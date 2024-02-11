@@ -12,7 +12,6 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ServiceFactory {
     int stage();
-    int week();
 
     interface Factory {
         Service create(ServiceConfig config);

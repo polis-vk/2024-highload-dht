@@ -63,10 +63,10 @@ public @interface ServiceTest {
                             .collect(Collectors.toList());
 
                     List<Class<?>> maxFactories = new ArrayList<>();
-                    long maxStage = 0;
+                    int maxStage = 0;
                     for (Class<?> factory : factories) {
                         ServiceFactory annotation = factory.getAnnotation(ServiceFactory.class);
-                        long stage = ((long) annotation.stage()) << 32 | annotation.week();
+                        int stage = annotation.stage();
                         if (stage < maxStage) {
                             continue;
                         }

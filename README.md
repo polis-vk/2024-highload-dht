@@ -1,5 +1,5 @@
 # 2024-highload-dht
-Курсовой проект 2024 года [курса «Разработка high-load систем»](https://education.vk.company/curriculum/program/discipline/1856/) [Корпоративной магистерской программы «Распределённые веб-сервисы / Web scale systems»](https://dws.itmo.ru/).
+Курсовой проект 2024 года [курса «Разработка high-load систем»](https://education.vk.company/curriculum/program/discipline/2007/) [Корпоративной магистерской программы «Распределённые веб-сервисы / Web scale systems»](https://dws.itmo.ru/).
 
 ## Этап 1. HTTP + storage (deadline 2024-02-21 23:59:59 MSK)
 ### Fork

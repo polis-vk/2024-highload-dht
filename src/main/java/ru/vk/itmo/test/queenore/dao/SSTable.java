@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.reference.dao;
+package ru.vk.itmo.test.queenore.dao;
 
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;

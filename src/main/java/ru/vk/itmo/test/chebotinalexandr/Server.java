@@ -73,7 +73,7 @@ public final class Server {
      */
     private static void fillManyFlushes(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         final int sstables = 100; //how many sstables dao must create
-        final int flushEntries = ENTRIES_IN_DB/ sstables;  //how many entries in one sstable
+        final int flushEntries = ENTRIES_IN_DB / sstables; //how many entries in one sstable
         List<Integer> entries = getRandomArray();
 
         //many flushes

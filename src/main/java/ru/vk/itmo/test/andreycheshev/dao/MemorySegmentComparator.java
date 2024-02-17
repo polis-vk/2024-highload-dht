@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.queenore.dao;
+package ru.vk.itmo.test.andreycheshev.dao;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;

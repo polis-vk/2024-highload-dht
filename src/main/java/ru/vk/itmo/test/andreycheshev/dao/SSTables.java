@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.queenore.dao;
+package ru.vk.itmo.test.andreycheshev.dao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

@@ -24,15 +24,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.BLOOM_FILTER_HASH_FUNCTIONS_OFFSET;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.BLOOM_FILTER_LENGTH_OFFSET;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.COMPACTION_NOT_FINISHED_TAG;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.ENTRIES_SIZE_OFFSET;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.OLDEST_SS_TABLE_INDEX;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.TOMBSTONE;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.deleteOldSSTables;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.entryByteSize;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.*;
 
 public class SSTablesStorage {
     private static final String SSTABLE_NAME = "sstable_";

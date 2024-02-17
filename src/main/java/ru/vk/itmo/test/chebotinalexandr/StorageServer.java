@@ -25,6 +25,7 @@ import static one.nio.http.Request.METHOD_POST;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class StorageServer extends HttpServer {
+    private static final String PATH = "/v0/entity";
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public StorageServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
@@ -54,7 +55,7 @@ public class StorageServer extends HttpServer {
         return Response.ok("Hello, cruel world!".getBytes(StandardCharsets.UTF_8));
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(METHOD_GET)
     public Response get(@Param("id") String id) {
         if (id == null || id.isEmpty()) {
@@ -62,14 +63,14 @@ public class StorageServer extends HttpServer {
         }
 
         Entry<MemorySegment> entry = dao.get(fromString(id));
-        if (entry != null) {
-            return Response.ok(toBytes(entry.value()));
-        } else {
+        if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else {
+            return Response.ok(toBytes(entry.value()));
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(METHOD_PUT)
     public Response upsert(@Param("id") String id, Request request) {
         if (id == null || id.isEmpty()) {
@@ -85,7 +86,7 @@ public class StorageServer extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(METHOD_DELETE)
     public Response delete(@Param("id") String id) {
         if (id == null || id.isEmpty()) {
@@ -101,7 +102,7 @@ public class StorageServer extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(METHOD_POST)
     public Response post(@Param("id") String id) {
         //Post (in-place updating in LSM) is not supported

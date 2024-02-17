@@ -117,40 +117,8 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
         return null;
     }
 
-    /*
-    @Override
-    public Entry<MemorySegment> getNoBloomFilter(MemorySegment key) {
-        State currState = this.state.get();
-
-        Entry<MemorySegment> result = currState.writeEntries.get(key);
-        if (result != null) {
-            return result.value() == null ? null : result;
-        }
-        result = currState.readEntries.get(key);
-        if (result != null) {
-            return result.value() == null ? null : result;
-        }
-
-        return getFromDiskNoBloomFilter(key, currState);
-    }
-
-    private Entry<MemorySegment> getFromDiskNoBloomFilter(MemorySegment key, State state) {
-        Entry<MemorySegment> result;
-
-        for (MemorySegment sstable : state.sstables) {
-            result = SSTableUtils.get(sstable, key);
-
-            if (result != null) {
-                return result.value() == null ? null : result;
-            }
-        }
-
-        return null;
-    }
-     */
-
     /**
-     * Merges iterators
+     * Merges iterators.
      */
     private PeekingIterator<Entry<MemorySegment>> range(
             Iterator<Entry<MemorySegment>> firstIterator,

@@ -13,9 +13,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 public class Server {
     private static final int ENTRIES_IN_DB = 500_000;
+
+    private Server() {
+
+    }
 
     public static void main(String[] args) throws IOException {
         ServiceConfig config = new ServiceConfig(
@@ -35,8 +40,7 @@ public class Server {
         fillManyFlushes(dao);
     }
 
-
-    private static ArrayList<Integer> getRandomArray() {
+    private static List<Integer> getRandomArray() {
         ArrayList<Integer> entries = new ArrayList<>(ENTRIES_IN_DB);
         for (int i = 0; i < ENTRIES_IN_DB; i++) {
             entries.add(i);
@@ -48,10 +52,10 @@ public class Server {
 
 
     /**
-     * Just fills memtable without flushing
+     * Just fills memtable without flushing.
      */
     private static void fillMemtable(Dao<MemorySegment, Entry<MemorySegment>> dao) {
-        ArrayList<Integer> entries = getRandomArray();
+        List<Integer> entries = getRandomArray();
         for (Integer entry : entries) {
             dao.upsert(entry(keyAt(entry), valueAt(entry)));
         }
@@ -65,15 +69,13 @@ public class Server {
         dao.flush();
     }
 
-
-
     /**
-     * Fills dao with multiple sstables
+     * Fills dao with multiple sstables.
      */
     private static void fillManyFlushes(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         final int sstables = 100; //how many sstables dao must create
-        final int flushEntries = ENTRIES_IN_DB / sstables;  //how many entries in one sstable
-        ArrayList<Integer> entries = getRandomArray();
+        final int flushEntries = ENTRIES_IN_DB/ sstables;  //how many entries in one sstable
+        List<Integer> entries = getRandomArray();
 
         //many flushes
         for (Integer entry : entries) {

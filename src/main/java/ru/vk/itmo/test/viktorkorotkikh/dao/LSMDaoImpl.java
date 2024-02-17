@@ -12,6 +12,7 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -174,8 +175,15 @@ public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
             Arena ssTablesArena
     ) throws IOException {
         if (memTable.isEmpty()) return;
+
         SSTable.save(memTable, fileIndex, config);
-        ssTables = SSTable.load(ssTablesArena, config);
+
+        SSTable flushed = SSTable.loadOne(ssTablesArena, false, config, fileIndex);
+        final List<SSTable> newSSTables = new ArrayList<>(ssTables.size() + 1);
+        newSSTables.add(flushed);
+        newSSTables.addAll(ssTables);
+
+        ssTables = newSSTables;
         flushingMemTable = new MemTable(-1);
     }
 
@@ -209,7 +217,10 @@ public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         if (ssTablesArena.scope().isAlive()) {
             ssTablesArena.close();
         }
-        SSTable.save(memTable, ssTables.size(), config);
+        if (!memTable.isEmpty()) {
+            SSTable.save(memTable, ssTables.size(), config);
+        }
+
         memTable = new MemTable(-1);
     }
 }

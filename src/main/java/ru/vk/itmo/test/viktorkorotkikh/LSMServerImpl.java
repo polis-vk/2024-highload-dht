@@ -9,11 +9,10 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
 
@@ -23,20 +22,20 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Objects;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class LSMServerImpl extends HttpServer {
-    private static final Logger logger = LoggerFactory.getLogger(LSMServerImpl.class);
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private final ServiceConfig serviceConfig;
-    private LSMDaoImpl dao;
+    private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     private static final List<Integer> SUPPORTED_METHODS = List.of(METHOD_GET, METHOD_PUT, METHOD_DELETE);
 
-    // private static final String PATH = "/v0/entity";
+    private static final String PATH = "/v0/entity";
 
     public LSMServerImpl(ServiceConfig serviceConfig) throws IOException {
         super(createServerConfig(serviceConfig));
@@ -76,19 +75,20 @@ public class LSMServerImpl extends HttpServer {
     public void startServer() {
         createLSMDao();
         start();
-        logger.info("Server started on port: 8080 (http)");
+        System.out.println("Server started on port: 8080 (http)");
     }
 
     public void stopServer() {
         stop();
-        logger.info("Server stopped. Closing dao...");
         closeLSMDao();
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id");
-        if (id == null || id.length() <= 1) { // request.getParameter("id") returns "=" on empty parameter
+        if (Objects.equals(request.getPath(), PATH)
+                && (id == null || id.length() <= 1) // request.getParameter("id") returns "=" on empty parameter
+        ) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
@@ -98,8 +98,6 @@ public class LSMServerImpl extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(value = {METHOD_GET})
     public Response handleGet(@Param(value = "id", required = true) String id) {
-        logger.info("Incoming request GET /v0/entity?id=" + id);
-
         byte[] byteKey = id.getBytes(StandardCharsets.UTF_8);
         Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(byteKey));
         if (entry == null || entry.value() == null) {
@@ -112,8 +110,6 @@ public class LSMServerImpl extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(value = {METHOD_PUT})
     public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
-        logger.info("Incoming request PUT /v0/entity?id=" + id);
-
         if (request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -129,8 +125,6 @@ public class LSMServerImpl extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(value = {METHOD_DELETE})
     public Response handleDelete(@Param(value = "id", required = true) String id) {
-        logger.info("Incoming request DELETE /v0/entity?id=" + id);
-
         Entry<MemorySegment> newEntry = new BaseEntry<>(
                 fromString(id),
                 null
@@ -140,6 +134,13 @@ public class LSMServerImpl extends HttpServer {
         response.addHeader("Content-Length: 0");
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    @Path("/v0/compact")
+    @RequestMethod(value = {METHOD_GET})
+    public Response handleCompact() throws IOException {
+        dao.compact();
+        return new Response(Response.OK, Response.EMPTY);
     }
 
     private static MemorySegment fromString(String data) {

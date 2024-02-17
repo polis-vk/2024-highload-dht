@@ -175,8 +175,6 @@ public final class SSTable {
     }
 
     public static void save(MemTable memTable, int fileIndex, Config config) throws IOException {
-        if (memTable.isEmpty()) return;
-
         final Path indexTmp = config.basePath().resolve(INDEX_FILE_NAME + TMP_FILE_EXTENSION);
         final Path indexFile = config.basePath().resolve(INDEX_FILE_NAME);
 

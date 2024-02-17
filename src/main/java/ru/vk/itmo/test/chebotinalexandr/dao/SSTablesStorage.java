@@ -111,7 +111,6 @@ public class SSTablesStorage {
 
     public static FindResult find(MemorySegment readSegment, MemorySegment key) {
         return binarySearch(readSegment, key);
-
     }
 
     public static Iterator<Entry<MemorySegment>> iteratorsAll(
@@ -230,7 +229,6 @@ public class SSTablesStorage {
             i++;
         }
         //---------
-
 
         return memorySegment;
     }

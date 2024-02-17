@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class Server {
+public final class Server {
     private static final int ENTRIES_IN_DB = 500_000;
 
     private Server() {
@@ -49,7 +49,6 @@ public class Server {
         Collections.shuffle(entries);
         return entries;
     }
-
 
     /**
      * Just fills memtable without flushing.

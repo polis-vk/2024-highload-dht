@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.andreycheshev;
 
 import one.nio.http.*;
-import one.nio.os.Mem;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -17,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 import static one.nio.http.Request.*;
 import static one.nio.http.Response.*;
 
-public class ServerImpl extends HttpServer {
+public class ServerImpl extends CustomHttpServer {
     private final ReferenceDao dao;
 
     public ServerImpl(ServiceConfig config) throws IOException {
@@ -43,48 +42,48 @@ public class ServerImpl extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(METHOD_GET)
     public Response get(@Param("id") String id) {
-        System.out.println("get");
+        if (id == null || id.isEmpty()) {
+            return new Response(BAD_REQUEST, Response.EMPTY);
+        }
 
-        MemorySegment key = fromString(id);
+        Entry<MemorySegment> entry = dao.get(fromString(id));
 
-        Entry<MemorySegment> entry = dao.get(key);
-
-        return (entry == null || entry.key() == null)
-                ? new Response(NOT_FOUND, new byte[]{})
+        return (entry == null)
+                ? new Response(NOT_FOUND, Response.EMPTY)
                 : Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     @Path("/v0/entity")
     @RequestMethod(METHOD_PUT)
     public Response put(@Param("id") String id, final Request request) {
-        System.out.println("put");
-        byte[] body = request.getBody();
-        Entry<MemorySegment> entry = new BaseEntry<>(fromString(id), fromByte(body));
+        if (id == null || id.isEmpty()) {
+            return new Response(BAD_REQUEST, Response.EMPTY);
+        }
 
+        Entry<MemorySegment> entry = new BaseEntry<>(
+                fromString(id),
+                MemorySegment.ofArray(request.getBody())
+        );
         dao.upsert(entry);
 
-        return new Response(CREATED, new byte[]{});
+        return new Response(CREATED, Response.EMPTY);
     }
 
     @Path("/v0/entity")
     @RequestMethod(METHOD_DELETE)
     public Response delete(@Param("id") String id) {
-        System.out.println("delete");
-        Entry<MemorySegment> entry = new BaseEntry<>(fromString(id), null);
+        if (id == null || id.isEmpty()) {
+            return new Response(BAD_REQUEST, Response.EMPTY);
+        }
 
+        Entry<MemorySegment> entry = new BaseEntry<>(fromString(id), null);
         dao.upsert(entry);
 
-        return new Response(ACCEPTED, new byte[]{});
+        return new Response(ACCEPTED, Response.EMPTY);
     }
 
     private MemorySegment fromString(String data) {
-        if (data == null) {
-            return null;
-        }
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    private MemorySegment fromByte(byte[] data) {
-        return MemorySegment.ofArray(data);
-    }
 }

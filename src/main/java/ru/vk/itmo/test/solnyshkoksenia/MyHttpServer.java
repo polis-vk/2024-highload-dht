@@ -8,7 +8,6 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.os.Mem;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -41,64 +40,61 @@ public class MyHttpServer extends HttpServer {
     }
 
     private static Config createConfig(ServiceConfig config) {
-        return new Config(config.workingDir(), 64);
+        return new Config(config.workingDir(), 1024);
     }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         if (request.getMethod() == Request.METHOD_GET) {
-            session.sendResponse(new Response(Response.BAD_REQUEST));
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
         session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response get(final HttpSession session,
+    public void get(final HttpSession session,
                         @Param(value = "id", required = true) String id) throws IOException {
         Response response;
         if (id.isEmpty()) {
-            response = new Response(Response.BAD_REQUEST);
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else {
             Entry<MemorySegment> entry = dao.get(toMS(id));
             if (entry == null) {
-                response = new Response(Response.NOT_FOUND);
+                response = new Response(Response.NOT_FOUND, Response.EMPTY);
             } else {
                 response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
             }
         }
         session.sendResponse(response);
-        return response;
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response put(final Request request, final HttpSession session,
+    public void put(final Request request, final HttpSession session,
                         @Param(value = "id", required = true) String id) throws IOException {
         Response response;
         if (id.isEmpty()) {
-            response = new Response(Response.BAD_REQUEST);
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else {
             dao.upsert(new BaseEntry<>(toMS(id), MemorySegment.ofArray(request.getBody())));
-            response = new Response(Response.CREATED);
+            response = new Response(Response.CREATED, Response.EMPTY);
         }
         session.sendResponse(response);
-        return response;
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(final HttpSession session,
+    public void delete(final HttpSession session,
                            @Param(value = "id", required = true) String id) throws IOException {
         Response response;
         if (id.isEmpty()) {
-            response = new Response(Response.BAD_REQUEST);
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else {
             dao.upsert(new BaseEntry<>(toMS(id), null));
-            response = new Response(Response.ACCEPTED);
+            response = new Response(Response.ACCEPTED, Response.EMPTY);
         }
         session.sendResponse(response);
-        return response;
     }
 
     private MemorySegment toMS(String input) {

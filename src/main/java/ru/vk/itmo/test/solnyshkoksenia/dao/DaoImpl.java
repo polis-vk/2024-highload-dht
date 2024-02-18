@@ -107,7 +107,8 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         try {
             if (state.isFlushing()) {
                 if (state.isOverflowed()) {
-                    throw new IOException();
+                    return;
+//                    throw new IOException();
                 } else {
                     return;
                 }

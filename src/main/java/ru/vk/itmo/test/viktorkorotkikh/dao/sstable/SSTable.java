@@ -26,16 +26,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.COMPACTED_PREFIX;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.COMPRESSION_INFO_EXTENSION;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.FILE_EXTENSION;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.FILE_NAME;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.INDEX_FILE_NAME;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.SSTABLE_INDEX_EXTENSION;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.TMP_FILE_EXTENSION;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.dataName;
-import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.indexName;
-
 public final class SSTable {
 
     private final boolean hasNoTombstones;
@@ -52,8 +42,8 @@ public final class SSTable {
             finalizeCompaction(basePath);
         }
 
-        Path indexTmp = basePath.resolve(INDEX_FILE_NAME + TMP_FILE_EXTENSION);
-        Path indexFile = basePath.resolve(INDEX_FILE_NAME);
+        Path indexTmp = basePath.resolve(SSTableUtils.INDEX_FILE_NAME + SSTableUtils.TMP_FILE_EXTENSION);
+        Path indexFile = basePath.resolve(SSTableUtils.INDEX_FILE_NAME);
 
         if (!Files.exists(indexFile)) {
             if (Files.exists(indexTmp)) {
@@ -69,7 +59,7 @@ public final class SSTable {
         List<String> existedFiles = Files.readAllLines(indexFile, StandardCharsets.UTF_8);
         List<SSTable> ssTables = new ArrayList<>(existedFiles.size());
         for (int i = 0; i < existedFiles.size(); i++) {
-            ssTables.add(loadOne(arena, existedFiles.get(i).startsWith(COMPACTED_PREFIX), config, i));
+            ssTables.add(loadOne(arena, existedFiles.get(i).startsWith(SSTableUtils.COMPACTED_PREFIX), config, i));
         }
 
         return ssTables;
@@ -78,11 +68,11 @@ public final class SSTable {
     public static SSTable loadOne(Arena arena, boolean isCompacted, Config config, int index) throws IOException {
         try (
                 FileChannel ssTableFileChannel = FileChannel.open(
-                        dataName(isCompacted, config.basePath(), index),
+                        SSTableUtils.dataName(isCompacted, config.basePath(), index),
                         StandardOpenOption.READ
                 );
                 FileChannel indexFileChannel = FileChannel.open(
-                        indexName(isCompacted, config.basePath(), index),
+                        SSTableUtils.indexName(isCompacted, config.basePath(), index),
                         StandardOpenOption.READ
                 )
         ) {
@@ -116,8 +106,10 @@ public final class SSTable {
     }
 
     public static void save(MemTable memTable, int fileIndex, Config config) throws IOException {
-        final Path indexTmp = config.basePath().resolve(INDEX_FILE_NAME + TMP_FILE_EXTENSION);
-        final Path indexFile = config.basePath().resolve(INDEX_FILE_NAME);
+        final Path indexTmp = config.basePath()
+                .resolve(SSTableUtils.INDEX_FILE_NAME + SSTableUtils.TMP_FILE_EXTENSION);
+        final Path indexFile = config.basePath()
+                .resolve(SSTableUtils.INDEX_FILE_NAME);
 
         try {
             Files.createFile(indexFile);
@@ -128,7 +120,8 @@ public final class SSTable {
         AbstractSSTableWriter writer = getWriter();
         writer.write(false, memTable.values().iterator(), config.basePath(), fileIndex);
 
-        String newFileName = dataName(false, config.basePath(), fileIndex).getFileName().toString();
+        String newFileName = SSTableUtils.dataName(false, config.basePath(), fileIndex)
+                .getFileName().toString();
 
         List<String> existedFiles = Files.readAllLines(indexFile, StandardCharsets.UTF_8);
         List<String> list = new ArrayList<>(existedFiles.size() + 1);
@@ -161,7 +154,7 @@ public final class SSTable {
     }
 
     private static Path getCompactedFilePath(Path basePath) {
-        return dataName(true, basePath, 0);
+        return SSTableUtils.dataName(true, basePath, 0);
     }
 
     private static boolean checkIfCompactedExists(Config config) {
@@ -183,11 +176,11 @@ public final class SSTable {
                              1,
                              (path, ignored) -> {
                                  String fileName = path.getFileName().toString();
-                                 return fileName.startsWith(FILE_NAME)
+                                 return fileName.startsWith(SSTableUtils.FILE_NAME)
                                          && (
-                                         fileName.endsWith(FILE_EXTENSION)
-                                                 || fileName.endsWith(SSTABLE_INDEX_EXTENSION)
-                                                 || fileName.endsWith(COMPRESSION_INFO_EXTENSION)
+                                         fileName.endsWith(SSTableUtils.FILE_EXTENSION)
+                                                 || fileName.endsWith(SSTableUtils.SSTABLE_INDEX_EXTENSION)
+                                                 || fileName.endsWith(SSTableUtils.COMPRESSION_INFO_EXTENSION)
                                  );
                              })) {
             stream.forEach(p -> {
@@ -199,15 +192,15 @@ public final class SSTable {
             });
         }
 
-        Path indexTmp = storagePath.resolve(INDEX_FILE_NAME + TMP_FILE_EXTENSION);
-        Path indexFile = storagePath.resolve(INDEX_FILE_NAME);
+        Path indexTmp = storagePath.resolve(SSTableUtils.INDEX_FILE_NAME + SSTableUtils.TMP_FILE_EXTENSION);
+        Path indexFile = storagePath.resolve(SSTableUtils.INDEX_FILE_NAME);
 
         Files.deleteIfExists(indexFile);
         Files.deleteIfExists(indexTmp);
 
         Path compactionFile = getCompactedFilePath(storagePath);
         boolean noData = Files.size(compactionFile) == 0;
-        String newFile = dataName(false, storagePath, 0).getFileName().toString();
+        String newFile = SSTableUtils.dataName(false, storagePath, 0).getFileName().toString();
 
         Files.write(
                 indexTmp,
@@ -218,7 +211,7 @@ public final class SSTable {
         );
 
         Files.move(indexTmp, indexFile, StandardCopyOption.ATOMIC_MOVE);
-        Path sstableIndexFile = indexName(true, storagePath, 0);
+        Path sstableIndexFile = SSTableUtils.indexName(true, storagePath, 0);
         if (noData) {
             Files.delete(compactionFile);
             Files.delete(sstableIndexFile);
@@ -230,7 +223,7 @@ public final class SSTable {
             );
             Files.move(
                     sstableIndexFile,
-                    indexName(false, storagePath, 0),
+                    SSTableUtils.indexName(false, storagePath, 0),
                     StandardCopyOption.ATOMIC_MOVE
             );
         }

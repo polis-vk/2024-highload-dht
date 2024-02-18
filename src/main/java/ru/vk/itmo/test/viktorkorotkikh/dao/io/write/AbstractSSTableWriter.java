@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao.io.write;
 
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTable;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.ByteArraySegment;
 import ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils;
 

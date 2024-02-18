@@ -9,9 +9,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 public final class SSTableUtils {
-    private SSTableUtils() {
-    }
-
     static final String FILE_NAME = "sstable";
 
     static final String INDEX_FILE_NAME = "index.idx";
@@ -25,6 +22,9 @@ public final class SSTableUtils {
     static final String COMPRESSION_INFO_EXTENSION = ".compressionInfo";
 
     static final String TMP_FILE_EXTENSION = ".tmp";
+
+    private SSTableUtils() {
+    }
 
     public static Path indexName(
             final boolean isCompacted,

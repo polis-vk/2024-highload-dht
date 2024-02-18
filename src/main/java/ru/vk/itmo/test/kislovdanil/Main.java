@@ -10,6 +10,10 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 public class Main {
+    private Main() {
+
+    }
+
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         DatabaseServiceFactory factory = new DatabaseServiceFactory();
         ServiceConfig config = new ServiceConfig(8080, "localhost", List.of(),

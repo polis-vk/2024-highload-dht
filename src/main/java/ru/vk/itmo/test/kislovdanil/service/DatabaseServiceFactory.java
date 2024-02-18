@@ -6,6 +6,7 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Paths;
 
 @ServiceFactory(stage = 1)
@@ -18,7 +19,7 @@ public class DatabaseServiceFactory implements ServiceFactory.Factory {
         try {
             return new DatabaseService(serverConfig, daoConfig);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException(e);
         }
     }
 }

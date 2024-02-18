@@ -1,6 +1,12 @@
 package ru.vk.itmo.test.kislovdanil.service;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -14,7 +20,7 @@ import java.nio.charset.StandardCharsets;
 
 public class DatabaseHttpServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private final static String ENTITY_ACCESS_URL = "/v0/entity";
+    private static final String ENTITY_ACCESS_URL = "/v0/entity";
 
     public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(transformConfig(config));
@@ -62,12 +68,12 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     private static HttpServerConfig transformConfig(ServiceConfig serviceConfig) {
-        HttpServerConfig httpServerConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
         acceptorConfig.threads = 8;
 
+        HttpServerConfig httpServerConfig = new HttpServerConfig();
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
         httpServerConfig.selectors = 10;

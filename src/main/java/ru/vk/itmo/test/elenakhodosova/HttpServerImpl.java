@@ -9,20 +9,19 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Utf8;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 public class HttpServerImpl extends HttpServer {
 
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ReferenceDao dao;
     private static final String PATH_NAME = "/v0/entity";
 
     public HttpServerImpl(ServiceConfig config, ReferenceDao dao) throws IOException {
@@ -45,42 +44,28 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        try {
-            Entry<MemorySegment> value = dao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
-            return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                    : Response.ok(value.value().toArray(ValueLayout.JAVA_BYTE));
-        } catch (Exception ex) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        Entry<MemorySegment> value = dao.get(MemorySegment.ofArray(id.toCharArray()));
+        return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                : Response.ok(value.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     @Path(PATH_NAME)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
-        if (isParamIncorrect(id) || request.getBody() == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         byte[] value = request.getBody();
-        try {
-            dao.upsert(new BaseEntry<>(
-                    MemorySegment.ofArray(Utf8.toBytes(id)),
-                    MemorySegment.ofArray(value)));
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (Exception ex) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        dao.upsert(new BaseEntry<>(
+                MemorySegment.ofArray(id.toCharArray()),
+                MemorySegment.ofArray(value)));
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Path(PATH_NAME)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        try {
-            dao.upsert(new BaseEntry<>(MemorySegment.ofArray(Utf8.toBytes(id)), null));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (Exception ex) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        dao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()), null));
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Path(PATH_NAME)
@@ -92,6 +77,16 @@ public class HttpServerImpl extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response badRequest = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(badRequest);
+    }
+
+    @Override
+    public synchronized void stop() {
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        super.stop();
     }
 
     private boolean isParamIncorrect(String param) {

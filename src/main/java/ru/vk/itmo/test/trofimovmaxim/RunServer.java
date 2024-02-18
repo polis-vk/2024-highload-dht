@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class RunServer {
+public final class RunServer {
     private RunServer() {
     }
 

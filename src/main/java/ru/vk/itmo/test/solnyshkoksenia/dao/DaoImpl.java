@@ -106,12 +106,7 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         lock.writeLock().lock();
         try {
             if (state.isFlushing()) {
-                if (state.isOverflowed()) {
-                    return;
-//                    throw new IOException();
-                } else {
-                    return;
-                }
+                return;
             }
             this.curState = state.moveStorage();
         } finally {
@@ -141,7 +136,7 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public void compact() throws IOException {
+    public void compact() {
         try {
             executor.submit(this::tryCompact).get();
         } catch (InterruptedException e) {

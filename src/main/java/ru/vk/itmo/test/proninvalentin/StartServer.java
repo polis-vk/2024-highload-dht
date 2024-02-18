@@ -9,12 +9,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-public class StartServer {
+public final class StartServer {
+    private StartServer() {
+        // Suppress warning
+    }
+
     public static void main(String[] args) throws IOException {
         String url = "http://localhost";
         int port = 8080;
         int flushThresholdBytes = 1 << 27; // 128 MB
-        Path profilingDataPath = Path.of("/Users/valentinpronin/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/proninvalentin/server_profiling_data");
+        Path profilingDataPath = Path.of(
+                "/Users/valentinpronin/IdeaProjects/2024-highload-dht/"
+                        + "src/main/java/ru/vk/itmo/test/"
+                        + "proninvalentin/server_profiling_data");
         Files.createDirectories(profilingDataPath);
 
         Config daoConfig = new Config(profilingDataPath, flushThresholdBytes);

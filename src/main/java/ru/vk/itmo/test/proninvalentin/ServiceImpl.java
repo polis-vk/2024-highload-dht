@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
-public class ServiceImpl implements ru.vk.itmo.Service {
+public class ServiceImpl implements Service {
     private final Config daoConfig;
     private final ServiceConfig config;
     private ReferenceDao dao;

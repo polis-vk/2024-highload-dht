@@ -1,6 +1,13 @@
 package ru.vk.itmo.test.proninvalentin;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -81,8 +88,9 @@ public class Server extends HttpServer {
         MemorySegment key = msFactory.fromString(id);
 
         Entry<MemorySegment> entry = dao.get(key);
-        if (entry == null)
+        if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
 
         byte[] value = msFactory.toByteArray(entry.value());
         return Response.ok(value);

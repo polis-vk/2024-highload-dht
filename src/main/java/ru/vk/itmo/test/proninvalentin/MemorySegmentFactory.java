@@ -9,7 +9,9 @@ import java.nio.charset.StandardCharsets;
 
 public class MemorySegmentFactory {
     public byte[] toByteArray(MemorySegment data) {
-        assert data != null;
+        if (data == null) {
+            throw new IllegalArgumentException();
+        }
 
         return data.toArray(ValueLayout.JAVA_BYTE);
     }
@@ -21,7 +23,9 @@ public class MemorySegmentFactory {
     }
 
     public Entry<MemorySegment> toMemorySegment(String key, String value) {
-        assert key != null && value != null;
+        if (key == null || value == null) {
+            throw new IllegalArgumentException();
+        }
 
         MemorySegment msKey = fromString(key);
         MemorySegment msValue = fromString(value);
@@ -29,7 +33,9 @@ public class MemorySegmentFactory {
     }
 
     public Entry<MemorySegment> toDeletedMemorySegment(String key) {
-        assert key != null;
+        if (key == null) {
+            throw new IllegalArgumentException();
+        }
 
         MemorySegment msKey = fromString(key);
         return new BaseEntry<>(msKey, null);

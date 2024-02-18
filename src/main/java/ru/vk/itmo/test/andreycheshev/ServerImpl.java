@@ -9,6 +9,7 @@ import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.andreycheshev.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -16,16 +17,17 @@ import java.nio.charset.StandardCharsets;
 import static one.nio.http.Request.*;
 import static one.nio.http.Response.*;
 
-public class ServerImpl extends CustomHttpServer {
+public class ServerImpl extends HttpServer {
+    private static final String REQUEST_PATH = "/v0/entity";
     private final ReferenceDao dao;
 
     public ServerImpl(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
 
         Config daoConfig = new Config(config.workingDir(), 100000);
+
         this.dao = new ReferenceDao(daoConfig);
     }
-
 
     public static HttpServerConfig createServerConfig(ServiceConfig config) {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
@@ -86,4 +88,32 @@ public class ServerImpl extends CustomHttpServer {
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        String path = request.getPath();
+        if (!path.equals(REQUEST_PATH)) {
+            Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+            session.sendResponse(response);
+            return;
+        }
+
+        int method = request.getMethod();
+        if (method != METHOD_GET && method != METHOD_PUT && method != METHOD_DELETE) {
+            Response response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            session.sendResponse(response);
+            return;
+        }
+
+        super.handleRequest(request, session);
+    }
+
+    @Override
+    public synchronized void stop() {
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        super.stop();
+    }
 }

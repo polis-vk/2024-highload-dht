@@ -9,18 +9,29 @@ import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    private final ServerImpl server;
+    private ServerImpl server;
+    private final ServiceConfig serviceConfig;
+    private boolean isActive = false;
 
     public ServiceImpl(ServiceConfig config) {
+        this.serviceConfig = config;
+        initServer();
+    }
+
+    private void initServer() {
         try {
-            server = new ServerImpl(config);
+            server = new ServerImpl(serviceConfig);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        isActive = true;
     }
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
+        if (!isActive) {
+            initServer();
+        }
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -28,6 +39,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        isActive = false;
         return CompletableFuture.completedFuture(null);
     }
 

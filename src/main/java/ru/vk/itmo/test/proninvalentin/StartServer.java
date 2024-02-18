@@ -14,14 +14,14 @@ public class StartServer {
         String url = "http://localhost";
         int port = 8080;
         int flushThresholdBytes = 1 << 27; // 128 MB
-        String profilingDataPath = "/var/folders/ws/d96mcphn30qbsqmksq2td7v40000gn/T/server_profiling_data";
+        Path profilingDataPath = Path.of("/Users/valentinpronin/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/proninvalentin/server_profiling_data");
+        Files.createDirectories(profilingDataPath);
 
-        Config daoConfig = new Config(Files.createTempDirectory("dao"), flushThresholdBytes);
-        Server server = new Server(new ServiceConfig(
-                port, url,
-                List.of(url),
-                Path.of(profilingDataPath)),
-                new ReferenceDao(daoConfig));
+        Config daoConfig = new Config(profilingDataPath, flushThresholdBytes);
+        ServiceConfig serviceConfig = new ServiceConfig(port, url, List.of(url), profilingDataPath);
+        ReferenceDao referenceDao = new ReferenceDao(daoConfig);
+
+        Server server = new Server(serviceConfig, referenceDao);
         server.start();
     }
 }

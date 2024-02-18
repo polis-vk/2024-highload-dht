@@ -51,8 +51,7 @@ public class ServerImpl extends HttpServer {
         Response response;
         if (Arrays.asList(METHODS).contains(request.getMethodName())) {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        else {
+        } else {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
         session.sendResponse(response);

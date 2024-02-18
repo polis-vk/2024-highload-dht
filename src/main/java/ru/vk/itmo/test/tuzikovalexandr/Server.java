@@ -11,6 +11,10 @@ import java.util.List;
 
 public class Server {
 
+    private Server() {
+
+    }
+
     public static void main(String[] args) throws IOException {
         Dao dao = new ReferenceDao(new Config(Files.createTempDirectory("data"), 64));
         ServerImpl server = new ServerImpl(new ServiceConfig(

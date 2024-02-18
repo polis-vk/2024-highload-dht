@@ -19,6 +19,7 @@ import static one.nio.http.Response.*;
 
 public class ServerImpl extends HttpServer {
     private static final String REQUEST_PATH = "/v0/entity";
+    private static final String ID = "id=";
     private final ReferenceDao dao;
 
     public ServerImpl(ServiceConfig config) throws IOException {
@@ -41,9 +42,8 @@ public class ServerImpl extends HttpServer {
         return serverConfig;
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(METHOD_GET)
-    public Response get(@Param("id") String id) {
+    public Response get(final Request request) {
+        String id = request.getParameter(ID);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
         }
@@ -55,9 +55,8 @@ public class ServerImpl extends HttpServer {
                 : Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(METHOD_PUT)
-    public Response put(@Param("id") String id, final Request request) {
+    public Response put(final Request request) {
+        String id = request.getParameter(ID);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
         }
@@ -71,9 +70,8 @@ public class ServerImpl extends HttpServer {
         return new Response(CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(METHOD_DELETE)
-    public Response delete(@Param("id") String id) {
+    public Response delete(final Request request) {
+        String id = request.getParameter(ID);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
         }
@@ -84,28 +82,28 @@ public class ServerImpl extends HttpServer {
         return new Response(ACCEPTED, Response.EMPTY);
     }
 
-    private MemorySegment fromString(String data) {
-        return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
-    }
-
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
-            System.out.println("bad = " + path);
-            Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-            session.sendResponse(response);
+            session.sendResponse(new Response(BAD_REQUEST, Response.EMPTY));
             return;
         }
 
         int method = request.getMethod();
-        if (method != METHOD_GET && method != METHOD_PUT && method != METHOD_DELETE) {
-            Response response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            session.sendResponse(response);
-            return;
-        }
 
-        super.handleRequest(request, session);
+        Response response = switch (method) {
+            case METHOD_GET -> get(request);
+            case METHOD_PUT -> put(request);
+            case METHOD_DELETE -> delete(request);
+            default -> new Response(METHOD_NOT_ALLOWED, Response.EMPTY);
+        };
+
+        session.sendResponse(response);
+    }
+
+    private MemorySegment fromString(String data) {
+        return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override

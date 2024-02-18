@@ -3,7 +3,6 @@ package ru.vk.itmo.test.viktorkorotkikh;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
@@ -21,8 +20,6 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Objects;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
@@ -32,10 +29,6 @@ public class LSMServerImpl extends HttpServer {
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private final ServiceConfig serviceConfig;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
-
-    private static final List<Integer> SUPPORTED_METHODS = List.of(METHOD_GET, METHOD_PUT, METHOD_DELETE);
-
-    private static final String PATH = "/v0/entity";
 
     public LSMServerImpl(ServiceConfig serviceConfig) throws IOException {
         super(createServerConfig(serviceConfig));
@@ -75,7 +68,8 @@ public class LSMServerImpl extends HttpServer {
     public void startServer() {
         createLSMDao();
         start();
-        System.out.println("Server started on port: 8080 (http)");
+        System.out.println("Server started on port: " + serviceConfig.selfPort());
+        System.out.println("Dao working dir: " + serviceConfig.workingDir());
     }
 
     public void stopServer() {
@@ -83,36 +77,37 @@ public class LSMServerImpl extends HttpServer {
         closeLSMDao();
     }
 
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    @Path("/v0/entity")
+    public void handleEntityRequest(Request request, HttpSession session) throws IOException {
+        // validate id parameter
         String id = request.getParameter("id");
-        if (Objects.equals(request.getPath(), PATH)
-                && (id == null || id.length() <= 1) // request.getParameter("id") returns "=" on empty parameter
-        ) {
+        if (id == null || id.length() <= 1) { // request.getParameter("id") returns "=" on empty parameter
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
-        super.handleRequest(request, session);
+
+        switch (request.getMethod()) {
+            case METHOD_GET -> session.sendResponse(handleGetEntity(id));
+            case METHOD_PUT -> session.sendResponse(handlePutEntity(id, request));
+            case METHOD_DELETE -> session.sendResponse(handleDeleteEntity(id));
+            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(value = {METHOD_GET})
-    public Response handleGet(@Param(value = "id", required = true) String id) {
-        byte[] byteKey = id.getBytes(StandardCharsets.UTF_8);
-        Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(byteKey));
+    private Response handleGetEntity(final String id) {
+        Entry<MemorySegment> entry = dao.get(fromString(id));
         if (entry == null || entry.value() == null) {
-            return new Response(Response.NOT_FOUND, byteKey);
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
 
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(value = {METHOD_PUT})
-    public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
+    private Response handlePutEntity(final String id, Request request) {
         if (request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
         Entry<MemorySegment> newEntry = new BaseEntry<>(
                 fromString(id),
                 MemorySegment.ofArray(request.getBody())
@@ -122,16 +117,12 @@ public class LSMServerImpl extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(value = {METHOD_DELETE})
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
+    private Response handleDeleteEntity(final String id) {
         Entry<MemorySegment> newEntry = new BaseEntry<>(
                 fromString(id),
                 null
         );
         dao.upsert(newEntry);
-        var response = new Response(Response.ACCEPTED);
-        response.addHeader("Content-Length: 0");
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
@@ -149,13 +140,6 @@ public class LSMServerImpl extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response;
-        if (SUPPORTED_METHODS.contains(request.getMethod())) {
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } else {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        }
-
-        session.sendResponse(response);
+        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 }

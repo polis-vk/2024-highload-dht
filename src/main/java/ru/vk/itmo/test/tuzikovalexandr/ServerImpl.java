@@ -3,10 +3,10 @@ package ru.vk.itmo.test.tuzikovalexandr;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Path;
 import one.nio.http.Param;
-import one.nio.http.RequestMethod;
+import one.nio.http.Path;
 import one.nio.http.Request;
+import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
@@ -22,7 +22,7 @@ import java.util.Arrays;
 
 public class ServerImpl extends HttpServer {
 
-    private Dao dao;
+    private final Dao dao;
     static final String[] METHODS = new String[]{"GET", "PUT", "DELETE"};
 
     public ServerImpl(ServiceConfig config, Dao dao) throws IOException {

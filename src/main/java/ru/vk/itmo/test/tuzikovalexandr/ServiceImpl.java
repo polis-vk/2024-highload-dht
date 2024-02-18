@@ -13,7 +13,7 @@ import java.util.concurrent.CompletableFuture;
 public class ServiceImpl implements Service {
 
     private ServerImpl server;
-    private ServiceConfig config;
+    private final ServiceConfig config;
     private Dao dao;
 
     public ServiceImpl(ServiceConfig config) {

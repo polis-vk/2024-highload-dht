@@ -10,18 +10,17 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class ServerImpl extends HttpServer {
 
-    private DaoFactory daoFactory;
     private Dao dao;
     static final String[] METHODS = new String[]{"GET", "PUT", "DELETE"};
 
     public ServerImpl(ServiceConfig config, Dao dao) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
-        this.daoFactory = new DaoFactory();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -52,6 +51,11 @@ public class ServerImpl extends HttpServer {
         session.sendResponse(response);
     }
 
+    @Path(value = "/v0/status")
+    public Response status() {
+        return Response.ok("OK");
+    }
+
     @Path(value = "/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getEntry(@Param(value = "id", required = true) String id) {
@@ -59,7 +63,7 @@ public class ServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        MemorySegment key = daoFactory.fromString(id);
+        MemorySegment key = fromString(id);
         Entry<MemorySegment> entry = dao.get(key);
 
         if (entry == null) {
@@ -76,7 +80,7 @@ public class ServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        MemorySegment key = daoFactory.fromString(id);
+        MemorySegment key = fromString(id);
         MemorySegment value = MemorySegment.ofArray(request.getBody());
 
         dao.upsert(new BaseEntry<>(key, value));
@@ -90,9 +94,13 @@ public class ServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        MemorySegment key = daoFactory.fromString(id);
+        MemorySegment key = fromString(id);
         dao.upsert(new BaseEntry<>(key, null));
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private MemorySegment fromString(String data) {
+        return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 }

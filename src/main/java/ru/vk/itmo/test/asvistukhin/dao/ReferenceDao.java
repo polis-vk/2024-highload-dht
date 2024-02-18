@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.reference.dao;
+package ru.vk.itmo.test.asvistukhin.dao;
 
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
@@ -7,6 +7,7 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.charset.Charset;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -76,6 +77,11 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     public Entry<MemorySegment> get(final MemorySegment key) {
         // Without lock, just snapshot of table set
         return tableSet.get(key);
+    }
+
+    public Entry<MemorySegment> get(final String key) {
+        // Without lock, just snapshot of table set
+        return tableSet.get(MemorySegment.ofArray(key.getBytes(Charset.defaultCharset())));
     }
 
     @Override

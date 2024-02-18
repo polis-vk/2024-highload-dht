@@ -20,12 +20,12 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = List.of(
-                Request.METHOD_GET,
-                Request.METHOD_PUT,
-                Request.METHOD_DELETE
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
         ).contains(request.getMethod())
-                ? new Response(Response.BAD_REQUEST, Response.EMPTY)
-                : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            ? new Response(Response.BAD_REQUEST, Response.EMPTY)
+            : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         session.sendResponse(response);
     }
 

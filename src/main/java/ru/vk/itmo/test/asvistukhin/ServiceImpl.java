@@ -30,7 +30,7 @@ public class ServiceImpl implements ru.vk.itmo.Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        dao =  new PersistentDao(new Config(serviceConfig.workingDir(), 8192));
+        dao = new PersistentDao(new Config(serviceConfig.workingDir(), 8192));
         server = new ServerImpl(serviceConfig);
         server.addRequestHandlers(this);
         server.start();
@@ -67,10 +67,10 @@ public class ServiceImpl implements ru.vk.itmo.Service {
         }
 
         dao.upsert(
-                new BaseEntry<>(
-                        MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
-                        MemorySegment.ofArray(request.getBody())
-                )
+            new BaseEntry<>(
+                MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
+                MemorySegment.ofArray(request.getBody())
+            )
         );
 
         return new Response(Response.CREATED, Response.EMPTY);
@@ -84,10 +84,10 @@ public class ServiceImpl implements ru.vk.itmo.Service {
         }
 
         dao.upsert(
-                new BaseEntry<>(
-                        MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
-                        null
-                )
+            new BaseEntry<>(
+                MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
+                null
+            )
         );
 
         return new Response(Response.ACCEPTED, Response.EMPTY);

@@ -17,12 +17,12 @@ public class ServerRunner {
 
     private static ServiceImpl createService() throws IOException {
         return new ServiceImpl(
-                new ServiceConfig(
-                        8080,
-                        "http://localhost",
-                        List.of("http://localhost"),
-                        Files.createTempDirectory("nio-server")
-                )
+            new ServiceConfig(
+                8080,
+                "http://localhost",
+                List.of("http://localhost"),
+                Files.createTempDirectory("nio-server")
+            )
         );
     }
 }

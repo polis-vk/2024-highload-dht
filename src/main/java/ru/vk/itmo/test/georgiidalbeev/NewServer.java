@@ -25,7 +25,7 @@ public class NewServer extends HttpServer {
 
     private final ReferenceDao dao;
     private static final long FLUSH_THRESHOLD = 5242880;
-    private static final String path = "/v0/entity";
+    private static final String PATH = "/v0/entity";
 
     public NewServer(ServiceConfig config) throws IOException {
         super(configureServer(config));
@@ -43,7 +43,7 @@ public class NewServer extends HttpServer {
         return serverConfig;
     }
 
-    @Path(path)
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
         MemorySegment key = validateId(id);
@@ -61,7 +61,7 @@ public class NewServer extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(path)
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         MemorySegment key = validateId(id);
@@ -78,7 +78,7 @@ public class NewServer extends HttpServer {
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(path)
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id", required = true) String id) {
         MemorySegment key = validateId(id);
@@ -96,7 +96,7 @@ public class NewServer extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path(path)
+    @Path(PATH)
     public Response otherMethods() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }

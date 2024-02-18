@@ -1,8 +1,9 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao.io.write;
 
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.viktorkorotkikh.dao.SSTable;
+import ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTable;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.ByteArraySegment;
+import ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -50,8 +51,8 @@ public abstract class AbstractSSTableWriter {
             final int fileIndex
     ) throws IOException {
         // Write to temporary files
-        final Path tempIndexName = SSTable.tempIndexName(isCompacted, baseDir, fileIndex);
-        final Path tempDataName = SSTable.tempDataName(isCompacted, baseDir, fileIndex);
+        final Path tempIndexName = SSTableUtils.tempIndexName(isCompacted, baseDir, fileIndex);
+        final Path tempDataName = SSTableUtils.tempDataName(isCompacted, baseDir, fileIndex);
 
         // Delete temporary files to eliminate tails
         Files.deleteIfExists(tempIndexName);
@@ -130,14 +131,14 @@ public abstract class AbstractSSTableWriter {
     ) throws IOException {
         // Publish files atomically
         // FIRST index, LAST data
-        final Path indexName = SSTable.indexName(isCompacted, baseDir, fileIndex);
+        final Path indexName = SSTableUtils.indexName(isCompacted, baseDir, fileIndex);
         Files.move(
                 tempIndexName,
                 indexName,
                 StandardCopyOption.ATOMIC_MOVE,
                 StandardCopyOption.REPLACE_EXISTING
         );
-        final Path dataName = SSTable.dataName(isCompacted, baseDir, fileIndex);
+        final Path dataName = SSTableUtils.dataName(isCompacted, baseDir, fileIndex);
         Files.move(
                 tempDataName,
                 dataName,

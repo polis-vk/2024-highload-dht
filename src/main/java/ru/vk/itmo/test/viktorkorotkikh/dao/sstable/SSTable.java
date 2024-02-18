@@ -1,7 +1,10 @@
-package ru.vk.itmo.test.viktorkorotkikh.dao;
+package ru.vk.itmo.test.viktorkorotkikh.dao.sstable;
 
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.viktorkorotkikh.dao.LSMPointerIterator;
+import ru.vk.itmo.test.viktorkorotkikh.dao.MemTable;
+import ru.vk.itmo.test.viktorkorotkikh.dao.MergeIterator;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.read.AbstractSSTableReader;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.read.BaseSSTableReader;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.write.AbstractSSTableWriter;
@@ -23,68 +26,20 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.COMPACTED_PREFIX;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.COMPRESSION_INFO_EXTENSION;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.FILE_EXTENSION;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.FILE_NAME;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.INDEX_FILE_NAME;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.SSTABLE_INDEX_EXTENSION;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.TMP_FILE_EXTENSION;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.dataName;
+import static ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils.indexName;
+
 public final class SSTable {
-
-    private static final String FILE_NAME = "sstable";
-
-    private static final String INDEX_FILE_NAME = "index.idx";
-
-    private static final String FILE_EXTENSION = ".db";
-
-    private static final String SSTABLE_INDEX_EXTENSION = ".index";
-
-    private static final String COMPACTED_PREFIX = "_compacted_";
-
-    private static final String COMPRESSION_INFO_EXTENSION = ".compressionInfo";
-
-    private static final String TMP_FILE_EXTENSION = ".tmp";
 
     private final boolean hasNoTombstones;
     private final AbstractSSTableReader reader;
-
-    public static Path indexName(
-            final boolean isCompacted,
-            final Path baseDir,
-            final int fileIndex
-    ) {
-        return isCompacted
-                ? baseDir.resolve(COMPACTED_PREFIX + FILE_NAME + fileIndex + SSTABLE_INDEX_EXTENSION)
-                : baseDir.resolve(FILE_NAME + fileIndex + SSTABLE_INDEX_EXTENSION);
-    }
-
-    public static Path dataName(
-            final boolean isCompacted,
-            final Path baseDir,
-            final int fileIndex
-    ) {
-        return isCompacted
-                ? baseDir.resolve(COMPACTED_PREFIX + FILE_NAME + fileIndex + FILE_EXTENSION)
-                : baseDir.resolve(FILE_NAME + fileIndex + FILE_EXTENSION);
-    }
-
-    public static Path tempIndexName(
-            final boolean isCompacted,
-            final Path baseDir,
-            final int fileIndex
-    ) {
-        if (isCompacted) {
-            return baseDir.resolve(
-                    COMPACTED_PREFIX + FILE_NAME + fileIndex + SSTABLE_INDEX_EXTENSION + TMP_FILE_EXTENSION
-            );
-        } else {
-            return baseDir.resolve(FILE_NAME + fileIndex + SSTABLE_INDEX_EXTENSION + TMP_FILE_EXTENSION);
-        }
-    }
-
-    public static Path tempDataName(
-            final boolean isCompacted,
-            final Path baseDir,
-            final int fileIndex
-    ) {
-        return isCompacted
-                ? baseDir.resolve(COMPACTED_PREFIX + FILE_NAME + fileIndex + FILE_EXTENSION + TMP_FILE_EXTENSION)
-                : baseDir.resolve(FILE_NAME + fileIndex + FILE_EXTENSION + TMP_FILE_EXTENSION);
-    }
 
     private SSTable(AbstractSSTableReader reader) {
         this.hasNoTombstones = reader.hasNoTombstones();
@@ -123,11 +78,11 @@ public final class SSTable {
     public static SSTable loadOne(Arena arena, boolean isCompacted, Config config, int index) throws IOException {
         try (
                 FileChannel ssTableFileChannel = FileChannel.open(
-                        SSTable.dataName(isCompacted, config.basePath(), index),
+                        dataName(isCompacted, config.basePath(), index),
                         StandardOpenOption.READ
                 );
                 FileChannel indexFileChannel = FileChannel.open(
-                        SSTable.indexName(isCompacted, config.basePath(), index),
+                        indexName(isCompacted, config.basePath(), index),
                         StandardOpenOption.READ
                 )
         ) {
@@ -156,22 +111,8 @@ public final class SSTable {
         return ssTables.isEmpty() || (ssTables.size() == 1 && ssTables.getFirst().hasNoTombstones);
     }
 
-    public LSMPointerIterator iterator(MemorySegment from, MemorySegment to) throws Exception {
+    public LSMPointerIterator iterator(MemorySegment from, MemorySegment to) throws IOException {
         return reader.iterator(from, to);
-    }
-
-    public static List<LSMPointerIterator> ssTableIterators(
-            List<SSTable> ssTables,
-            MemorySegment from,
-            MemorySegment to
-    ) {
-        return ssTables.stream().map(ssTable -> {
-            try {
-                return ssTable.iterator(from, to);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }).toList();
     }
 
     public static void save(MemTable memTable, int fileIndex, Config config) throws IOException {

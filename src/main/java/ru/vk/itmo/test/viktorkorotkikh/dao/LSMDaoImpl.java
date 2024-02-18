@@ -8,6 +8,8 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.CompactionException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.FlushingException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoCreationException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
+import ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTable;
+import ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -63,7 +65,7 @@ public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     private MergeIterator.MergeIteratorWithTombstoneFilter mergeIterator(MemorySegment from, MemorySegment to) {
-        List<LSMPointerIterator> ssTableIterators = SSTable.ssTableIterators(ssTables, from, to);
+        List<LSMPointerIterator> ssTableIterators = SSTableUtils.ssTableIterators(ssTables, from, to);
         return MergeIterator.create(
                 memTable.iterator(from, to, 0),
                 flushingMemTable.iterator(from, to, 1),
@@ -121,7 +123,7 @@ public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         try {
             SSTable.compact(
                     MergeIterator.createThroughSSTables(
-                            SSTable.ssTableIterators(ssTables, null, null)
+                            SSTableUtils.ssTableIterators(ssTables, null, null)
                     ),
                     config
             );

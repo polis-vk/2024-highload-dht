@@ -8,6 +8,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -26,6 +28,7 @@ import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class LSMServerImpl extends HttpServer {
+    private static final Logger log = LoggerFactory.getLogger(LSMServerImpl.class);
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private final ServiceConfig serviceConfig;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -68,8 +71,8 @@ public class LSMServerImpl extends HttpServer {
     public void startServer() {
         createLSMDao();
         start();
-        System.out.println("Server started on port: " + serviceConfig.selfPort());
-        System.out.println("Dao working dir: " + serviceConfig.workingDir());
+        log.info("Server started on port: " + serviceConfig.selfPort());
+        log.info("Dao working dir: " + serviceConfig.workingDir());
     }
 
     public void stopServer() {

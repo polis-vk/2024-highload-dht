@@ -21,7 +21,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-
 public class MyServer extends HttpServer {
 
     private static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -62,7 +61,7 @@ public class MyServer extends HttpServer {
 
         Entry<MemorySegment> entry = new BaseEntry<>(
                 msKey,
-                toMemorySegment(request.getBody())
+                MemorySegment.ofArray(request.getBody())
         );
 
         dao.upsert(entry);
@@ -113,10 +112,6 @@ public class MyServer extends HttpServer {
 
     private MemorySegment toMemorySegment(String s) {
         return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private MemorySegment toMemorySegment(byte[] bytes) {
-        return MemorySegment.ofArray(bytes);
     }
 
     private byte[] toByteArray(MemorySegment ms) {

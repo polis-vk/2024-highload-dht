@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-public class Main {
+public final class Main {
     private Main() {
 
     }

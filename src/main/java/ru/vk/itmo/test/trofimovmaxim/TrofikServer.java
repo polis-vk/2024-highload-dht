@@ -108,7 +108,7 @@ public class TrofikServer extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    public Response entityDelete(@Param(value = "id", required = true) String id) {
+    public Response entityDelete(String id) {
         dao.upsert(entry(id, null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }

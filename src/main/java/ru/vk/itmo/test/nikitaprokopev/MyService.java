@@ -4,7 +4,6 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {

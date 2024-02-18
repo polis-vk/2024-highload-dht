@@ -6,7 +6,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class Server {
+public final class Server {
+
+    private Server() {
+
+    }
 
     public static void main(String[] args) throws IOException {
         NewServer server = new NewServer(new ServiceConfig(

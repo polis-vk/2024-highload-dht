@@ -21,15 +21,15 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-
 public class NewServer extends HttpServer {
 
     private final ReferenceDao dao;
-    private static final long FIVE_MEGA_BYTES = 5242880;
+    private static final long FLUSH_THRESHOLD = 5242880;
+    private static final String path = "/v0/entity";
 
     public NewServer(ServiceConfig config) throws IOException {
         super(configureServer(config));
-        dao = new ReferenceDao(new Config(config.workingDir(), FIVE_MEGA_BYTES));
+        dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
     }
 
     private static HttpServerConfig configureServer(ServiceConfig serviceConfig) {
@@ -43,7 +43,7 @@ public class NewServer extends HttpServer {
         return serverConfig;
     }
 
-    @Path("/v0/entity")
+    @Path(path)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
         MemorySegment key = validateId(id);
@@ -61,7 +61,7 @@ public class NewServer extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(path)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         MemorySegment key = validateId(id);
@@ -78,7 +78,7 @@ public class NewServer extends HttpServer {
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path("/v0/entity")
+    @Path(path)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id", required = true) String id) {
         MemorySegment key = validateId(id);
@@ -96,7 +96,7 @@ public class NewServer extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(path)
     public Response otherMethods() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }

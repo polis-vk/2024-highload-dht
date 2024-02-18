@@ -5,6 +5,6 @@ import ru.vk.itmo.dao.Entry;
 public record EntryExtended<Data>(Data key, Data value, Data expiration) implements Entry<Data> {
     @Override
     public String toString() {
-        return STR."{\{key}:\{value}:\{expiration}}";
+        return "{" + key + ":" + value + ":" + expiration + "}";
     }
 }

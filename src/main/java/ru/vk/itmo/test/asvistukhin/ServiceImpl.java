@@ -10,7 +10,7 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.asvistukhin.dao.ReferenceDao;
+import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -21,7 +21,7 @@ import java.util.concurrent.CompletableFuture;
 public class ServiceImpl implements ru.vk.itmo.Service {
 
     private final ServiceConfig serviceConfig;
-    private ReferenceDao dao;
+    private PersistentDao dao;
     private ServerImpl server;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
@@ -30,7 +30,7 @@ public class ServiceImpl implements ru.vk.itmo.Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        dao =  new ReferenceDao(new Config(serviceConfig.workingDir(), 8192));
+        dao =  new PersistentDao(new Config(serviceConfig.workingDir(), 8192));
         server = new ServerImpl(serviceConfig);
         server.addRequestHandlers(this);
         server.start();

@@ -21,15 +21,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-import static one.nio.http.Request.METHOD_DELETE;
-import static one.nio.http.Request.METHOD_GET;
-import static one.nio.http.Request.METHOD_PUT;
-import static one.nio.http.Response.ACCEPTED;
-import static one.nio.http.Response.BAD_REQUEST;
-import static one.nio.http.Response.CREATED;
-import static one.nio.http.Response.EMPTY;
-import static one.nio.http.Response.METHOD_NOT_ALLOWED;
-import static one.nio.http.Response.NOT_FOUND;
 
 public class MyServer extends HttpServer {
 
@@ -62,11 +53,11 @@ public class MyServer extends HttpServer {
     }
 
     @Path(BASE_PATH)
-    @RequestMethod(METHOD_PUT)
+    @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id, Request request) {
         MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
         if (msKey == null) {
-            return new Response(BAD_REQUEST, EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = new BaseEntry<>(
@@ -76,32 +67,32 @@ public class MyServer extends HttpServer {
 
         dao.upsert(entry);
 
-        return new Response(CREATED, EMPTY);
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Path(BASE_PATH)
-    @RequestMethod(METHOD_GET)
+    @RequestMethod(Request.METHOD_GET)
     public Response get(@Param(value = "id", required = true) String id) {
         MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
         if (msKey == null) {
-            return new Response(BAD_REQUEST, EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = dao.get(msKey);
 
         if (entry == null) {
-            return new Response(NOT_FOUND, EMPTY);
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
 
         return Response.ok(toByteArray(entry.value()));
     }
 
     @Path(BASE_PATH)
-    @RequestMethod(METHOD_DELETE)
+    @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(value = "id", required = true) String id) {
         MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
         if (msKey == null) {
-            return new Response(BAD_REQUEST, EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = new BaseEntry<>(
@@ -111,13 +102,13 @@ public class MyServer extends HttpServer {
 
         dao.upsert(entry);
 
-        return new Response(ACCEPTED, EMPTY);
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     // For other methods
     @Path(BASE_PATH)
     public Response other() {
-        return new Response(METHOD_NOT_ALLOWED, EMPTY);
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
     private MemorySegment toMemorySegment(String s) {
@@ -135,7 +126,7 @@ public class MyServer extends HttpServer {
     // For other requests - 400 Bad Request
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(BAD_REQUEST, EMPTY);
+        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
     }
 }

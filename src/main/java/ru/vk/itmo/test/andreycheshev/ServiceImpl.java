@@ -9,8 +9,8 @@ import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    private ServerImpl server;
     private final ServiceConfig serviceConfig;
+    private ServerImpl server;
     private boolean isActive = false;
 
     public ServiceImpl(ServiceConfig config) {

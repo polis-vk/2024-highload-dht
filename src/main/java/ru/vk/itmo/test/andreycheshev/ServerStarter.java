@@ -4,16 +4,17 @@ import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 public class ServerStarter {
     public static void main(String[] args) throws IOException {
         ServerImpl server = new ServerImpl(
                 new ServiceConfig(
-                        80,
+                        8080,
                         "http://localhost",
                         List.of("http://localhost"),
-                        Files.createTempDirectory("/home/andrey/andrey/tmp")
+                        Path.of("/home/andrey/andrey/tmp")
                 ));
 
         server.start();

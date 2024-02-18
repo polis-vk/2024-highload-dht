@@ -92,6 +92,7 @@ public class ServerImpl extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
+            System.out.println("bad = " + path);
             Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
             session.sendResponse(response);
             return;

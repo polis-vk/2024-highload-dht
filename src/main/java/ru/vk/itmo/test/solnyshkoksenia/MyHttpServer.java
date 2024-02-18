@@ -23,6 +23,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class MyHttpServer extends HttpServer {
     public final DaoImpl dao;
+
     public MyHttpServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config));
         this.dao = new DaoImpl(createConfig(config));
@@ -34,7 +35,7 @@ public class MyHttpServer extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
-        serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
     }
@@ -54,7 +55,7 @@ public class MyHttpServer extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public void get(final HttpSession session,
-                        @Param(value = "id", required = true) String id) throws IOException {
+                    @Param(value = "id", required = true) String id) throws IOException {
         Response response;
         if (id.isEmpty()) {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -72,7 +73,7 @@ public class MyHttpServer extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public void put(final Request request, final HttpSession session,
-                        @Param(value = "id", required = true) String id) throws IOException {
+                    @Param(value = "id", required = true) String id) throws IOException {
         Response response;
         if (id.isEmpty()) {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -86,7 +87,7 @@ public class MyHttpServer extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public void delete(final HttpSession session,
-                           @Param(value = "id", required = true) String id) throws IOException {
+                       @Param(value = "id", required = true) String id) throws IOException {
         Response response;
         if (id.isEmpty()) {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);

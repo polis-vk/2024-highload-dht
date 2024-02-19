@@ -14,8 +14,6 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private HttpServer server;
 
-    private static final String ADDRESS = "localhost";
-
     public ServiceImpl(final ServiceConfig config) throws IOException {
         this.config = config;
     }
@@ -23,7 +21,6 @@ public class ServiceImpl implements Service {
     private static DaoHttpServerConfig createDaoHttpServerConfig(final ServiceConfig config) {
         final DaoHttpServerConfig serverConfig = new DaoHttpServerConfig();
         final AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.address = ADDRESS;
         acceptorConfig.port = config.selfPort();
         acceptorConfig.reusePort = true;
 

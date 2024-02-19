@@ -11,6 +11,9 @@ import java.util.List;
 
 public class Main {
 
+    private Main() {
+    }
+
     public static void main(String[] args) throws IOException {
         Path daoDataPath = Path.of("/Users/ruarsv5/Developer/ITMO/sem-2/highload/src/test/dao_data");
         Files.createDirectories(daoDataPath);

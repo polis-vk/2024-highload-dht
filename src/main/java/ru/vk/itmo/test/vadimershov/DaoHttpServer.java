@@ -38,15 +38,13 @@ public class DaoHttpServer extends HttpServer {
     }
 
     private static HttpServerConfig getHttpServerConfig(ServiceConfig config) {
-        return new HttpServerConfig() {{
-            acceptors = new AcceptorConfig[]{
-                    new AcceptorConfig() {{
-                        port = config.selfPort();
-                        reusePort = true;
-                    }}
-            };
-            closeSessions = true;
-        }};
+        HttpServerConfig httpServerConfig = new HttpServerConfig();
+        AcceptorConfig acceptorConfig = new AcceptorConfig();
+            acceptorConfig.port = config.selfPort();
+            acceptorConfig.reusePort = true;
+        httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        httpServerConfig.closeSessions = true;
+        return httpServerConfig;
     }
 
     @Override

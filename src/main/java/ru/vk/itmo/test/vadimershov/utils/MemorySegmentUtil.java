@@ -10,6 +10,9 @@ import java.nio.charset.StandardCharsets;
 
 public class MemorySegmentUtil {
 
+    private MemorySegmentUtil() {
+    }
+
     public static MemorySegment toMemorySegment(@Nonnull String data) {
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }

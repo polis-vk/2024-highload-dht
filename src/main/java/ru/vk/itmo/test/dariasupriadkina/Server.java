@@ -22,8 +22,9 @@ import java.util.List;
 
 public class Server extends HttpServer {
 
-    private ReferenceDao dao;
-    private List<Integer> permittedMethods = List.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
+    private final ReferenceDao dao;
+    private final List<Integer> permittedMethods = List.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
+
     public Server(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;
@@ -78,10 +79,11 @@ public class Server extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response;
-        if (!permittedMethods.contains(request.getMethod())) {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        } else {
+        if (permittedMethods.contains(request.getMethod())) {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } else {
+            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+
         }
         session.sendResponse(response);
     }

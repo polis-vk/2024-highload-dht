@@ -7,7 +7,6 @@ import ru.vk.itmo.test.ServiceFactory;
 
 import java.nio.file.Path;
 
-
 @ServiceFactory(stage = 1)
 public class ServiceImlFactory implements ServiceFactory.Factory {
     @Override

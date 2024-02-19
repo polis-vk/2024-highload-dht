@@ -3,6 +3,7 @@ package ru.vk.itmo.test.dariasupriadkina;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.test.dariasupriadkina.dao.exception.ServiceImplCreationException;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
@@ -24,7 +25,7 @@ public class ServiceIml implements Service {
             this.dao = new ReferenceDao(daoConfig);
 
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new ServiceImplCreationException();
         }
     }
 

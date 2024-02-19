@@ -52,7 +52,7 @@ public class ServerImpl extends HttpServer {
 
         return (entry == null)
                 ? new Response(NOT_FOUND, Response.EMPTY)
-                : Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+                : new Response(OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     public Response put(final Request request) {

@@ -29,6 +29,7 @@ import static one.nio.http.Response.NOT_FOUND;
 import static one.nio.http.Response.OK;
 
 public class ServerImpl extends HttpServer {
+    private static final int THRESHOLD_BYTES = 100000;
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID = "id=";
     private final ReferenceDao dao;
@@ -36,7 +37,7 @@ public class ServerImpl extends HttpServer {
     public ServerImpl(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
 
-        Config daoConfig = new Config(config.workingDir(), 100000);
+        Config daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);
 
         this.dao = new ReferenceDao(daoConfig);
     }

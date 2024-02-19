@@ -1,6 +1,10 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -14,8 +18,16 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-import static one.nio.http.Request.*;
-import static one.nio.http.Response.*;
+import static one.nio.http.Request.METHOD_DELETE;
+import static one.nio.http.Request.METHOD_GET;
+import static one.nio.http.Request.METHOD_PUT;
+import static one.nio.http.Response.ACCEPTED;
+import static one.nio.http.Response.BAD_REQUEST;
+import static one.nio.http.Response.CREATED;
+import static one.nio.http.Response.METHOD_NOT_ALLOWED;
+import static one.nio.http.Response.NOT_FOUND;
+import static one.nio.http.Response.OK;
+
 
 public class ServerImpl extends HttpServer {
     private static final String REQUEST_PATH = "/v0/entity";

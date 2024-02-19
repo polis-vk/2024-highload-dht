@@ -7,6 +7,10 @@ import java.nio.file.Path;
 import java.util.List;
 
 public class ServerStarter {
+    private ServerStarter() {
+
+    }
+
     public static void main(String[] args) throws IOException {
         ServerImpl server = new ServerImpl(
                 new ServiceConfig(

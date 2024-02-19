@@ -13,7 +13,7 @@ public class ServerStarter {
                         8080,
                         "http://localhost",
                         List.of("http://localhost"),
-                        Path.of("/home/andrey/andrey/tmp1_tmp")
+                        Path.of("/home/andrey/andrey/tmp")
                 ));
 
         server.start();

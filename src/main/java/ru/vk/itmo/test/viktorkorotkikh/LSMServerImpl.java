@@ -83,8 +83,8 @@ public class LSMServerImpl extends HttpServer {
     @Path("/v0/entity")
     public void handleEntityRequest(Request request, HttpSession session) throws IOException {
         // validate id parameter
-        String id = request.getParameter("id");
-        if (id == null || id.length() <= 1) { // request.getParameter("id") returns "=" on empty parameter
+        String id = request.getParameter("id=");
+        if (id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }

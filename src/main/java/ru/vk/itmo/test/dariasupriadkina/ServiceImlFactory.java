@@ -9,6 +9,7 @@ import java.nio.file.Path;
 
 @ServiceFactory(stage = 1)
 public class ServiceImlFactory implements ServiceFactory.Factory {
+
     @Override
     public Service create(ServiceConfig serviceConfig) {
         Config referenceDaoConfig = new Config(Path.of(serviceConfig.workingDir().toUri()), 1024 * 1024);

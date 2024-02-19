@@ -23,7 +23,8 @@ import java.util.List;
 public class Server extends HttpServer {
 
     private final ReferenceDao dao;
-    private final List<Integer> permittedMethods = List.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
+    private final List<Integer> permittedMethods =
+            List.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
 
     public Server(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(createHttpServerConfig(config));

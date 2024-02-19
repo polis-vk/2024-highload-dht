@@ -25,7 +25,7 @@ public class ServiceIml implements Service {
             this.dao = new ReferenceDao(daoConfig);
 
         } catch (IOException e) {
-            throw new ServiceImplCreationException();
+            throw new ServiceImplCreationException(e);
         }
     }
 

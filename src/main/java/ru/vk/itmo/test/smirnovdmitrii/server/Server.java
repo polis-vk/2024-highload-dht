@@ -56,7 +56,7 @@ public class Server extends HttpServer {
         return handleEntityRequest(id, key -> {
             final Entry<MemorySegment> entry = dao.get(key);
             if (entry == null) {
-                return new Response(Response.NOT_FOUND, new byte[0]);
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
             return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
         });
@@ -72,7 +72,7 @@ public class Server extends HttpServer {
             final MemorySegment value = MemorySegment.ofArray(request.getBody());
             final Entry<MemorySegment> entry = new BaseEntry<>(key, value);
             dao.upsert(entry);
-            return new Response(Response.CREATED, new byte[0]);
+            return new Response(Response.CREATED, Response.EMPTY);
         });
     }
 
@@ -84,15 +84,8 @@ public class Server extends HttpServer {
         return handleEntityRequest(id, key -> {
             final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
             dao.upsert(entry);
-            return new Response(Response.ACCEPTED, new byte[0]);
+            return new Response(Response.ACCEPTED, Response.EMPTY);
         });
-    }
-
-    @Path("/stop")
-    @RequestMethod(METHOD_GET)
-    public Response stopRequest() {
-        new Thread(this::stop).start();
-        return Response.ok("Server is stopping.");
     }
 
     private Response handleEntityRequest(
@@ -112,15 +105,35 @@ public class Server extends HttpServer {
     }
 
     @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
+    public void handleRequest(final Request request, final HttpSession session) throws IOException {
+        final String path = request.getPath();
         final int method = request.getMethod();
-        final Response response;
-        if (method == METHOD_GET || method == METHOD_PUT || method == METHOD_DELETE) {
-            response = new Response(Response.BAD_REQUEST, new byte[0]);
-        } else {
-            response = new Response(Response.METHOD_NOT_ALLOWED, new byte[0]);
+        if (!validate(path, method, session)) {
+            return;
+        }
+        final String id = request.getParameter("id=");
+        final Response response = switch (method) {
+            case METHOD_GET -> get(id);
+            case METHOD_DELETE -> delete(id);
+            case METHOD_PUT -> put(id, request);
+            default -> throw new RuntimeException();
+        };
+        session.sendResponse(response);
+    }
+
+
+    public boolean validate(String path, int method, HttpSession session) throws IOException {
+        Response response = null;
+        if (method != METHOD_GET && method != METHOD_PUT && method != METHOD_DELETE) {
+            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        } else if (!path.startsWith(REQUEST_PATH)) {
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+        if (response == null) {
+            return true;
         }
         session.sendResponse(response);
+        return false;
     }
 
     public boolean isInvalidKey(final String key) {

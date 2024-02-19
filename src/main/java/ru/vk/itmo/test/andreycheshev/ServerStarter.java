@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-public class ServerStarter {
+public final class ServerStarter {
     private ServerStarter() {
 
     }

@@ -28,7 +28,6 @@ import static one.nio.http.Response.METHOD_NOT_ALLOWED;
 import static one.nio.http.Response.NOT_FOUND;
 import static one.nio.http.Response.OK;
 
-
 public class ServerImpl extends HttpServer {
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID = "id=";

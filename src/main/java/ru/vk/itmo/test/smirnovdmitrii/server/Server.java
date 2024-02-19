@@ -27,28 +27,9 @@ import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class Server extends HttpServer {
-    private static final int DEFAULT_FLUSH_VALUE_BYTES = 16 * 1024; // 16 kb
+    private static final int DEFAULT_FLUSH_VALUE_BYTES = 1024 * 1024; // 1 mb
     private static final String REQUEST_PATH = "/v0/entity";
-    private static final Response INVALID_ID_RESPONSE = new Response(
-            Response.BAD_REQUEST,
-            "invalid id".getBytes(StandardCharsets.UTF_8)
-    );
-    private static final Response INVALID_REQUEST_RESPONSE = new Response(
-            Response.BAD_REQUEST,
-            new byte[0]
-    );
-    private static final Response INVALID_METHOD_RESPONSE = new Response(
-            Response.METHOD_NOT_ALLOWED,
-            new byte[0]
-    );
-    private static final Response CREATED_RESPONSE = new Response(
-            Response.CREATED,
-            new byte[0]
-    );
-    private static final Response ACCEPTED_RESPONSE = new Response(
-            Response.ACCEPTED,
-            new byte[0]
-    );
+
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
     private final DaoHttpServerConfig config;
@@ -91,7 +72,7 @@ public class Server extends HttpServer {
             final MemorySegment value = MemorySegment.ofArray(request.getBody());
             final Entry<MemorySegment> entry = new BaseEntry<>(key, value);
             dao.upsert(entry);
-            return CREATED_RESPONSE;
+            return new Response(Response.CREATED, new byte[0]);
         });
     }
 
@@ -103,8 +84,15 @@ public class Server extends HttpServer {
         return handleEntityRequest(id, key -> {
             final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
             dao.upsert(entry);
-            return ACCEPTED_RESPONSE;
+            return new Response(Response.ACCEPTED, new byte[0]);
         });
+    }
+
+    @Path("/stop")
+    @RequestMethod(METHOD_GET)
+    public Response stopRequest() {
+        new Thread(this::stop).start();
+        return Response.ok("Server is stopping.");
     }
 
     private Response handleEntityRequest(
@@ -112,7 +100,7 @@ public class Server extends HttpServer {
             final Function<MemorySegment, Response> keyToResponse
     ) {
         if (isInvalidKey(id)) {
-            return INVALID_ID_RESPONSE;
+            return new Response(Response.BAD_REQUEST, "invalid id".getBytes(StandardCharsets.UTF_8));
         }
         final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         try {
@@ -126,11 +114,13 @@ public class Server extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         final int method = request.getMethod();
+        final Response response;
         if (method == METHOD_GET || method == METHOD_PUT || method == METHOD_DELETE) {
-            session.sendResponse(INVALID_REQUEST_RESPONSE);
+            response = new Response(Response.BAD_REQUEST, new byte[0]);
         } else {
-            session.sendResponse(INVALID_METHOD_RESPONSE);
+            response = new Response(Response.METHOD_NOT_ALLOWED, new byte[0]);
         }
+        session.sendResponse(response);
     }
 
     public boolean isInvalidKey(final String key) {

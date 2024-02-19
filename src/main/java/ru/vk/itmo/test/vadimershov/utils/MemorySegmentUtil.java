@@ -8,7 +8,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-public class MemorySegmentUtil {
+public final class MemorySegmentUtil {
 
     private MemorySegmentUtil() {
     }

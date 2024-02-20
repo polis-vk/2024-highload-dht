@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.abramovilya;
 
+import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
@@ -11,12 +12,13 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 
-public class Service implements ru.vk.itmo.Service {
+public class ServiceImpl implements Service {
     public static final int FLUSH_THRESHOLD_BYTES = 1024 * 1023;
     private Server server;
     private final ServiceConfig serviceConfig;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
-    public Service(ServiceConfig serviceConfig) {
+
+    public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
     }
 
@@ -39,7 +41,7 @@ public class Service implements ru.vk.itmo.Service {
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ru.vk.itmo.Service create(ServiceConfig config) {
-            return new Service(config);
+            return new ServiceImpl(config);
         }
     }
 

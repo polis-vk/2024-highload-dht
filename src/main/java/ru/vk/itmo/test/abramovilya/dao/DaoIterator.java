@@ -6,7 +6,6 @@ import ru.vk.itmo.test.abramovilya.dao.table.MemTable;
 import ru.vk.itmo.test.abramovilya.dao.table.SSTable;
 import ru.vk.itmo.test.abramovilya.dao.table.TableEntry;
 
-
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.NavigableMap;
@@ -25,7 +24,7 @@ class DaoIterator implements Iterator<Entry<MemorySegment>> {
                 Storage storage,
                 NavigableMap<MemorySegment, Entry<MemorySegment>> memTable,
                 NavigableMap<MemorySegment, Entry<MemorySegment>> flushingTable
-                ) {
+    ) {
 
         this.from = from;
         this.to = to;

@@ -9,7 +9,6 @@ import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class LaunchService implements Service {
-
     private final DaoServer server;
 
     public LaunchService(ServiceConfig config) {

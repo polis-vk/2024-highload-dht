@@ -10,7 +10,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class ServerRunner {
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
+
+    private ServerRunner() {
+        // hello, codeclimate
+    }
+
+    public static void main(
+        String[] args
+    ) throws IOException, ExecutionException, InterruptedException, TimeoutException {
         ServiceImpl serviceImpl = createService();
         serviceImpl.start().get(10, TimeUnit.SECONDS);
     }

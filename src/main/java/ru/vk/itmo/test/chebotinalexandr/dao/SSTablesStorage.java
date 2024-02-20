@@ -32,7 +32,6 @@ import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.deleteOldSSTables;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.entryByteSize;
 
-
 public class SSTablesStorage {
     private static final String SSTABLE_NAME = "sstable_";
     private static final String SSTABLE_EXTENSION = ".dat";
@@ -101,7 +100,6 @@ public class SSTablesStorage {
                 Files.move(pathTmp, pathTmp.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),
                         StandardCopyOption.ATOMIC_MOVE);
             }
-
         } catch (FileNotFoundException | NoSuchFileException e) {
             arena.close();
         } catch (IOException e) {
@@ -210,7 +208,6 @@ public class SSTablesStorage {
 
         MemorySegment memorySegment;
         Arena arenaForSave = Arena.ofShared();
-
         memorySegment = writeMappedSegment(size, arenaForSave);
 
         //Writing sstable header

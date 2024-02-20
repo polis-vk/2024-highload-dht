@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
-public class State {
+public final class State {
     private static final Comparator<MemorySegment> comparator = NotOnlyInMemoryDao::comparator;
     private final SortedMap<MemorySegment, Entry<MemorySegment>> readEntries;
     private final SortedMap<MemorySegment, Entry<MemorySegment>> writeEntries;

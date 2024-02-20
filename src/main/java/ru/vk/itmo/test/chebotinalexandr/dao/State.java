@@ -31,10 +31,7 @@ public final class State {
     }
 
     public static State initial(List<MemorySegment> segments) {
-        return new State(
-                createMap(),
-                createMap(),
-                segments
+        return new State(createMap(), createMap(), segments
         );
     }
 

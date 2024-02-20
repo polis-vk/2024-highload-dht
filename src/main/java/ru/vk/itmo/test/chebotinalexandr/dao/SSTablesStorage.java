@@ -24,9 +24,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.BLOOM_FILTER_HASH_FUNCTIONS_OFFSET;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.BLOOM_FILTER_LENGTH_OFFSET;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.ENTRIES_SIZE_OFFSET;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.TOMBSTONE;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.deleteOldSSTables;
@@ -39,6 +36,8 @@ public class SSTablesStorage {
     private static final long COMPACTION_NOT_FINISHED_TAG = -1;
     private final Path basePath;
     public static final int HASH_FUNCTIONS_NUM = 2;
+    private static final SSTableOffsets offsetsConfig =
+            new SSTableOffsets(Long.BYTES, 0, 2L * Long.BYTES);
 
     public SSTablesStorage(Path basePath) {
         this.basePath = basePath;
@@ -92,7 +91,7 @@ public class SSTablesStorage {
             MemorySegment tmpSstable = channel.map(
                     FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
 
-            long tag = tmpSstable.get(ValueLayout.JAVA_LONG_UNALIGNED, ENTRIES_SIZE_OFFSET);
+            long tag = tmpSstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset());
             if (tag == COMPACTION_NOT_FINISHED_TAG) {
                 Files.delete(pathTmp);
             } else {
@@ -145,19 +144,19 @@ public class SSTablesStorage {
 
         if (from == null && to == null) {
             keyIndexFrom = 0;
-            keyIndexTo = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, ENTRIES_SIZE_OFFSET);
+            keyIndexTo = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset());
         } else if (from == null) {
             keyIndexFrom = 0;
             keyIndexTo = find(sstable, to).index();
         } else if (to == null) {
             keyIndexFrom = find(sstable, from).index();
-            keyIndexTo = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, ENTRIES_SIZE_OFFSET);
+            keyIndexTo = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset());
         } else {
             keyIndexFrom = find(sstable, from).index();
             keyIndexTo = find(sstable, to).index();
         }
 
-        final long bloomFilterLength = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, BLOOM_FILTER_LENGTH_OFFSET);
+        final long bloomFilterLength = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterLengthOffset());
         final long keyOffset = 3L * Long.BYTES + bloomFilterLength * Long.BYTES;
 
         if (keyIndexFrom < 0) {
@@ -213,11 +212,11 @@ public class SSTablesStorage {
         //Writing sstable header
         long headerOffset = 0;
 
-        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, BLOOM_FILTER_LENGTH_OFFSET, bloomFilterLength);
+        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterLengthOffset(), bloomFilterLength);
         headerOffset += Long.BYTES;
-        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, BLOOM_FILTER_HASH_FUNCTIONS_OFFSET, HASH_FUNCTIONS_NUM);
+        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterHashFunctionsOffset(), HASH_FUNCTIONS_NUM);
         headerOffset += Long.BYTES;
-        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, ENTRIES_SIZE_OFFSET, dataToFlush.size());
+        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), dataToFlush.size());
         headerOffset += Long.BYTES;
         //---------
 
@@ -288,11 +287,11 @@ public class SSTablesStorage {
             //Writing sstable header
             long headerOffset = 0;
 
-            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, BLOOM_FILTER_LENGTH_OFFSET, bfLength);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterLengthOffset(), bfLength);
             headerOffset += Long.BYTES;
-            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, BLOOM_FILTER_HASH_FUNCTIONS_OFFSET, HASH_FUNCTIONS_NUM);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterHashFunctionsOffset(), HASH_FUNCTIONS_NUM);
             headerOffset += Long.BYTES;
-            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, ENTRIES_SIZE_OFFSET, COMPACTION_NOT_FINISHED_TAG);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), COMPACTION_NOT_FINISHED_TAG);
             headerOffset += Long.BYTES;
             //---------
 
@@ -311,7 +310,7 @@ public class SSTablesStorage {
                 index++;
             }
 
-            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, ENTRIES_SIZE_OFFSET, entryCount);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), entryCount);
 
             deleteOldSSTables(basePath, SSTABLE_EXTENSION);
             Files.move(path, path.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),

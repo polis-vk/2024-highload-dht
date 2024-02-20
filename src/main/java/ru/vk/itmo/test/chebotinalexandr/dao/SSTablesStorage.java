@@ -24,11 +24,20 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.*;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.BLOOM_FILTER_HASH_FUNCTIONS_OFFSET;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.BLOOM_FILTER_LENGTH_OFFSET;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.ENTRIES_SIZE_OFFSET;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.TOMBSTONE;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.deleteOldSSTables;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.entryByteSize;
+
 
 public class SSTablesStorage {
     private static final String SSTABLE_NAME = "sstable_";
     private static final String SSTABLE_EXTENSION = ".dat";
+    private static final long OLDEST_SS_TABLE_INDEX = 0;
+    private static final long COMPACTION_NOT_FINISHED_TAG = -1;
     private final Path basePath;
     public static final int HASH_FUNCTIONS_NUM = 2;
 

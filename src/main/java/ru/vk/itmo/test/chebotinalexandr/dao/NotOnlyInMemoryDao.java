@@ -12,12 +12,9 @@ import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.SortedMap;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +25,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.SS_TABLE_PRIORITY;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.sizeOf;
 
 public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     private static final double BLOOM_FILTER_FPP = 0.03;
@@ -77,9 +75,9 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
         State currState = this.state.get();
 
         PeekingIterator<Entry<MemorySegment>> rangeIterator = range(
-                memoryIterator(currState.readEntries, from, to),
-                memoryIterator(currState.writeEntries, from, to),
-                currState.sstables,
+                memoryIterator(currState.getReadEntries(), from, to),
+                memoryIterator(currState.getWriteEntries(), from, to),
+                currState.getSstables(),
                 from, to);
         return new SkipTombstoneIterator(rangeIterator);
     }
@@ -88,11 +86,11 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
     public Entry<MemorySegment> get(MemorySegment key) {
         State currState = this.state.get();
 
-        Entry<MemorySegment> result = currState.writeEntries.get(key);
+        Entry<MemorySegment> result = currState.getWriteEntries().get(key);
         if (result != null) {
             return result.value() == null ? null : result;
         }
-        result = currState.readEntries.get(key);
+        result = currState.getReadEntries().get(key);
         if (result != null) {
             return result.value() == null ? null : result;
         }
@@ -103,7 +101,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
     private Entry<MemorySegment> getFromDisk(MemorySegment key, State state) {
         Entry<MemorySegment> result;
 
-        for (MemorySegment sstable : state.sstables) {
+        for (MemorySegment sstable : state.getSstables()) {
             boolean mayContain = BloomFilter.sstableMayContain(key, sstable);
             if (mayContain) {
                 result = SSTableUtils.get(sstable, key);
@@ -120,8 +118,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
     /**
      * Merges iterators.
      */
-    private PeekingIterator<Entry<MemorySegment>> range(
-            Iterator<Entry<MemorySegment>> firstIterator,
+    private PeekingIterator<Entry<MemorySegment>> range(Iterator<Entry<MemorySegment>> firstIterator,
             Iterator<Entry<MemorySegment>> secondIterator,
             List<MemorySegment> segments,
             MemorySegment from,
@@ -164,7 +161,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
         Entry<MemorySegment> old;
         upsertLock.readLock().lock();
         try {
-            old = state.get().writeEntries.put(key, entry);
+            old = state.get().getWriteEntries().put(key, entry);
 
             final long curSize = size.addAndGet(sizeOf(entry) - sizeOf(old));
             autoFlush = curSize > config.flushThresholdBytes();
@@ -177,24 +174,12 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
         }
     }
 
-    private static long sizeOf(final Entry<MemorySegment> entry) {
-        if (entry == null) {
-            return 0L;
-        }
-
-        if (entry.value() == null) {
-            return entry.key().byteSize();
-        }
-
-        return entry.key().byteSize() + entry.value().byteSize();
-    }
-
     @Override
     public void compact() {
         bgExecutor.execute(() -> {
             try {
                 State currState = this.state.get();
-                MemorySegment newPage = performCompact(currState.sstables);
+                MemorySegment newPage = performCompact(currState.getSstables());
                 this.state.set(currState.compact(newPage));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -237,7 +222,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
     public void flush() {
         bgExecutor.execute(() -> {
             State prevState = state.get();
-            SortedMap<MemorySegment, Entry<MemorySegment>> writeEntries = prevState.writeEntries;
+            SortedMap<MemorySegment, Entry<MemorySegment>> writeEntries = prevState.getWriteEntries();
             if (writeEntries.isEmpty()) {
                 return;
             }
@@ -289,54 +274,6 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        }
-    }
-
-    private static class State {
-        private static final Comparator<MemorySegment> comparator = NotOnlyInMemoryDao::comparator;
-        private final SortedMap<MemorySegment, Entry<MemorySegment>> readEntries;
-        private final SortedMap<MemorySegment, Entry<MemorySegment>> writeEntries;
-        private final List<MemorySegment> sstables;
-
-        private State(
-                SortedMap<MemorySegment, Entry<MemorySegment>> readEntries,
-                SortedMap<MemorySegment, Entry<MemorySegment>> writeEntries,
-                List<MemorySegment> segments
-        ) {
-            this.readEntries = readEntries;
-            this.writeEntries = writeEntries;
-            this.sstables = segments;
-        }
-
-        private static SortedMap<MemorySegment, Entry<MemorySegment>> createMap() {
-            return new ConcurrentSkipListMap<>(comparator);
-        }
-
-        public static State initial(List<MemorySegment> segments) {
-            return new State(
-                    createMap(),
-                    createMap(),
-                    segments
-            );
-        }
-
-        public State compact(MemorySegment compacted) {
-            return new State(
-                    readEntries,
-                    writeEntries,
-                    compacted == null ? Collections.emptyList() : Collections.singletonList(compacted));
-        }
-
-        public State beforeFlush() {
-            return new State(writeEntries, createMap(), sstables);
-        }
-
-        public State afterFlush(MemorySegment newPage) {
-            List<MemorySegment> segments = new ArrayList<>(this.sstables.size() + 1);
-            segments.addAll(this.sstables);
-            segments.add(newPage);
-
-            return new State(createMap(), writeEntries, segments);
         }
     }
 }

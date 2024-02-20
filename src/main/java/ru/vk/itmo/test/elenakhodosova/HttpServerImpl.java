@@ -9,6 +9,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Utf8;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
@@ -44,7 +45,7 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        Entry<MemorySegment> value = dao.get(MemorySegment.ofArray(id.toCharArray()));
+        Entry<MemorySegment> value = dao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
         return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY)
                 : Response.ok(value.value().toArray(ValueLayout.JAVA_BYTE));
     }
@@ -55,7 +56,7 @@ public class HttpServerImpl extends HttpServer {
         byte[] value = request.getBody();
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
         dao.upsert(new BaseEntry<>(
-                MemorySegment.ofArray(id.toCharArray()),
+                MemorySegment.ofArray(Utf8.toBytes(id)),
                 MemorySegment.ofArray(value)));
         return new Response(Response.CREATED, Response.EMPTY);
     }
@@ -64,7 +65,7 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        dao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()), null));
+        dao.upsert(new BaseEntry<>(MemorySegment.ofArray(Utf8.toBytes(id)), null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 

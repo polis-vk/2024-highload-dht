@@ -8,12 +8,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-public class MainServ {
+public final class MainServ {
 
     private MainServ() {
 
     }
-    
+
     public static void main(String[] args) throws IOException {
         Path basePath = Path.of("/media/user/DATA/projects/gitproj/DWS-ITMO-2023/sem 2/dao_content");
         Path daoPath = Files.createTempDirectory(basePath, "tmpServ");

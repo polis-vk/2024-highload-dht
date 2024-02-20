@@ -21,13 +21,14 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
-public class HttpServer extends one.nio.http.HttpServer {
+public class DaoHttpServer extends one.nio.http.HttpServer {
 
-    private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
+    private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
+            Request.METHOD_DELETE);
     private final Config daoConfig;
     private ReferenceDaoPel dao;
 
-    public HttpServer(ServiceConfig config, Config daoConfig) throws IOException {
+    public DaoHttpServer(ServiceConfig config, Config daoConfig) throws IOException {
         super(createHttpServerConfig(config));
         this.daoConfig = daoConfig;
     }

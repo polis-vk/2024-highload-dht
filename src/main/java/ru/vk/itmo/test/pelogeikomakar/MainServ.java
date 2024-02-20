@@ -16,7 +16,7 @@ public class MainServ {
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http://localhost", List.of("http://localhost"), daoPath);
         Config daoConfig = new Config(daoPath, 2048L);
 
-        HttpServer server = new HttpServer(serviceConfig, daoConfig);
+        DaoHttpServer server = new DaoHttpServer(serviceConfig, daoConfig);
 
         server.start();
     }

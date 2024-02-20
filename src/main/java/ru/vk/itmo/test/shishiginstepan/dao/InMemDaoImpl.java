@@ -11,7 +11,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
@@ -20,6 +25,9 @@ import java.util.concurrent.locks.ReentrantLock;
 public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     private final ExecutorService executor;
     private final Lock flushLock = new ReentrantLock();
+
+    Future<?> flushNotification;
+
     private static final Comparator<MemorySegment> keyComparator = (o1, o2) -> {
         long mismatch = o1.mismatch(o2);
         if (mismatch == -1) {
@@ -136,11 +144,10 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         this.persistentStorage.close();
     }
 
-    Future<?> flush_notification;
 
     @Override
     public void flush() {
-        flush_notification = executor.submit(() -> {
+        flushNotification = executor.submit(() -> {
             if (flushLock.tryLock()) {
                 try {
                     if (!this.memStorage.get().isEmpty()) {
@@ -164,8 +171,8 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         int id = persistentStorage.nextId();
         executor.execute(() -> {
             try {
-                if (flush_notification != null) {
-                    flush_notification.get();
+                if (flushNotification != null) {
+                    flushNotification.get();
                 }
             } catch (InterruptedException | ExecutionException e) {
                 throw new RuntimeException(e);

@@ -1,7 +1,12 @@
 package ru.vk.itmo.test.shishiginstepan.server;
 
-import one.nio.http.*;
-import one.nio.server.AcceptorConfig;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.util.ByteArrayBuilder;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -16,31 +21,32 @@ import java.util.Iterator;
 
 
 public class Server extends HttpServer {
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private static final String basePath = "/v0/entity";
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(configFromServiceConfig(config));
         this.dao = dao;
     }
 
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     private static HttpServerConfig configFromServiceConfig(ServiceConfig serviceConfig) {
         HttpServerConfig serverConfig = new HttpServerConfig();
-        AcceptorConfig acceptorConfig = new AcceptorConfig();
+        one.nio.server.AcceptorConfig acceptorConfig = new one.nio.server.AcceptorConfig();
         acceptorConfig.reusePort = true;
         acceptorConfig.port = serviceConfig.selfPort();
 
 
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        serverConfig.acceptors = new one.nio.server.AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
     }
 
-    @Path("/v0/entity")
+    @Path(basePath)
     @RequestMethod(Request.METHOD_GET)
 
     public Response getOne(@Param(value = "id", required = true) String id) {
-        if (id.length() == 0) {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         var key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
@@ -51,10 +57,10 @@ public class Server extends HttpServer {
         return Response.ok(val.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path("/v0/entity")
+    @Path(basePath)
     @RequestMethod(Request.METHOD_PUT)
     public Response putOne(@Param(value = "id", required = true) String id, Request request) {
-        if (id.length() == 0) {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         var key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
@@ -63,10 +69,10 @@ public class Server extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(basePath)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteOne(@Param(value = "id", required = true) String id) {
-        if (id.length() == 0) {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         var key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
@@ -74,7 +80,7 @@ public class Server extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(basePath)
     public Response notAllowed() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
@@ -94,7 +100,7 @@ public class Server extends HttpServer {
     }
 
     @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
+    public void handleDefault(Request request, one.nio.http.HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
     }

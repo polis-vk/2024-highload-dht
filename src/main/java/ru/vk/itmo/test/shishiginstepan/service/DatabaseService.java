@@ -12,18 +12,18 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 
-public class Service implements ru.vk.itmo.Service {
+public class DatabaseService implements ru.vk.itmo.Service {
     private Server server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     private final ServiceConfig config;
 
-    public Service(ServiceConfig config) {
+    public DatabaseService(ServiceConfig config) {
         this.config = config;
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public CompletableFuture<Void> start() {
         dao = new InMemDaoImpl(config.workingDir(), 1024);
         try {
             server = new Server(config, dao);
@@ -37,6 +37,7 @@ public class Service implements ru.vk.itmo.Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -46,7 +47,7 @@ public class Service implements ru.vk.itmo.Service {
 
         @Override
         public ru.vk.itmo.Service create(ServiceConfig config) {
-            return new Service(config);
+            return new DatabaseService(config);
         }
     }
 }

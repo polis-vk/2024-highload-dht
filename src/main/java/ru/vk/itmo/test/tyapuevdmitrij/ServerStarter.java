@@ -6,7 +6,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class ServerStarter {
+public final class ServerStarter {
+
+    private ServerStarter() {
+
+    }
     public static void main(String[] args) throws IOException {
         ServerImplementation server = new ServerImplementation(new ServiceConfig(8080,
                 "http://localhost",

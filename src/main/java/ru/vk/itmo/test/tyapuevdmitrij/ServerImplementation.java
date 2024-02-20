@@ -25,6 +25,8 @@ public class ServerImplementation extends HttpServer {
 
     private final MemorySegmentDao memorySegmentDao;
 
+    private static final String ENTITY_PATH = "/v0/entity";
+
     public ServerImplementation(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
         memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), 5242880));
@@ -45,7 +47,7 @@ public class ServerImplementation extends HttpServer {
         return Response.ok("OK");
     }
 
-    @Path("/v0/entity")
+    @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response get(@Param(value = "id", required = true) String id) {
         if (id == null || id.isEmpty()) {
@@ -59,7 +61,7 @@ public class ServerImplementation extends HttpServer {
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path("/v0/entity")
+    @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id, Request request) {
         if (id == null || id.isEmpty()) {
@@ -71,7 +73,7 @@ public class ServerImplementation extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(value = "id", required = true) String id) {
         if (id == null || id.isEmpty()) {
@@ -96,7 +98,7 @@ public class ServerImplementation extends HttpServer {
         session.sendResponse(response);
     }
 
-    @Path("/v0/entity")
+    @Path(ENTITY_PATH)
     public Response unsupportedMethods() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }

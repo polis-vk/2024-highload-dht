@@ -90,8 +90,7 @@ public final class BinarySearchSSTableWriter {
             throw new SSTableCreationException(e);
         }
 
-        Path newTablePath = sstPath.get();
-
+        final Path newTablePath = sstPath.get();
         sstPath.remove();
         tempSSTPath.remove();
         indexPath.remove();

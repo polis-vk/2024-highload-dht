@@ -24,12 +24,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.TOMBSTONE;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.deleteOldSSTables;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.entryByteSize;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.restoreCompaction;
 
 public class SSTablesStorage {
+    private static final long TOMBSTONE = -1;
     private static final String SSTABLE_NAME = "sstable_";
     private static final String SSTABLE_EXTENSION = ".dat";
     private static final long OLDEST_SS_TABLE_INDEX = 0;
@@ -47,7 +48,7 @@ public class SSTablesStorage {
         List<MemorySegment> sstables = new ArrayList<>();
 
         if (compactionTmpFileExists(basePath)) {
-            restoreCompaction(basePath, arena);
+            restoreCompaction(offsetsConfig, basePath, arena);
         }
 
         try (Stream<Path> stream = Files.list(basePath)) {
@@ -82,28 +83,6 @@ public class SSTablesStorage {
     private static boolean compactionTmpFileExists(Path basePath) {
         Path pathTmp = basePath.resolve(SSTABLE_NAME + ".tmp");
         return Files.exists(pathTmp);
-    }
-
-    private static void restoreCompaction(Path basePath, Arena arena) {
-        Path pathTmp = basePath.resolve(SSTABLE_NAME + ".tmp");
-
-        try (FileChannel channel = FileChannel.open(pathTmp, StandardOpenOption.READ)) {
-            MemorySegment tmpSstable = channel.map(
-                    FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
-
-            long tag = tmpSstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset());
-            if (tag == COMPACTION_NOT_FINISHED_TAG) {
-                Files.delete(pathTmp);
-            } else {
-                deleteOldSSTables(basePath, SSTABLE_EXTENSION);
-                Files.move(pathTmp, pathTmp.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),
-                        StandardCopyOption.ATOMIC_MOVE);
-            }
-        } catch (FileNotFoundException | NoSuchFileException e) {
-            arena.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 
     private static int parsePriority(Path path) {
@@ -213,7 +192,8 @@ public class SSTablesStorage {
         //Writing sstable header
         long headerOffset = 0;
 
-        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterLengthOffset(), bloomFilterLength);
+        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED,
+                offsetsConfig.getBloomFilterLengthOffset(), bloomFilterLength);
         headerOffset += Long.BYTES;
         memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED,
                 offsetsConfig.getBloomFilterHashFunctionsOffset(), HASH_FUNCTIONS_NUM);
@@ -282,7 +262,6 @@ public class SSTablesStorage {
                     StandardOpenOption.READ,
                     StandardOpenOption.WRITE,
                     StandardOpenOption.CREATE)) {
-
                 memorySegment = channel.map(FileChannel.MapMode.READ_WRITE, 0, sizeForCompaction,
                         arenaForCompact);
             }
@@ -317,10 +296,9 @@ public class SSTablesStorage {
 
             memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), entryCount);
 
-            deleteOldSSTables(basePath, SSTABLE_EXTENSION);
+            deleteOldSSTables(basePath);
             Files.move(path, path.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),
                     StandardCopyOption.ATOMIC_MOVE);
-
         }
 
         return memorySegment;
@@ -329,7 +307,6 @@ public class SSTablesStorage {
     private MemorySegment writeMappedSegment(long size, Arena arena) throws IOException {
         int count = getPaths(basePath).size() + 1;
         Path path = basePath.resolve(SSTABLE_NAME + count + SSTABLE_EXTENSION);
-
         try (FileChannel channel = FileChannel.open(path,
                 StandardOpenOption.READ,
                 StandardOpenOption.WRITE,

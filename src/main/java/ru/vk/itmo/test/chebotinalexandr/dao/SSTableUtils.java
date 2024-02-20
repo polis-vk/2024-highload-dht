@@ -3,12 +3,18 @@ package ru.vk.itmo.test.chebotinalexandr.dao;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.stream.Stream;
 
 public final class SSTableUtils {
@@ -96,10 +102,32 @@ public final class SSTableUtils {
         }
     }
 
-    public static void deleteOldSSTables(Path basePath, String extension) throws IOException {
+    public static void restoreCompaction(SSTableOffsets offsets, Path basePath, Arena arena) {
+        Path pathTmp = basePath.resolve("sstable_" + ".tmp");
+
+        try (FileChannel channel = FileChannel.open(pathTmp, StandardOpenOption.READ)) {
+            MemorySegment tmpSstable = channel.map(
+                    FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
+
+            long tag = tmpSstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offsets.getEntriesSizeOffset());
+            if (tag == -1) {
+                Files.delete(pathTmp);
+            } else {
+                deleteOldSSTables(basePath);
+                Files.move(pathTmp, pathTmp.resolveSibling("sstable_" + 0 + ".dat"),
+                        StandardCopyOption.ATOMIC_MOVE);
+            }
+        } catch (FileNotFoundException | NoSuchFileException e) {
+            arena.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    public static void deleteOldSSTables(Path basePath) throws IOException {
         try (Stream<Path> stream = Files.list(basePath)) {
             stream
-                    .filter(path -> path.toString().endsWith(extension))
+                    .filter(path -> path.toString().endsWith(".dat"))
                     .forEach(path -> {
                         try {
                             Files.delete(path);

@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-public class MainServer {
+public final class MainServer {
     private MainServer() {
     }
 

@@ -40,7 +40,7 @@ public class ServiceImpl implements Service {
     @ServiceFactory(stage = 1)
     public static class Factory implements ServiceFactory.Factory {
         @Override
-        public ru.vk.itmo.Service create(ServiceConfig config) {
+        public Service create(ServiceConfig config) {
             return new ServiceImpl(config);
         }
     }

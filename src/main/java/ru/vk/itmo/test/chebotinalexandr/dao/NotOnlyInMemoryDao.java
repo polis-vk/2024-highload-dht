@@ -104,7 +104,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
         Entry<MemorySegment> result;
 
         for (MemorySegment sstable : state.sstables) {
-            boolean mayContain = BloomFilter.sstableMayContain(key, sstable);
+            boolean mayContain = BloomFilter.sstableMayContain(key, sstable); //FIXME!!! out of bound memorysegment
             if (mayContain) {
                 result = SSTableUtils.get(sstable, key);
 

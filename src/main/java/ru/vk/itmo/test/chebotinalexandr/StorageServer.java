@@ -19,10 +19,15 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
+import static one.nio.http.Request.METHOD_CONNECT;
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
+import static one.nio.http.Request.METHOD_HEAD;
+import static one.nio.http.Request.METHOD_OPTIONS;
+import static one.nio.http.Request.METHOD_PATCH;
 import static one.nio.http.Request.METHOD_POST;
 import static one.nio.http.Request.METHOD_PUT;
+import static one.nio.http.Request.METHOD_TRACE;
 
 public class StorageServer extends HttpServer {
     private static final String PATH = "/v0/entity";
@@ -103,7 +108,7 @@ public class StorageServer extends HttpServer {
     }
 
     @Path(PATH)
-    @RequestMethod(METHOD_POST)
+    @RequestMethod({METHOD_POST, METHOD_OPTIONS, METHOD_PATCH, METHOD_HEAD, METHOD_TRACE, METHOD_CONNECT})
     public Response post(@Param("id") String id) {
         //Post (in-place updating in LSM) is not supported
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);

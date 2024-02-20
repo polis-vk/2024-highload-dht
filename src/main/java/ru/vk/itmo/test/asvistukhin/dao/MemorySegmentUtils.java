@@ -14,32 +14,33 @@ public final class MemorySegmentUtils {
 
         long left = 0;
         long right = recordsCount - 1;
+        long keyByteSize = key.byteSize();
+
         while (left <= right) {
             long mid = (left + right) >>> 1;
 
             long startOfKey = startOfKey(segment, mid);
             long endOfKey = endOfKey(segment, mid);
-            long mismatch = MemorySegment.mismatch(segment, startOfKey, endOfKey, key, 0, key.byteSize());
+
+            long mismatch = MemorySegment.mismatch(segment, startOfKey, endOfKey, key, 0, keyByteSize);
+
             if (mismatch == -1) {
                 return mid;
             }
 
-            if (mismatch == key.byteSize()) {
+            if (mismatch == keyByteSize) {
                 right = mid - 1;
-                continue;
-            }
-
-            if (mismatch == endOfKey - startOfKey) {
+            } else if (mismatch == endOfKey - startOfKey) {
                 left = mid + 1;
-                continue;
-            }
-
-            int b1 = Byte.toUnsignedInt(segment.get(ValueLayout.JAVA_BYTE, startOfKey + mismatch));
-            int b2 = Byte.toUnsignedInt(key.get(ValueLayout.JAVA_BYTE, mismatch));
-            if (b1 > b2) {
-                right = mid - 1;
             } else {
-                left = mid + 1;
+                int b1 = Byte.toUnsignedInt(segment.get(ValueLayout.JAVA_BYTE, startOfKey + mismatch));
+                int b2 = Byte.toUnsignedInt(key.get(ValueLayout.JAVA_BYTE, mismatch));
+
+                if (b1 > b2) {
+                    right = mid - 1;
+                } else {
+                    left = mid + 1;
+                }
             }
         }
 

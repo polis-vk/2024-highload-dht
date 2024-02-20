@@ -30,7 +30,7 @@ public class ServiceImpl implements ru.vk.itmo.Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        dao = new PersistentDao(new Config(serviceConfig.workingDir(), 8192));
+        dao = new PersistentDao(new Config(serviceConfig.workingDir(), 48000));
         server = new ServerImpl(serviceConfig);
         server.addRequestHandlers(this);
         server.start();

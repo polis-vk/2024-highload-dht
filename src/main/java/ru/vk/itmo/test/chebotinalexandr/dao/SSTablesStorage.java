@@ -156,7 +156,8 @@ public class SSTablesStorage {
             keyIndexTo = find(sstable, to).index();
         }
 
-        final long bloomFilterLength = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterLengthOffset());
+        final long bloomFilterLength = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED,
+                offsetsConfig.getBloomFilterLengthOffset());
         final long keyOffset = 3L * Long.BYTES + bloomFilterLength * Long.BYTES;
 
         if (keyIndexFrom < 0) {
@@ -214,9 +215,11 @@ public class SSTablesStorage {
 
         memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterLengthOffset(), bloomFilterLength);
         headerOffset += Long.BYTES;
-        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterHashFunctionsOffset(), HASH_FUNCTIONS_NUM);
+        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED,
+                offsetsConfig.getBloomFilterHashFunctionsOffset(), HASH_FUNCTIONS_NUM);
         headerOffset += Long.BYTES;
-        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), dataToFlush.size());
+        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED,
+                offsetsConfig.getEntriesSizeOffset(), dataToFlush.size());
         headerOffset += Long.BYTES;
         //---------
 
@@ -289,9 +292,11 @@ public class SSTablesStorage {
 
             memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterLengthOffset(), bfLength);
             headerOffset += Long.BYTES;
-            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getBloomFilterHashFunctionsOffset(), HASH_FUNCTIONS_NUM);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED,
+                    offsetsConfig.getBloomFilterHashFunctionsOffset(), HASH_FUNCTIONS_NUM);
             headerOffset += Long.BYTES;
-            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), COMPACTION_NOT_FINISHED_TAG);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED,
+                    offsetsConfig.getEntriesSizeOffset(), COMPACTION_NOT_FINISHED_TAG);
             headerOffset += Long.BYTES;
             //---------
 

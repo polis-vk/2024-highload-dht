@@ -4,7 +4,10 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-public class Converter {
+public final class Converter {
+
+    private Converter() {
+    }
 
     public static MemorySegment getMemorySegment(String data) {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));

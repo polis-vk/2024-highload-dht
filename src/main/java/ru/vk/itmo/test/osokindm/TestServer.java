@@ -6,7 +6,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-public class TestServer {
+public final class TestServer {
+
+    private TestServer() {
+    }
+
     public static void main(String[] args) throws IOException {
         HttpServerImpl server = new HttpServerImpl(new ServiceConfig(
                 8080, "http://localhost",

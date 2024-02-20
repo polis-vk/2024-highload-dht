@@ -3,7 +3,11 @@ package ru.vk.itmo.test.osokindm.dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -137,7 +141,7 @@ final class TableSet {
 
         return switch (iterators.size()) {
             case 0 -> Collections.emptyIterator();
-            case 1 -> iterators.get(0);
+            case 1 -> iterators.getFirst();
             default -> new MergingEntryIterator(iterators);
         };
     }

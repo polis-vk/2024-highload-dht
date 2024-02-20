@@ -29,7 +29,6 @@ public class ServiceImpl implements Service {
             logger.error("Error occurred while starting the server");
             throw new IOException(e);
         }
-        // логика восстановления после сбоя перед стартом
         return CompletableFuture.completedFuture(null);
     }
 

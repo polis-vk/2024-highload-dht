@@ -1,9 +1,16 @@
 package ru.vk.itmo.test.osokindm;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
@@ -15,6 +22,9 @@ import java.lang.foreign.ValueLayout;
 public class HttpServerImpl extends HttpServer {
 
     private static final int MEMORY_LIMIT = 8388608;
+//    private static final int MEMORY_LIMIT = 1024;
+    private static final String PATH = "/v0/entity";
+    private static final String ID_REQUEST = "id=";
     private DaoWrapper daoWrapper;
     private final java.nio.file.Path workingDir;
 
@@ -59,9 +69,9 @@ public class HttpServerImpl extends HttpServer {
         super.stop();
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id=", required = true) String id) {
+    public Response get(@Param(value = ID_REQUEST, required = true) String id) {
         Entry<MemorySegment> result = daoWrapper.get(id);
         if (result != null && result.value() != null) {
             return new Response(Response.OK, result.value().toArray(ValueLayout.JAVA_BYTE));
@@ -69,22 +79,21 @@ public class HttpServerImpl extends HttpServer {
         return new Response(Response.NOT_FOUND, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id=", required = true) String id) {
+    public Response delete(@Param(value = ID_REQUEST, required = true) String id) {
         daoWrapper.delete(id);
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
-    public Response upsert(@Param(value = "id=", required = true) String id, Request request) {
+    public Response upsert(@Param(value = ID_REQUEST, required = true) String id, Request request) {
         daoWrapper.upsert(id, request);
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_POST)
     public Response post() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
@@ -92,7 +101,7 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        String id = request.getParameter("id=");
+        String id = request.getParameter(ID_REQUEST);
         if (id != null && id.isEmpty()) {
             handleDefault(request, session);
         } else {

@@ -4,7 +4,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.nio.charset.StandardCharsets;
 
 /**
  * taken from <a href="https://github.com/apache/cassandra/blob/trunk/src/java/org/apache/cassandra/utils/MurmurHash.java#L178">...</a>.
@@ -148,8 +147,8 @@ public final class MurmurHash {
     }
 
     private static long getBlock(MemorySegment key, int offset, int index) {
-        int i_8 = index << 3;
-        int blockOffset = offset + i_8;
+        int i8 = index << 3;
+        int blockOffset = offset + i8;
         return (long) LITTLE_ENDIAN_LONG.get(key, blockOffset);
     }
 

@@ -172,7 +172,7 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
                     flushNotification.get();
                 }
             } catch (InterruptedException | ExecutionException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt();
             }
             persistentStorage.compact(id);
         });

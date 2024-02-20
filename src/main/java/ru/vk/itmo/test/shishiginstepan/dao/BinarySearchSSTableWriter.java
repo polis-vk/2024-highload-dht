@@ -89,7 +89,14 @@ public final class BinarySearchSSTableWriter {
         } catch (IOException e) {
             throw new SSTableCreationException(e);
         }
-        return new BinarySearchSSTable(sstPath.get(), arena);
+
+        Path newTablePath = sstPath.get();
+
+        sstPath.remove();
+        tempSSTPath.remove();
+        indexPath.remove();
+        tempIndexPath.remove();
+        return new BinarySearchSSTable(newTablePath, arena);
     }
 
     private static void writeEntries(

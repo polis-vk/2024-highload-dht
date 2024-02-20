@@ -7,7 +7,11 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NavigableSet;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
@@ -115,6 +119,7 @@ public class PersistentStorage {
         for (var sstable : tablesToCompact.get()) {
             iteratorsToCompact.add(sstable.scan(null, null));
         }
+        tablesToCompact.remove();
         return iteratorsToCompact;
     }
 

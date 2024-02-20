@@ -118,7 +118,6 @@ public class PersistentStorage {
         return iteratorsToCompact;
     }
 
-
     public void compact(int id) {
         tablesToCompact.set(new ArrayList<>());
         setTablesToCompact();

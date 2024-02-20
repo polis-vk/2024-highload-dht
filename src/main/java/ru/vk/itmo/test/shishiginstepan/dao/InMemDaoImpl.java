@@ -46,7 +46,6 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         return Byte.compare(b1, b2);
     };
 
-
     private final AtomicLong memStorageSize = new AtomicLong(0);
 
     private final long memStorageLimit;
@@ -144,7 +143,6 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         this.persistentStorage.close();
     }
 
-
     @Override
     public void flush() {
         flushNotification = executor.submit(() -> {
@@ -164,7 +162,6 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
             }
         });
     }
-
 
     @Override
     public void compact() {

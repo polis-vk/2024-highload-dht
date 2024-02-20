@@ -19,7 +19,6 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
-
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String basePath = "/v0/entity";
@@ -29,13 +28,11 @@ public class Server extends HttpServer {
         this.dao = dao;
     }
 
-
     private static HttpServerConfig configFromServiceConfig(ServiceConfig serviceConfig) {
         HttpServerConfig serverConfig = new HttpServerConfig();
         one.nio.server.AcceptorConfig acceptorConfig = new one.nio.server.AcceptorConfig();
         acceptorConfig.reusePort = true;
         acceptorConfig.port = serviceConfig.selfPort();
-
 
         serverConfig.acceptors = new one.nio.server.AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
@@ -84,7 +81,6 @@ public class Server extends HttpServer {
     public Response notAllowed() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
-
 
     //     for debug only
     @Path("/v0/entity/all")

@@ -19,7 +19,6 @@ public class BinarySearchSSTableWriter {
     private static final ThreadLocal<Path> indexPath = new ThreadLocal<>();
     private static final ThreadLocal<Path> tempIndexPath = new ThreadLocal<>();
 
-
     private static class SSTableCreationException extends RuntimeException {
         public SSTableCreationException(Throwable cause) {
             super(cause);

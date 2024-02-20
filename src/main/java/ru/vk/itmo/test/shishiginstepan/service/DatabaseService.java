@@ -41,7 +41,6 @@ public class DatabaseService implements ru.vk.itmo.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-
     @ServiceFactory(stage = 1)
     public static class Factory implements ServiceFactory.Factory {
 

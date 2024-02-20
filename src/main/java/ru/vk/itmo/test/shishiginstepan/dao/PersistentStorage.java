@@ -26,8 +26,6 @@ public class PersistentStorage {
 
     private final Arena arena;
 
-//    private static final ThreadLocal<List<BinarySearchSSTable>> tablesToCompact = new ThreadLocal<>();
-
     private static final class CompactionError extends RuntimeException {
         public CompactionError(Exception e) {
             super(e);
@@ -102,7 +100,7 @@ public class PersistentStorage {
         return iterators;
     }
 
-    private List<Iterator<Entry<MemorySegment>>> getCompactableIterators(List<ru.vk.itmo.test.shishiginstepan.dao.BinarySearchSSTable> tablesToCompact) {
+    private List<Iterator<Entry<MemorySegment>>> getCompactableIterators(List<BinarySearchSSTable> tablesToCompact) {
         List<Iterator<Entry<MemorySegment>>> iteratorsToCompact = new ArrayList<>();
         for (var sstable : tablesToCompact) {
             if (sstable.closed.get()) continue;

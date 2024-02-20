@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.abramovilya.dao;
 
-import ch.qos.logback.classic.util.StatusViaSLF4JLoggerFactory;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
@@ -20,7 +19,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.logging.Logger;
 
 public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> map =
@@ -134,7 +132,7 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public void flush() throws IOException {
+    public void flush() {
         if (isFlushing.compareAndSet(false, true)) {
             backgroundQueue.execute(() -> {
                 long size;

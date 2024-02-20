@@ -13,7 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.concurrent.ThreadLocalRandom;
 
-public class BinarySearchSSTableWriter {
+public final class BinarySearchSSTableWriter {
     private static final ThreadLocal<Path> sstPath = new ThreadLocal<>();
     private static final ThreadLocal<Path> tempSSTPath = new ThreadLocal<>();
     private static final ThreadLocal<Path> indexPath = new ThreadLocal<>();
@@ -23,6 +23,9 @@ public class BinarySearchSSTableWriter {
         public SSTableCreationException(Throwable cause) {
             super(cause);
         }
+    }
+
+    private BinarySearchSSTableWriter() {
     }
 
     public static BinarySearchSSTable writeSSTable(

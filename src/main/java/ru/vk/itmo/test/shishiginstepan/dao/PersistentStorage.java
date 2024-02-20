@@ -26,7 +26,7 @@ public class PersistentStorage {
 
     private final Arena arena;
 
-    private static final ThreadLocal<List<BinarySearchSSTable>> tablesToCompact = new ThreadLocal<>();
+//    private static final ThreadLocal<List<BinarySearchSSTable>> tablesToCompact = new ThreadLocal<>();
 
     private static final class CompactionError extends RuntimeException {
         public CompactionError(Exception e) {
@@ -102,41 +102,34 @@ public class PersistentStorage {
         return iterators;
     }
 
-    private void setTablesToCompact() {
-        for (var sstable : sstables) {
-            if (sstable.closed.get()) continue;
-            if (sstable.inCompaction.compareAndSet(false, true)) tablesToCompact.get().add(sstable);
-        }
-    }
-
-    private List<Iterator<Entry<MemorySegment>>> getCompactableIterators() {
+    private List<Iterator<Entry<MemorySegment>>> getCompactableIterators(List<ru.vk.itmo.test.shishiginstepan.dao.BinarySearchSSTable> tablesToCompact) {
         List<Iterator<Entry<MemorySegment>>> iteratorsToCompact = new ArrayList<>();
-        for (var sstable : tablesToCompact.get()) {
+        for (var sstable : tablesToCompact) {
             if (sstable.closed.get()) continue;
-            if (sstable.inCompaction.compareAndSet(false, true)) tablesToCompact.get().add(sstable);
+            if (sstable.inCompaction.compareAndSet(false, true)) {
+                iteratorsToCompact.add(sstable.scan(null, null));
+            }
         }
-
-        for (var sstable : tablesToCompact.get()) {
-            iteratorsToCompact.add(sstable.scan(null, null));
-        }
-        tablesToCompact.remove();
         return iteratorsToCompact;
     }
 
     public void compact(int id) {
-        tablesToCompact.set(new ArrayList<>());
-        setTablesToCompact();
+        var tablesToCompact = new ArrayList<BinarySearchSSTable>();
+
+        for (var sstable : sstables) {
+            if (sstable.closed.get()) continue;
+            if (sstable.inCompaction.compareAndSet(false, true)) tablesToCompact.add(sstable);
+        }
         store(
                 () -> {
-                    var iterators = getCompactableIterators();
+                    var iterators = getCompactableIterators(tablesToCompact);
                     return new SkipDeletedIterator(
                             new MergeIterator(
                                     iterators));
                 }, id);
-        for (var sstable : tablesToCompact.get()) {
+        for (var sstable : tablesToCompact) {
             compactionClean(sstable);
         }
-        tablesToCompact.remove();
     }
 
     private void compactionClean(BinarySearchSSTable sstable) {

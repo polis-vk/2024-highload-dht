@@ -15,9 +15,9 @@ public class TestServer {
                 8080,
                 url,
                 List.of(url),
-                Paths.get("."));
+                Paths.get("./"));
         ReferenceDao dao = new ReferenceDao(
-                new Config(serviceConfig.workingDir(), 1024 * 1024));
+                new Config(serviceConfig.workingDir(), 1024 * 128));
         Server server = new Server(serviceConfig, dao);
         server.start();
     }

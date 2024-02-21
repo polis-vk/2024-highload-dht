@@ -24,7 +24,7 @@ public class Server extends HttpServer {
 
     public Server(HttpServerConfig serverConfig, java.nio.file.Path workingDir) throws IOException {
         super(serverConfig);
-        Config daoConfig = new Config(workingDir, 65 * 1024 * 1024);
+        Config daoConfig = new Config(workingDir, 42 * 1024 * 1024);
         dao = new ReferenceDao(daoConfig);
     }
 

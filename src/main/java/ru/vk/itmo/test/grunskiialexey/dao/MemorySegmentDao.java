@@ -27,7 +27,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-
 public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     private final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
 
@@ -67,12 +66,12 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        StorageState state = this.state.get();
+        StorageState currentState = this.state.get();
 
         return Compaction.range(
-                getInMemory(state.readStorage, from, to),
-                getInMemory(state.writeStorage, from, to),
-                state.diskSegmentList,
+                getInMemory(currentState.readStorage, from, to),
+                getInMemory(currentState.writeStorage, from, to),
+                currentState.diskSegmentList,
                 from,
                 to
         );
@@ -106,8 +105,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
         synchronized (this) {
-            StorageState state = this.state.get();
-            Entry<MemorySegment> entry = state.writeStorage.get(key);
+            StorageState currentState = this.state.get();
+            Entry<MemorySegment> entry = currentState.writeStorage.get(key);
             if (entry != null) {
                 if (entry.value() == null) {
                     return null;
@@ -116,9 +115,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             }
 
             Iterator<Entry<MemorySegment>> iterator = Compaction.range(
-                    getInMemory(state.readStorage, key, null),
-                    getInMemory(state.writeStorage, key, null),
-                    state.diskSegmentList,
+                    getInMemory(currentState.readStorage, key, null),
+                    getInMemory(currentState.writeStorage, key, null),
+                    currentState.diskSegmentList,
                     key,
                     null);
 
@@ -136,7 +135,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public void flush() {
         bgExecutor.execute(() -> {
-            Collection<Entry<MemorySegment>> entries;
             StorageState prevState = state.get();
             ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment>> writeStorage = prevState.writeStorage;
             if (writeStorage.isEmpty()) {
@@ -153,7 +151,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             }
 
             MemorySegment newPage;
-            entries = writeStorage.values();
+            Collection<Entry<MemorySegment>> entries = writeStorage.values();
             try {
                 newPage = DiskStorage.save(arena, path, entries);
             } catch (IOException e) {
@@ -176,15 +174,15 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         bgExecutor.execute(() -> {
             synchronized (this) {
                 try {
-                    StorageState state = this.state.get();
+                    StorageState currentState = this.state.get();
                     MemorySegment newPage = Compaction.compact(arena, path, () -> Compaction.range(
                             Collections.emptyIterator(),
                             Collections.emptyIterator(),
-                            state.diskSegmentList,
+                            currentState.diskSegmentList,
                             null,
                             null
                     ));
-                    this.state.set(state.compact(newPage));
+                    this.state.set(currentState.compact(newPage));
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }

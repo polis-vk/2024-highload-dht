@@ -24,6 +24,9 @@ import static ru.vk.itmo.test.grunskiialexey.dao.DiskStorage.NAME_INDEX_FILE;
 import static ru.vk.itmo.test.grunskiialexey.dao.DiskStorage.NAME_TMP_INDEX_FILE;
 
 public class Compaction {
+    private Compaction() {
+    }
+
     public static Iterator<Entry<MemorySegment>> range(
             Iterator<Entry<MemorySegment>> firstIterator,
             Iterator<Entry<MemorySegment>> secondIterator,

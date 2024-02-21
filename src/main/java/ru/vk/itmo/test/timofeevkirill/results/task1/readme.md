@@ -25,9 +25,9 @@ See cpu flag issue, fixed from v3.0 async-profiler (https://github.com/async-pro
 100.000%    7.46ms
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p100000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p100000rps.png)
 
 ### 20 thds rps
 ```
@@ -41,9 +41,9 @@ CPU
 100.000%    9.02ms
 ```
 ALLOC
-![put 20](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p20000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p200000rps.png)
 CPU
-![put 20](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p20000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p200000rps.png)
 
 ### 30 thds rps
 ```

@@ -40,8 +40,8 @@ public class ServiceIml implements Service {
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        dao.close();
         server.stop();
+        dao.close();
 
         return CompletableFuture.completedFuture(null);
     }

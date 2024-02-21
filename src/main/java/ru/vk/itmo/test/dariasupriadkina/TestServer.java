@@ -8,7 +8,8 @@ import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.List;
 
-public class TestServer {
+public final class TestServer {
+
     public static void main(String[] args) throws IOException {
         String url = "http://localhost";
         ServiceConfig serviceConfig = new ServiceConfig(

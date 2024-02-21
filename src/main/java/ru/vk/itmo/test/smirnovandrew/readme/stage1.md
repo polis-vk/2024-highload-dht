@@ -57,13 +57,44 @@ end
 
 
 ### Тест PUT
-```agsl
+wrk:
+```wrk
 ./wrk -d 240 -t 1 -c 1 -R 3000 -L -s /Users/sandrew2003/IdeaProjects/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/smirnovandrew/lua/put.lua http://localhost:8080
 ```
-результат:
-
+asprof:
+```asprof
+./asprof -d 240 -e cpu -f put_cpu.html 54962  
+./asprof -d 240 -e alloc -f put_alloc.html 54962  
+```
+результаты:
+Из графиков (которые кстати можно посмотреть в папочке stats)
+можно сделать вывод по wrk:
+latency довольно сильно увеличивается после прохождения отметки в 
+99.999% percentile
+по alloc:
+Большинство аллокаций - это конвертация из строки в MemorySegment и
+собственно парсинг запроса
+по cpu:
+Большая часть cpu потребовалось для записи ответа на запрос 
+и на запись данных в бд.
 
 ### Тест GET
-```agsl
+wrk:
+```wrk
 ./wrk -d 240 -t 1 -c 1 -R 3000 -L -s /Users/sandrew2003/IdeaProjects/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/smirnovandrew/lua/get.lua http://localhost:8080
 ```
+asprof:
+```asprof
+./asprof -d 240 -e cpu -f get_cpu.html 54962  
+./asprof -d 240 -e alloc -f get_alloc.html 54962  
+```
+результаты:
+Из графиков (которые кстати можно посмотреть в папочке stats)
+можно сделать вывод по wrk:
+latency довольно сильно увеличивается после прохождения отметки в
+99.999% percentile
+по alloc:
+Большинство аллокаций - это конвертация из строки в MemorySegment и
+собственно парсинг запроса а также на ответ на него
+по cpu:
+Наибольшие ресурсы CPU задействованы при поиске ключа в БД

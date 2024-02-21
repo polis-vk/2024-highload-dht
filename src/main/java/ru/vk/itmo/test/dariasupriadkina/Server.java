@@ -44,6 +44,12 @@ public class Server extends HttpServer {
         return httpServerConfig;
     }
 
+    @Path("/health")
+    @RequestMethod(Request.METHOD_GET)
+    public Response health() {
+        return Response.ok(Response.OK);
+    }
+
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getHandler(@Param(value = "id", required = true) String id) {

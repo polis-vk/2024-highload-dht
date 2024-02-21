@@ -22,12 +22,15 @@ end
 
 
 request = function()
-    magic_selector = math.random(0,3)
-    if magic_selector < 2 then
-        return getOneRandom()
-    elseif magic_selector == 3 then
-        return putOneRandom()
-    else
-        return deleteOneRandom()
-    end
+--    magic_selector = math.random(0,3)
+--    if magic_selector < 2 then
+--        return getOneRandom()
+--    elseif magic_selector == 3 then
+--        return putOneRandom()
+--    else
+--        return deleteOneRandom()
+--    end
+--    return putOneRandom()
 end
+
+--при тестировании нужные методы просто раскоментировал, хотя и в полной имплементации тоже тестировал

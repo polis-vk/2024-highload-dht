@@ -5,10 +5,8 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -19,14 +17,17 @@ public class SSTable implements DaoFileGet<MemorySegment, Entry<MemorySegment>> 
 
     public static final Comparator<MemorySegment> COMPARATOR = UtilsMemorySegment::compare;
     public static final Comparator<Entry<MemorySegment>> ENTRY_COMPARATOR = UtilsMemorySegment::compareEntry;
-    public static final String INDEX_SUFFIX = "_index";
 
+    private Path indexPath;
+    private Path dataPath;
     private final IndexList indexList;
 
     private SSTable(final Path indexPath, final Path dataPath, final Arena arena) throws IOException {
-        indexList = new IndexList(
-                mapSegment(indexPath, arena),
-                mapSegment(dataPath, arena)
+        this.indexPath = indexPath;
+        this.dataPath = dataPath;
+        this.indexList = new IndexList(
+                UtilsMemorySegment.mapReadSegment(indexPath, arena),
+                UtilsMemorySegment.mapReadSegment(dataPath, arena)
         );
     }
 
@@ -39,26 +40,12 @@ public class SSTable implements DaoFileGet<MemorySegment, Entry<MemorySegment>> 
         return new SSTable(indexPath, dataPath, arena);
     }
 
-    private static Path getDataPath(final Path root, final String name) {
+    public static Path getDataPath(final Path root, final String name) {
         return root.resolve(name);
     }
 
-    private static Path getIndexPath(final Path root, final String name) {
-        return root.resolve(name + INDEX_SUFFIX);
-    }
-
-    private static MemorySegment mapSegment(final Path path, final Arena arena) throws IOException {
-        try (FileChannel readerChannel = FileChannel.open(
-                path,
-                StandardOpenOption.READ)
-        ) {
-            return readerChannel.map(
-                    FileChannel.MapMode.READ_ONLY,
-                    0,
-                    readerChannel.size(),
-                    arena
-            );
-        }
+    public static Path getIndexPath(final Path root, final String name) {
+        return root.resolve(name + "_index");
     }
 
     private static final class KeyEntry implements Entry<MemorySegment> {
@@ -103,13 +90,16 @@ public class SSTable implements DaoFileGet<MemorySegment, Entry<MemorySegment>> 
         return indexList.subList(startPos, endPos).iterator();
     }
 
-    private static long getTotalMapSize(final SortedMap<MemorySegment, Entry<MemorySegment>> map) {
-        long totalSize = 0;
+    public static SizeInfo getMapSize(final SortedMap<MemorySegment, Entry<MemorySegment>> map) {
+        long keysSize = 0;
+        long valuesSize = 0;
         for (Map.Entry<MemorySegment, Entry<MemorySegment>> entry : map.entrySet()) {
             final MemorySegment value = entry.getValue().value();
-            totalSize += entry.getKey().byteSize() + (value == null ? 0 : value.byteSize());
+
+            keysSize += entry.getKey().byteSize();
+            valuesSize += value == null ? 0 : value.byteSize();
         }
-        return totalSize;
+        return new SizeInfo(map.size(), keysSize, valuesSize);
     }
 
     public static void write(
@@ -117,71 +107,44 @@ public class SSTable implements DaoFileGet<MemorySegment, Entry<MemorySegment>> 
             final Path path,
             final String name
     ) throws IOException {
-        long[][] offsets;
-        final long mapSize = getTotalMapSize(map);
-        try (Arena arena = Arena.ofConfined(); FileChannel writerChannel = FileChannel.open(
+        try (Arena arena = Arena.ofConfined(); SStorageDumper dumper = new SStorageDumper(
+                getMapSize(map),
                 getDataPath(path, name),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE)
-        ) {
-            final MemorySegment memorySegment = writerChannel.map(
-                    FileChannel.MapMode.READ_WRITE,
-                    0,
-                    mapSize,
-                    arena
-            );
-            offsets = new long[map.size()][2];
-
-            int index = 0;
-            long totalOffset = 0;
-            for (final MemorySegment key : map.keySet()) {
-                offsets[index][0] = totalOffset;
-                MemorySegment.copy(
-                        key,
-                        0,
-                        memorySegment,
-                        totalOffset,
-                        key.byteSize()
-                );
-                totalOffset += key.byteSize();
-                index += 1;
-            }
-
-            index = 0;
-            for (final Entry<MemorySegment> value : map.values()) {
-                if (value.value() == null) {
-                    offsets[index][1] = -1;
-                } else {
-                    offsets[index][1] = totalOffset;
-                    MemorySegment.copy(
-                            value.value(),
-                            0,
-                            memorySegment,
-                            totalOffset,
-                            value.value().byteSize()
-                    );
-                    totalOffset += value.value().byteSize();
-                }
-                index += 1;
+                getIndexPath(path, name),
+                arena
+            )) {
+            for (final Entry<MemorySegment> entry: map.values()) {
+                dumper.writeEntry(entry);
             }
         }
+    }
 
-        try (Arena arena = Arena.ofConfined(); FileChannel writerChannel = FileChannel.open(
-                getIndexPath(path, name),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE)
-        ) {
-            final MemorySegment memorySegment = writerChannel.map(
-                    FileChannel.MapMode.READ_WRITE,
-                    0,
-                    IndexList.getFileSize(map),
-                    arena
-            );
-            IndexList.write(memorySegment, offsets, mapSize);
+    public void move(
+            final Path path,
+            final String name
+    ) throws IOException {
+        final Path targetDataPath = getDataPath(path, name);
+        final Path targetIndexPath = getIndexPath(path, name);
+        Files.move(dataPath, targetDataPath);
+        try {
+            Files.move(indexPath, targetIndexPath);
+        } catch (IOException e) {
+            Files.move(targetDataPath, dataPath);
+            throw e;
+        }
+        dataPath = targetDataPath;
+        indexPath = targetIndexPath;
+    }
+
+    public SizeInfo getSizeInfo() {
+        return new SizeInfo(indexList.size(), indexList.keysSize(), indexList.valuesSize());
+    }
+
+    public void delete() throws IOException {
+        try {
+            Files.delete(dataPath);
+        } finally {
+            Files.delete(indexPath);
         }
     }
 

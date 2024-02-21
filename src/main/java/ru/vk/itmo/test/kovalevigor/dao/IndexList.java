@@ -6,17 +6,17 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.AbstractList;
 import java.util.RandomAccess;
-import java.util.SortedMap;
 
 public class IndexList extends AbstractList<Entry<MemorySegment>> implements RandomAccess {
 
-    public static final long INDEX_ENTRY_SIZE = 2 * ValueLayout.JAVA_LONG.byteSize();
-    public static final long META_INFO_SIZE = ValueLayout.JAVA_LONG.byteSize();
+    public static final long INDEX_ENTRY_SIZE = IndexDumper.ENTRY_SIZE;
+    public static final long META_INFO_SIZE = IndexDumper.HEAD_SIZE;
     public static long MAX_BYTE_SIZE = META_INFO_SIZE + Integer.MAX_VALUE * INDEX_ENTRY_SIZE;
 
     private final MemorySegment indexSegment;
     private final MemorySegment dataSegment;
-    private final long valuesOffset;
+    private final long keysSize;
+    private final long valuesSize;
 
     public IndexList(final MemorySegment indexSegment, final MemorySegment dataSegment) {
         if (indexSegment.byteSize() > MAX_BYTE_SIZE) {
@@ -26,8 +26,8 @@ public class IndexList extends AbstractList<Entry<MemorySegment>> implements Ran
         }
 
         this.dataSegment = dataSegment;
-
-        this.valuesOffset = readOffset(0);
+        this.keysSize = readOffset(0);
+        this.valuesSize = readOffset(ValueLayout.JAVA_LONG.byteSize());
     }
 
     private long getEntryOffset(final int index) {
@@ -73,11 +73,16 @@ public class IndexList extends AbstractList<Entry<MemorySegment>> implements Ran
         final long nextEntryOffset = getEntryOffset(index + 1);
 
         final MemorySegment value;
-        if (valueOffset > 0) {
-            long valueSize = (nextEntryOffset == -1
-                    ? dataSegment.byteSize()
-                    : Math.abs(readOffset(nextEntryOffset + ValueLayout.JAVA_LONG.byteSize()))) - valueOffset;
-            value = dataSegment.asSlice(valueOffset, valueSize);
+        if (valueOffset >= 0) {
+
+            long valueSize;
+            if (nextEntryOffset == -1) {
+                valueSize = dataSegment.byteSize() - keysSize();
+            } else {
+                final long nextValueOffset = readOffset(nextEntryOffset + ValueLayout.JAVA_LONG.byteSize());
+                valueSize = (nextValueOffset > 0 ? nextValueOffset : -(nextValueOffset + 1));
+            }
+            value = dataSegment.asSlice(valueOffset + keysSize(), valueSize - valueOffset);
         } else {
             value = null;
         }
@@ -91,7 +96,7 @@ public class IndexList extends AbstractList<Entry<MemorySegment>> implements Ran
         final long keyOffset = readOffset(offset);
         final long nextEntryOffset = getEntryOffset(index + 1);
 
-        long keySize = (nextEntryOffset == -1 ? valuesOffset : readOffset(nextEntryOffset)) - keyOffset;
+        long keySize = (nextEntryOffset == -1 ? keysSize : readOffset(nextEntryOffset)) - keyOffset;
 
         final MemorySegment key = dataSegment.asSlice(keyOffset, keySize);
         return new LazyEntry(key, index);
@@ -102,35 +107,12 @@ public class IndexList extends AbstractList<Entry<MemorySegment>> implements Ran
         return (int)((indexSegment.byteSize() - META_INFO_SIZE) / INDEX_ENTRY_SIZE);
     }
 
-    public static long getFileSize(final SortedMap<MemorySegment, Entry<MemorySegment>> map) {
-        return META_INFO_SIZE + map.size() * INDEX_ENTRY_SIZE;
+    public long keysSize() {
+        return keysSize;
     }
 
-    private static long writeLong(final MemorySegment writer, final long offset, final long value) {
-        writer.set(ValueLayout.JAVA_LONG, offset, value);
-        return offset + ValueLayout.JAVA_LONG.byteSize();
-    }
-
-    public static void write(
-            final MemorySegment writer,
-            final long[][] offsets,
-            final long fileSize
-    ) {
-
-        long nextOffset = fileSize;
-        for (int i = offsets.length - 1; i >= 0; i--) {
-            if (offsets[i][1] == -1) {
-                offsets[i][1] = -nextOffset;
-            } else {
-                nextOffset = offsets[i][1];
-            }
-        }
-
-        long offset = writeLong(writer, 0, offsets.length > 0 ? Math.abs(offsets[0][1]) : 0);
-        for (final long[] entry: offsets) {
-            offset = writeLong(writer, offset, entry[0]);
-            offset = writeLong(writer, offset, entry[1]);
-        }
+    public long valuesSize() {
+        return valuesSize;
     }
 
 }

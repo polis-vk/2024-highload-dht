@@ -5,10 +5,9 @@ import ru.vk.itmo.dao.Entry;
 import java.lang.foreign.MemorySegment;
 import java.util.Collection;
 
-public class MergeEntryIterator extends MergeIterator
-        <
-                Entry<MemorySegment>,
-                PriorityShiftedIterator<Entry<MemorySegment>>
+public class MergeEntryIterator extends MergeIterator<
+        Entry<MemorySegment>,
+        PriorityShiftedIterator<Entry<MemorySegment>>
         > {
     public MergeEntryIterator(Collection<? extends PriorityShiftedIterator<Entry<MemorySegment>>> collection) {
         super(collection);

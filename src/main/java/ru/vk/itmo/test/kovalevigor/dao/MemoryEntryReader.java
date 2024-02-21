@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.kovalevigor.dao;
 
-import ru.vk.itmo.BaseEntry;
-import ru.vk.itmo.Entry;
+import ru.vk.itmo.dao.BaseEntry;
+import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;

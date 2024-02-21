@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.kovalevigor.dao;
 
-import ru.vk.itmo.Entry;
+import ru.vk.itmo.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;

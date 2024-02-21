@@ -1,8 +1,7 @@
 package ru.vk.itmo.test.kovalevigor.dao;
-
-import ru.vk.itmo.Config;
-import ru.vk.itmo.Dao;
-import ru.vk.itmo.Entry;
+import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

@@ -15,12 +15,13 @@ import java.nio.charset.StandardCharsets;
 
 public class ServerImpl extends HttpServer {
 
-    private final DaoImpl dao;
+    private static final String API_PREFIX = "/v0/entity";
+
+    private DaoImpl dao;
 
     public ServerImpl(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
-        dao = new DaoImpl(new Config(config.workingDir(), 666));
-
+        dao = new DaoImpl(new Config(config.workingDir(), 1024 * 1024));
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -34,54 +35,54 @@ public class ServerImpl extends HttpServer {
         return serverConfig;
     }
 
-    @Path("/v0/entity")
+    @Path(API_PREFIX)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntityById(@Param(value = "id", required = true) String id) {
         if (isInvalidId(id)) {
-            return new Response(Response.BAD_REQUEST, new byte[]{});
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         MemorySegment key = convertStringToMemorySegment(id);
         Entry<MemorySegment> entry = dao.get(key);
 
         if (entry == null) {
-            return new Response(Response.NOT_FOUND, new byte[]{});
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
 
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path("/v0/entity")
+    @Path(API_PREFIX)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntityById(@Param(value = "id", required = true) String id) {
         if (isInvalidId(id)) {
-            return new Response(Response.BAD_REQUEST, new byte[]{});
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         MemorySegment key = convertStringToMemorySegment(id);
         dao.upsert(new BaseEntry<>(key, null));
 
-        return new Response(Response.ACCEPTED, new byte[]{});
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(API_PREFIX)
     public Response respondMethodNotAllowed() {
-        return new Response(Response.METHOD_NOT_ALLOWED, new byte[]{});
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(API_PREFIX)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
         byte[] body = request.getBody();
         if (isInvalidId(id) || body == null) {
-            return new Response(Response.BAD_REQUEST, new byte[]{});
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         MemorySegment key = convertStringToMemorySegment(id);
         MemorySegment value = MemorySegment.ofArray(request.getBody());
         dao.upsert(new BaseEntry<>(key, value));
 
-        return new Response(Response.CREATED, new byte[]{});
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Override
@@ -100,7 +101,7 @@ public class ServerImpl extends HttpServer {
         super.stop();
     }
 
-    private boolean isInvalidId (String id) {
+    private boolean isInvalidId(String id) {
         return id == null || id.isEmpty();
     }
 

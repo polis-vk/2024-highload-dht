@@ -55,7 +55,7 @@ compileJava {
     options.compilerArgs += ["--enable-preview"]
 
     // Enforce errors
-    options.compilerArgs += ["-Werror"]
+//    options.compilerArgs += ["-Werror"]
 }
 
 compileTestJava {

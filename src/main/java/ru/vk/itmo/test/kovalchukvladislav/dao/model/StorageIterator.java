@@ -7,7 +7,6 @@ import java.lang.foreign.ValueLayout;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-
 public class StorageIterator<D, E extends Entry<D>> implements Iterator<E> {
     private final EntryExtractor<D, E> extractor;
     private final MemorySegment storageSegment;

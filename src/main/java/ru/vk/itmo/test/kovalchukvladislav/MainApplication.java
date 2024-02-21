@@ -4,6 +4,7 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -21,7 +22,7 @@ public final class MainApplication {
         try {
             return Files.createTempDirectory(WORKING_DIR_NAME);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException(e);
         }
     }
 

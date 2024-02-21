@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 
-
 public interface SSTableStorage<D, E extends Entry<D>> {
     /**
      * Добавляет новый SSTable из basePath в метадату и рефрешит SSTableStorage.

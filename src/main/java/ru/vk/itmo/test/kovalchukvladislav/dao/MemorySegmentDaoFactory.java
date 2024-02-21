@@ -10,7 +10,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
-public class MemorySegmentDaoFactory {
+public final class MemorySegmentDaoFactory {
     private static final Charset CHARSET = StandardCharsets.UTF_8;
     private static final ValueLayout.OfByte VALUE_LAYOUT = ValueLayout.JAVA_BYTE;
 

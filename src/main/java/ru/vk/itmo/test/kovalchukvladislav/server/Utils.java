@@ -1,6 +1,9 @@
 package ru.vk.itmo.test.kovalchukvladislav.server;
 
-public class Utils {
+public final class Utils {
+    private Utils() {
+    }
+
     public static boolean isBlank(String str) {
         if (str == null) {
             return true;

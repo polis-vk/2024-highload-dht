@@ -1,10 +1,10 @@
 package ru.vk.itmo.test.reshetnikovaleksei;
 
+import ru.vk.itmo.ServiceConfig;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-
-import ru.vk.itmo.ServiceConfig;
 
 public final class ServerRunnerApp {
     public ServerRunnerApp() {

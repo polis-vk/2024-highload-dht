@@ -22,7 +22,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 public class DaoHttpRequestHandler extends HttpServer {
-    public static final int FLUSH_THRESHOLD = 1024;
+    public static final int FLUSH_THRESHOLD = 1024 * 1024;
     public static final String ENTITY_PATH = "/v0/entity";
 
     private final Config daoConfig;
@@ -61,7 +61,7 @@ public class DaoHttpRequestHandler extends HttpServer {
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id") String id) {
-        if (Utils.isBlank(id)) {
+        if (Utils.isEmpty(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         Entry<MemorySegment> entry = dao.get(MemorySegmentDaoFactory.fromString(id));
@@ -74,7 +74,7 @@ public class DaoHttpRequestHandler extends HttpServer {
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntity(@Param(value = "id") String id, Request request) {
-        if (Utils.isBlank(id)) {
+        if (Utils.isEmpty(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         MemorySegment key = MemorySegmentDaoFactory.fromString(id);
@@ -86,7 +86,7 @@ public class DaoHttpRequestHandler extends HttpServer {
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id") String id) {
-        if (Utils.isBlank(id)) {
+        if (Utils.isEmpty(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         dao.upsert(new BaseEntry<>(MemorySegmentDaoFactory.fromString(id), null));

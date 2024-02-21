@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 public final class MainApplication {
-    private static final int SELF_PORT = 8080;
+    private static final int SELF_PORT = 8083;
     private static final Path WORKING_DIR = createPath();
     private static final String SELF_URL = "http://localhost";
     private static final String WORKING_DIR_NAME = "serviceData";

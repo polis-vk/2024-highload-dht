@@ -11,11 +11,12 @@ public final class ServerStarter {
     private ServerStarter() {
 
     }
+
     public static void main(String[] args) throws IOException {
         ServerImplementation server = new ServerImplementation(new ServiceConfig(8080,
                 "http://localhost",
                 List.of("http://localhost"),
-                Files.createTempDirectory(".")));
+                Files.createTempDirectory("DaoServer")));
         server.start();
     }
 }

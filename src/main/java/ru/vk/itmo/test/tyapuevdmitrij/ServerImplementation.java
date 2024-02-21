@@ -26,10 +26,11 @@ public class ServerImplementation extends HttpServer {
     private final MemorySegmentDao memorySegmentDao;
 
     private static final String ENTITY_PATH = "/v0/entity";
+    private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
 
     public ServerImplementation(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
-        memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), 5242880));
+        memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {

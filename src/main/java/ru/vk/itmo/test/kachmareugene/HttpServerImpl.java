@@ -1,6 +1,13 @@
 package ru.vk.itmo.test.kachmareugene;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -22,7 +29,6 @@ public class HttpServerImpl extends HttpServer {
     private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
     Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
     private final ServiceConfig serviceConfig;
-    private final Response CREATED = new Response(Response.CREATED, Response.EMPTY);
     private final Response BAD_REQUEST = new Response(Response.BAD_REQUEST, Response.EMPTY);
 
     public HttpServerImpl(ServiceConfig conf) throws IOException {
@@ -76,7 +82,6 @@ public class HttpServerImpl extends HttpServer {
 
         if (result == null) {
             return NOT_FOUND;
-            //return Response.ok(Response.OK);
         }
         return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
     }
@@ -94,7 +99,7 @@ public class HttpServerImpl extends HttpServer {
         daoImpl.upsert(
                 new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
                                 MemorySegment.ofArray(request.getBody())));
-        return CREATED;
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Path(value = "/v0/entity")

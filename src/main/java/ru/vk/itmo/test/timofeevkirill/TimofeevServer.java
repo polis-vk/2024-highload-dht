@@ -100,7 +100,6 @@ public class TimofeevServer extends HttpServer {
     }
 
     private boolean isEmptyRequest(Request request) {
-        byte[] body = request.getBody();
-        return body == null || body.length == 0;
+        return request.getBody() == null;
     }
 }

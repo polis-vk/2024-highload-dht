@@ -1,9 +1,9 @@
-counter = 0
+id = 0
 
  function request()
-     counter = counter + 1
-     local headers = {}
-     headers["Host"] = "localhost:8080"
-     local key = "k" .. counter
-     local value = "v$" .. counter
-     return wrk.format("PUT", "/v0/entity?id=" .. key, headers, value)
+     body = string.rep("value", 100)
+     method = "PUT"
+     id = id + 1
+     path = "/v0/entity?id=" .. id
+     return wrk.format(method, path, headers, body)
+end

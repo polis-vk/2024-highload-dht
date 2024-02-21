@@ -20,7 +20,7 @@ public final class ServerInitializer {
                 Files.createTempDirectory("reports")
         );
 
-        ReferenceDao dao = new ReferenceDao(new Config(config.workingDir(), 1024));
+        ReferenceDao dao = new ReferenceDao(new Config(config.workingDir(), 1024 * 1024 * 1024));
         ServerImpl server = new ServerImpl(config, dao);
         server.start();
     }

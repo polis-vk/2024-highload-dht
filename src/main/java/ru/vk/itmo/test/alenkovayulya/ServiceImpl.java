@@ -22,7 +22,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        referenceDao = new ReferenceDao(new Config(config.workingDir(), 1024));
+        referenceDao = new ReferenceDao(new Config(config.workingDir(), 1024 * 1024 * 1024));
         server = new ServerImpl(config, referenceDao);
         server.start();
         return CompletableFuture.completedFuture(null);

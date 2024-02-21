@@ -47,7 +47,7 @@ public class ServerImpl extends HttpServer {
 
     private Response requestHandle(final String id, final Function<MemorySegment, Response> request) {
         if (!validateId(id)) {
-            return new Response(Response.BAD_REQUEST, (STR."invalid id: \{id}").getBytes(StandardCharsets.UTF_8));
+            return new Response(Response.BAD_REQUEST, ("invalid id: " + id).getBytes(StandardCharsets.UTF_8));
         }
         final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         return request.apply(key);

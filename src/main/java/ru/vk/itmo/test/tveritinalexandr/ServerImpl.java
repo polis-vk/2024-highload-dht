@@ -1,6 +1,13 @@
 package ru.vk.itmo.test.tveritinalexandr;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.tveritinalexandr.dao.DaoImpl;
@@ -11,7 +18,9 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-import static one.nio.http.Request.*;
+import static one.nio.http.Request.METHOD_DELETE;
+import static one.nio.http.Request.METHOD_GET;
+import static one.nio.http.Request.METHOD_PUT;
 
 public class ServerImpl extends HttpServer {
     private static final String PATH_V0_ENTITY = "/v0/entity";
@@ -82,7 +91,7 @@ public class ServerImpl extends HttpServer {
     }
 
     @Override
-    public void handleDefault(Request request, one.nio.http.HttpSession session) throws IOException {
+    public void handleDefault(Request request, HttpSession session) throws IOException {
         session.sendResponse(RESPONSE_BAD_REQUEST);
     }
 }

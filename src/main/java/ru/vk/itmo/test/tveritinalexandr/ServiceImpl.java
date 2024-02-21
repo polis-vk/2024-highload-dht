@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.tveritinalexandr;
 
-import one.nio.http.*;
+import one.nio.http.HttpServerConfig;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
@@ -64,7 +64,7 @@ public class ServiceImpl implements Service {
             try {
                 return new ServiceImpl(config);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                throw new UncheckedIOException(e);
             }
         }
     }

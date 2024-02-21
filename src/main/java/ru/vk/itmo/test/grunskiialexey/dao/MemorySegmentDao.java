@@ -211,6 +211,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         } catch (InterruptedException e) {
             InterruptedIOException exception = new InterruptedIOException("Interrupted or timed out");
             exception.initCause(e);
+            Thread.currentThread().interrupt();
             throw exception;
         }
     }

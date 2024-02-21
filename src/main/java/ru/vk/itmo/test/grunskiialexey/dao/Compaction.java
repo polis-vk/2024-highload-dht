@@ -23,7 +23,7 @@ import java.util.stream.Stream;
 import static ru.vk.itmo.test.grunskiialexey.dao.DiskStorage.NAME_INDEX_FILE;
 import static ru.vk.itmo.test.grunskiialexey.dao.DiskStorage.NAME_TMP_INDEX_FILE;
 
-public class Compaction {
+public final class Compaction {
     private Compaction() {
     }
 

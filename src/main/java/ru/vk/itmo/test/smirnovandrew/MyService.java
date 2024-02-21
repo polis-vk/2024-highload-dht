@@ -1,12 +1,12 @@
 package ru.vk.itmo.test.smirnovandrew;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
-
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
+
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
 

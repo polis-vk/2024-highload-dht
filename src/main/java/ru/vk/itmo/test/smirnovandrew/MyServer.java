@@ -1,19 +1,5 @@
 package ru.vk.itmo.test.smirnovandrew;
 
-//import one.nio.http.HttpServer;
-
-//import com.sun.net.httpserver.HttpServer;
-
-import java.io.IOException;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentSkipListSet;
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -26,6 +12,15 @@ import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
+
+import java.io.IOException;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 public class MyServer extends HttpServer {
 
@@ -120,7 +115,8 @@ public class MyServer extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         session.sendResponse(
-                METHOD_SET.contains(request.getMethod()) ?
+                METHOD_SET.contains(request.getMethod())
+                        ?
                         new Response(Response.BAD_REQUEST, Response.EMPTY) :
                         new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY)
                 );

@@ -51,5 +51,19 @@ function request()
     return wrk.format("PUT", path, headers, body)
 end
 ```
+### Testing
+Для начала нужно заполнить dao на несколько мегобайт с помощью последовательного
+вызова `PUT`, поэтому начнем тестирование с него
 
 
+### Тест PUT
+```agsl
+./wrk -d 240 -t 1 -c 1 -R 3000 -L -s /Users/sandrew2003/IdeaProjects/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/smirnovandrew/lua/put.lua http://localhost:8080
+```
+результат:
+
+
+### Тест GET
+```agsl
+./wrk -d 240 -t 1 -c 1 -R 3000 -L -s /Users/sandrew2003/IdeaProjects/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/smirnovandrew/lua/get.lua http://localhost:8080
+```

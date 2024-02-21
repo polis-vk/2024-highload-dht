@@ -1,16 +1,16 @@
 package ru.vk.itmo.test.smirnovandrew;
 
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.List;
-
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+
 public final class Main {
     public static void main(String[] args) throws IOException {
-        Path data = Path.of("./data1/");
+        Path data = Path.of("/Users/sandrew2003/IdeaProjects/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/smirnovandrew/data/");
         ReferenceDao dao = new ReferenceDao(
                 new Config(
                         data,

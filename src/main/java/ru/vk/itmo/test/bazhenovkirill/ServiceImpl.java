@@ -5,7 +5,6 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.ServiceFactory;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {

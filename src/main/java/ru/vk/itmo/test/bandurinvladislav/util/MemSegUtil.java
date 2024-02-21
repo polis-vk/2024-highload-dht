@@ -6,7 +6,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-public class MemSegUtil {
+public final class MemSegUtil {
     private MemSegUtil() {
         throw new UnsupportedOperationException();
     }

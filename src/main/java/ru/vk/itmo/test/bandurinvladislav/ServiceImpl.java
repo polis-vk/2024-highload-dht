@@ -28,7 +28,8 @@ public class ServiceImpl implements Service {
             throw new UncheckedIOException(e);
         }
         server.start();
-        return CompletableFuture.completedFuture(null);    }
+        return CompletableFuture.completedFuture(null);
+    }
 
     @Override
     public CompletableFuture<Void> stop() {

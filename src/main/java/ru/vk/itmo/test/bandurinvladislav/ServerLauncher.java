@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class ServerLauncher {
+public final class ServerLauncher {
 
     private ServerLauncher() {
     }

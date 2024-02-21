@@ -18,4 +18,9 @@ public class Main {
         ));
         server.start();
     }
+
+    private Main()
+    {
+
+    }
 }

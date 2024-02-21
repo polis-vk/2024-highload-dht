@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class Server {
+public final class Server {
 
     private Server(){
 

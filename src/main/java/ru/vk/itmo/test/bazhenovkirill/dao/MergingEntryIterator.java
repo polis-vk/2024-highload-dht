@@ -5,9 +5,9 @@ import ru.vk.itmo.dao.Entry;
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.NoSuchElementException;
 
 /**
  * Merges entry {@link Iterator}s.

@@ -10,7 +10,7 @@ import java.util.List;
 
 public final class Main {
     public static void main(String[] args) throws IOException {
-        Path data = Path.of("/data/");
+        Path data = Path.of("/Users/sandrew2003/IdeaProjects/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/smirnovandrew/data/");
         ReferenceDao dao = new ReferenceDao(
                 new Config(
                         data,
@@ -29,5 +29,7 @@ public final class Main {
         server.start();
     }
 
-    private Main() {}
+    private Main() {
+
+    }
 }

@@ -104,9 +104,7 @@ public class PersistentStorage {
         List<Iterator<Entry<MemorySegment>>> iteratorsToCompact = new ArrayList<>();
         for (var sstable : tablesToCompact) {
             if (sstable.closed.get()) continue;
-            if (sstable.inCompaction.compareAndSet(false, true)) {
-                iteratorsToCompact.add(sstable.scan(null, null));
-            }
+            iteratorsToCompact.add(sstable.scan(null, null));
         }
         return iteratorsToCompact;
     }

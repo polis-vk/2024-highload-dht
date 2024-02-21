@@ -73,14 +73,14 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         this.basePath = basePath;
         this.persistentStorage = new PersistentStorage(this.basePath);
         this.memStorageLimit = memStorageLimit;
-        this.executor = Executors.newFixedThreadPool(16);
+        this.executor = Executors.newFixedThreadPool(2);
     }
 
     public InMemDaoImpl() {
         this.basePath = Paths.get("./");
         this.persistentStorage = new PersistentStorage(this.basePath);
         this.memStorageLimit = Runtime.getRuntime().freeMemory();
-        this.executor = Executors.newFixedThreadPool(8);
+        this.executor = Executors.newFixedThreadPool(2);
     }
 
     @Override

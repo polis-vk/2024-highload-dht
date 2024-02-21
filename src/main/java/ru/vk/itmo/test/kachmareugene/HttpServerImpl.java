@@ -29,7 +29,7 @@ public class HttpServerImpl extends HttpServer {
     private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
     Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
     private final ServiceConfig serviceConfig;
-    private final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private static final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
 
     public HttpServerImpl(ServiceConfig conf) throws IOException {
         super(convertToHttpConfig(conf));
@@ -125,13 +125,13 @@ public class HttpServerImpl extends HttpServer {
         int method = request.getMethod();
         Response response;
 
-        if (!(method == Request.METHOD_PUT
+        if (method == Request.METHOD_PUT
                 || method == Request.METHOD_DELETE
-                || method == Request.METHOD_GET)) {
+                || method == Request.METHOD_GET) {
 
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        } else {
             response = BAD;
+        } else {
+            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
         session.sendResponse(response);
     }

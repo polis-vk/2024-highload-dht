@@ -6,10 +6,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class ServerActivator {
+public final class ServerActivator {
     private ServerActivator() {
 
     }
+
     public static void main(String[] args) throws IOException {
 
         HttpServerImpl server = new HttpServerImpl(new ServiceConfig(

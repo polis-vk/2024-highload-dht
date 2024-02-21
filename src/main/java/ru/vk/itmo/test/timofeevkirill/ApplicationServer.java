@@ -25,4 +25,6 @@ public class ApplicationServer {
         );
         server.start();
     }
+
+    private ApplicationServer() {}
 }

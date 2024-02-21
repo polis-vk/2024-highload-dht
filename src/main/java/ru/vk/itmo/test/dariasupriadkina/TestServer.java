@@ -10,6 +10,9 @@ import java.util.List;
 
 public final class TestServer {
 
+    private TestServer() {
+    }
+
     public static void main(String[] args) throws IOException {
         String url = "http://localhost";
         ServiceConfig serviceConfig = new ServiceConfig(

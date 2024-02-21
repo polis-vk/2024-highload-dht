@@ -7,7 +7,9 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -16,11 +18,13 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
+import ru.vk.itmo.test.viktorkorotkikh.http.LSMConstantResponse;
+import ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession;
+import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 import static one.nio.http.Request.METHOD_DELETE;
@@ -89,26 +93,27 @@ public class LSMServerImpl extends HttpServer {
             return;
         }
 
-        switch (request.getMethod()) {
-            case METHOD_GET -> session.sendResponse(handleGetEntity(id));
-            case METHOD_PUT -> session.sendResponse(handlePutEntity(id, request));
-            case METHOD_DELETE -> session.sendResponse(handleDeleteEntity(id));
-            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-        }
+        Response response = switch (request.getMethod()) {
+            case METHOD_GET -> handleGetEntity(request, id);
+            case METHOD_PUT -> handlePutEntity(request, id);
+            case METHOD_DELETE -> handleDeleteEntity(request, id);
+            default -> LSMConstantResponse.methodNotAllowed(request);
+        };
+        session.sendResponse(response);
     }
 
-    private Response handleGetEntity(final String id) {
-        Entry<MemorySegment> entry = dao.get(fromString(id));
+    private Response handleGetEntity(final Request request, final String id) {
+        final Entry<MemorySegment> entry = dao.get(fromString(id));
         if (entry == null || entry.value() == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+            return LSMConstantResponse.notFound(request);
         }
 
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+        return new LSMServerResponseWithMemorySegment(Response.OK, entry.value());
     }
 
-    private Response handlePutEntity(final String id, Request request) {
+    private Response handlePutEntity(final Request request, final String id) {
         if (request.getBody() == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return LSMConstantResponse.badRequest(request);
         }
 
         Entry<MemorySegment> newEntry = new BaseEntry<>(
@@ -117,24 +122,24 @@ public class LSMServerImpl extends HttpServer {
         );
         dao.upsert(newEntry);
 
-        return new Response(Response.CREATED, Response.EMPTY);
+        return LSMConstantResponse.created(request);
     }
 
-    private Response handleDeleteEntity(final String id) {
-        Entry<MemorySegment> newEntry = new BaseEntry<>(
+    private Response handleDeleteEntity(final Request request, final String id) {
+        final Entry<MemorySegment> newEntry = new BaseEntry<>(
                 fromString(id),
                 null
         );
         dao.upsert(newEntry);
 
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+        return LSMConstantResponse.accepted(request);
     }
 
     @Path("/v0/compact")
     @RequestMethod(value = {METHOD_GET})
-    public Response handleCompact() throws IOException {
+    public Response handleCompact(Request request) throws IOException {
         dao.compact();
-        return new Response(Response.OK, Response.EMPTY);
+        return LSMConstantResponse.ok(request);
     }
 
     private static MemorySegment fromString(String data) {
@@ -144,5 +149,10 @@ public class LSMServerImpl extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new LSMCustomSession(socket, this);
     }
 }

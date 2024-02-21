@@ -19,6 +19,9 @@ RPS из-за долгой генерации тела запроса. То ес
     * [Latency](#latency-3)
     * [CPU profiling](#cpu-profiling-3)
     * [Memory allocations](#memory-allocations-3)
+- [Оптимизация аллокаций](#оптимизация-аллокаций)
+  * [Put](#put-1)
+  * [Get](#get)
 
 ## PUT
 
@@ -238,3 +241,88 @@ GET запросы отправлялись на прогретой jvm посл
 ![GET-after-compact-alloc-general.png](GET-after-compact-alloc-general.png)
 
 C точки зрения аллокаций в целом ситуация осталась такой же.
+
+## Оптимизация аллокаций
+
+### Put
+
+[Старые показатели](#latency)
+
+[PUT-60000-60s-less-allocations.txt](PUT-60000-60s-less-allocations.txt)
+```
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   570.71us  323.63us   2.92ms   58.34%
+    Req/Sec    63.08k     3.64k   77.89k    68.56%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%  571.00us
+ 75.000%  848.00us
+ 90.000%    1.01ms
+ 99.000%    1.11ms
+ 99.900%    1.42ms
+ 99.990%    2.08ms
+ 99.999%    2.79ms
+100.000%    2.92ms
+```
+![PUT-60000-60s-less-alloc-histogram.png](PUT-60000-60s-less-alloc-histogram.png)
+
+Показатели улучшились. Возможно, это связано с рефакторингом кода (статические методы, final переменные), который 
+позволил компилятору выполнить дополнительные оптимизации в коде.
+
+В целом график остался прежним: до 99-го и после 99.999-го перцентилей есть плато. Вероятнее всего часть ресурсов было отнято jit
+компиляцией, после которой запросы стали обрабатываться быстрее.
+
+![PUT-less-alloc-cpu.png](PUT-less-alloc-cpu.png)
+
+С точки зрения затрат по cpu изменений практически нет.
+
+![PUT-less-alloc-alloc.png](PUT-less-alloc-alloc.png)
+
+Аллокации требуемые для парсинга запроса библиотекой one-nio не изменились, а вот при обработке запроса их стало меньше:
+
+**Старая реализация:**
+![PUT-alloc-handle](PUT-alloc-handle.png)
+
+**Новая реализация:**
+![PUT-less-alloc-alloc-handle.png](PUT-less-alloc-alloc-handle.png)
+
+Как можно увидеть - аллокаций Response больше нет.
+
+### Get
+
+[GET-30000-60s-less-allocations.txt](GET-30000-60s-less-allocations.txt)
+```
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   641.45us  380.09us   4.45ms   64.97%
+    Req/Sec    31.60k     2.24k   38.90k    66.83%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%  633.00us
+ 75.000%    0.92ms
+ 90.000%    1.09ms
+ 99.000%    1.70ms
+ 99.900%    1.95ms
+ 99.990%    4.03ms
+ 99.999%    4.42ms
+100.000%    4.45ms
+```
+
+В целом график остался прежним:
+
+![GET-30000-60s-less-allocations-histrogram.png](GET-30000-60s-less-allocations-histrogram.png)
+
+С точки зрения потребления cpu ничего не поменялось:
+
+![GET-less-alloc-cpu.png](GET-less-alloc-cpu.png)
+
+Аллокации требуемые для парсинга запроса библиотекой one-nio не изменились, а вот при обработке запроса их стало меньше -
+исчезли копирования значения Entry из MemorySegment в byte[]:
+
+![GET-less-alloc-alloc.png](GET-less-alloc-alloc.png)
+
+**Старая реализация:**
+
+![GET-alloc-handle](GET-alloc-handle.png)
+
+**Новая реализация:**
+
+![PUT-less-alloc-alloc-handle.png](PUT-less-alloc-alloc-handle.png)
+

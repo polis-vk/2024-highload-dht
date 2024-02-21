@@ -1,17 +1,22 @@
 package ru.vk.itmo.test.grunskiialexey;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.grunskiialexey.dao.MemorySegmentConverter;
 import ru.vk.itmo.test.grunskiialexey.dao.MemorySegmentDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
 
@@ -58,7 +63,7 @@ public class DaoServer extends HttpServer {
             session.sendError(Response.BAD_REQUEST, "Incorrect value of 'id' parameter");
             return;
         }
-        final MemorySegment key = MemorySegmentConverter.fromString(id.substring(1));
+        final MemorySegment key = MemorySegment.ofArray(id.substring(1).getBytes(StandardCharsets.UTF_8));
         switch (methodName) {
             case "GET" -> {
                 final Entry<MemorySegment> entry = dao.get(key);

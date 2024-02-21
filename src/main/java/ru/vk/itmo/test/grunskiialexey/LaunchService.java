@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class LaunchService implements Service {
     private final DaoServer server;
-    private boolean isStarted = false;
+    private boolean isStarted;
 
     public LaunchService(ServiceConfig config) {
         try {

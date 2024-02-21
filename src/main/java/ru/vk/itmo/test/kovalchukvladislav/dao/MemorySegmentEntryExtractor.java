@@ -1,11 +1,12 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao;
 
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.kovalchukvladislav.dao.model.EntryExtractor;
+
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+
 
 public final class MemorySegmentEntryExtractor implements EntryExtractor<MemorySegment, Entry<MemorySegment>> {
     public static final MemorySegmentEntryExtractor INSTANCE = new MemorySegmentEntryExtractor();

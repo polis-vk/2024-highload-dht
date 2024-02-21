@@ -1,5 +1,9 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao.storage;
 
+import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.EntryExtractor;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.TableInfo;
+
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -13,10 +17,6 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.EntryExtractor;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.TableInfo;
 
 public final class StorageUtility {
     private static final OpenOption[] WRITE_OPTIONS = new OpenOption[] {

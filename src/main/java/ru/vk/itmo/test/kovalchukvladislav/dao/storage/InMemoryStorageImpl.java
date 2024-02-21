@@ -1,5 +1,11 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao.storage;
 
+import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.EntryExtractor;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.MemoryOverflowException;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.SimpleDaoLoggerUtility;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.TableInfo;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,12 +20,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Logger;
-
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.EntryExtractor;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.MemoryOverflowException;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.SimpleDaoLoggerUtility;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.TableInfo;
 
 public class InMemoryStorageImpl<D, E extends Entry<D>> implements InMemoryStorage<D, E> {
     private static final StandardCopyOption[] MOVE_OPTIONS = new StandardCopyOption[]{

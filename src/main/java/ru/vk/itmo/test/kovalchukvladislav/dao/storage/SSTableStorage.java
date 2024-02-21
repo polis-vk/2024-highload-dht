@@ -1,10 +1,11 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao.storage;
 
+import ru.vk.itmo.dao.Entry;
+
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 
-import ru.vk.itmo.dao.Entry;
 
 public interface SSTableStorage<D, E extends Entry<D>> {
     /**

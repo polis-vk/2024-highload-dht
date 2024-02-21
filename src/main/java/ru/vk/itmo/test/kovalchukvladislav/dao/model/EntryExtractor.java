@@ -1,9 +1,9 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao.model;
 
+import ru.vk.itmo.dao.Entry;
+
 import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
-
-import ru.vk.itmo.dao.Entry;
 
 public interface EntryExtractor<D, E extends Entry<D>> extends Comparator<D> {
     D readValue(MemorySegment memorySegment, long offset);

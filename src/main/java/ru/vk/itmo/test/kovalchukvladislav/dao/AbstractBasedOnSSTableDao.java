@@ -1,5 +1,16 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao;
 
+import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.DaoIterator;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.EntryExtractor;
+import ru.vk.itmo.test.kovalchukvladislav.dao.model.SimpleDaoLoggerUtility;
+import ru.vk.itmo.test.kovalchukvladislav.dao.storage.InMemoryStorage;
+import ru.vk.itmo.test.kovalchukvladislav.dao.storage.InMemoryStorageImpl;
+import ru.vk.itmo.test.kovalchukvladislav.dao.storage.SSTableStorage;
+import ru.vk.itmo.test.kovalchukvladislav.dao.storage.SSTableStorageImpl;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -12,17 +23,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
-
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.DaoIterator;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.EntryExtractor;
-import ru.vk.itmo.test.kovalchukvladislav.dao.model.SimpleDaoLoggerUtility;
-import ru.vk.itmo.test.kovalchukvladislav.dao.storage.InMemoryStorage;
-import ru.vk.itmo.test.kovalchukvladislav.dao.storage.InMemoryStorageImpl;
-import ru.vk.itmo.test.kovalchukvladislav.dao.storage.SSTableStorage;
-import ru.vk.itmo.test.kovalchukvladislav.dao.storage.SSTableStorageImpl;
 
 public abstract class AbstractBasedOnSSTableDao<D, E extends Entry<D>> implements Dao<D, E> {
     private final Logger logger = SimpleDaoLoggerUtility.createLogger(getClass());

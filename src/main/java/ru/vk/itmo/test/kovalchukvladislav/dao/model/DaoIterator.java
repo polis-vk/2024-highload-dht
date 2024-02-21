@@ -1,11 +1,12 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao.model;
 
+import ru.vk.itmo.dao.Entry;
+
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.PriorityQueue;
 
-import ru.vk.itmo.dao.Entry;
 
 public class DaoIterator<D, E extends Entry<D>> implements Iterator<E> {
     private final List<Iterator<E>> iterators;

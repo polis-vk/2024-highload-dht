@@ -25,6 +25,9 @@ public final class MainApplication {
         }
     }
 
+    private MainApplication() {
+    }
+
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         Service service = new ServiceImpl(SERVICE_CONF);
         service.start().get();

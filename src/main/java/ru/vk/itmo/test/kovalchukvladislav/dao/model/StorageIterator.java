@@ -1,11 +1,12 @@
 package ru.vk.itmo.test.kovalchukvladislav.dao.model;
 
+import ru.vk.itmo.dao.Entry;
+
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import ru.vk.itmo.dao.Entry;
 
 public class StorageIterator<D, E extends Entry<D>> implements Iterator<E> {
     private final EntryExtractor<D, E> extractor;

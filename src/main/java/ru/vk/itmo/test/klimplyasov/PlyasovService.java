@@ -16,7 +16,7 @@ public class PlyasovService implements Service {
     private ReferenceDao dao;
     private final ServiceConfig config;
 
-    public PlyasovService(ServiceConfig config){
+    public PlyasovService(ServiceConfig config) {
         this.config = config;
     }
 

@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.klimplyasov;
 
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -24,12 +23,13 @@ import java.util.Set;
 public class PlyasovServer extends HttpServer {
 
     private final ReferenceDao dao;
+
     public PlyasovServer(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(createConfig(config));
         this.dao = dao;
     }
 
-    public static HttpServerConfig createConfig(ServiceConfig serviceConfig){
+    public static HttpServerConfig createConfig(ServiceConfig serviceConfig) {
         HttpServerConfig serverConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
@@ -89,9 +89,8 @@ public class PlyasovServer extends HttpServer {
         session.sendResponse(response);
     }
 
-
     @Path("/v0/status")
-    public Response status(){
+    public Response status() {
         return Response.ok("OK");
     }
 }

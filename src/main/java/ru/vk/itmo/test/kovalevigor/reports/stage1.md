@@ -58,7 +58,9 @@ Macbook Pro M1 16GB после перезапуска
 Если посмотреть на [аллокации](html/put_request_alloc.html),
 то наше DAO почти ничего не аллоцирует, все уходит на сервер
 
-На [cpu](html/put_request_cpu.html), к сожалению, не видно какой процент уходит на flush.
+На [cpu](html/put_request_cpu.html), т.к. мы вынесли flush в отдельный поток (самая левая гора),
+то он незаметно, что он как либо блокирует, сохранение наших записей.
+
 Однако, можно заметить, что 30% от времени отправки ответа занимает помещенеие entity в мапу
 
 Судя по ширине колонки приходится достаточно долго ждать, несмотря на то,
@@ -136,3 +138,64 @@ Macbook Pro M1 16GB после перезапуска
 DAO - кринж, бинарный поиск - кринж.
 
 B+-tree - круто, блюм-фитр - респект
+
+
+### Попробовал убрать весь генерируемый код
+
+```
+@Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (request.getPath().startsWith(ENTITY)) {
+            switch (request.getMethod()) {
+                case METHOD_GET:
+                case METHOD_PUT:
+                case METHOD_DELETE:
+                    String entityId = request.getParameter("id");
+                    if (entityId == null || entityId.isEmpty()) {
+                        break;
+                    }
+                    MemorySegment key = fromString(entityId);
+                    session.sendResponse(
+                            switch (request.getMethod()) {
+                                case METHOD_GET -> getEntity(key);
+                                case METHOD_PUT -> createEntity(key, MemorySegment.ofArray(request.getBody()));
+                                case METHOD_DELETE -> deleteEntity(key);
+                                default -> throw new IllegalStateException("Can't be");
+                            }
+                    );
+                    return;
+                default:
+                    session.sendResponse(Responses.NOT_ALLOWED.toResponse());
+                    return;
+            }
+        }
+        session.sendResponse(Responses.BAD_REQUEST.toResponse());
+    }
+
+    public Response getEntity(MemorySegment key) {
+        Entry<MemorySegment> entity = dao.get(key);
+        if (entity == null) {
+            return Responses.NOT_FOUND.toResponse();
+        }
+        return Response.ok(entity.value().toArray(ValueLayout.JAVA_BYTE));
+    }
+
+    public Response createEntity(MemorySegment key, MemorySegment value) {
+        dao.upsert(makeEntry(key, value));
+        return Responses.CREATED.toResponse();
+    }
+
+    public Response deleteEntity(MemorySegment key) {
+        dao.upsert(makeEntry(key, null));
+        return Responses.ACCEPTED.toResponse();
+    }
+```
+
+За исключением того, что при первом `PUT`-запросе немного не дождался оптимизатора,
+каких-то существенных различий замечено не было
+
+Хотя при этом время ответа значительно увеличилось. Возможно, комп уже загадился, либо я что-то не понял
+
+PUT: [wrk](html/put_without_gen_wrk.txt), [alloc](html/put_without_gen_alloc.html), [cpu](html/put_without_gen_cpu.html)
+GET: [wrk](html/Fget_without_gen_wrk.txt), [alloc](html%2Fget_without_gen_alloc.html), [cpu](html%2Fget_without_gen_cpu.html)
+

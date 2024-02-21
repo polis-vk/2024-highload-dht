@@ -10,6 +10,10 @@ import java.util.List;
 
 public class Server {
 
+    private Server() {
+        //:)
+    }
+
     public static void main(String[] args) throws IOException {
         ServiceConfig serviceConfig = new ServiceConfig(
                 8080,

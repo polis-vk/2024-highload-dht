@@ -7,17 +7,17 @@ function build_query_param(param, value)
 end
 
 function getOneRandom()
-    return wrk.format("GET", base_url..build_query_param("id", math.random(0, 10000)), headers)
+    return wrk.format("GET", base_url..build_query_param("id", math.random(0, 100000)), headers)
 end
 
 
 function putOneRandom()
-    return wrk.format("PUT", base_url..build_query_param("id", math.random(0, 10000)), headers, math.random(0, 10000))
+    return wrk.format("PUT", base_url..build_query_param("id", math.random(0, 100000)), headers, math.random(0, 10000))
 end
 
 
 function deleteOneRandom()
-    return wrk.format("DELETE", base_url..build_query_param("id", math.random(0, 10000)), headers)
+    return wrk.format("DELETE", base_url..build_query_param("id", math.random(0, 100000)), headers)
 end
 
 

@@ -1,11 +1,11 @@
 package ru.vk.itmo.test.kovalchukvladislav;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
-
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.kovalchukvladislav.server.DaoHttpRequestHandler;
+
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
     private final ServiceConfig serviceConfig;
@@ -23,7 +23,7 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public CompletableFuture<Void> stop() {
         this.daoHttpRequestHandler.stop();
         return CompletableFuture.completedFuture(null);
     }

@@ -1,10 +1,5 @@
 package ru.vk.itmo.test.kovalchukvladislav.server;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -20,6 +15,11 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.kovalchukvladislav.dao.MemorySegmentDaoFactory;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 public class DaoHttpRequestHandler extends HttpServer {
     public static final int FLUSH_THRESHOLD = 1024;

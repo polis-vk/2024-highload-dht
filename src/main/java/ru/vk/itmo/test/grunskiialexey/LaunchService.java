@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class LaunchService implements Service {
     private final DaoServer server;
+    private boolean isStarted = false;
 
     public LaunchService(ServiceConfig config) {
         try {
@@ -24,13 +25,17 @@ public class LaunchService implements Service {
      */
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        server.start();
+        server.loadDao();
+        if (!isStarted) {
+            server.start();
+            isStarted = true;
+        }
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        server.stop();
+        server.closeDao();
         return CompletableFuture.completedFuture(null);
     }
 

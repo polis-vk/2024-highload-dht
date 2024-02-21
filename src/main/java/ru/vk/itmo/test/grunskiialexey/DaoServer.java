@@ -1,11 +1,6 @@
 package ru.vk.itmo.test.grunskiialexey;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -16,16 +11,18 @@ import ru.vk.itmo.test.grunskiialexey.dao.MemorySegmentDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.file.Files;
 import java.util.List;
 
 public class DaoServer extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 1028;
-    private final MemorySegmentDao dao;
+    private final ServiceConfig config;
+    private MemorySegmentDao dao;
 
     public DaoServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
-        this.dao = createDao(config);
+        this.config = config;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -35,6 +32,7 @@ public class DaoServer extends HttpServer {
         acceptorConfig.reusePort = true;
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        serverConfig.selectors = 1;
         serverConfig.closeSessions = true;
         return serverConfig;
     }
@@ -45,7 +43,7 @@ public class DaoServer extends HttpServer {
 
     public static void main(String[] args) throws IOException {
         DaoServer server = new DaoServer(new ServiceConfig(
-                8080, "http://localhost",
+                8081, "http://localhost",
                 List.of("http://localhost"),
                 Files.createTempDirectory(".")
         ));
@@ -55,24 +53,23 @@ public class DaoServer extends HttpServer {
     @Path("/v0/entity")
     public void handleQueries(Request request, HttpSession session) throws IOException {
         final String methodName = request.getMethodName();
-        final MemorySegment key = MemorySegmentConverter.fromString(request.getParameter("id"));
-        if (key == null) {
-            session.sendResponse(new Response(Response.BAD_REQUEST));
+        String id = request.getParameter("id");
+        if (id == null || id.isBlank() || id.trim().equals("=")) {
+            session.sendError(Response.BAD_REQUEST, "Incorrect value of 'id' parameter");
             return;
         }
+        final MemorySegment key = MemorySegmentConverter.fromString(id.substring(1));
         switch (methodName) {
             case "GET" -> {
                 final Entry<MemorySegment> entry = dao.get(key);
                 if (entry == null || entry.value() == null) {
-                    handleDefault(request, session);
+                    session.sendError(Response.NOT_FOUND, "Not found value associate with key" + id);
                     return;
                 }
 
-                session.sendResponse(Response.ok(
-                        MemorySegmentConverter.toString(entry.value())
-                ));
+                session.sendResponse(Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE)));
             }
-            case "POST" -> {
+            case "PUT" -> {
                 final Entry<MemorySegment> entry = new BaseEntry<>(key, MemorySegment.ofArray(request.getBody()));
                 dao.upsert(entry);
 
@@ -84,6 +81,21 @@ public class DaoServer extends HttpServer {
 
                 session.sendResponse(new Response(Response.ACCEPTED));
             }
+            default -> session.sendError(Response.METHOD_NOT_ALLOWED, "Not allowed method");
         }
+        session.close();
+    }
+
+    @Override
+    public void handleDefault(Request request, HttpSession session) throws IOException {
+        session.sendError(Response.BAD_REQUEST, "This path is unavailable");
+    }
+
+    public void loadDao() throws IOException {
+        dao = createDao(config);
+    }
+
+    public void closeDao() throws IOException {
+        dao.close();
     }
 }

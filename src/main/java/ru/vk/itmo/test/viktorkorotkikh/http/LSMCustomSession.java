@@ -30,7 +30,10 @@ public class LSMCustomSession extends HttpSession {
         writeResponse(response, handling.getMethod() != Request.METHOD_HEAD);
         if (!keepAlive) scheduleClose();
 
-        if ((this.handling = handling = pipeline.pollFirst()) != null) {
+        this.handling = pipeline.pollFirst();
+        handling = this.handling;
+
+        if (handling != null) {
             if (handling == FIN) {
                 scheduleClose();
             } else {

@@ -9,6 +9,7 @@ import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.tveritinalexandr.dao.DaoImpl;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
@@ -17,10 +18,6 @@ public class ServiceImpl implements Service {
 
     public ServiceImpl(ServiceConfig serviceConfig) throws IOException {
         this.serviceConfig = serviceConfig;
-//        this.httpServer = new ServerImpl(
-//                adaptConfig(serviceConfig),
-//                new DaoImpl(new Config(serviceConfig.workingDir(), 1024))
-//        );
     }
 
     private static HttpServerConfig adaptConfig(ServiceConfig serviceConfig) {
@@ -36,12 +33,12 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
-        httpServer = new ServerImpl(
-                adaptConfig(serviceConfig),
-                new DaoImpl(new Config(serviceConfig.workingDir(), 1024))
-        );
-//        httpServer.setDao(new DaoImpl(new Config(serviceConfig.workingDir(), 1024)));
+    public CompletableFuture<Void> start() {
+        try {
+            httpServer = createServerInstance();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         httpServer.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -50,6 +47,13 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> stop() {
         httpServer.stop();
         return CompletableFuture.completedFuture(null);
+    }
+
+    private ServerImpl createServerInstance() throws IOException {
+        return new ServerImpl(
+                adaptConfig(serviceConfig),
+                new DaoImpl(new Config(serviceConfig.workingDir(), 1024))
+        );
     }
 
     @ServiceFactory(stage = 1)

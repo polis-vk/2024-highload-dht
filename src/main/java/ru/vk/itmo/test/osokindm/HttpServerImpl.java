@@ -22,7 +22,6 @@ import java.lang.foreign.ValueLayout;
 public class HttpServerImpl extends HttpServer {
 
     private static final int MEMORY_LIMIT = 8388608;
-//    private static final int MEMORY_LIMIT = 1024;
     private static final String PATH = "/v0/entity";
     private static final String ID_REQUEST = "id=";
     private DaoWrapper daoWrapper;

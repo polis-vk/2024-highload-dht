@@ -28,7 +28,6 @@ end
 function request()
     id = getRandomId()
     path = "/v0/entity?id=" .. id
---     body = getRandomString(10)
-    body = "getRandomString(10)sdgsfgsdklfjgslkdfgj;slkgjf;slfkgjs;ldfgjs;dlfgjsl;fdkgjsldgfgj;kj"
+    body = getRandomString(10)
     return wrk.format("PUT", path, nil, body)
 end

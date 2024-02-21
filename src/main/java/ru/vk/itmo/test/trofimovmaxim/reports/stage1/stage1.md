@@ -1,41 +1,40 @@
 ## PUT
 
 ```
-i111433450:wrk2-arm trofik00777$ ./wrk -c 1 -t 1 -s /Users/trofik00777/Documents/itmo_s6/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/trofimovmaxim/lua/stage1/check_put.lua -d 1m -R 20000 "http://localhost:8080" 
+i111433450:wrk2-arm trofik00777$ ./wrk -c 1 -t 1 -s /Users/trofik00777/Documents/itmo_s6/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/trofimovmaxim/lua/stage1/check_put.lua -d 1m -R 35000 "http://localhost:8080" 
 Running 1m test @ http://localhost:8080
   1 threads and 1 connections
-  Thread calibration: mean lat.: 2.417ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 62.996ms, rate sampling interval: 284ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.51ms    1.17ms  19.20ms   75.72%
-    Req/Sec    16.04k     9.56k   42.33k    69.00%
-  961459 requests in 1.00m, 61.43MB read
-  Socket errors: connect 0, read 0, write 0, timeout 5
-Requests/sec:  16022.38
-Transfer/sec:      1.02MB
+    Latency   341.24ms  156.37ms 635.39ms   59.73%
+    Req/Sec    34.74k     1.56k   41.80k    86.93%
+  2077981 requests in 1.00m, 132.78MB read
+Requests/sec:  32633.09
+Transfer/sec:      2.21MB
 ```
 
-Можем заметить что при `rps=20k` наш сервер обрабатывает лишь `16k` запросов. Будем проводить профилирование на `10k rps`
+Можем заметить что при `rps>35k` наш сервер обрабатывает лишь `32k` запросов. Будем проводить профилирование на `30k rps`
 
 ```
-i111433450:wrk2-arm trofik00777$ ./wrk -c 1 -t 1 -s /Users/trofik00777/Documents/itmo_s6/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/trofimovmaxim/lua/stage1/check_put.lua -d 1m -R 10000 "http://localhost:8080" 
+i111433450:wrk2-arm trofik00777$ ./wrk -c 1 -t 1 -s /Users/trofik00777/Documents/itmo_s6/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/trofimovmaxim/lua/stage1/check_put.lua -d 1m -R 30000 "http://localhost:8080" 
 Running 1m test @ http://localhost:8080
   1 threads and 1 connections
-  Thread calibration: mean lat.: 1.424ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 2.677ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.42ms    2.18ms  50.85ms   98.13%
-    Req/Sec    10.55k     1.62k   40.40k    86.14%
-  599981 requests in 1.00m, 38.34MB read
-Requests/sec:   9999.62
-Transfer/sec:    654.27KB
+    Latency   767.68us    1.47ms  25.52ms   98.47%
+    Req/Sec    31.71k     2.98k   47.00k    79.11%
+  1799966 requests in 1.00m, 115.01MB read
+Requests/sec:  29999.35
+Transfer/sec:      1.92MB
 ```
 
-![](img.png)
+![](img_put_cpu.png)
 
-Замечаем, что 50% времени тратится на select, 20% на чтение запроса, 15% на запись ответа и ~5% на поход в бд
+Замечаем, что 46% времени тратится на select, 5% на чтение запроса, 21% на запись ответа и 16% на поход в бд
 
-![](img_1.png)
+![](img_put_alloc.png)
 
-Замечаем, что 50% аллокаций происходит в handleRequest, тк там происходят конвертации String в MemorySegment, 10% на поход в бд, 15% на парсинг запроса
+Замечаем, что 50% аллокаций происходит в handleRequest, тк там происходят конвертации String в MemorySegment, 17% на парсинг запроса
 
 
 ## GET
@@ -56,32 +55,33 @@ Requests/sec:  36758.78
 Transfer/sec:     22.62MB
 ```
 
-Будем профилировать на 20к rps
+Будем профилировать на 35к rps
 
 ```
-i111433450:wrk2-arm trofik00777$ ./wrk -c 1 -t 1 -s /Users/trofik00777/Documents/itmo_s6/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/trofimovmaxim/lua/stage1/check_get.lua -d 1m -R 20000 "http://localhost:8080" 
+i111433450:wrk2-arm trofik00777$ ./wrk -c 1 -t 1 -s /Users/trofik00777/Documents/itmo_s6/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/trofimovmaxim/lua/stage1/check_get.lua -d 1m -R 35000 "http://localhost:8080" 
 Running 1m test @ http://localhost:8080
   1 threads and 1 connections
-  Thread calibration: mean lat.: 1.776ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.044ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.89ms    9.37ms 143.62ms   98.57%
-    Req/Sec    21.11k     3.30k   42.00k    80.82%
-  1199973 requests in 1.00m, 738.49MB read
-  Non-2xx or 3xx responses: 3
-Requests/sec:  19999.56
-Transfer/sec:     12.31MB
+    Latency   637.86us  433.86us   8.30ms   73.83%
+    Req/Sec    36.95k     2.90k   46.78k    56.26%
+  2099971 requests in 1.00m, 1.26GB read
+  Non-2xx or 3xx responses: 4
+Requests/sec:  34999.22
+Transfer/sec:     21.54MB
 ```
 
-![](img_4.png)
+![](img_hist.png)
 
-![](img_2.png)
+![](img_get_cpu.png)
 
-50% времени тратится на select, 12% на отправку ответа, 23% на поход в бд, 12% на чтение запроса
+46% времени тратится на select, 24% на отправку ответа, 16% на поход в бд, 10% на чтение запроса
 
-![](img_3.png)
+![](img_get_alloc.png)
 
-35% аллокаций происходит при отправке ответа, 39% при обработке запроса (из них <5% на поход в бд)
+34% аллокаций происходит при отправке ответа, 41% при обработке запроса (из них <3% на поход в бд)
 
 ## вывод
 
-Из всего проанализированного можно сделать вывод, что бОльшая часть аллокаций происходит при конвертации строк из запроса в memory segment. Чтобы это соптимизировать можно напрямую с байтами из запроса работать
+Из всего проанализированного можно сделать вывод, что бОльшая часть аллокаций происходит при конвертации строк из запроса в memory segment.
+БОльшая часть cpu тратится на select/read_request/write_response, тут оптимизировать мало что получится, но конечно основное ускорение можно дать с помощью увеличения ресурсов (сделать несколько обрабатывающих машинок) и/или более "тонко подходящими" настройками сервера нашего. А вот 16% cpu которые тратятся на поход в бд потенциально можно немного ускорить подправив реализацию DAO.

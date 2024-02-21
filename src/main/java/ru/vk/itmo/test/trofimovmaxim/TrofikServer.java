@@ -7,9 +7,7 @@ import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -23,7 +21,8 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public class TrofikServer extends HttpServer {
-    private static final long FLUSH_THRESHOLD_BYTES = 10 * 1024 * 1024;
+    private static final long FLUSH_THRESHOLD_BYTES = 42 * 1024 * 1024;
+    private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private ReferenceDao dao;
     private final ServiceConfig config;
 
@@ -45,7 +44,7 @@ public class TrofikServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        session.sendResponse(BAD_RESPONSE);
     }
 
     @Override
@@ -60,17 +59,12 @@ public class TrofikServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        for (SelectorThread selector : selectors) {
-            selector.selector.forEach(Session::close);
-        }
-
+        super.stop();
         try {
             dao.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-
-        super.stop();
     }
 
     private Entry<MemorySegment> entry(String key, byte[] value) {
@@ -85,7 +79,7 @@ public class TrofikServer extends HttpServer {
     public Response v0Entity(Request request,
                              @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return BAD_RESPONSE;
         }
 
         return switch (request.getMethod()) {
@@ -107,7 +101,7 @@ public class TrofikServer extends HttpServer {
 
     public Response entityPut(Request request, String id) {
         if (request.getBody() == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return BAD_RESPONSE;
         }
         dao.upsert(entry(id, request.getBody()));
 

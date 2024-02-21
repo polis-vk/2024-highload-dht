@@ -52,7 +52,7 @@ public class ServiceImpl implements Service {
     private ServerImpl createServerInstance() throws IOException {
         return new ServerImpl(
                 adaptConfig(serviceConfig),
-                new DaoImpl(new Config(serviceConfig.workingDir(), 1024))
+                new DaoImpl(new Config(serviceConfig.workingDir(), 10 * 1024 * 1024))
         );
     }
 

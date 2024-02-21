@@ -29,9 +29,21 @@ public class Server extends HttpServer implements Closeable {
     private static final Charset CHARSET = StandardCharsets.UTF_8;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    private final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
-    private final Response CREATED = new Response(Response.CREATED, Response.EMPTY);
-    private final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
+    private enum Responses {
+        NOT_FOUND(Response.NOT_FOUND),
+        CREATED(Response.CREATED),
+        ACCEPTED(Response.ACCEPTED);
+
+        private final String responseCode;
+
+        Responses(String responseCode) {
+            this.responseCode = responseCode;
+        }
+
+        public Response toResponse() {
+            return emptyResponse(responseCode);
+        }
+    }
 
     public Server(DaoServerConfig config) throws IOException {
         super(config);
@@ -42,7 +54,7 @@ public class Server extends HttpServer implements Closeable {
     public Response getEntity(@Param(value = "id", required = true) String entityId) {
         Entry<MemorySegment> entity = dao.get(fromString(entityId));
         if (entity == null) {
-            return NOT_FOUND;
+            return Responses.NOT_FOUND.toResponse();
         }
         return Response.ok(entity.value().toArray(ValueLayout.JAVA_BYTE));
     }
@@ -56,7 +68,7 @@ public class Server extends HttpServer implements Closeable {
         dao.upsert(
                 makeEntry(fromString(entityId), MemorySegment.ofArray(request.getBody()))
         );
-        return CREATED;
+        return Responses.CREATED.toResponse();
     }
 
     @Path(PREFIX)
@@ -65,7 +77,7 @@ public class Server extends HttpServer implements Closeable {
         dao.upsert(
                 makeEntry(fromString(entityId), null)
         );
-        return ACCEPTED;
+        return Responses.ACCEPTED.toResponse();
     }
 
     @Override
@@ -86,5 +98,9 @@ public class Server extends HttpServer implements Closeable {
 
     private static MemorySegment fromString(final String data) {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(CHARSET));
+    }
+
+    private static Response emptyResponse(String resultCode) {
+        return new Response(resultCode, Response.EMPTY);
     }
 }

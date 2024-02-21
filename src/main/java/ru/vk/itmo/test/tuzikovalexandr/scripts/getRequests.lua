@@ -1,5 +1,5 @@
 function request()
-    id = math.random(100000)
+    id = math.random(1, 100000)
     key = "k" .. id
     path = "/v0/entity?id=" .. key
 

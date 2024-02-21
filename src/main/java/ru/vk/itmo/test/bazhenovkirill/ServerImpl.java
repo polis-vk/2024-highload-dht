@@ -103,7 +103,7 @@ public class ServerImpl extends HttpServer {
         try {
             dao.close();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new IllegalArgumentException(e);
         }
         super.stop();
     }

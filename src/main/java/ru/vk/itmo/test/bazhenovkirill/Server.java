@@ -8,6 +8,10 @@ import java.util.List;
 
 public class Server {
 
+    private Server(){
+
+    }
+
     public static void main(String[] args) throws IOException {
         ServerImpl server = new ServerImpl(new ServiceConfig(
                 8080,

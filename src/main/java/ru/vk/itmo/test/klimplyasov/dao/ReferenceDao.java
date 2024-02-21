@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.reference.dao;
+package ru.vk.itmo.test.klimplyasov.dao;
 
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;

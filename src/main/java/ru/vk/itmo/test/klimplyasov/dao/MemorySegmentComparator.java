@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.reference.dao;
+package ru.vk.itmo.test.klimplyasov.dao;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;

@@ -1,7 +1,9 @@
-## нагрузечное тестирование с wrk2
+## Нагрузочное тестирование с wrk2
 
 ### PUT
-С использованием виртуальной машины была выявленна точка разладки для PUT запроса:
+С использованием виртуальной машины была выявленна точка разладки при 10000 RPS для PUT запроса:
+
+### 10000 RPS
 
 wrk -d 30 -c 1 -t 1 -R 10000 -L -s /home/ravenhub/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/volkovnikita/lua/stage1/put.lua http://127.0.0.1:8080
 Running 30s test @ http://127.0.0.1:8080
@@ -75,7 +77,7 @@ Transfer/sec:    546.77KB
 
 Проанализируем работу про 6000 и 7000 RPS:
 
-### 6000
+### 6000 RPS
 
 wrk -d 30 -c 1 -t 1 -R 6000 -L -s /home/ravenhub/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/volkovnikita/lua/stage1/put.lua http://127.0.0.1:8080
 Running 30s test @ http://127.0.0.1:8080
@@ -187,7 +189,15 @@ Value   Percentile   TotalCount 1/(1-Percentile)
 Requests/sec:   5999.66
 Transfer/sec:    392.56KB
 
-### 7000
+![Histogram_put_6000.png](..%2Fdata%2Fstage1%2Fput%2FHistogram_put_6000.png)
+
+[cpu-put](..%2Fdata%2Fstage1%2Fput%2Fprofile-6000-cpu-put.html)
+
+[alloc-put](..%2Fdata%2Fstage1%2Fput%2Fprofile-6000-alloc.html)
+
+
+### 7000 RPS 
+Приведён просто для доп. статистики
 
 wrk -d 30 -c 1 -t 1 -R 7000 -L -s /home/ravenhub/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/volkovnikita/lua/stage1/put.lua http://127.0.0.1:8080
 Running 30s test @ http://127.0.0.1:8080
@@ -303,9 +313,14 @@ Transfer/sec:    456.94KB
 
 ### GET
 Прогнав по значениям в диапазоне от 250 до 10000 RPS получилось найти точку разладки
-в 2300 RPS, стабильно работает при 2000 RPS, связи с профилированием в 
+в 2300 RPS, стабильно работает при 2000 RPS, связи с профилированием в виртуалке, 
+RPS не очень большие. 
 
-### 2300
+Прогонял до 10000 потому что выявил что в Linux-ubuntu при длительном нахождении Idea ultimate
+в пассивном режиме(не открывал среду разработки) любое количество RPS в среднем давало Latency 4s, 
+пока не понял с чем связано
+
+### 2300 RTS
 wrk -d 30 -c 1 -t 1 -R 2300 -L -s /home/ravenhub/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/volkovnikita/lua/stage1/get.lua http://127.0.0.1:8080
 Running 30s test @ http://127.0.0.1:8080
 1 threads and 1 connections
@@ -396,7 +411,7 @@ Requests/sec:   2299.92
 Transfer/sec:    152.28KB
 
 
-### 2000
+### 2000 RTS
 wrk -d 30 -c 1 -t 1 -R 2000 -L -s /home/ravenhub/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/volkovnikita/lua/stage1/get.lua http://127.0.0.1:8080
 Running 30s test @ http://127.0.0.1:8080
 1 threads and 1 connections
@@ -504,4 +519,8 @@ Value   Percentile   TotalCount 1/(1-Percentile)
 Requests/sec:   1999.87
 Transfer/sec:    132.41KB
 
+![Histogram_get_2000.png](..%2Fdata%2Fstage1%2Fget%2FHistogram_get_2000.png)
 
+[get-cpu](..%2Fdata%2Fstage1%2Fget%2Fprofile-2000-get-cpu.html)
+
+[get-alloc](..%2Fdata%2Fstage1%2Fget%2Fprofile-2000-get-alloc.html)

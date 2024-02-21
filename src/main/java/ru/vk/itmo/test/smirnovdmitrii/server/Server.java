@@ -116,11 +116,10 @@ public class Server extends HttpServer {
             case METHOD_GET -> get(id);
             case METHOD_DELETE -> delete(id);
             case METHOD_PUT -> put(id, request);
-            default -> throw new RuntimeException();
+            default -> new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         };
         session.sendResponse(response);
     }
-
 
     public boolean validate(String path, int method, HttpSession session) throws IOException {
         Response response = null;

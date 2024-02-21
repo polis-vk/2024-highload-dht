@@ -7,7 +7,7 @@ import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 
-public class Main {
+public final class Main {
     private Main() {
     }
 

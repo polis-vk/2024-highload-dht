@@ -24,7 +24,7 @@ import java.nio.charset.StandardCharsets;
 
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private static final String entityPath = "/v0/entity";
+    private static final String ENTITY_PATH = "/v0/entity";
     private static final long MEM_DAO_SIZE = 1L << 16;
 
     public Server(ServiceConfig config) throws IOException {
@@ -36,7 +36,7 @@ public class Server extends HttpServer {
         }
     }
 
-    @Path(entityPath)
+    @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getById(
         @Param(value = "id", required = true) final String id
@@ -53,7 +53,7 @@ public class Server extends HttpServer {
         return Response.ok(segmentEntry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(entityPath)
+    @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response putById(
         @Param(value = "id", required = true) final String id,
@@ -69,7 +69,7 @@ public class Server extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(entityPath)
+    @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteById(
         @Param(value = "id", required = true) final String id
@@ -83,7 +83,7 @@ public class Server extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path(entityPath)
+    @Path(ENTITY_PATH)
     public Response notAllowed(
         @Param(value = "id", required = true) final String id
     ) {

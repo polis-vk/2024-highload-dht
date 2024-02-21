@@ -53,11 +53,7 @@ public class HttpServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        try {
-            dao.upsert(new BaseEntry<>(parseToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
-        } catch (IllegalStateException e) {
-            return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
-        }
+        dao.upsert(new BaseEntry<>(parseToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
         return new Response(Response.CREATED, Response.EMPTY);
     }
 

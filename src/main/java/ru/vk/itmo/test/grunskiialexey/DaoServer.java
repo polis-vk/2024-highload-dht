@@ -54,10 +54,14 @@ public class DaoServer extends HttpServer {
 
     @Path("/v0/entity")
     public void handleQueries(Request request, HttpSession session) throws IOException {
-        String methodName = request.getMethodName();
+        final String methodName = request.getMethodName();
+        final MemorySegment key = MemorySegmentConverter.fromString(request.getParameter("id"));
+        if (key == null) {
+            session.sendResponse(new Response(Response.BAD_REQUEST));
+            return;
+        }
         switch (methodName) {
             case "GET" -> {
-                final MemorySegment key = MemorySegmentConverter.fromString(request.getParameter("id"));
                 final Entry<MemorySegment> entry = dao.get(key);
                 if (entry == null || entry.value() == null) {
                     handleDefault(request, session);
@@ -69,19 +73,13 @@ public class DaoServer extends HttpServer {
                 ));
             }
             case "POST" -> {
-                final Entry<MemorySegment> entry = new BaseEntry<>(
-                        MemorySegmentConverter.fromString(request.getParameter("id")),
-                        MemorySegment.ofArray(request.getBody())
-                );
+                final Entry<MemorySegment> entry = new BaseEntry<>(key, MemorySegment.ofArray(request.getBody()));
                 dao.upsert(entry);
 
                 session.sendResponse(new Response(Response.CREATED));
             }
             case "DELETE" -> {
-                final Entry<MemorySegment> entry = new BaseEntry<>(
-                        MemorySegmentConverter.fromString(request.getParameter("id")),
-                        null
-                );
+                final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
                 dao.upsert(entry);
 
                 session.sendResponse(new Response(Response.ACCEPTED));

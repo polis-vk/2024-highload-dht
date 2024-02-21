@@ -42,11 +42,6 @@ public class ServerImpl extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        super.handleRequest(request, session);
-    }
-
-    @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response;
         if (Arrays.asList(METHODS).contains(request.getMethodName())) {

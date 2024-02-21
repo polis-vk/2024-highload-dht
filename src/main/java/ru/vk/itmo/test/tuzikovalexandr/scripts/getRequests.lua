@@ -1,11 +1,10 @@
-id = 0
-function getRequest()
-    id = id + 1
+function request()
+    id = math.random(100000)
     key = "k" .. id
     path = "/v0/entity?id=" .. key
 
-    headers = { }
-    headers["Host"] = "localhost:8080"
+    --headers = { }
+    --headers["Host"] = "localhost:8080"
 
-    return wrk.format("GET", path, headers, nil)
+    return wrk.format("GET", path, body)
 end

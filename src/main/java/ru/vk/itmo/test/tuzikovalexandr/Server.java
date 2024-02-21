@@ -16,7 +16,8 @@ public final class Server {
     }
 
     public static void main(String[] args) throws IOException {
-        Dao dao = new ReferenceDao(new Config(Files.createTempDirectory("data"), 64));
+        int flushThresholdBytes = 2 << 16;
+        Dao dao = new ReferenceDao(new Config(Files.createTempDirectory("data"), flushThresholdBytes));
         ServerImpl server = new ServerImpl(new ServiceConfig(
                 8080, "http://localhost",
                 List.of("http://localhost"),

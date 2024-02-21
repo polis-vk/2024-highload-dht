@@ -10,7 +10,7 @@ import java.util.List;
 
 import static ru.vk.itmo.test.timofeevkirill.Settings.FLUSH_THRESHOLD_BYTES;
 
-public class ApplicationServer {
+final public class ApplicationServer {
 
     public static void main(String[] args) throws IOException {
         Config daoConfig = new Config(Files.createTempDirectory("dao"), FLUSH_THRESHOLD_BYTES);
@@ -26,5 +26,6 @@ public class ApplicationServer {
         server.start();
     }
 
-    private ApplicationServer() {}
+    private ApplicationServer() {
+    }
 }

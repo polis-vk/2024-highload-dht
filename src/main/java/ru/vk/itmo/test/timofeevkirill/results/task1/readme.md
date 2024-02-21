@@ -24,10 +24,20 @@ See cpu flag issue, fixed from v3.0 async-profiler (https://github.com/async-pro
  99.999%    7.07ms
 100.000%    7.46ms
 ```
+По перцентилям аномалий не наблюдается.
+
 ALLOC
-![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p100000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+99.2% NIO Selector:
+put 23% - 370MB. Что вполне ожидаемо для размера сохраняемой строки "meow"*100 ~400мб
+парсинг тела запроса 30% - 400Мб
+довольно много занимает респонз ~13%. В константу засунуть его не вариант, тк wrk начинает сбрасывать соединения, когда сервер отправляет один и тот же объект ответа для всех запросов.
+
 CPU
-![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p100000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+92% NIO selector: уходит на то, чтобы распарсить запрос, найти аццептор, сформировать и отправить ответ
+5% flusher: writeSegment
+< 3% C1 C2 GC
 
 ### 20 thds rps
 ```
@@ -40,10 +50,11 @@ CPU
  99.999%    9.00ms
 100.000%    9.02ms
 ```
+Просто наблюдаем небольшую деградацию.
 ALLOC
-![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p200000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p20000rps.png)
 CPU
-![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p200000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p20000rps.png)
 
 ### 30 thds rps
 ```
@@ -56,10 +67,11 @@ CPU
  99.999%   23.71ms
 100.000%   23.76ms
 ```
+Просто наблюдаем небольшую деградацию.
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p30000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p30000rps.png)
 
 ### 40 thds rps
 ```
@@ -72,12 +84,14 @@ CPU
  99.999%   35.33ms
 100.000%   35.36ms
 ```
+Удивительная точка, тк был скачок по времени, который далее спал. Хотя все тесты проводились в равных условиях. Предполагаю, что это связано с не самым здоровым диском ~80% / существующими тестовыми записями в хранилище, о которые он мог споткнуться.
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p40000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p40000rps.png)
 
 ### 50 thds rps
+Если пропустить 40к, то просто наблюдаем небольшую деградацию.
 ```
  50.000%  629.00us
  75.000%    0.94ms
@@ -89,11 +103,12 @@ CPU
 100.000%   26.43ms
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p50000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p50000rps.png)
 
 ### 70 thds rps
+Просто наблюдаем небольшую деградацию.
 ```
  50.000%  629.00us
  75.000%    0.94ms
@@ -105,11 +120,12 @@ CPU
 100.000%   26.43ms
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p70000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p70000rps.png)
 
 ### 100 thds rps
+Близки к точке разладки
 ```
  50.000%  568.00us
  75.000%  843.00us
@@ -121,9 +137,9 @@ CPU
 100.000%   41.38ms
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p100000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p100000rps.png)
 
 ### 110 thds rps - точка разладки
 ```
@@ -137,11 +153,13 @@ CPU
 100.000%  119.49ms
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p1100000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p110000rps.png)
+Выросло время на flusher. Почти 8% на writeSegment.
 
 ### 120 thds rps
+Тестовая нагрузка за точкой разладки
 ```
  50.000%    4.35s
  75.000%    5.69s
@@ -153,11 +171,12 @@ CPU
 100.000%    6.72s
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p120000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p120000rps.png)
 
 ### 150 thds rps
+Тестовая нагрузка за точкой разладки
 ```
  50.000%   16.43s
  75.000%   22.95s
@@ -169,11 +188,12 @@ CPU
 100.000%   29.47s
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p150000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p150000rps.png)
 
 ### 200 thds rps
+Тестовая нагрузка за точкой разладки
 ```
  50.000%   28.52s
  75.000%   40.30s
@@ -185,11 +205,11 @@ CPU
 100.000%    0.86m
 ```
 ALLOC
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/alloc/png/alloc_p200000rps.png)
 CPU
-![put 10](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p10000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/put/cpu/png/cpu_p200000rps.png)
 
-## GET Research
+## GET Research 5.44Gb
 
 ### 1 thds rps
 ```
@@ -203,10 +223,15 @@ CPU
 100.000%   15.05ms
 ```
 ALLOC
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p1000rps.png)
+Почти 40% на формирования респонза... Мда.
+
 CPU
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p1000rps.png)
+Почти 100% это операция сравнения memorySegment компоратора.
+
 ### 3 thds rps - (2 thds точка разладки)
+Тяжко было найти точку разладки точнее, тк прыжок появился слишком резко. Ожидал, что выдержит большую нагрузку. Вероятно связано с больным диском и неплохо так заполненной бд.
 ```
  50.000%   14.75s
  75.000%   21.38s
@@ -218,11 +243,12 @@ CPU
 100.000%   28.38s
 ```
 ALLOC
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p3000rps.png)
 CPU
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p3000rps.png)
 
 ### 5 thds rps
+Чек 50тыс.
 ```
  50.000%   35.68s
  75.000%   50.50s
@@ -234,9 +260,9 @@ CPU
 100.000%    1.09m
 ```
 ALLOC
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p5000rps.png)
 CPU
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p5000rps.png)
 
 ### 10 thds rps
 ```
@@ -250,15 +276,16 @@ CPU
 100.000%    1.55m
 ```
 ALLOC
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p10000rps.png)
 CPU
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p10000rps.png)
 
 ### 20 thds rps
 
 ### 30 thds rps
 
 ### 50 thds rps
+Проще всего было увидеть потенциальную деградацию.
 ```
  50.000%    1.04m
  75.000%    1.47m
@@ -270,6 +297,8 @@ CPU
 100.000%    1.91m
 ```
 ALLOC
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/alloc/png/alloc_p50000rps.png)
 CPU
-![get 1](https://github.com/NoGe4Ek/2024-highload-dht/blob/main/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p1000rps.png)
+![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task1/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task1/asprof/get/cpu/png/cpu_p50000rps.png)
+74% compare
+Начинает играть роль расчет длины ключа/значения. ~30%.

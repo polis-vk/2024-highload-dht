@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
-    private final static long FLUSH_THRESHOLD_BYTES = 128 * 1024 * 1024 / 3;
+    private static final long FLUSH_THRESHOLD_BYTES = 128 * 1024 * 1024 / 3;
     private Server server;
     public final DaoServerConfig config;
 

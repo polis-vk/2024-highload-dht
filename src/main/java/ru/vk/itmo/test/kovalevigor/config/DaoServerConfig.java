@@ -9,7 +9,4 @@ import java.nio.file.Path;
 public class DaoServerConfig extends HttpServerConfig {
     public Path basePath;
     public long flushThresholdBytes;
-
-    public DaoServerConfig() {
-    }
 }

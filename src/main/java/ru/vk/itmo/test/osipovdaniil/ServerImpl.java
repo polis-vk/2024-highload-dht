@@ -1,6 +1,13 @@
 package ru.vk.itmo.test.osipovdaniil;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.RequestMethod;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -40,7 +47,7 @@ public class ServerImpl extends HttpServer {
 
     private Response requestHandle(final String id, final Function<MemorySegment, Response> request) {
         if (!validateId(id)) {
-            return new Response(Response.BAD_REQUEST, ("invalid id: " + id).getBytes(StandardCharsets.UTF_8));
+            return new Response(Response.BAD_REQUEST, (STR."invalid id: \{id}").getBytes(StandardCharsets.UTF_8));
         }
         final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         return request.apply(key);
@@ -52,9 +59,9 @@ public class ServerImpl extends HttpServer {
         return requestHandle(id,
                 key -> {
                     final Entry<MemorySegment> entry = dao.get(key);
-                    return entry != null ?
-                        Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE)) :
-                        new Response(Response.NOT_FOUND, Response.EMPTY);
+                    return entry == null
+                            ? new Response(Response.NOT_FOUND, Response.EMPTY) :
+                            Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
                 });
     }
 

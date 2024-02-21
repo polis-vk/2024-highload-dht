@@ -26,7 +26,6 @@ public class ServiceImpl implements Service {
         return new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES);
     }
 
-
     @Override
     public CompletableFuture<Void> start() throws IOException {
         this.dao = new ReferenceDao(daoConfig);

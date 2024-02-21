@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class Main {
+public final class Main {
     public static void main(String[] args) throws IOException {
         String selfUrl = "http://localhost";
         DaoServer server = new DaoServer(new ServiceConfig(
@@ -19,8 +19,7 @@ public class Main {
         server.start();
     }
 
-    private Main()
-    {
+    private Main() {
 
     }
 }

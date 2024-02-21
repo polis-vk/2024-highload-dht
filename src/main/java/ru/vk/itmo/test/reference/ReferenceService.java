@@ -1,7 +1,8 @@
-package ru.vk.itmo.test;
+package ru.vk.itmo.test.reference;
 
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.test.ServiceFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

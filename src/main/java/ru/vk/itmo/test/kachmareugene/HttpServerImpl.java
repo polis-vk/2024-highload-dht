@@ -29,7 +29,7 @@ public class HttpServerImpl extends HttpServer {
     private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
     Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
     private final ServiceConfig serviceConfig;
-    private final Response BAD_REQUEST = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
 
     public HttpServerImpl(ServiceConfig conf) throws IOException {
         super(convertToHttpConfig(conf));
@@ -47,8 +47,6 @@ public class HttpServerImpl extends HttpServer {
         return httpServerConfig;
     }
 
-
-    // :TODO: MAGICAL CONST!!!
     @Override
     public synchronized void start() {
         try {
@@ -75,7 +73,7 @@ public class HttpServerImpl extends HttpServer {
             @Param("id") String key) {
 
         if (key == null || key.isEmpty()) {
-            return BAD_REQUEST;
+            return BAD;
         }
 
         Entry<MemorySegment> result = daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
@@ -93,7 +91,7 @@ public class HttpServerImpl extends HttpServer {
             Request request) {
 
         if (key == null || key.isEmpty()) {
-            return BAD_REQUEST;
+            return BAD;
         }
 
         daoImpl.upsert(
@@ -106,7 +104,7 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param("id") String key) {
         if (key.isEmpty()) {
-            return BAD_REQUEST;
+            return BAD;
         }
         daoImpl.upsert(new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
                         null));
@@ -127,13 +125,13 @@ public class HttpServerImpl extends HttpServer {
         int method = request.getMethod();
         Response response;
 
-        if (method != Request.METHOD_PUT
-                && method != Request.METHOD_DELETE
-                && method != Request.METHOD_GET) {
+        if (!(method == Request.METHOD_PUT
+                || method == Request.METHOD_DELETE
+                || method == Request.METHOD_GET)) {
 
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         } else {
-            response = BAD_REQUEST;
+            response = BAD;
         }
         session.sendResponse(response);
     }

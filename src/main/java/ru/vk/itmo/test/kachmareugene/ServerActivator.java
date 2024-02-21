@@ -7,6 +7,9 @@ import java.nio.file.Files;
 import java.util.List;
 
 public class ServerActivator {
+    private ServerActivator() {
+
+    }
     public static void main(String[] args) throws IOException {
 
         HttpServerImpl server = new HttpServerImpl(new ServiceConfig(

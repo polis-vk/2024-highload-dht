@@ -16,6 +16,7 @@ import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -99,7 +100,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             dao = new ReferenceDao(daoConfig);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException(e);
         }
 
         super.start();
@@ -112,7 +113,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             dao.close();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException(e);
         }
     }
 }

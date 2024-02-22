@@ -1,12 +1,12 @@
-package ru.vk.itmo.test.ryabovvadim.sstable;
+package ru.vk.itmo.test.ryabovvadim.dao.sstable;
 
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.ryabovvadim.iterators.FutureIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.LazyIterator;
-import ru.vk.itmo.test.ryabovvadim.utils.FileUtils;
-import ru.vk.itmo.test.ryabovvadim.utils.MemorySegmentUtils;
-import ru.vk.itmo.test.ryabovvadim.utils.NumberUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.FutureIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.LazyIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.FileUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.MemorySegmentUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.NumberUtils;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -20,10 +20,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import static java.nio.file.StandardOpenOption.CREATE;
-import static java.nio.file.StandardOpenOption.READ;
-import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
-import static java.nio.file.StandardOpenOption.WRITE;
+import static java.nio.file.StandardOpenOption.*;
 
 public class SSTable {
     private final long id;

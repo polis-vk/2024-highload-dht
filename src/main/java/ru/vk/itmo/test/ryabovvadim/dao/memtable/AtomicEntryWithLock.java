@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.ryabovvadim.memtable;
+package ru.vk.itmo.test.ryabovvadim.dao.memtable;
 
 import ru.vk.itmo.dao.Entry;
 

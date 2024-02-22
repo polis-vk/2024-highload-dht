@@ -1,16 +1,12 @@
-package ru.vk.itmo.test.ryabovvadim;
+package ru.vk.itmo.test.ryabovvadim.dao;
 
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.ryabovvadim.iterators.EntrySkipNullsIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.FutureIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.GatheringIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.LazyIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.PriorityIterator;
-import ru.vk.itmo.test.ryabovvadim.memtable.MemoryTable;
-import ru.vk.itmo.test.ryabovvadim.sstable.SSTableManager;
-import ru.vk.itmo.test.ryabovvadim.utils.MemorySegmentUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.*;
+import ru.vk.itmo.test.ryabovvadim.dao.memtable.MemoryTable;
+import ru.vk.itmo.test.ryabovvadim.dao.sstable.SSTableManager;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.MemorySegmentUtils;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

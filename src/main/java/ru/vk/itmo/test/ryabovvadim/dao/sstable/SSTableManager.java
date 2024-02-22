@@ -1,13 +1,13 @@
-package ru.vk.itmo.test.ryabovvadim.sstable;
+package ru.vk.itmo.test.ryabovvadim.dao.sstable;
 
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.ryabovvadim.iterators.EntrySkipNullsIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.FutureIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.GatheringIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.PriorityIterator;
-import ru.vk.itmo.test.ryabovvadim.utils.FileUtils;
-import ru.vk.itmo.test.ryabovvadim.utils.MemorySegmentUtils;
-import ru.vk.itmo.test.ryabovvadim.utils.NumberUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.EntrySkipNullsIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.FutureIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.GatheringIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.PriorityIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.FileUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.MemorySegmentUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.NumberUtils;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -17,24 +17,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.NavigableSet;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static ru.vk.itmo.test.ryabovvadim.utils.FileUtils.DATA_FILE_EXT;
+import static ru.vk.itmo.test.ryabovvadim.dao.utils.FileUtils.DATA_FILE_EXT;
 
 public class SSTableManager {
     private final Logger log = Logger.getLogger(SSTableManager.class.getName());

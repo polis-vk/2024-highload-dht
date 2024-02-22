@@ -1,10 +1,10 @@
-package ru.vk.itmo.test.ryabovvadim.sstable;
+package ru.vk.itmo.test.ryabovvadim.dao.sstable;
 
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.ryabovvadim.iterators.FutureIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.LazyIterator;
-import ru.vk.itmo.test.ryabovvadim.utils.FileUtils;
-import ru.vk.itmo.test.ryabovvadim.utils.IteratorUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.FutureIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.LazyIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.FileUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.IteratorUtils;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -13,8 +13,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static ru.vk.itmo.test.ryabovvadim.utils.FileUtils.DATA_FILE_EXT;
-import static ru.vk.itmo.test.ryabovvadim.utils.FileUtils.DELETED_FILE_EXT;
+import static ru.vk.itmo.test.ryabovvadim.dao.utils.FileUtils.DATA_FILE_EXT;
+import static ru.vk.itmo.test.ryabovvadim.dao.utils.FileUtils.DELETED_FILE_EXT;
 
 public class SafeSSTable {
     private boolean deleted;

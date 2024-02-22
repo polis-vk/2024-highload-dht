@@ -1,7 +1,7 @@
-package ru.vk.itmo.test.ryabovvadim.iterators;
+package ru.vk.itmo.test.ryabovvadim.dao.iterators;
 
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.ryabovvadim.utils.MemorySegmentUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.MemorySegmentUtils;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;

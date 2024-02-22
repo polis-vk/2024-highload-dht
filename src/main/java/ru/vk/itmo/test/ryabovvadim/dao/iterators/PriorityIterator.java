@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.ryabovvadim.iterators;
+package ru.vk.itmo.test.ryabovvadim.dao.iterators;
 
 public class PriorityIterator<T> implements FutureIterator<T> {
     private final FutureIterator<T> delegate;

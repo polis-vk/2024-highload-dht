@@ -1,7 +1,7 @@
-package ru.vk.itmo.test.ryabovvadim.utils;
+package ru.vk.itmo.test.ryabovvadim.dao.utils;
 
-import ru.vk.itmo.test.ryabovvadim.iterators.FutureIterator;
-import ru.vk.itmo.test.ryabovvadim.iterators.LazyIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.FutureIterator;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.LazyIterator;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;

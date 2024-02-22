@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.ryabovvadim.iterators;
+package ru.vk.itmo.test.ryabovvadim.dao.iterators;
 
 import java.util.Collection;
 import java.util.Comparator;

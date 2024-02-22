@@ -1,24 +1,18 @@
-package ru.vk.itmo.test.ryabovvadim.memtable;
+package ru.vk.itmo.test.ryabovvadim.dao.memtable;
 
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.ryabovvadim.exception.MemoryTableOutOfMemoryException;
-import ru.vk.itmo.test.ryabovvadim.iterators.MemoryMergeIterators;
-import ru.vk.itmo.test.ryabovvadim.sstable.SSTableManager;
-import ru.vk.itmo.test.ryabovvadim.utils.IteratorUtils;
-import ru.vk.itmo.test.ryabovvadim.utils.MemorySegmentUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.exception.MemoryTableOutOfMemoryException;
+import ru.vk.itmo.test.ryabovvadim.dao.iterators.MemoryMergeIterators;
+import ru.vk.itmo.test.ryabovvadim.dao.sstable.SSTableManager;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.IteratorUtils;
+import ru.vk.itmo.test.ryabovvadim.dao.utils.MemorySegmentUtils;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.NavigableMap;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentNavigableMap;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;

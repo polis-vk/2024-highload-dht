@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.ryabovvadim.utils;
+package ru.vk.itmo.test.ryabovvadim.dao.utils;
 
 import java.util.ArrayList;
 import java.util.List;

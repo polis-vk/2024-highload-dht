@@ -17,10 +17,9 @@ import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-
-import static java.nio.file.StandardOpenOption.*;
 
 public class SSTable {
     private final long id;
@@ -31,7 +30,7 @@ public class SSTable {
         this.id = id;
         Path dataFile = FileUtils.makePath(path, Long.toString(id), FileUtils.DATA_FILE_EXT);
 
-        try (FileChannel dataFileChannel = FileChannel.open(dataFile, READ)) {
+        try (FileChannel dataFileChannel = FileChannel.open(dataFile, StandardOpenOption.READ)) {
             this.data = dataFileChannel.map(MapMode.READ_ONLY, 0, dataFileChannel.size(), arena);
             this.countRecords = (int) (this.data.get(ValueLayout.JAVA_LONG, 0) / Long.BYTES);
         }
@@ -170,7 +169,7 @@ public class SSTable {
         }
 
         Path tmpDataFile = FileUtils.makePath(prefix, Long.toString(id), FileUtils.TMP_FILE_EXT);
-        try (FileChannel dataFileChannel = FileChannel.open(tmpDataFile, CREATE, WRITE, READ, TRUNCATE_EXISTING)) {
+        try (FileChannel dataFileChannel = FileChannel.open(tmpDataFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.READ, StandardOpenOption.TRUNCATE_EXISTING)) {
             long dataOffset = (long) countRecords * Long.BYTES;
             MemorySegment dataSegment = dataFileChannel.map(
                 MapMode.READ_WRITE,

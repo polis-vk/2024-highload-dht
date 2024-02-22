@@ -9,20 +9,9 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 public class ServiceImpl implements Service {
-
-    public static void main(String[] args) throws Exception {
-        ServiceConfig serviceConfig = new ServiceConfig(
-                8088,
-                "http://localhost:8088",
-                Collections.emptyList(),
-                Files.createTempDirectory(".")
-        );
-
-        Service service = new ServiceImpl(serviceConfig);
-        service.start().get();
-    }
 
     private final ServiceConfig serviceConfig;
     private SimpleServer server;
@@ -50,5 +39,17 @@ public class ServiceImpl implements Service {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
+        ServiceConfig serviceConfig = new ServiceConfig(
+                8088,
+                "http://localhost:8088",
+                Collections.emptyList(),
+                Files.createTempDirectory(".")
+        );
+
+        Service service = new ServiceImpl(serviceConfig);
+        service.start().get();
     }
 }

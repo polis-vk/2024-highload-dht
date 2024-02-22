@@ -4,6 +4,7 @@ import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.List;
 
 public class Server {
@@ -12,7 +13,7 @@ public class Server {
         ReferenceServer server = new ReferenceServer(new ServiceConfig(
             8080, "http://localhost",
             List.of("http://localhost"),
-            Files.createTempDirectory(".")
+            Paths.get("tmp/db")
         ));
         server.start();
     }

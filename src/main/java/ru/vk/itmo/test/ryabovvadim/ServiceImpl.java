@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 
-//MY NOTE: think about name
 public class ServiceImpl implements Service {
 
     public static void main(String[] args) throws Exception {

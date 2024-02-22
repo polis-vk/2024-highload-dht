@@ -19,7 +19,6 @@ import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Set;
 
-//MY NOTE: think about name
 public class SimpleServer extends HttpServer {
 
     private static final long DAO_FLUSH_THRESHOLD_BYTES = 4096;

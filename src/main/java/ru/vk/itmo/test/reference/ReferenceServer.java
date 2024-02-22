@@ -57,7 +57,7 @@ public class ReferenceServer extends HttpServer {
     }
 
     @Path("/v0/entity")
-    public Response entity(Request request, @Param(value = "id", required = true) String id) {
+    public Response entity(Request request, @Param(value = "id") String id) {
         if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }

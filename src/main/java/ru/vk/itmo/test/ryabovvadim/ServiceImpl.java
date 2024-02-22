@@ -2,21 +2,18 @@ package ru.vk.itmo.test.ryabovvadim;
 
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.ryabovvadim.server.Server;
+import ru.vk.itmo.test.ryabovvadim.server.SimpleServer;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.InetAddress;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 //MY NOTE: think about name
 public class ServiceImpl implements Service {
 
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-        System.out.println(InetAddress.getLocalHost().getHostAddress());
+    public static void main(String[] args) throws Exception {
         ServiceConfig serviceConfig = new ServiceConfig(
                 8088,
                 "http://localhost:8088",
@@ -28,18 +25,16 @@ public class ServiceImpl implements Service {
         service.start().get();
     }
 
-    private final Server server;
+    private final ServiceConfig serviceConfig;
+    private SimpleServer server;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
-        try {
-            this.server = new Server(serviceConfig);
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
-        }
+        this.serviceConfig = serviceConfig;
     }
 
     @Override
     public CompletableFuture<Void> start() {
+        createServer();
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -48,5 +43,13 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> stop() {
         server.stop();
         return CompletableFuture.completedFuture(null);
+    }
+
+    private void createServer() {
+        try {
+            server = new SimpleServer(serviceConfig);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }

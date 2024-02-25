@@ -22,10 +22,7 @@ public class LSMCustomSession extends HttpSession {
 
         server.incRequestsProcessed();
 
-        String connection = handling.getHeader("Connection:");
-        boolean keepAlive = handling.isHttp11()
-                ? !"close".equalsIgnoreCase(connection)
-                : "Keep-Alive".equalsIgnoreCase(connection);
+        boolean keepAlive = LSMConstantResponse.keepAlive(handling);
 
         writeResponse(response, handling.getMethod() != Request.METHOD_HEAD);
         if (!keepAlive) scheduleClose();

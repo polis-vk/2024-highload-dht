@@ -2,20 +2,27 @@ package ru.vk.itmo.test.viktorkorotkikh;
 
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class LSMServiceImpl implements Service {
+    private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private final ServiceConfig serviceConfig;
     private LSMServerImpl httpServer;
-    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private boolean isRunning = false;
+    private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         java.nio.file.Path tmpDir = Files.createTempDirectory("dao");
@@ -33,29 +40,55 @@ public class LSMServiceImpl implements Service {
     }
 
     public LSMServiceImpl(ServiceConfig serviceConfig) throws IOException {
-        this.httpServer = createServer(serviceConfig);
         this.serviceConfig = serviceConfig;
     }
 
-    private static LSMServerImpl createServer(ServiceConfig serviceConfig) throws IOException {
-        return new LSMServerImpl(serviceConfig);
+    private static LSMServerImpl createServer(
+            ServiceConfig serviceConfig,
+            Dao<MemorySegment, Entry<MemorySegment>> dao
+    ) throws IOException {
+        return new LSMServerImpl(serviceConfig, dao);
+    }
+
+    private static Dao<MemorySegment, Entry<MemorySegment>> createLSMDao(Path workingDir) {
+        Config daoConfig = new Config(
+                workingDir,
+                FLUSH_THRESHOLD
+        );
+        return new LSMDaoImpl(daoConfig);
+    }
+
+    private static void closeLSMDao(Dao<MemorySegment, Entry<MemorySegment>> dao) {
+        if (dao == null) return;
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
-        if (isRunning.getAndSet(true)) return CompletableFuture.completedFuture(null);
-        if (httpServer == null) {
-            httpServer = createServer(serviceConfig);
-        }
-        httpServer.startServer();
+    public synchronized CompletableFuture<Void> start() throws IOException {
+        if (isRunning) return CompletableFuture.completedFuture(null);
+        dao = createLSMDao(serviceConfig.workingDir());
+
+        httpServer = createServer(serviceConfig, dao);
+        httpServer.start();
+
+        isRunning = true;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
-        if (!isRunning.getAndSet(false)) return CompletableFuture.completedFuture(null);
-        httpServer.stopServer();
+    public synchronized CompletableFuture<Void> stop() throws IOException {
+        if (!isRunning) return CompletableFuture.completedFuture(null);
+        httpServer.stop();
         httpServer = null;
+
+        closeLSMDao(dao);
+        dao = null;
+
+        isRunning = false;
         return CompletableFuture.completedFuture(null);
     }
 

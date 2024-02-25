@@ -1,13 +1,6 @@
 package ru.vk.itmo.test.abramovilya;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -16,13 +9,22 @@ import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.abramovilya.dao.DaoFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.*;
 
 public class Server extends HttpServer {
     public static final String ENTITY_PATH = "/v0/entity";
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ExecutorService executorService = new ThreadPoolExecutor(
+            1,
+            1,
+            1,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(8)
+    );
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createConfig(config));
@@ -43,6 +45,29 @@ public class Server extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, "Unknown path".getBytes(StandardCharsets.UTF_8));
         session.sendResponse(response);
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            executorService.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            // TODO change to logging
+            System.out.println("rejected execution exception");
+            session.sendError(Response.SERVICE_UNAVAILABLE, "");
+        }
+    }
+
+    @Override
+    public synchronized void stop() {
+        super.stop();
+        executorService.close();
     }
 
     @Path(ENTITY_PATH)

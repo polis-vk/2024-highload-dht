@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.vadimershov;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -70,6 +71,9 @@ public class DaoHttpServer extends HttpServer {
             super.handleRequest(request, session);
         } catch (Exception e) {
             logger.error(e.getMessage());
+            if (e instanceof HttpException) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }
@@ -79,7 +83,7 @@ public class DaoHttpServer extends HttpServer {
     public Response getMapping(
             @Param(value = "id", required = true) String id
     ) {
-        if (id.isBlank()) {
+        if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 

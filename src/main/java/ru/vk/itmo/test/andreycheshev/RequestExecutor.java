@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.andreycheshev;
 
+import one.nio.async.CompletedFuture;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -32,29 +33,29 @@ public class RequestExecutor {
         );
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings({"FutureReturnValueIgnored", "ThreadPriorityCheck"})
     public void execute(Request request, HttpSession session) {
         Callable<Response> task = new ResponseGeneratorCallable(request, requestHandler);
-        FutureTask<Response> future = new FutureTask<>(task);
-
-        workQueue.add(future);
 
         CompletableFuture<Response> completableFuture = CompletableFuture.supplyAsync(
                 () -> {
                     try {
-                        return future.get();
+                        return task.call();
                     } catch (Exception e) {
-                        return null;
+                        throw new RuntimeException(e);
                     }
                 },
                 workers
         );
 
-        completableFuture.thenAccept(result -> {
+        CompletableFuture.runAsync(() -> {
+            while(!completableFuture.isDone()) {
+                Thread.yield();
+            }
             try {
-                session.sendResponse(result);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                session.sendResponse(completableFuture.get());
+            } catch (IOException | InterruptedException | ExecutionException e) {
+                throw new RuntimeException(e);
             }
         });
     }

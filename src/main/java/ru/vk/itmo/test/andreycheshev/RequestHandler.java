@@ -86,6 +86,7 @@ public class RequestHandler {
 
         return new Response(ACCEPTED, Response.EMPTY);
     }
+
     private MemorySegment fromString(String data) {
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }

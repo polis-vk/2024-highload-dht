@@ -10,7 +10,7 @@ import java.util.concurrent.Callable;
 import static one.nio.http.Response.SERVICE_UNAVAILABLE;
 
 public final class ResponseGeneratorCallable implements Callable<Response> {
-    private static final long MAX_TIME_DELTA_MILLIS = 3000;
+    private static final long MAX_AWAITING_IME_MILLIS = 3000;
     private final Callable<Response> callable;
     private final long deadline;
 
@@ -20,7 +20,7 @@ public final class ResponseGeneratorCallable implements Callable<Response> {
 
         callable = () -> {
             // If the task is overdue
-            if (System.currentTimeMillis() - deadline > MAX_TIME_DELTA_MILLIS) {
+            if (System.currentTimeMillis() - deadline > MAX_AWAITING_IME_MILLIS) {
                 return new Response(SERVICE_UNAVAILABLE, Response.EMPTY);
             } else {
                 try {

@@ -9,7 +9,10 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
@@ -30,7 +33,9 @@ public class DaoHttpServer extends HttpServer {
             Request.METHOD_DELETE
     );
 
-    private final ReferenceDao dao;
+    private final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
+
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public DaoHttpServer(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(getHttpServerConfig(config));
@@ -59,6 +64,16 @@ public class DaoHttpServer extends HttpServer {
         return SUPPORTED_METHODS.contains(httpMethod);
     }
 
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
+    }
+
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getMapping(
@@ -75,6 +90,15 @@ public class DaoHttpServer extends HttpServer {
 
         byte[] value = toByteArray(entry.value());
         return Response.ok(value);
+    }
+
+    class MyResponse extends Response {
+
+        public MyResponse(String resultCode, byte[] body) {
+            super(resultCode, body);
+        }
+
+
     }
 
     @Path("/v0/entity")

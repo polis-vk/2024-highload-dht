@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.vadimershov;
 
+import one.nio.http.HttpServer;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -15,7 +16,9 @@ public class ServiceImpl implements Service {
     private final Config daoConfig;
     private final ServiceConfig config;
     private ReferenceDao dao;
-    private DaoHttpServer server;
+    private HttpServer server;
+
+    private boolean isRun = false;
 
     public ServiceImpl(ServiceConfig config) throws IOException {
         int flushThresholdBytes = 1 << 11;
@@ -24,17 +27,25 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
+        if (isRun) {
+            return CompletableFuture.completedFuture(null);
+        }
         dao = new ReferenceDao(daoConfig);
         server = new DaoHttpServer(config, dao);
         server.start();
+        isRun = true;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
+        if (!isRun) {
+            CompletableFuture.completedFuture(null);
+        }
         server.stop();
         dao.close();
+        isRun = false;
         return CompletableFuture.completedFuture(null);
     }
 

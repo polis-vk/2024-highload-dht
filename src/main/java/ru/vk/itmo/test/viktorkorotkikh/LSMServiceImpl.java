@@ -21,11 +21,11 @@ public class LSMServiceImpl implements Service {
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private final ServiceConfig serviceConfig;
     private LSMServerImpl httpServer;
-    private boolean isRunning = false;
+    private boolean isRunning;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-        java.nio.file.Path tmpDir = Files.createTempDirectory("dao");
+        Path tmpDir = Files.createTempDirectory("dao");
         tmpDir.toFile().deleteOnExit();
 
         ServiceConfig serviceConfig = new ServiceConfig(

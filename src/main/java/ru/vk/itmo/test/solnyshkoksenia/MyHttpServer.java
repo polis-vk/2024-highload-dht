@@ -29,7 +29,15 @@ public class MyHttpServer extends HttpServer {
     private final DaoImpl dao;
     private static final int PROCESSORS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executorService = new ThreadPoolExecutor(PROCESSORS, Integer.MAX_VALUE,
-            5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), this::reject);
+            5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(),
+            (r, _) -> {
+                HttpSession session = ((Task) r).session;
+                try {
+                    session.sendResponse(new Response(Response.PAYMENT_REQUIRED, Response.EMPTY));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
 
     public MyHttpServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config));
@@ -51,22 +59,13 @@ public class MyHttpServer extends HttpServer {
         return new Config(config.workingDir(), Math.round(0.33 * 128 * 1024 * 1024)); // 0.33 * 128mb
     }
 
-    private void reject(Runnable runnable, ExecutorService executorService) {
-        HttpSession session = ((Task) runnable).session;
-        try {
-            session.sendResponse(new Response(Response.PAYMENT_REQUIRED, Response.EMPTY));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
     @Override
     public void handleDefault(Request request, HttpSession session) {
         executorService.execute(new Task(() -> {
             try {
-                if (request.getMethod() == Request.METHOD_GET ||
-                        request.getMethod() == Request.METHOD_PUT ||
-                        request.getMethod() == Request.METHOD_DELETE) {
+                if (request.getMethod() == Request.METHOD_GET
+                        || request.getMethod() == Request.METHOD_PUT
+                        || request.getMethod() == Request.METHOD_DELETE) {
                     session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                     return;
                 }

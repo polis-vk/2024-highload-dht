@@ -20,6 +20,7 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toByteArray;
 import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toDeletedEntity;
@@ -46,8 +47,8 @@ public class DaoHttpServer extends HttpServer {
     private static HttpServerConfig getHttpServerConfig(ServiceConfig config) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
-            acceptorConfig.port = config.selfPort();
-            acceptorConfig.reusePort = true;
+        acceptorConfig.port = config.selfPort();
+        acceptorConfig.reusePort = true;
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
@@ -69,12 +70,12 @@ public class DaoHttpServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
             super.handleRequest(request, session);
+        } catch (DaoException e) {
+            logger.error(e.getMessage());
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (Exception e) {
             logger.error(e.getMessage());
-            if (e instanceof HttpException) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            }
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
     }
 
@@ -83,17 +84,19 @@ public class DaoHttpServer extends HttpServer {
     public Response getMapping(
             @Param(value = "id", required = true) String id
     ) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
+        return handleDaoException(() -> {
+            if (id.isBlank()) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
 
-        Entry<MemorySegment> entry = dao.get(toMemorySegment(id));
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
+            Entry<MemorySegment> entry = dao.get(toMemorySegment(id));
+            if (entry == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
 
-        byte[] value = toByteArray(entry.value());
-        return Response.ok(value);
+            byte[] value = toByteArray(entry.value());
+            return Response.ok(value);
+        });
     }
 
     @Path("/v0/entity")
@@ -102,12 +105,14 @@ public class DaoHttpServer extends HttpServer {
             @Param(value = "id", required = true) String id,
             Request request
     ) {
-        if (id.isBlank() || request.getBody() == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
+        return handleDaoException(() -> {
+            if (id.isBlank() || request.getBody() == null) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
 
-        dao.upsert(toEntity(id, request.getBody()));
-        return new Response(Response.CREATED, Response.EMPTY);
+            dao.upsert(toEntity(id, request.getBody()));
+            return new Response(Response.CREATED, Response.EMPTY);
+        });
     }
 
     @Path("/v0/entity")
@@ -115,11 +120,21 @@ public class DaoHttpServer extends HttpServer {
     public Response deleteMapping(
             @Param(value = "id", required = true) String id
     ) {
-        if (id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        return handleDaoException(() -> {
+            if (id.isBlank()) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            dao.upsert(toDeletedEntity(id));
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+        });
+    }
+
+    private Response handleDaoException(Supplier<Response> supplier) {
+        try {
+            return supplier.get();
+        } catch (Exception e) {
+            throw new DaoException(e);
         }
-        dao.upsert(toDeletedEntity(id));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
 }

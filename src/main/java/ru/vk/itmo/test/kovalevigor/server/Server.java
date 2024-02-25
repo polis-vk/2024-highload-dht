@@ -18,13 +18,12 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
@@ -36,7 +35,6 @@ public class Server extends HttpServer implements AutoCloseable, RejectedExecuti
     private static final Charset CHARSET = StandardCharsets.UTF_8;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
-    private final BlockingQueue<Runnable> blockingQueue;
     private static final Logger log = Logger.getAnonymousLogger();
 
     private enum Responses {
@@ -117,12 +115,13 @@ public class Server extends HttpServer implements AutoCloseable, RejectedExecuti
     public Server(DaoServerConfig config) throws IOException {
         super(config);
         dao = new DaoImpl(mapConfig(config));
-        blockingQueue = new ArrayBlockingQueue<>(200);
-        executorService =  new ThreadPoolExecutor(2, 20,
+        executorService =  new ThreadPoolExecutor(
+                2,
+                20,
                 100L, TimeUnit.MILLISECONDS,
-                blockingQueue,
+                new ArrayBlockingQueue<>(200),
                 this
-                );
+        );
     }
 
     @Override

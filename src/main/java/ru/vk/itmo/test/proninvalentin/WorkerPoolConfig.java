@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class WorkerPoolConfig {
-    private final static int maxQueueSize = 4200;
+    private static final int MAX_QUEUE_SIZE = 4200;
     public final int corePoolSize;
     public final int maxPoolSize;
     public final long keepAliveTime;
@@ -38,7 +38,7 @@ public class WorkerPoolConfig {
                 Runtime.getRuntime().availableProcessors(),
                 60L,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(maxQueueSize),
+                new ArrayBlockingQueue<>(MAX_QUEUE_SIZE),
                 r -> {
                     Thread thread = new Thread(r, "Pool worker #" + index.incrementAndGet());
                     thread.setDaemon(true);

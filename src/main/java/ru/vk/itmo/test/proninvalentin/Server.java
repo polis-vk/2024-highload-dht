@@ -107,15 +107,6 @@ public class Server extends HttpServer {
         }
     }
 
-    private static void processProblemRequest(HttpSession session, Exception e) {
-        logger.error("Error while processing request", e);
-
-        String responseCode = e.getClass() == HttpException.class
-                ? Response.BAD_REQUEST
-                : Response.INTERNAL_ERROR;
-        sendResponse(session, new Response(responseCode, Response.EMPTY));
-    }
-
     // region Handlers
 
     @Path("/v0/entity")

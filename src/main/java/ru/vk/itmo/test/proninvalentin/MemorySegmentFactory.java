@@ -7,7 +7,11 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-public class MemorySegmentFactory {
+public final class MemorySegmentFactory {
+    private MemorySegmentFactory() {
+        // Suppress warning
+    }
+
     public static byte[] toByteArray(MemorySegment data) {
         if (data == null) {
             throw new IllegalArgumentException();

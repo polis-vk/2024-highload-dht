@@ -8,7 +8,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public class MemorySegmentFactory {
-    public byte[] toByteArray(MemorySegment data) {
+    public static byte[] toByteArray(MemorySegment data) {
         if (data == null) {
             throw new IllegalArgumentException();
         }
@@ -16,13 +16,15 @@ public class MemorySegmentFactory {
         return data.toArray(ValueLayout.JAVA_BYTE);
     }
 
-    public MemorySegment fromString(String data) {
-        return data == null
-                ? null
-                : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
+    public static MemorySegment fromString(String data) {
+        if (data == null) {
+            throw new IllegalArgumentException();
+        }
+
+        return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    public Entry<MemorySegment> toMemorySegment(String key, String value) {
+    public static Entry<MemorySegment> toMemorySegment(String key, String value) {
         if (key == null || value == null) {
             throw new IllegalArgumentException();
         }
@@ -32,7 +34,7 @@ public class MemorySegmentFactory {
         return new BaseEntry<>(msKey, msValue);
     }
 
-    public Entry<MemorySegment> toDeletedMemorySegment(String key) {
+    public static Entry<MemorySegment> toDeletedMemorySegment(String key) {
         if (key == null) {
             throw new IllegalArgumentException();
         }

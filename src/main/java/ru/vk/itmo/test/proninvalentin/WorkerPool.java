@@ -1,50 +1,33 @@
 package ru.vk.itmo.test.proninvalentin;
 
-import one.nio.server.PayloadThread;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
-final class WorkerPool extends ThreadPoolExecutor implements ThreadFactory, Thread.UncaughtExceptionHandler {
-    private static final Logger log = LoggerFactory.getLogger(WorkerPool.class);
+final class WorkerPool {
+    private static final int SOFT_SHUT_DOWN_TIME = 20;
+    private static final int HARD_SHUT_DOWN_TIME = 10;
 
-    private final AtomicInteger index;
+    public final ExecutorService pool;
 
     public WorkerPool(WorkerPoolConfig config) {
-        super(config.corePoolSize, config.maxPoolSize, config.keepAliveTime, config.timeUnit,
+        pool = new ThreadPoolExecutor(config.corePoolSize, config.maxPoolSize, config.keepAliveTime, config.timeUnit,
                 config.workQueue, config.threadFactory, config.rejectedExecutionHandler);
-        this.index = new AtomicInteger();
     }
 
     void gracefulShutdown() {
-        shutdown();
+        pool.shutdown();
         try {
-            awaitTermination(20, TimeUnit.SECONDS);
+            pool.awaitTermination(SOFT_SHUT_DOWN_TIME, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 
-        shutdownNow();
+        pool.shutdownNow();
         try {
-            awaitTermination(10, TimeUnit.SECONDS);
+            pool.awaitTermination(HARD_SHUT_DOWN_TIME, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    @Override
-    public Thread newThread(Runnable r) {
-        PayloadThread thread = new PayloadThread(r, "NIO Worker #" + index.incrementAndGet());
-        thread.setUncaughtExceptionHandler(this);
-        return thread;
-    }
-
-    @Override
-    public void uncaughtException(Thread t, Throwable e) {
-        log.error("Uncaught exception in {}", t, e);
     }
 }

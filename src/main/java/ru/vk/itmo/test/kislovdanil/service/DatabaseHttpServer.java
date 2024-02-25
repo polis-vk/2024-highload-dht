@@ -17,10 +17,16 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class DatabaseHttpServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
+    private final ThreadPoolExecutor queryExecutor= new ThreadPoolExecutor(4, 8,
+            10, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100000));
 
     public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(transformConfig(config));
@@ -33,19 +39,45 @@ public class DatabaseHttpServer extends HttpServer {
         session.sendResponse(response);
     }
 
-    @Path(ENTITY_ACCESS_URL)
-    public Response handleEntityRequest(Request request,
-                                        @Param(value = "id", required = true) String entityKey) {
+    private void handleEntityRequestTask(int method, String entityKey, byte[] body,
+                                         HttpSession session) {
+        Response response;
         if (entityKey.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } else {
+            MemorySegment key = fromString(entityKey);
+            response = switch (method) {
+                case Request.METHOD_GET -> getEntity(key);
+                case Request.METHOD_PUT -> putEntity(key, body);
+                case Request.METHOD_DELETE -> deleteEntity(key);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
         }
-        MemorySegment key = fromString(entityKey);
-        return switch (request.getMethod()) {
-            case Request.METHOD_GET -> getEntity(key);
-            case Request.METHOD_PUT -> putEntity(key, request.getBody());
-            case Request.METHOD_DELETE -> deleteEntity(key);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        };
+        for (int i = 0; i < 3; i++) {
+            try {
+                session.sendResponse(response);
+                return;
+            } catch (IOException e) {
+                System.err.println(STR."\{e.getMessage()}, iteration \{i}");
+            }
+        }
+        System.err.println(STR."Failed to send response \{response.toString()}");
+    }
+
+    @Path(ENTITY_ACCESS_URL)
+    public void handleEntityRequest(Request request, HttpSession session,
+                                        @Param(value = "id", required = true) String entityKey) {
+        try {
+            queryExecutor.execute(() -> handleEntityRequestTask(request.getMethod(),
+                    entityKey, request.getBody(), session));
+        } catch (RejectedExecutionException e) {
+            try {
+                session.sendError(Response.SERVICE_UNAVAILABLE,
+                        "Service temporary unavailable, retry later");
+            } catch (IOException e2) {
+                System.err.println(STR."Failed to send error message, \{request.toString()}");
+            }
+        }
     }
 
     private Response putEntity(MemorySegment entityKey, byte[] entityValue) {

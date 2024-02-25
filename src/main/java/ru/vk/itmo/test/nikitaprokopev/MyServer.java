@@ -22,8 +22,8 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyServer extends HttpServer {
@@ -32,11 +32,12 @@ public class MyServer extends HttpServer {
     private final Logger log = LoggerFactory.getLogger(MyServer.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    private final ExecutorService executorService = new MyWorkerPool();
+    private final ThreadPoolExecutor workerPool;
 
-    public MyServer(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    public MyServer(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao, ThreadPoolExecutor workerPool) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
+        this.workerPool = workerPool;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -122,7 +123,7 @@ public class MyServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         long createdAt = System.currentTimeMillis();
         try {
-            executorService.execute(
+            workerPool.execute(
                     () -> {
                         if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
                             try {
@@ -159,13 +160,6 @@ public class MyServer extends HttpServer {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
-    }
-
-
-    @Override
-    public synchronized void stop() {
-        executorService.shutdown();
-        super.stop();
     }
 
     private MemorySegment toMemorySegment(String s) {

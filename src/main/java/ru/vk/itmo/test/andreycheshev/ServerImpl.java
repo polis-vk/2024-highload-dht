@@ -36,7 +36,7 @@ public class ServerImpl extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public void handleRequest(Request request, HttpSession session) {
         executor.execute(request, session);
     }
 

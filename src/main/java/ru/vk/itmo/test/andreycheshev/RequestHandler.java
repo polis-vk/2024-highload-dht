@@ -30,7 +30,7 @@ public class RequestHandler {
         this.dao = dao;
     };
 
-    public Response handle(Request request) throws IOException {
+    public Response handle(Request request) {
 
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {

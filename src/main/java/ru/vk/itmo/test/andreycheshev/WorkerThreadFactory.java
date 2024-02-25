@@ -4,7 +4,7 @@ import java.util.concurrent.ThreadFactory;
 
 public class WorkerThreadFactory implements ThreadFactory {
     private int counter = 0;
-    private static final String prefix = "RequestProcessorThread-";
+    private static final String prefix = "RequestWorkerThread-";
 
     @Override
     public Thread newThread(Runnable runnable) {

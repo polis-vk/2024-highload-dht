@@ -3,8 +3,8 @@ package ru.vk.itmo.test.andreycheshev;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.dao.BaseEntry;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.andreycheshev.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -24,9 +24,9 @@ import static one.nio.http.Response.OK;
 public class RequestHandler {
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID = "id=";
-    private final ReferenceDao dao;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public RequestHandler(ReferenceDao dao) {
+    public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao) {
         this.dao = dao;
     };
 

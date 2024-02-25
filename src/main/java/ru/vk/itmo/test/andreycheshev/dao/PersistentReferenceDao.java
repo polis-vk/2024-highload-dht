@@ -22,7 +22,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * @author incubos
  */
-public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class PersistentReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     private final Config config;
     private final Arena arena;
 
@@ -45,7 +45,7 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
 
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    public ReferenceDao(final Config config) throws IOException {
+    public PersistentReferenceDao(final Config config) throws IOException {
         this.config = config;
         this.arena = Arena.ofShared();
 

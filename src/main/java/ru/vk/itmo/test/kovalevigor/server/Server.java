@@ -95,7 +95,7 @@ public class Server extends HttpServer implements AutoCloseable, RejectedExecuti
     public Server(DaoServerConfig config) throws IOException {
         super(config);
         dao = new DaoImpl(mapConfig(config));
-        executorService =  new ThreadPoolExecutor(
+        executorService = new ThreadPoolExecutor(
                 config.corePoolSize,
                 config.maximumPoolSize,
                 config.keepAliveTime,

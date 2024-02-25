@@ -30,7 +30,7 @@ public class MyHttpServer extends HttpServer {
     private static final int PROCESSORS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executorService = new ThreadPoolExecutor(PROCESSORS, Integer.MAX_VALUE,
             5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(),
-            (r, _) -> {
+            (r, executor) -> {
                 HttpSession session = ((Task) r).session;
                 try {
                     session.sendResponse(new Response(Response.PAYMENT_REQUIRED, Response.EMPTY));

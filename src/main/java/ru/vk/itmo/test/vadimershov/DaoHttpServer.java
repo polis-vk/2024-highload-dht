@@ -92,15 +92,6 @@ public class DaoHttpServer extends HttpServer {
         return Response.ok(value);
     }
 
-    class MyResponse extends Response {
-
-        public MyResponse(String resultCode, byte[] body) {
-            super(resultCode, body);
-        }
-
-
-    }
-
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response upsertMapping(

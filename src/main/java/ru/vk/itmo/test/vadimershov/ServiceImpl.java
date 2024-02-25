@@ -18,7 +18,7 @@ public class ServiceImpl implements Service {
     private ReferenceDao dao;
     private HttpServer server;
 
-    private boolean isRun = false;
+    private boolean isRun;
 
     public ServiceImpl(ServiceConfig config) throws IOException {
         int flushThresholdBytes = 1 << 11;

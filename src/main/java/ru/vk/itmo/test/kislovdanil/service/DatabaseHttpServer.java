@@ -71,13 +71,10 @@ public class DatabaseHttpServer extends HttpServer {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
-        acceptorConfig.threads = 8;
 
         HttpServerConfig httpServerConfig = new HttpServerConfig();
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
-        httpServerConfig.selectors = 10;
-
         return httpServerConfig;
     }
 

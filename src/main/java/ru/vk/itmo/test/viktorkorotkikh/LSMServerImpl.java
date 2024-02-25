@@ -54,6 +54,16 @@ public class LSMServerImpl extends HttpServer {
         return acceptorConfig;
     }
 
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            log.error("Unexpected error occurred: ", e);
+            session.sendResponse(LSMConstantResponse.serviceUnavailable(request));
+        }
+    }
+
     @Path("/v0/entity")
     public void handleEntityRequest(Request request, HttpSession session) throws IOException {
         // validate id parameter
@@ -63,20 +73,12 @@ public class LSMServerImpl extends HttpServer {
             return;
         }
 
-        Response response;
-
-        try {
-            response = switch (request.getMethod()) {
-                case METHOD_GET -> handleGetEntity(request, id);
-                case METHOD_PUT -> handlePutEntity(request, id);
-                case METHOD_DELETE -> handleDeleteEntity(request, id);
-                default -> LSMConstantResponse.methodNotAllowed(request);
-            };
-        } catch (Exception e) {
-            log.error("Unexpected error occurred: ", e);
-            response = LSMConstantResponse.serviceUnavailable(request);
-        }
-
+        Response response = switch (request.getMethod()) {
+            case METHOD_GET -> handleGetEntity(request, id);
+            case METHOD_PUT -> handlePutEntity(request, id);
+            case METHOD_DELETE -> handleDeleteEntity(request, id);
+            default -> LSMConstantResponse.methodNotAllowed(request);
+        };
         session.sendResponse(response);
     }
 
@@ -125,8 +127,10 @@ public class LSMServerImpl extends HttpServer {
         try {
             dao.upsert(newEntry);
         } catch (LSMDaoOutOfMemoryException e) {
+            // when entry is too big to be putted into memtable
             return LSMConstantResponse.entityTooLarge(request);
         } catch (TooManyFlushesException e) {
+            // when one memory table is in the process of being flushed, and the second is already full
             return LSMConstantResponse.tooManyRequests(request);
         }
 

@@ -1,13 +1,6 @@
 package ru.vk.itmo.test.khadyrovalmasgali.server;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -20,12 +13,19 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.*;
 
 public class DaoServer extends HttpServer {
 
     private ReferenceDao dao;
     private final ServiceConfig config;
-    private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1024;
+    private final ExecutorService executorService = new ThreadPoolExecutor(
+            0,
+            Runtime.getRuntime().availableProcessors(),
+            50,
+            TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(128));
+    private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1MB
     private static final String ENTITY_PATH = "/v0/entity";
 
     public DaoServer(ServiceConfig config) throws IOException {
@@ -50,47 +50,70 @@ public class DaoServer extends HttpServer {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            executorService.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    if (e instanceof HttpException) {
+                        sendResponseSafe(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    } else {
+                        sendResponseSafe(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
     @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response entity(@Param(value = "id", required = true) String id, Request request) {
+        if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        Entry<MemorySegment> entry = dao.get(stringToMemorySegment(id));
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                Entry<MemorySegment> entry = dao.get(stringToMemorySegment(id));
+                if (entry == null) {
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                }
+                return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+            }
+            case Request.METHOD_PUT -> {
+                dao.upsert(new BaseEntry<>(
+                        stringToMemorySegment(id),
+                        MemorySegment.ofArray(request.getBody())));
+                return new Response(Response.CREATED, Response.EMPTY);
+            }
+            case Request.METHOD_DELETE -> {
+                dao.upsert(new BaseEntry<>(stringToMemorySegment(id), null));
+                return new Response(Response.ACCEPTED, Response.EMPTY);
+            }
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
         }
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response upsert(@Param(value = "id", required = true) String id, Request request) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+    @Override
+    public synchronized void stop() {
+        super.stop();
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-        dao.upsert(new BaseEntry<>(stringToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
-        return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private void sendResponseSafe(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-        dao.upsert(new BaseEntry<>(stringToMemorySegment(id), null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_POST)
-    public Response post() {
-        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    }
-
-    public void shutdown() throws IOException {
-        dao.close();
     }
 
     private static MemorySegment stringToMemorySegment(String s) {

@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -9,31 +10,38 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.nikitaprokopev.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class MyServer extends HttpServer {
-
-    private static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB
     private static final String BASE_PATH = "/v0/entity";
-    private final ReferenceDao dao;
+    private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
+    private final Logger log = LoggerFactory.getLogger(MyServer.class);
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public MyServer(ServiceConfig serviceConfig) throws IOException {
+    private final ExecutorService executorService = new MyWorkerPool();
+
+    public MyServer(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createServerConfig(serviceConfig));
-        dao = new ReferenceDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES));
+        this.dao = dao;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
+        httpServerConfig.selectors = 4;
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
@@ -41,14 +49,6 @@ public class MyServer extends HttpServer {
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
-    }
-
-    public void close() {
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 
     @Path(BASE_PATH)
@@ -110,18 +110,69 @@ public class MyServer extends HttpServer {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
+    // For other requests - 400 Bad Request
+
+    @Override
+    public void handleDefault(Request request, HttpSession session) throws IOException {
+        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        session.sendResponse(response);
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        long createdAt = System.currentTimeMillis();
+        try {
+            executorService.execute(
+                    () -> {
+                        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
+                            try {
+                                session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+                                return;
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        }
+
+                        try {
+                            super.handleRequest(request, session);
+                        } catch (Exception e) {
+                            handleRequestException(session, e);
+                        }
+                    }
+            );
+        } catch (RejectedExecutionException e) {
+            log.error("RejectedExecutionException", e);
+            session.sendResponse(new Response(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), Response.EMPTY));
+        } catch (Exception e) {
+            handleRequestException(session, e);
+        }
+    }
+
+    private void handleRequestException(HttpSession session, Exception e) {
+        log.error("Error while handling request", e);
+        try {
+            if (e instanceof HttpException) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+
+    @Override
+    public synchronized void stop() {
+        executorService.shutdown();
+        super.stop();
+    }
+
     private MemorySegment toMemorySegment(String s) {
         return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
     }
 
     private byte[] toByteArray(MemorySegment ms) {
         return ms.toArray(ValueLayout.JAVA_BYTE);
-    }
-
-    // For other requests - 400 Bad Request
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
     }
 }

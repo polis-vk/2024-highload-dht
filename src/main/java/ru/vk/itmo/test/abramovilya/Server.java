@@ -2,6 +2,8 @@ package ru.vk.itmo.test.abramovilya;
 
 import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -17,6 +19,7 @@ import java.util.concurrent.*;
 
 public class Server extends HttpServer {
     public static final String ENTITY_PATH = "/v0/entity";
+    private static final Logger logger = LoggerFactory.getLogger(Server.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService = new ThreadPoolExecutor(
             1,
@@ -54,12 +57,12 @@ public class Server extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (IOException e) {
+                    logger.info(STR."IOException for request: \{request}");
                     throw new UncheckedIOException(e);
                 }
             });
         } catch (RejectedExecutionException e) {
-            // TODO change to logging
-            System.out.println("rejected execution exception");
+            logger.info(STR."Execution rejected for request: \{request}");
             session.sendError(Response.SERVICE_UNAVAILABLE, "");
         }
     }

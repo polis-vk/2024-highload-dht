@@ -41,7 +41,7 @@ public class ServiceImpl implements Service {
     @Override
     public synchronized CompletableFuture<Void> stop() throws IOException {
         if (!isRun) {
-            CompletableFuture.completedFuture(null);
+            return CompletableFuture.completedFuture(null);
         }
         server.stop();
         dao.close();

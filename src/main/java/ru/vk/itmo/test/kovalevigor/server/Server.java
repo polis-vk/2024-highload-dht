@@ -37,26 +37,6 @@ public class Server extends HttpServer implements AutoCloseable, RejectedExecuti
     private final ExecutorService executorService;
     private static final Logger log = Logger.getAnonymousLogger();
 
-    private enum Responses {
-        NOT_FOUND(Response.NOT_FOUND),
-        CREATED(Response.CREATED),
-        ACCEPTED(Response.ACCEPTED),
-        BAD_REQUEST(Response.BAD_REQUEST),
-        NOT_ALLOWED(Response.METHOD_NOT_ALLOWED),
-        INTERNAL_ERROR(Response.INTERNAL_ERROR),
-        SERVICE_UNAVAILABLE(Response.SERVICE_UNAVAILABLE);
-
-        private final String responseCode;
-
-        Responses(String responseCode) {
-            this.responseCode = responseCode;
-        }
-
-        public Response toResponse() {
-            return emptyResponse(responseCode);
-        }
-    }
-
     private class Task implements Runnable {
         public final Request request;
         public final HttpSession session;
@@ -73,7 +53,7 @@ public class Server extends HttpServer implements AutoCloseable, RejectedExecuti
             } catch (IOException ioException) {
                 session.handleException(ioException);
             } catch (Exception exception) {
-                Server.Responses response = Responses.INTERNAL_ERROR;
+                Responses response = Responses.INTERNAL_ERROR;
                 if (exception instanceof HttpException) {
                     response = Responses.BAD_REQUEST;
                 } else {
@@ -116,10 +96,11 @@ public class Server extends HttpServer implements AutoCloseable, RejectedExecuti
         super(config);
         dao = new DaoImpl(mapConfig(config));
         executorService =  new ThreadPoolExecutor(
-                2,
-                20,
-                100L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(200),
+                config.corePoolSize,
+                config.maximumPoolSize,
+                config.keepAliveTime,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(config.queueCapacity),
                 this
         );
     }
@@ -184,9 +165,5 @@ public class Server extends HttpServer implements AutoCloseable, RejectedExecuti
 
     private static MemorySegment fromString(final String data) {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(CHARSET));
-    }
-
-    private static Response emptyResponse(String resultCode) {
-        return new Response(resultCode, Response.EMPTY);
     }
 }

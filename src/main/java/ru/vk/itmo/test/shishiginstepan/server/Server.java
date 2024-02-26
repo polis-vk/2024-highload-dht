@@ -1,6 +1,14 @@
 package ru.vk.itmo.test.shishiginstepan.server;
 
-import one.nio.http.*;
+import one.nio.http.HttpException;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import org.apache.log4j.Logger;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -41,16 +49,15 @@ public class Server extends HttpServer {
 
         @Override
         public Thread newThread(@Nonnull Runnable r) {
-//            return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter.getAndIncrement()}");
-            return new Thread(group, r, group.getName()+workerNamingCounter.getAndIncrement());
+           return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter.getAndIncrement()}");
         }
     };
-
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(configFromServiceConfig(config));
         this.dao = dao;
-        BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100); //TODO подумать какое значение будет разумным
+            //TODO подумать какое значение будет разумным
+        BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100);
         int processors = Runtime.getRuntime().availableProcessors();
         this.executor = new ThreadPoolExecutor(
                 this.getSelectorCount(),
@@ -107,7 +114,6 @@ public class Server extends HttpServer {
             }
         }
     }
-
 
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_GET)

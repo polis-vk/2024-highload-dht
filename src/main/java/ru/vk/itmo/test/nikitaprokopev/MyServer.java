@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -9,27 +10,26 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.nikitaprokopev.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public class MyServer extends HttpServer {
-
-    private static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB
+    private final static Logger log = LoggerFactory.getLogger(MyServer.class);
     private static final String BASE_PATH = "/v0/entity";
-    private final ReferenceDao dao;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public MyServer(ServiceConfig serviceConfig) throws IOException {
+    public MyServer(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createServerConfig(serviceConfig));
-        dao = new ReferenceDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES));
+        this.dao = dao;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -43,19 +43,11 @@ public class MyServer extends HttpServer {
         return httpServerConfig;
     }
 
-    public void close() {
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id, Request request) {
         MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
-        if (msKey == null) {
+        if (msKey == null || request.getBody().length == 0) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -123,5 +115,19 @@ public class MyServer extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            log.error("Error while handling request", e);
+            if (e instanceof HttpException) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
     }
 }

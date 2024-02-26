@@ -4,24 +4,31 @@ import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 public final class ServerStarter {
+    private static final String WORKING_DIR = "tmp/dao";
 
     private ServerStarter() {
 
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     public static void main(String[] args) throws IOException {
-        MyServer server = new MyServer(
+        Path path = Path.of(WORKING_DIR);
+        if (!Files.exists(path)) {
+            Files.createDirectories(path);
+        }
+        MyService service = new MyService(
                 new ServiceConfig(
                         8080,
-                        "http://localhost",
-                        List.of("http://localhost"),
-                        Files.createTempDirectory("dao")
+                        "http://localhost:8080",
+                        List.of("http://localhost:8080"),
+                        path
                 )
         );
 
-        server.start();
+        service.start();
     }
 }

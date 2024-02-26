@@ -2,10 +2,7 @@ package ru.vk.itmo.test.smirnovdmitrii.server;
 
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +17,6 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.function.Function;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
@@ -48,91 +44,75 @@ public class Server extends HttpServer {
         this.dao = new DaoImpl(daoConfig);
     }
 
-    @Path(REQUEST_PATH)
-    @RequestMethod(METHOD_GET)
-    public Response get(
-            @Param("id") final String id
-    ) {
-        return handleEntityRequest(id, key -> {
-            final Entry<MemorySegment> entry = dao.get(key);
-            if (entry == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-            return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-        });
+    public Response get(final MemorySegment key) {
+        final Entry<MemorySegment> entry = dao.get(key);
+        if (entry == null) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
+        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(REQUEST_PATH)
-    @RequestMethod(METHOD_PUT)
     public Response put(
-            @Param("id") final String id,
+            final MemorySegment key,
             final Request request
     ) {
-        return handleEntityRequest(id, key -> {
-            final MemorySegment value = MemorySegment.ofArray(request.getBody());
-            final Entry<MemorySegment> entry = new BaseEntry<>(key, value);
-            dao.upsert(entry);
-            return new Response(Response.CREATED, Response.EMPTY);
-        });
+        final MemorySegment value = MemorySegment.ofArray(request.getBody());
+        final Entry<MemorySegment> entry = new BaseEntry<>(key, value);
+        dao.upsert(entry);
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(REQUEST_PATH)
-    @RequestMethod(METHOD_DELETE)
-    public Response delete(
-            @Param("id") final String id
-    ) {
-        return handleEntityRequest(id, key -> {
-            final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
-            dao.upsert(entry);
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        });
-    }
-
-    private Response handleEntityRequest(
-            final String id,
-            final Function<MemorySegment, Response> keyToResponse
-    ) {
-        if (isInvalidKey(id)) {
-            return new Response(Response.BAD_REQUEST, "invalid id".getBytes(StandardCharsets.UTF_8));
-        }
-        final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        try {
-            return keyToResponse.apply(key);
-        } catch (final Exception e) {
-            logger.error(e.getMessage(), e);
-            return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
-        }
+    public Response delete(final MemorySegment key) {
+        final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
+        dao.upsert(entry);
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
-    public void handleRequest(final Request request, final HttpSession session) throws IOException {
-        final String path = request.getPath();
-        final int method = request.getMethod();
-        if (!validate(path, method, session)) {
-            return;
+    public void handleRequest(final Request request, final HttpSession session) {
+        try {
+            final String uri = request.getURI();
+            final String id = request.getParameter("id=");
+            final Response validationFailedResponse = validate(uri, id);
+            if (validationFailedResponse != null) {
+                session.sendResponse(validationFailedResponse);
+                return;
+            }
+            final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+            final int method = request.getMethod();
+            Response response = getResponse(request, method, key);
+            session.sendResponse(response);
+        } catch (final IOException e) {
+            logger.error("IOException in send response.");
         }
-        final String id = request.getParameter("id=");
-        final Response response = switch (method) {
-            case METHOD_GET -> get(id);
-            case METHOD_DELETE -> delete(id);
-            case METHOD_PUT -> put(id, request);
-            default -> new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        };
-        session.sendResponse(response);
     }
 
-    public boolean validate(String path, int method, HttpSession session) throws IOException {
-        Response response = null;
-        if (method != METHOD_GET && method != METHOD_PUT && method != METHOD_DELETE) {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        } else if (!path.startsWith(REQUEST_PATH)) {
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private Response getResponse(final Request request, final int method, final MemorySegment key) {
+        Response response;
+        try {
+            response = switch (method) {
+                case METHOD_GET -> get(key);
+                case METHOD_DELETE -> delete(key);
+                case METHOD_PUT -> put(key, request);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+        } catch (final Exception e) {
+            logger.error("Exception while handling request", e);
+            response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        if (response == null) {
-            return true;
+        return response;
+    }
+
+    public Response validate(
+            final String path,
+            final String id
+    ) {
+        if (!path.startsWith(REQUEST_PATH)) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } else if (isInvalidKey(id)) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        session.sendResponse(response);
-        return false;
+        return null;
     }
 
     public boolean isInvalidKey(final String key) {

@@ -19,15 +19,32 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.ExecutorService;
 
 public class HttpServerImpl extends HttpServer {
 
     private final ReferenceDao dao;
     private static final String PATH_NAME = "/v0/entity";
+    private final ExecutorService executorService;
 
-    public HttpServerImpl(ServiceConfig config, ReferenceDao dao) throws IOException {
+    public HttpServerImpl(ServiceConfig config, ReferenceDao dao, ExecutorService executorService) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
+        this.executorService = executorService;
+    }
+    @Override
+    public void handleRequest(Request request, HttpSession session) {
+        executorService.execute(() -> {
+            try {
+                super.handleRequest(request, session);
+            } catch (Exception e) {
+                try {
+                    session.sendError(Response.BAD_REQUEST, e.getMessage());
+                } catch (IOException ex) {
+                    throw new UncheckedIOException(ex);
+                }
+            }
+        });
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -82,12 +99,13 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        executorService.shutdownNow();
+        super.stop();
         try {
             dao.close();
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            Thread.currentThread().interrupt();
         }
-        super.stop();
     }
 
     private boolean isParamIncorrect(String param) {

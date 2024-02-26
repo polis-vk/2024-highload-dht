@@ -8,6 +8,7 @@ import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 public class ServiceImpl implements Service {
 
@@ -24,7 +25,8 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        this.server = new HttpServerImpl(config, dao);
+        ExecutorService executorService = ExecutorServiceConfig.getExecutorService();
+        this.server = new HttpServerImpl(config, dao, executorService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -36,7 +38,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

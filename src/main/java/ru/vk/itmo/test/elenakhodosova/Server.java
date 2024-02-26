@@ -7,16 +7,17 @@ import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 
 public final class Server {
     public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
-
     private Server() {
 
     }
 
     public static void main(String[] args) throws IOException {
          ReferenceDao dao;
+         ExecutorService executorService = ExecutorServiceConfig.getExecutorService();
          ServiceConfig config = new ServiceConfig(
                 8080,
                 "http://localhost",
@@ -25,7 +26,7 @@ public final class Server {
         );
 
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        HttpServerImpl server = new HttpServerImpl(config, dao);
+        HttpServerImpl server = new HttpServerImpl(config, dao, executorService);
         server.start();
     }
 }

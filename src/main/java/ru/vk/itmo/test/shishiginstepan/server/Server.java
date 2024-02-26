@@ -7,6 +7,7 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -39,7 +40,7 @@ public class Server extends HttpServer {
         private final ThreadGroup group = new ThreadGroup("LSM-server-workers");
 
         @Override
-        public Thread newThread(Runnable r) {
+        public Thread newThread(@Nonnull Runnable r) {
             return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter.getAndIncrement()}");
         }
     };

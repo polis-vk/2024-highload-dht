@@ -41,7 +41,8 @@ public class Server extends HttpServer {
 
         @Override
         public Thread newThread(@Nonnull Runnable r) {
-            return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter.getAndIncrement()}");
+//            return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter.getAndIncrement()}");
+            return new Thread(group, r, group.getName()+workerNamingCounter.getAndIncrement());
         }
     };
 
@@ -54,7 +55,7 @@ public class Server extends HttpServer {
         this.executor = new ThreadPoolExecutor(
                 this.getSelectorCount(),
                 Math.min(this.getSelectorCount() * 2, processors),
-                30,
+                32,
                 TimeUnit.SECONDS,
                 requestQueue,
                 threadFactory

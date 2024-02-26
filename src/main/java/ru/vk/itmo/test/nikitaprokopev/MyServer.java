@@ -47,7 +47,7 @@ public class MyServer extends HttpServer {
     @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id, Request request) {
         MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
-        if (msKey == null || request.getBody().length == 0) {
+        if (msKey == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 

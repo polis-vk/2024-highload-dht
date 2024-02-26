@@ -58,13 +58,53 @@ BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>()
 Сделаем вывод, что чем больше `corePoolSize`, тем лучше latency. Однако вариант с неограниченной очередью нас тоже не
 устраивает, потому что однажды мы можем получить `OutOfMemoryException`. Рассмотрим очереди с capacity.
 
-### LinkedBlockingQueue with capacity and fair ArrayBlockingQueue
+### LinkedBlockingQueue with capacity and ArrayBlockingQueue
 
 Если мы ограничиваем размер очереди, у нас появляется новый сценарий - максимальное количество тредов загружено и 
 очередь заполнена. В таком случае введём `RejectedExecutionHandler` чтобы корректно обрабатывать такие случаи. Завернём
 `Runnable` в `Task`, чтобы передавать в `ExecutorService` сессию, а в `reject()` будем отправлять в сессию
 `Response.PAYMENT_REQUIRED`.
 
+Попробуем нагрузить `LinkedBlockingQueue` и fair `ArrayBlockingQueue` `PUT` запросами при разных 
+параметрах `queue capacity` (10 и 100) и `maxPoolSize` (`Integer.MAX_VALUE` и `2 * corePoolSize`). `corePoolSize = 
+Runtime.getRuntime().availableProcessors()`
+
+#### `PUT` requests, RPS: 5000, Connections: 64, Threads: 64, Duration: 30s
+
+Интересно, что при использовании обеих очередей, с `queue capacity = 10` и `maxPoolSize = 2 * corePoolSize` мы получили
+небольшое количество rejectов (меньше 0,001% от всех запросов). Сделаем вывод, что для такого размера очереди pool
+должен быть больше. 
+
+Лучше всех в данном сравнении себя показала `LinkedBlockingQueue` с `queue capacity = 100` и `maxPoolSize = 
+Integer.MAX_VALUE`.
+
+![image](images/stage2/cmp-put-lin-arr-fair-d30-t64-c64-R5000.png)
+
+Продолжим сравнение на более высоких RPS исключив варианты с rejectами и добавив non-fair `ArrayBlockingQueue`.
+
+#### `PUT` requests, RPS: 20.000, Connections: 64, Threads: 64, Duration: 30s
+
+Fair `ArrayBlockingQueue` показала себя очень неэффективной, улетев до средней latency в 100ms, поэтому для наглядности
+на графике результатов с ней нет. `LinkedBlockingQueue` и non-fair `ArrayBlockingQueue` с `queue capacity = 10` и 
+`maxPoolSize = Integer.MAX_VALUE` привели к`OutOfMemoryError`: сервер пытался выделить больше потоков, чем физически 
+позволяло железо, а при ограничении `maxPoolSize = 2000` (примерно такой предел) выдавал много rejectов, поэтому
+этих ситуаций также нет на графике. Интересно, что такого не произошло только с fair `ArrayBlockingQueue` с такими же
+параметрами: она ответила на все запросы, но опять же очень медленно.
+
+Лучше всех отработала `LinkedBlockingQueue` с `queue capacity = 100` независимо от `maxPoolSize`.
+
+![image](images/stage2/cmp-put-lin-arr-d30-t64-c64-R20000.png)
+
+### Сравнение очередей на профилях
+
+Мне стало интересно, почему `LinkedBlockingQueue` работает лучше, чем non-fair `ArrayBlockingQueue`, поэтому я решила
+посмотреть на профили.
+
+#### `PUT` requests, RPS: 20.000, Connections: 64, Threads: 64, Duration: 30s
+
+Профили CPU и аллокаций не показали никаких существенных различий ([lin-cpu.html](flame_graphs/stage2/lin-cpu.html), 
+[arr-cpu.html](flame_graphs/stage2/arr-cpu.html), [lin-alloc.html](flame_graphs/stage2/lin-alloc.html),
+[arr-alloc.html](flame_graphs/stage2/arr-alloc.html)).
 
 
 
@@ -76,32 +116,6 @@ BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>()
 
 
 
-
-
-
-
-
-
-[//]: # (### `PUT` requests, RPS: 100, Connections: 64, Threads: 64, Duration: 30s)
-
-[//]: # ()
-[//]: # (На низких RPS видно, что асинхронный сервер обрабатывает запросы быстрее)
-
-[//]: # ()
-[//]: # (![image]&#40;images/stage2/cmp-put-d30-t64-c64-R100.png&#41;)
-
-[//]: # ()
-[//]: # (### `PUT` requests, RPS: 5000, Connections: 64, Threads: 64, Duration: 30s)
-
-[//]: # ()
-[//]: # (Интересно, что при текущих параметрах, асинхронный и последовательный сервер работают почти одинаково, но <1% запросов)
-
-[//]: # (последовательный сервер обрабатывает быстрее. `ThreadPoolExecutor` добавляет новые потоки, когда `workQueue`)
-
-[//]: # (переполняется. Попробуем)
-
-[//]: # ()
-[//]: # (![image]&#40;images/stage2/cmp-put-d30-t64-c64-R5000.png&#41;)
 
 [//]: # (Using large queues and small pools minimizes CPU usage, OS resources, and context-switching overhead, but can 
 lead to artificially low throughput. If tasks frequently block &#40;for example if they are I/O bound&#41;, a system may

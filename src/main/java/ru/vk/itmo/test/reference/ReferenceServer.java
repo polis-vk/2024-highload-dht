@@ -3,26 +3,26 @@ package ru.vk.itmo.test.reference;
 import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 public class ReferenceServer extends HttpServer {
 
-    private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
+    private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
 
-    private final ReferenceDao dao;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public ReferenceServer(ServiceConfig config) throws IOException {
+    public ReferenceServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createServerConfig(config));
-        dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
+        this.dao = dao;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -41,6 +41,7 @@ public class ReferenceServer extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
+            log.error("Exception during handleRequest: ", e);
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }
@@ -89,13 +90,4 @@ public class ReferenceServer extends HttpServer {
         }
     }
 
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
 }

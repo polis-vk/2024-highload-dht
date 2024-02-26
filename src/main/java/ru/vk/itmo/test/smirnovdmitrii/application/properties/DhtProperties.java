@@ -20,22 +20,24 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ResourceBundle;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-//// костыль, так как нет resources папочки
 public final class DhtProperties {
     public static final String CLASSES_PACKAGE = "ru.vk.itmo.test.smirnovdmitrii";
+    public static final String PROPERTIES_FILE_PATH = "smirnovdmitrii/application";
     private static final Logger logger = LoggerFactory.getLogger(DhtProperties.class);
     private static final Map<String, String> properties = new HashMap<>();
-    private static AtomicBoolean isPropertiesSet;
+    private static final AtomicBoolean isPropertiesSet = new AtomicBoolean(false);
 
     static {
-        /// where to search classes
-
-        /// init properties
-        properties.put("flush.threshold.megabytes", "1");
-        properties.put("local.selfPort", "8080");
-        properties.put("local.selfUrl", "http://0.0.0.0:8080/");
+        ResourceBundle bundle = ResourceBundle.getBundle(PROPERTIES_FILE_PATH);
+        for (final Enumeration<String> keyEnumeration = bundle.getKeys();
+             keyEnumeration.hasMoreElements();
+        ) {
+            final String key = keyEnumeration.nextElement();
+            properties.put(key, bundle.getString(key));
+        }
     }
 
     private DhtProperties() {
@@ -61,12 +63,8 @@ public final class DhtProperties {
             while (resources.hasMoreElements()) {
                 directories.add(Path.of(URLDecoder.decode(resources.nextElement().getPath(), StandardCharsets.UTF_8)));
             }
-        } catch (final NullPointerException e) {
-            throw new ClassNotFoundException("class package is not valid");
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
-        } catch (final Exception e) {
-            throw new RuntimeException(e);
         }
         for (final Path path : directories) {
             try {
@@ -82,7 +80,7 @@ public final class DhtProperties {
                                 handleClass(Class.forName(classPath.replace("/", ".")));
                             } catch (final ClassNotFoundException e) {
                                 logger.error(e.getMessage());
-                                throw new RuntimeException(e);
+                                throw new PropertyException(e);
                             }
                         }
                         return FileVisitResult.CONTINUE;
@@ -97,65 +95,81 @@ public final class DhtProperties {
     private static void handleClass(final Class<?> clazz) {
         final Field[] fields = clazz.getDeclaredFields();
         for (final Field field: fields) {
-            final DhtValue DhtValue = field.getAnnotation(DhtValue.class);
-            if (DhtValue == null) {
+            final DhtValue dhtValue = field.getAnnotation(DhtValue.class);
+            if (dhtValue == null) {
                 continue;
             }
             final int modifiers = field.getModifiers();
             if (Modifier.isAbstract(modifiers)) {
-                throw new PropertyException("field " + field.getName()
-                        + " is abstract, class + clazz.getName()");
+                throwModifierException(clazz, field, "abstract");
             }
             if (Modifier.isFinal(modifiers)) {
-                throw new PropertyException("field " + field.getName()
-                        + " is final, class + clazz.getName()");
+                throwModifierException(clazz, field, "final");
             }
             if (!Modifier.isStatic(modifiers)) {
-                throw new PropertyException("field " + field.getName()
-                        + " is not static, class " + clazz.getName());
+                throwModifierException(clazz, field, "not static");
             }
-            final String value = properties.get(DhtValue.value());
+            final String value = properties.get(dhtValue.value());
             if (value == null) {
                 throw new PropertyException(
-                        "property '" + DhtValue.value() + "' not found, annotated field " + field.getName()
+                        "property '" + dhtValue.value() + "' not found, annotated field " + field.getName()
                 );
             }
             field.setAccessible(true);
             final Class<?> fieldType = field.getType();
-            Object valueToSet = null;
-            if (String.class.isAssignableFrom(fieldType)) {
-               valueToSet = value;
-            } else if (int.class.isAssignableFrom(fieldType)) {
-                valueToSet = Integer.valueOf(value);
-            } else if (long.class.isAssignableFrom(fieldType)) {
-                valueToSet = Long.valueOf(value);
-            } else if (short.class.isAssignableFrom(fieldType)) {
-                valueToSet = Short.valueOf(value);
-            } else if (double.class.isAssignableFrom(fieldType)) {
-                valueToSet = Double.valueOf(value);
-            } else if (boolean.class.isAssignableFrom(fieldType)) {
-                valueToSet = Boolean.valueOf(value);
-            } else if (fieldType == Enum.class) {
-                final Object[] enumValues = fieldType.getEnumConstants();
-                for (final Object enumValue: enumValues) {
-                    if (enumValue.toString().equals(value)) {
-                        valueToSet = enumValue;
-                        break;
-                    }
-                }
-                if (valueToSet == null) {
-                    throw new PropertyException("No enum constraint for field "
-                            + field.getName() + " with name " + value);
-                }
-            } else {
-                throw new PropertyException("not supported field type '" + fieldType.getName()
-                        + ", class " + clazz.getName());
-            }
+            final Object valueToSet = convertToFieldClass(clazz, field, fieldType, value);
             try {
                 field.set(null, valueToSet);
             } catch (final IllegalAccessException e) {
-                throw new PropertyException("can't set field: " + e.getMessage());
+                throw new PropertyException(e);
             }
         }
+    }
+
+    private static void throwModifierException(
+            final Class<?> clazz,
+            final Field field,
+            final String message
+    ) {
+        throw new PropertyException("field " + field.getName()
+                + " is " + message + ", class " + clazz.getName());
+    }
+
+    private static Object convertToFieldClass(
+            final Class<?> clazz,
+            final Field field,
+            final Class<?> fieldType,
+            final String value
+    ) {
+        Object valueToSet = null;
+        if (String.class.isAssignableFrom(fieldType)) {
+           valueToSet = value;
+        } else if (int.class.isAssignableFrom(fieldType)) {
+            valueToSet = Integer.valueOf(value);
+        } else if (long.class.isAssignableFrom(fieldType)) {
+            valueToSet = Long.valueOf(value);
+        } else if (short.class.isAssignableFrom(fieldType)) {
+            valueToSet = Short.valueOf(value);
+        } else if (double.class.isAssignableFrom(fieldType)) {
+            valueToSet = Double.valueOf(value);
+        } else if (boolean.class.isAssignableFrom(fieldType)) {
+            valueToSet = Boolean.valueOf(value);
+        } else if (Enum.class.isAssignableFrom(fieldType)) {
+            final Object[] enumValues = fieldType.getEnumConstants();
+            for (final Object enumValue: enumValues) {
+                if (enumValue.toString().equals(value)) {
+                    valueToSet = enumValue;
+                    break;
+                }
+            }
+            if (valueToSet == null) {
+                throw new PropertyException("No enum constraint for field "
+                        + field.getName() + " with name " + value);
+            }
+        } else {
+            throw new PropertyException("not supported field type '" + fieldType.getName()
+                    + ", class " + clazz.getName());
+        }
+        return valueToSet;
     }
 }

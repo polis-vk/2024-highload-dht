@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.server;
 
 import one.nio.http.HttpServer;
-import one.nio.os.SchedulingPolicy;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
@@ -9,8 +8,8 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtProperties;
+import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyException;
-import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyValue;
 import ru.vk.itmo.test.smirnovdmitrii.dao.DaoImpl;
 
 import java.io.IOException;
@@ -22,29 +21,37 @@ import java.util.concurrent.CompletableFuture;
 public class DaoServiceImpl implements Service {
 
     // acceptors
-    @PropertyValue("server.acceptor.threads")
+    @DhtValue("server.acceptor.threads")
     private static int acceptorThreads;
-    @PropertyValue("server.acceptor.reusePort")
+    @DhtValue("server.acceptor.reusePort")
     private static boolean reusePort;
     // dao
-    @PropertyValue("flush.threshold.megabytes")
+    @DhtValue("flush.threshold.megabytes")
     private static int flushThresholdMegabytes;
     // workers
-    @PropertyValue("server.workers.min")
+    @DhtValue("server.workers.min")
     private static int minWorkers;
-    @PropertyValue("server.workers.max")
+    @DhtValue("server.workers.max")
     private static int maxWorkers;
-    @PropertyValue("server.workers.queueTime")
+    @DhtValue("server.workers.queueTimeMs")
     private static int queueTime;
-    @PropertyValue("server.workers.schedulingPolicy")
-    private static SchedulingPolicy schedulingPolicy;
+    @DhtValue("server.workers.keepAliveTime")
+    private static int keepAliveTime;
+    @DhtValue("server.workers.useWorkers")
+    private static boolean useWorkers;
+    @DhtValue("server.workers.queueSize")
+    private static int queueSize;
+    @DhtValue("server.workers.queueType")
+    private static WorkerQueueType workerQueueType;
     // selectors
-    @PropertyValue("server.selectors.closeSessions")
+    @DhtValue("server.selectors.closeSessions")
     private static boolean closeSessions;
-    @PropertyValue("server.selectors.threads")
+    @DhtValue("server.selectors.threads")
     private static int selectorThreads;
-    @PropertyValue("server.selectors.affinity")
+    @DhtValue("server.selectors.affinity")
     private static boolean selectorAffinity;
+    @DhtValue("server.virtualThreads.enable")
+    private static boolean useVirtualThreads;
 
     private final ServiceConfig config;
     private HttpServer server;
@@ -61,15 +68,20 @@ public class DaoServiceImpl implements Service {
         acceptorConfig.reusePort = reusePort;
         acceptorConfig.threads = acceptorThreads;
         serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
-        serverConfig.closeSessions = closeSessions;
         // selectors
+        serverConfig.closeSessions = closeSessions;
         serverConfig.selectors = selectorThreads;
         serverConfig.affinity = selectorAffinity;
         // workers
         serverConfig.minWorkers = minWorkers;
         serverConfig.maxWorkers = maxWorkers;
         serverConfig.queueTime = queueTime;
-        serverConfig.schedulingPolicy = schedulingPolicy;
+        serverConfig.useWorkers = useWorkers;
+        serverConfig.queueSize = queueSize;
+        serverConfig.keepAliveTime = keepAliveTime;
+        serverConfig.workerQueueType = workerQueueType;
+        // virtual threads
+        serverConfig.useVirtualThreads = useVirtualThreads;
 
         serverConfig.workingDir = config.workingDir();
         return serverConfig;
@@ -77,14 +89,13 @@ public class DaoServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> start() {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                final Dao<MemorySegment, Entry<MemorySegment>> dao = createDao(config.workingDir());
-                server = new DaoHttpServer(createDaoHttpServerConfig(config), dao);
-            } catch (final IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        });
+        try {
+            final Dao<MemorySegment, Entry<MemorySegment>> dao = createDao(config.workingDir());
+            server = new DaoHttpServer(createDaoHttpServerConfig(config), dao);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return CompletableFuture.runAsync(server::start);
     }
 
     private Dao<MemorySegment, Entry<MemorySegment>> createDao(final Path basePath) {

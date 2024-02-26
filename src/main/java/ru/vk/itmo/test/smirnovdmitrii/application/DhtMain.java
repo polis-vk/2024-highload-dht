@@ -1,5 +1,12 @@
 package ru.vk.itmo.test.smirnovdmitrii.application;
 
+import ru.vk.itmo.Service;
+import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtProperties;
+import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
+import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyException;
+import ru.vk.itmo.test.smirnovdmitrii.server.DaoServiceImpl;
+
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -7,28 +14,25 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
-import ru.vk.itmo.Service;
-import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtProperties;
-import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyException;
-import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
-import ru.vk.itmo.test.smirnovdmitrii.server.DaoServiceImpl;
-
-public class DhtMain {
+public final class DhtMain {
     @DhtValue("local.selfUrl")
     private static String selfUrl;
     @DhtValue("local.selfPort")
     private static int selfPort;
 
-    public static void main(String[] args) throws Exception {
+    private DhtMain() {
+    }
+
+    public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
         Path workingDirectory;
         if (args.length > 0) {
             workingDirectory = Path.of(args[0]);
             Files.createDirectories(workingDirectory);
             if (args.length > 1) {
                 if (!"clear_on_init".equals(args[1])) {
-                    throw new RuntimeException("unexpected argument: " + args[1]);
+                    return;
                 }
                 clearDirectory(workingDirectory);
             }

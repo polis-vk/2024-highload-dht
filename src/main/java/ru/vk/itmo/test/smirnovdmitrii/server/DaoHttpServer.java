@@ -7,40 +7,57 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.smirnovdmitrii.dao.DaoImpl;
-import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtProperties;
-import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyException;
-import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyValue;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.TimeUnit;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class DaoHttpServer extends HttpServer {
-
     private static final String REQUEST_PATH = "/v0/entity";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
-
-    private final DaoHttpServerConfig config;
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ExecutorService workerPool;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public DaoHttpServer(
             final DaoHttpServerConfig config,
             final Dao<MemorySegment, Entry<MemorySegment>> dao
     ) throws IOException {
         super(config);
-        this.config = config;
         this.dao = dao;
+        if (config.useWorkers && config.useVirtualThreads) {
+            this.workerPool = Executors.newVirtualThreadPerTaskExecutor();
+        } else if (config.useWorkers) {
+            final BlockingQueue<Runnable> blockingQueue;
+            if (config.workerQueueType == WorkerQueueType.SYNCHRONOUS_QUEUE) {
+                blockingQueue = new SynchronousQueue<>();
+            } else {
+                blockingQueue = new ArrayBlockingQueue<>(config.queueSize);
+            }
+            this.workerPool = new DaoWorkerPool(
+                    config.minWorkers,
+                    config.maxWorkers,
+                    config.keepAliveTime,
+                    TimeUnit.SECONDS,
+                    blockingQueue
+            );
+        } else {
+            this.workerPool = null;
+        }
     }
 
     public Response get(final MemorySegment key) {
@@ -61,7 +78,6 @@ public class DaoHttpServer extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-
     public Response delete(final MemorySegment key) {
         final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
         dao.upsert(entry);
@@ -69,14 +85,33 @@ public class DaoHttpServer extends HttpServer {
     }
 
     @Override
-    public void handleRequest(final Request request, final HttpSession session) throws IOException {
-        final String uri = request.getURI();
-        final String id = request.getParameter("id=");
-        if (!validate(uri, id, session)) {
-            return;
+    public void handleRequest(final Request request, final HttpSession session) {
+        if (useWorkers) {
+            workerPool.execute(() -> handleRequestTask(request, session));
+        } else {
+            handleRequestTask(request, session);
         }
-        final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        final int method = request.getMethod();
+    }
+
+    private void handleRequestTask(final Request request, final HttpSession session) {
+        try {
+            final String uri = request.getURI();
+            final String id = request.getParameter("id=");
+            final Response validationFailedResponse = validate(uri, id);
+            if (validationFailedResponse != null) {
+                session.sendResponse(validationFailedResponse);
+                return;
+            }
+            final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+            final int method = request.getMethod();
+            Response response = getResponse(request, method, key);
+            session.sendResponse(response);
+        } catch (final IOException e) {
+            logger.error("IOException in send response.");
+        }
+    }
+
+    private Response getResponse(final Request request, final int method, final MemorySegment key) {
         Response response;
         try {
             response = switch (method) {
@@ -89,25 +124,19 @@ public class DaoHttpServer extends HttpServer {
             logger.error("Exception while handling request", e);
             response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        session.sendResponse(response);
+        return response;
     }
 
-    public boolean validate(
+    public Response validate(
             final String path,
-            final String id,
-            final HttpSession session
-    ) throws IOException {
-        Response response = null;
+            final String id
+    ) {
         if (!path.startsWith(REQUEST_PATH)) {
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else if (isInvalidKey(id)) {
-            response = new Response(Response.BAD_REQUEST, INVALID_KEY_MESSAGE);
+            return new Response(Response.BAD_REQUEST, INVALID_KEY_MESSAGE);
         }
-        if (response == null) {
-            return true;
-        }
-        session.sendResponse(response);
-        return false;
+        return null;
     }
 
     public boolean isInvalidKey(final String key) {
@@ -117,10 +146,31 @@ public class DaoHttpServer extends HttpServer {
     @Override
     public synchronized void stop() {
         super.stop();
+        if (workerPool != null) {
+            gracefulShutdown(workerPool);
+        }
         try {
             dao.close();
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    private static void gracefulShutdown(final ExecutorService executorService) {
+        executorService.shutdown();
+        try {
+            if (executorService.awaitTermination(20, TimeUnit.SECONDS)) {
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        executorService.shutdownNow();
+        try {
+            executorService.awaitTermination(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

@@ -41,7 +41,7 @@ public class PersistentStorage {
             ).map(
                     path -> new BinarySearchSSTable(path, arena)).forEach(this.sstables::add);
         } catch (IOException e) {
-            Logger.getAnonymousLogger().log(Level.WARNING, "Failed reading SSTABLE (probably deleted)");
+            Logger.getAnonymousLogger().log(Level.INFO, "Failed reading SSTABLE (probably deleted)");
         }
 
         lastSSTableId = new AtomicInteger(this.sstables.isEmpty() ? 0 : this.sstables.getFirst().id);

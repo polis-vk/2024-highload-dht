@@ -1,12 +1,7 @@
 package ru.vk.itmo.test.shishiginstepan.server;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
+import org.apache.log4j.Logger;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -16,14 +11,47 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.concurrent.*;
 
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String BASE_PATH = "/v0/entity";
 
+    private final Logger logger = Logger.getLogger("lsm-db-server");
+
+    private final Executor executor;
+    private static final Duration defaultTimeout = Duration.of(200, ChronoUnit.MILLIS);
+    private static final ZoneId ServerZoneId = ZoneId.of("+0");
+
+    private static final ThreadFactory threadFactory = new ThreadFactory() {
+        private int workerNamingCounter = 0;
+        private final ThreadGroup group = new ThreadGroup("LSM-server-workers");
+
+        @Override
+        public Thread newThread(Runnable r) {
+            workerNamingCounter++;
+            return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter}");
+        }
+    };
+
+
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(configFromServiceConfig(config));
         this.dao = dao;
+        BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100);
+        this.executor = new ThreadPoolExecutor(
+                4,
+                8,
+                30,
+                TimeUnit.SECONDS,
+                requestQueue,
+                threadFactory
+        );
+
     }
 
     private static HttpServerConfig configFromServiceConfig(ServiceConfig serviceConfig) {
@@ -35,6 +63,28 @@ public class Server extends HttpServer {
         serverConfig.acceptors = new one.nio.server.AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        LocalDateTime requestExpirationDate = LocalDateTime.now(ServerZoneId).plus(defaultTimeout);
+        try {
+            executor.execute(() -> {
+                try {
+                    if (LocalDateTime.now(ServerZoneId).isAfter(requestExpirationDate)) {
+                        session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+                    } else {
+                        super.handleRequest(request, session);
+                    }
+                } catch (IOException e) {
+                    session.close();
+                    throw new RuntimeException(e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error(e);
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
     }
 
     @Path(BASE_PATH)

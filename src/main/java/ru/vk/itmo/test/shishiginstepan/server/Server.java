@@ -15,7 +15,14 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -28,13 +35,12 @@ public class Server extends HttpServer {
     private static final ZoneId ServerZoneId = ZoneId.of("+0");
 
     private static final ThreadFactory threadFactory = new ThreadFactory() {
-        private int workerNamingCounter = 0;
+        private final AtomicInteger workerNamingCounter = new AtomicInteger(0);
         private final ThreadGroup group = new ThreadGroup("LSM-server-workers");
 
         @Override
         public Thread newThread(Runnable r) {
-            workerNamingCounter++;
-            return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter}");
+            return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter.getAndIncrement()}");
         }
     };
 
@@ -42,16 +48,16 @@ public class Server extends HttpServer {
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(configFromServiceConfig(config));
         this.dao = dao;
-        BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100);
+        BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100); //TODO подумать какое значение будет разумным
+        int processors = Runtime.getRuntime().availableProcessors();
         this.executor = new ThreadPoolExecutor(
-                4,
-                8,
+                this.getSelectorCount(),
+                Math.min(this.getSelectorCount() * 2, processors),
                 30,
                 TimeUnit.SECONDS,
                 requestQueue,
                 threadFactory
         );
-
     }
 
     private static HttpServerConfig configFromServiceConfig(ServiceConfig serviceConfig) {
@@ -71,14 +77,9 @@ public class Server extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    if (LocalDateTime.now(ServerZoneId).isAfter(requestExpirationDate)) {
-                        session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
-                    } else {
-                        super.handleRequest(request, session);
-                    }
+                    handleRequestInOtherThread(request, session, requestExpirationDate);
                 } catch (IOException e) {
-                    session.close();
-                    throw new RuntimeException(e);
+                    session.handleException(e);
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -87,6 +88,25 @@ public class Server extends HttpServer {
         }
     }
 
+    private void handleRequestInOtherThread(Request request, HttpSession session, LocalDateTime requestExpirationDate) throws IOException {
+        try {
+            if (LocalDateTime.now(ServerZoneId).isAfter(requestExpirationDate)) {
+                session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            } else {
+                super.handleRequest(request, session);
+            }
+        } catch (Exception e) {
+            if (e instanceof HttpException) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            } else {
+                logger.error(e);
+                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                throw e;
+            }
+        }
+    }
+
+
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_GET)
 
@@ -94,8 +114,14 @@ public class Server extends HttpServer {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        var key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        var val = dao.get(key);
+        MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+        Entry<MemorySegment> val;
+        try {
+            val = dao.get(key);
+        } catch (Exception e) {
+            logger.error(e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
         if (val == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
@@ -108,9 +134,14 @@ public class Server extends HttpServer {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        var key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        var val = MemorySegment.ofArray(request.getBody());
-        dao.upsert(new BaseEntry<>(key, val));
+        MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+        MemorySegment val = MemorySegment.ofArray(request.getBody());
+        try {
+            dao.upsert(new BaseEntry<>(key, val));
+        } catch (Exception e) {
+            logger.error(e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
@@ -120,8 +151,13 @@ public class Server extends HttpServer {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        var key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        dao.upsert(new BaseEntry<>(key, null));
+        MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+        try {
+            dao.upsert(new BaseEntry<>(key, null));
+        } catch (Exception e) {
+            logger.error(e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 

@@ -6,7 +6,6 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
-import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +23,7 @@ import static one.nio.http.Response.OK;
 public class RequestHandler {
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID = "id=";
+
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao) {

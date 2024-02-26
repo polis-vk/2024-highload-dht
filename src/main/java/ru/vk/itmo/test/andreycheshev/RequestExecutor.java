@@ -25,11 +25,11 @@ public class RequestExecutor {
     private static final int MAX_WORKERS_COUNT = 100;
     private static final Logger logger = LoggerFactory.getLogger(RequestExecutor.class);
 
-    static final String TOO_MANY_REQUESTS = "429 Too many requests";
-
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService workers;
     private final RequestHandler requestHandler;
+
+    static final String TOO_MANY_REQUESTS = "429 Too many requests";
 
     public RequestExecutor(Config daoConfig) throws IOException {
         this.dao = new PersistentReferenceDao(daoConfig);
@@ -49,9 +49,12 @@ public class RequestExecutor {
 
     public void execute(Request request, HttpSession session) {
         Runnable task = new ResponseGeneratorRunnable(request, session, requestHandler);
+
         try {
             workers.execute(task);
-        } catch (RejectedExecutionException e) { // Переполнение очереди
+        }
+        // Переполнение очереди, невозможно взять новую задачу в исполнение
+        catch (RejectedExecutionException e) {
             try {
                 session.sendResponse(
                         new Response(TOO_MANY_REQUESTS, Response.EMPTY)

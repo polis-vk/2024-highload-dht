@@ -13,8 +13,8 @@ import static ru.vk.itmo.test.andreycheshev.RequestExecutor.TOO_MANY_REQUESTS;
 
 public final class ResponseGeneratorRunnable implements Runnable {
     private static final Logger logger = LoggerFactory.getLogger(ResponseGeneratorRunnable.class);
-    private static final long MAX_AWAITING_IME_MILLIS = 3000;
-    private final Runnable runnable;
+    private static final long MAX_AWAITING_TIME_MILLIS = 3000;
+    private final Runnable runnableTask;
     private final long deadline;
 
     public ResponseGeneratorRunnable(Request request,
@@ -22,11 +22,11 @@ public final class ResponseGeneratorRunnable implements Runnable {
                                      RequestHandler requestHandler) {
         this.deadline = System.currentTimeMillis();
 
-        runnable = () -> {
+        this.runnableTask = () -> {
             Response response;
 
             // Если дедлайн для выполнения задачи прошел
-            if (System.currentTimeMillis() - deadline > MAX_AWAITING_IME_MILLIS) {
+            if (System.currentTimeMillis() - deadline > MAX_AWAITING_TIME_MILLIS) {
                 response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
             } else {
                 response = requestHandler.handle(request);
@@ -43,6 +43,6 @@ public final class ResponseGeneratorRunnable implements Runnable {
 
     @Override
     public void run(){
-        runnable.run();
+        runnableTask.run();
     }
 }

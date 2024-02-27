@@ -9,6 +9,7 @@ import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class LaunchService implements Service {
+    // :TODO Should make new abstraction which allows save dao in service, not in HttpServer
     private final DaoServer server;
     private boolean isStarted;
 

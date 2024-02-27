@@ -11,24 +11,20 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public class HttpServerImpl extends HttpServer {
-    private final Config daoConfig;
-    private ReferenceDao dao;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public HttpServerImpl(ServiceConfig config) throws IOException {
+    public HttpServerImpl(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createConfig(config));
-
-        this.daoConfig = createDaoConfig(config);
+        this.dao = dao;
     }
 
     @Path("/v0/entity")
@@ -49,11 +45,15 @@ public class HttpServerImpl extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id, Request request) {
-        if (id.isEmpty()) {
+        if (id.isEmpty() || request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        dao.upsert(new BaseEntry<>(parseToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
+        try {
+            dao.upsert(new BaseEntry<>(parseToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
+        } catch (IllegalStateException e) {
+            return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
+        }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
@@ -89,31 +89,5 @@ public class HttpServerImpl extends HttpServer {
         httpServerConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
-    }
-
-    private static Config createDaoConfig(ServiceConfig serviceConfig) {
-        return new Config(serviceConfig.workingDir(), 1024);
-    }
-
-    @Override
-    public synchronized void start() {
-        try {
-            dao = new ReferenceDao(daoConfig);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
-        super.start();
-    }
-
-    @Override
-    public synchronized void stop() {
-        super.stop();
-
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 }

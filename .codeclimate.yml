@@ -9,6 +9,7 @@ plugins:
     enabled: true
     config:
       file: "checkstyle.xml"
+      channel: "beta"
   pmd:
     enabled: true
     config:

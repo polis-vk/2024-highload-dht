@@ -7,6 +7,7 @@ import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,10 +71,10 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = SUPPORTED_METHODS.contains(request.getMethod())
-                ? new Response(Response.BAD_REQUEST, Response.EMPTY)
-                : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        session.sendResponse(response);
+        DaoResponse daoResponse = SUPPORTED_METHODS.contains(request.getMethod())
+                ? new DaoResponse(DaoResponse.BAD_REQUEST, DaoResponse.EMPTY)
+                : new DaoResponse(DaoResponse.METHOD_NOT_ALLOWED, DaoResponse.EMPTY);
+        session.sendResponse(daoResponse);
     }
 
     @Override
@@ -83,37 +84,29 @@ public class DaoHttpServer extends HttpServer {
             executor.execute(() -> {
                 try {
                     if (System.currentTimeMillis() > expiration) {
-                        try {
-                            session.sendResponse(Response.empty(Response.SERVICE_UNAVAILABLE));
-                        } catch (IOException ex) {
-                            logger.error(ex.getMessage());
-                        }
+                        sessionSendResponse(session, DaoResponse.SERVICE_UNAVAILABLE);
                     } else {
                         super.handleRequest(request, session);
                     }
                 } catch (DaoException e) {
                     logger.error(e.getMessage());
-                    try {
-                        session.sendResponse(Response.empty(Response.INTERNAL_ERROR));
-                    } catch (IOException ex) {
-                        logger.error(ex.getMessage());
-                    }
+                    sessionSendResponse(session, DaoResponse.INTERNAL_ERROR);
                 } catch (Exception e) {
                     logger.error(e.getMessage());
-                    try {
-                        session.sendResponse(Response.empty(Response.BAD_REQUEST));
-                    } catch (IOException ex) {
-                        logger.error(ex.getMessage());
-                    }
+                    sessionSendResponse(session, DaoResponse.BAD_REQUEST);
                 }
             });
         } catch (RejectedExecutionException e) {
             logger.error(e.getMessage());
-            try {
-                session.sendResponse(Response.empty(Response.TOO_MANY_REQUESTS));
-            } catch (IOException ex) {
-                logger.error(ex.getMessage());
-            }
+            sessionSendResponse(session, DaoResponse.TOO_MANY_REQUESTS);
+        }
+    }
+
+    private void sessionSendResponse(HttpSession session, String serviceUnavailable) {
+        try {
+            session.sendResponse(DaoResponse.empty(serviceUnavailable));
+        } catch (IOException ex) {
+            logger.error(ex.getMessage());
         }
     }
 
@@ -125,55 +118,55 @@ public class DaoHttpServer extends HttpServer {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public one.nio.http.Response getMapping(
+    public Response getMapping(
             @Param(value = "id", required = true) String id
     ) {
         return handleDaoException(() -> {
             if (id.isBlank()) {
-                return Response.empty(Response.BAD_REQUEST);
+                return DaoResponse.empty(DaoResponse.BAD_REQUEST);
             }
 
             Entry<MemorySegment> entry = dao.get(toMemorySegment(id));
             if (entry == null) {
-                return Response.empty(Response.NOT_FOUND);
+                return DaoResponse.empty(DaoResponse.NOT_FOUND);
             }
 
             byte[] value = toByteArray(entry.value());
-            return Response.ok(value);
+            return DaoResponse.ok(value);
         });
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public one.nio.http.Response upsertMapping(
+    public Response upsertMapping(
             @Param(value = "id", required = true) String id,
             Request request
     ) {
         return handleDaoException(() -> {
             if (id.isBlank() || request.getBody() == null) {
-                return Response.empty(Response.BAD_REQUEST);
+                return DaoResponse.empty(DaoResponse.BAD_REQUEST);
             }
 
             dao.upsert(toEntity(id, request.getBody()));
-            return Response.empty(Response.CREATED);
+            return DaoResponse.empty(DaoResponse.CREATED);
         });
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public one.nio.http.Response deleteMapping(
+    public Response deleteMapping(
             @Param(value = "id", required = true) String id
     ) {
         return handleDaoException(() -> {
             if (id.isBlank()) {
-                return Response.empty(Response.BAD_REQUEST);
+                return DaoResponse.empty(DaoResponse.BAD_REQUEST);
             }
             dao.upsert(toDeletedEntity(id));
-            return Response.empty(Response.ACCEPTED);
+            return DaoResponse.empty(DaoResponse.ACCEPTED);
         });
     }
 
-    private Response handleDaoException(Supplier<Response> supplier) {
+    private DaoResponse handleDaoException(Supplier<DaoResponse> supplier) {
         try {
             return supplier.get();
         } catch (Exception e) {

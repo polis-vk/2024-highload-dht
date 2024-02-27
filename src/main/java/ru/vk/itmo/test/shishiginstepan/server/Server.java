@@ -49,7 +49,7 @@ public class Server extends HttpServer {
 
         @Override
         public Thread newThread(@Nonnull Runnable r) {
-            return new Thread(r, STR."lsm-db-worker-\{workerNamingCounter.getAndIncrement()}");
+            return new Thread(r, "lsm-db-worker-" + workerNamingCounter.getAndIncrement());
         }
     };
 

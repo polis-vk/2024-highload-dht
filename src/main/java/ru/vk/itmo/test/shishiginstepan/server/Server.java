@@ -9,6 +9,7 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.server.AcceptorConfig;
 import org.apache.log4j.Logger;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -70,11 +71,11 @@ public class Server extends HttpServer {
 
     private static HttpServerConfig configFromServiceConfig(ServiceConfig serviceConfig) {
         HttpServerConfig serverConfig = new HttpServerConfig();
-        one.nio.server.AcceptorConfig acceptorConfig = new one.nio.server.AcceptorConfig();
+        AcceptorConfig acceptorConfig = new one.nio.server.AcceptorConfig();
         acceptorConfig.reusePort = true;
         acceptorConfig.port = serviceConfig.selfPort();
 
-        serverConfig.acceptors = new one.nio.server.AcceptorConfig[]{acceptorConfig};
+        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
     }
@@ -178,7 +179,7 @@ public class Server extends HttpServer {
     }
 
     @Override
-    public void handleDefault(Request request, one.nio.http.HttpSession session) throws IOException {
+    public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
     }

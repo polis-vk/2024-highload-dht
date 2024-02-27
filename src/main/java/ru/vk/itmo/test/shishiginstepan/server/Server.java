@@ -87,8 +87,17 @@ public class Server extends HttpServer {
             executor.execute(() -> {
                 try {
                     handleRequestInOtherThread(request, session, requestExpirationDate);
-                } catch (IOException e) {
-                    session.handleException(e);
+                } catch (IOException | HttpException e) {
+                    try {
+                        if (e instanceof HttpException) {
+                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        } else {
+                            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                        }
+                    } catch (IOException exceptionHandlingException) {
+                        logger.error(exceptionHandlingException.initCause(e));
+                        session.close();
+                    }
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -101,21 +110,11 @@ public class Server extends HttpServer {
             Request request,
             HttpSession session,
             LocalDateTime requestExpirationDate
-    ) throws IOException {
-        try {
-            if (LocalDateTime.now(ServerZoneId).isAfter(requestExpirationDate)) {
-                session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
-            } else {
-                super.handleRequest(request, session);
-            }
-        } catch (Exception e) {
-            if (e instanceof HttpException) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            } else {
-                logger.error(e);
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                throw e;
-            }
+    ) throws IOException, HttpException {
+        if (LocalDateTime.now(ServerZoneId).isAfter(requestExpirationDate)) {
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        } else {
+            super.handleRequest(request, session);
         }
     }
 

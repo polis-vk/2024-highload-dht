@@ -71,7 +71,7 @@ public class Server extends HttpServer {
 
     private static HttpServerConfig configFromServiceConfig(ServiceConfig serviceConfig) {
         HttpServerConfig serverConfig = new HttpServerConfig();
-        AcceptorConfig acceptorConfig = new one.nio.server.AcceptorConfig();
+        AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.reusePort = true;
         acceptorConfig.port = serviceConfig.selfPort();
 
@@ -87,13 +87,16 @@ public class Server extends HttpServer {
             executor.execute(() -> {
                 try {
                     handleRequestInOtherThread(request, session, requestExpirationDate);
-                } catch (IOException | HttpException e) {
+                } catch (IOException e) {
                     try {
-                        if (e instanceof HttpException) {
-                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        } else {
-                            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                        }
+                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                    } catch (IOException exceptionHandlingException) {
+                        logger.error(exceptionHandlingException.initCause(e));
+                        session.close();
+                    }
+                } catch (HttpException e) {
+                    try {
+                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                     } catch (IOException exceptionHandlingException) {
                         logger.error(exceptionHandlingException.initCause(e));
                         session.close();

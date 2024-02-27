@@ -106,7 +106,7 @@ public class Server extends HttpServer {
                 try {
                     handleRequestWrapper(request, session);
                 } catch (IOException e) {
-                    throw new UncheckedIOException(e);
+                    throw new UncheckedIOException("Error while trying wrap request: " + request , e);
                 }
             });
         } catch (RejectedExecutionException e) {

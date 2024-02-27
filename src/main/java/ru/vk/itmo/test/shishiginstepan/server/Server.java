@@ -45,18 +45,17 @@ public class Server extends HttpServer {
 
     private static final ThreadFactory threadFactory = new ThreadFactory() {
         private final AtomicInteger workerNamingCounter = new AtomicInteger(0);
-        private final ThreadGroup group = new ThreadGroup("LSM-server-workers");
 
         @Override
         public Thread newThread(@Nonnull Runnable r) {
-           return new Thread(group, r, STR."\{group.getName()}-\{workerNamingCounter.getAndIncrement()}");
+            return new Thread(r, STR."lsm-db-worker-\{workerNamingCounter.getAndIncrement()}");
         }
     };
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(configFromServiceConfig(config));
         this.dao = dao;
-            //TODO подумать какое значение будет разумным
+        //TODO подумать какое значение будет разумным
         BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100);
         int processors = Runtime.getRuntime().availableProcessors();
         this.executor = new ThreadPoolExecutor(
@@ -97,7 +96,11 @@ public class Server extends HttpServer {
         }
     }
 
-    private void handleRequestInOtherThread(Request request, HttpSession session, LocalDateTime requestExpirationDate) throws IOException {
+    private void handleRequestInOtherThread(
+            Request request,
+            HttpSession session,
+            LocalDateTime requestExpirationDate
+    ) throws IOException {
         try {
             if (LocalDateTime.now(ServerZoneId).isAfter(requestExpirationDate)) {
                 session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));

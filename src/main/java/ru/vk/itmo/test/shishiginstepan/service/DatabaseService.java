@@ -24,7 +24,7 @@ public class DatabaseService implements ru.vk.itmo.Service {
 
     @Override
     public CompletableFuture<Void> start() {
-        dao = new InMemDaoImpl(config.workingDir(), 1024*1024*10);
+        dao = new InMemDaoImpl(config.workingDir(), 1024 * 1024 * 10);
         try {
             server = new Server(config, dao);
         } catch (IOException e) {

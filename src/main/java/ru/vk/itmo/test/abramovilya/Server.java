@@ -22,11 +22,11 @@ public class Server extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService = new ThreadPoolExecutor(
-            1,
-            1,
+            4,
+            8,
             1,
             TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(8)
+            new ArrayBlockingQueue<>(80)
     );
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
@@ -46,8 +46,12 @@ public class Server extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, "Unknown path".getBytes(StandardCharsets.UTF_8));
-        session.sendResponse(response);
+        try {
+            Response response = new Response(Response.BAD_REQUEST, "Unknown path".getBytes(StandardCharsets.UTF_8));
+            session.sendResponse(response);
+        } catch (Exception e) {
+            session.sendError(Response.INTERNAL_ERROR, "");
+        }
     }
 
     @Override

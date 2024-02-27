@@ -1,16 +1,12 @@
 package ru.vk.itmo.test.proninvalentin;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
@@ -19,8 +15,9 @@ import java.lang.foreign.MemorySegment;
 import java.util.Set;
 
 public class Server extends HttpServer {
-    private final ReferenceDao dao;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final MemorySegmentFactory msFactory;
+    private static final Logger logger = LoggerFactory.getLogger(Server.class);
     private static final Set<Integer> SUPPORTED_HTTP_METHODS = Set.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
@@ -56,6 +53,28 @@ public class Server extends HttpServer {
 
     private boolean isSupportedMethod(int httpMethod) {
         return SUPPORTED_HTTP_METHODS.contains(httpMethod);
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            logger.error("Error while processing request", e);
+
+            String responseCode = e.getClass() == HttpException.class
+                    ? Response.BAD_REQUEST
+                    : Response.INTERNAL_ERROR;
+            sendResponse(session, new Response(responseCode, Response.EMPTY));
+        }
+    }
+
+    private static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("Error while sending response", e);
+        }
     }
 
     @Override

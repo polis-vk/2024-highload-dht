@@ -20,11 +20,25 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
+@SuppressWarnings("unused")
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String ENTITY_PATH = "/v0/entity";
-    private static final long MEM_DAO_SIZE = 1L << 22;
+    private static final long MEM_DAO_SIZE = 1L << 16;
+    private static final int KEEP_ALIVE_THREAD = 30;
+    private static final TimeUnit KEEP_ALIVE_THREAD_UNIT = TimeUnit.SECONDS;
+    private static final int AWAIT_TERMINATION_TIME = 5;
+    private static final TimeUnit AWAIT_TERMINATION_UNIT = TimeUnit.MINUTES;
+    public static final int QUEUE_CAPACITY = 1024;
+    private final ExecutorService executorService;
 
     public Server(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
@@ -33,6 +47,7 @@ public class Server extends HttpServer {
         } catch (IOException e) {
             throw new UncheckedIOException("Can't start server", e);
         }
+        executorService = getExecutorService();
     }
 
     @Path(ENTITY_PATH)
@@ -85,13 +100,62 @@ public class Server extends HttpServer {
     }
 
     @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            Future<?> submit = executorService.submit(() -> {
+                try {
+                    handleRequestWrapper(request, session);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            Response response = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            session.sendResponse(response);
+        }
+    }
+
+    private void handleRequestWrapper(Request request, HttpSession session) throws IOException {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            handleDefault(request, session);
+        }
+    }
+
+    @Override
     public synchronized void stop() {
+        shutdownAwait(executorService);
         super.stop();
         try {
             dao.close();
         } catch (IOException e) {
             throw new UncheckedIOException("Error while stopping server", e);
         }
+    }
+
+    private static void shutdownAwait(ExecutorService executorService) {
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(AWAIT_TERMINATION_TIME, AWAIT_TERMINATION_UNIT)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static ExecutorService getExecutorService() {
+        int cores = Runtime.getRuntime().availableProcessors();
+        return new ThreadPoolExecutor(
+            cores / 2,
+            cores,
+            KEEP_ALIVE_THREAD,
+            KEEP_ALIVE_THREAD_UNIT,
+            new ArrayBlockingQueue<>(QUEUE_CAPACITY),
+            Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.DiscardOldestPolicy()
+        );
     }
 
     private static MemorySegment toMemorySegment(String string) {

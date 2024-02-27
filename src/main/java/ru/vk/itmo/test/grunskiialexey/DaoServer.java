@@ -56,6 +56,8 @@ public class DaoServer extends HttpServer {
     }
 
     @Path("/v0/entity")
+//    :TODO Check profiling with request method s
+//    @RequestMethod(Request.METHOD_GET)
     public void handleQueries(Request request, HttpSession session) throws IOException {
         final String methodName = request.getMethodName();
         String id = request.getParameter("id");
@@ -67,6 +69,8 @@ public class DaoServer extends HttpServer {
         switch (methodName) {
             case "GET" -> {
                 final Entry<MemorySegment> entry = dao.get(key);
+                // :TODO should go to check how to working .get(key) - may it has entry.value() or not
+                //  :TODO but actualy it's not necessary
                 if (entry == null || entry.value() == null) {
                     session.sendError(Response.NOT_FOUND, "Not found value associate with key" + id);
                     return;
@@ -91,6 +95,7 @@ public class DaoServer extends HttpServer {
         session.close();
     }
 
+    // :TODO we need to handle exceptions
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         session.sendError(Response.BAD_REQUEST, "This path is unavailable");

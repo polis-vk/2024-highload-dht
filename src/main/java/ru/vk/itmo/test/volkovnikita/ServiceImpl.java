@@ -21,7 +21,7 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         server = new HttpServerImpl(config, dao);
         server.start();
@@ -29,7 +29,7 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         server.stop();
         dao.close();
         return CompletableFuture.completedFuture(null);

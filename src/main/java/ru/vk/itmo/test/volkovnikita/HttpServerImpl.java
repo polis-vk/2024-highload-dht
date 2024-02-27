@@ -11,19 +11,20 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.List;
+import java.util.Set;
 
 public class HttpServerImpl extends HttpServer {
 
-    private final ReferenceDao dao;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    static final List<String> METHODS = List.of(
+    static final Set<String> METHODS = Set.of(
             "GET",
             "PUT",
             "DELETE"
@@ -53,10 +54,10 @@ public class HttpServerImpl extends HttpServer {
     @Path(value = "/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getEntry(@Param(value = "id", required = true) String id) {
-        if (isIdCorrect(id)) {
+        if (isIdUncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        MemorySegment key = idToMemorySegment(id);
+        MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         Entry<MemorySegment> entry = dao.get(key);
         return entry == null ? new Response(Response.NOT_FOUND, Response.EMPTY) :
                 new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
@@ -64,11 +65,11 @@ public class HttpServerImpl extends HttpServer {
 
     @Path(value = "/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response putEntry(@Param(value = "id", required = true) String id, Request request) {
-        if (isIdCorrect(id)) {
+    public Response up(@Param(value = "id", required = true) String id, Request request) {
+        if (isIdUncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        MemorySegment key = idToMemorySegment(id);
+        MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         MemorySegment value = MemorySegment.ofArray(request.getBody());
         dao.upsert(new BaseEntry<>(key, value));
         return new Response(Response.CREATED, Response.EMPTY);
@@ -77,10 +78,10 @@ public class HttpServerImpl extends HttpServer {
     @Path(value = "/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntry(@Param(value = "id", required = true) String id) {
-        if (isIdCorrect(id)) {
+        if (isIdUncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        MemorySegment key = idToMemorySegment(id);
+        MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         dao.upsert(new BaseEntry<>(key, null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
@@ -98,11 +99,7 @@ public class HttpServerImpl extends HttpServer {
         session.sendResponse(response);
     }
 
-    private MemorySegment idToMemorySegment(String id) {
-        return id == null ? null : MemorySegment.ofArray(id.toCharArray());
-    }
-
-    private boolean isIdCorrect(String id) {
+    private boolean isIdUncorrect(String id) {
         return id == null || id.isEmpty() || id.isBlank();
     }
 }

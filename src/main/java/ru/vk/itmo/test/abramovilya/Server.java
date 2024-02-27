@@ -61,12 +61,12 @@ public class Server extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (IOException e) {
-                    logger.info(STR."IOException for request: \{request}");
+                    logger.info("IOException for request: " + request);
                     throw new UncheckedIOException(e);
                 }
             });
         } catch (RejectedExecutionException e) {
-            logger.info(STR."Execution rejected for request: \{request}");
+            logger.info("Execution rejected for request: " + request);
             session.sendError(Response.SERVICE_UNAVAILABLE, "");
         }
     }

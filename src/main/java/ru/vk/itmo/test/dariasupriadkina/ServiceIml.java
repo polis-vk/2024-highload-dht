@@ -3,16 +3,19 @@ package ru.vk.itmo.test.dariasupriadkina;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.dariasupriadkina.dao.exception.ServiceImplCreationException;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceIml implements Service {
 
     private Server server;
-    private ReferenceDao dao;
+    private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private Config daoConfig;
     private ServiceConfig serviceConfig;
 
@@ -30,7 +33,7 @@ public class ServiceIml implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
         server = new Server(serviceConfig, dao);
 
@@ -39,7 +42,7 @@ public class ServiceIml implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         server.stop();
         dao.close();
 

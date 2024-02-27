@@ -10,9 +10,11 @@ import java.nio.file.Path;
 @ServiceFactory(stage = 1)
 public class ServiceImlFactory implements ServiceFactory.Factory {
 
+    private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024;
+
     @Override
     public Service create(ServiceConfig serviceConfig) {
-        Config referenceDaoConfig = new Config(Path.of(serviceConfig.workingDir().toUri()), 1024 * 1024);
+        Config referenceDaoConfig = new Config(Path.of(serviceConfig.workingDir().toUri()), FLUSH_THRESHOLD_BYTES);
         return new ServiceIml(serviceConfig, referenceDaoConfig);
     }
 }

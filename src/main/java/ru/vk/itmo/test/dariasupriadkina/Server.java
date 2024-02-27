@@ -11,22 +11,22 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.Set;
 
 public class Server extends HttpServer {
 
-    private final ReferenceDao dao;
-    private final List<Integer> permittedMethods =
-            List.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final Set<Integer> permittedMethods =
+            Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
 
-    public Server(ServiceConfig config, ReferenceDao dao) throws IOException {
+    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;
     }
@@ -53,34 +53,46 @@ public class Server extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getHandler(@Param(value = "id", required = true) String id) {
-        if (id.length() == 0) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        try {
+            if (id.length() == 0) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            Entry<MemorySegment> entry = getEntryById(id);
+            if (entry == null || entry.value() == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
+            return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        Entry<MemorySegment> entry = getEntryById(id);
-        if (entry == null || entry.value() == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response putHandler(Request request, @Param(value = "id", required = true) String id) {
-        if (id.length() == 0) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        try {
+            if (id.length() == 0) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            dao.upsert(convertToEntry(id, request.getBody()));
+            return new Response(Response.CREATED, Response.EMPTY);
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        dao.upsert(convertToEntry(id, request.getBody()));
-        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteHandler(@Param(value = "id", required = true) String id) {
-        if (id.length() == 0) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        try {
+            if (id.length() == 0) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            dao.upsert(convertToEntry(id, null));
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        dao.upsert(convertToEntry(id, null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
@@ -107,4 +119,5 @@ public class Server extends HttpServer {
     private Entry<MemorySegment> getEntryById(String id) {
         return dao.get(convertByteArrToMemorySegment(id.getBytes(StandardCharsets.UTF_8)));
     }
+
 }

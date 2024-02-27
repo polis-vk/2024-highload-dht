@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class RequestExecutor {
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int KEEPALIVE_MILLIS = 3000;
-    private static final int MAX_WORKERS_COUNT = 100;
+    private static final int BLOCKING_QUEUE_MAX_SIZE = 100;
     private static final Logger logger = LoggerFactory.getLogger(RequestExecutor.class);
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -41,7 +41,7 @@ public class RequestExecutor {
                 CPU_THREADS_COUNT * 10,
                 KEEPALIVE_MILLIS,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(MAX_WORKERS_COUNT),
+                new ArrayBlockingQueue<>(BLOCKING_QUEUE_MAX_SIZE),
                 new WorkerThreadFactory(),
                 new ThreadPoolExecutor.AbortPolicy()
         );

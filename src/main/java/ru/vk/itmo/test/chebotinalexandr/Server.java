@@ -19,6 +19,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class Server {
+    private static final Random RANDOM = new Random();
     private static final int ENTRIES_IN_DB = 500_000;
 
     private Server() {
@@ -52,8 +53,6 @@ public final class Server {
     }
 
     private static int[] getRandomArray() {
-        Random rand = new Random();
-
         int[] entries = new int[ENTRIES_IN_DB];
         for (int i = 0; i < ENTRIES_IN_DB; i++) {
             entries[i] = i;
@@ -61,7 +60,7 @@ public final class Server {
 
         int index;
         for (int i = ENTRIES_IN_DB; i > 0; i--) {
-            index = rand.nextInt(i + 1);
+            index = RANDOM.nextInt(i + 1);
             if (index != i) {
                 entries[index] ^= entries[i];
                 entries[i] ^= entries[index];

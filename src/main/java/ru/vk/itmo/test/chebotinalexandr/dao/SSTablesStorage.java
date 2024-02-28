@@ -38,7 +38,7 @@ public class SSTablesStorage {
     public static final int HASH_FUNCTIONS_NUM = 2;
     private static final SSTableOffsets offsetsConfig =
             new SSTableOffsets(Long.BYTES, 0, 2L * Long.BYTES);
-    private static int sstablesCount = 0;
+    private static int sstablesCount;
 
     public SSTablesStorage(Path basePath) {
         this.basePath = basePath;

@@ -143,6 +143,7 @@ public class MyServer extends HttpServer {
                     sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), session);
                     return;
                 }
+
                 try {
                     super.handleRequest(request, session);
                 } catch (Exception e) {

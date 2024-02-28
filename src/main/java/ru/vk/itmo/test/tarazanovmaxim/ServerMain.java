@@ -9,7 +9,6 @@ import java.util.List;
 public final class ServerMain {
 
      private ServerMain() {
-
     }
 
     public static void main(String[] args) throws IOException {

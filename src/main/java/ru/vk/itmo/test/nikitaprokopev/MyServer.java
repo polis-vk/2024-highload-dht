@@ -34,7 +34,11 @@ public class MyServer extends HttpServer {
 
     private final ThreadPoolExecutor workerPool;
 
-    public MyServer(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao, ThreadPoolExecutor workerPool) throws IOException {
+    public MyServer(
+            ServiceConfig serviceConfig,
+            Dao<MemorySegment, Entry<MemorySegment>> dao,
+            ThreadPoolExecutor workerPool
+    ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
         this.workerPool = workerPool;

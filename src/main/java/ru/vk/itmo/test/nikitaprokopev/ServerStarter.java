@@ -28,7 +28,7 @@ public final class ServerStarter {
                         8080,
                         "http://localhost",
                         List.of("http://localhost"),
-                        Paths.get("tmp/dao")
+                        directoryPath
                 )
         );
 

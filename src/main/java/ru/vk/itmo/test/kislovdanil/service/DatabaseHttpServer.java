@@ -75,7 +75,7 @@ public class DatabaseHttpServer extends HttpServer {
                 session.sendError(Response.SERVICE_UNAVAILABLE,
                         "Service temporary unavailable, retry later");
             } catch (IOException e2) {
-                System.err.println(STR."Failed to send error message, \{request.toString()}");
+                System.err.printf("Failed to send error message, %s\n", request.toString());
             }
         }
     }

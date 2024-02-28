@@ -1,17 +1,13 @@
 package ru.vk.itmo.test.bandurinvladislav;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.http.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.bandurinvladislav.dao.ReferenceDao;
+import ru.vk.itmo.test.bandurinvladislav.util.Constants;
 import ru.vk.itmo.test.bandurinvladislav.util.MemSegUtil;
 import ru.vk.itmo.test.bandurinvladislav.util.StringUtil;
 
@@ -20,17 +16,16 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class Server extends HttpServer {
-    private static final String ENDPOINT = "/v0/entity";
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
     private final DaoWorkerPool workerPool;
     private final ReferenceDao dao;
 
     public Server(HttpServerConfig serverConfig, java.nio.file.Path workingDir) throws IOException {
         super(serverConfig);
-        Config daoConfig = new Config(workingDir, 42 * 1024 * 1024);
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         workerPool = new DaoWorkerPool(
                 availableProcessors,
@@ -40,6 +35,7 @@ public class Server extends HttpServer {
                 new ArrayBlockingQueue<>(30_000)
         );
 
+        Config daoConfig = new Config(workingDir, Constants.FLUSH_THRESHOLD_BYTES);
         dao = new ReferenceDao(daoConfig);
         logger.info("Server started");
     }
@@ -74,27 +70,34 @@ public class Server extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        // пока не очень понятно, насколько масштабируемое решение относительно эндпоинтов и параметров
-        // мы хотим, поэтому захардкожу для одного существующего, чтобы не создавать лишних объектов
         String path = request.getPath();
-        if (!path.equals(ENDPOINT)) {
+        if (!path.equals(Constants.ENDPOINT)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
-        String key = request.getParameter("id=");
+        String key = request.getParameter(Constants.PARAMETER_ID);
         if (StringUtil.isEmpty(key)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
-        workerPool.execute(() -> {
-            try {
-                handleDaoCall(request, session, key);
-            } catch (IOException e) {
-                logger.error(STR."IO exception during request handling: \{e.getMessage()}");
+        try {
+            workerPool.execute(() -> {
+                try {
+                    handleDaoCall(request, session, key);
+                } catch (IOException e) {
+                    logger.error(STR."IO exception during request handling: \{e.getMessage()}");
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            if (workerPool.isShutdown()) {
+                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
             }
-        });
+            session.sendResponse(
+                    new Response(Constants.TOO_MANY_REQUESTS, Response.EMPTY)
+            );
+        }
     }
 
     private void handleDaoCall(Request request, HttpSession session, String key) throws IOException {

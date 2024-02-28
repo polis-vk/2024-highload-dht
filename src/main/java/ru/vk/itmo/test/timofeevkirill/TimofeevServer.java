@@ -32,7 +32,7 @@ public class TimofeevServer extends HttpServer {
     private static final String PATH = VERSION_PREFIX + "/entity";
     private final Dao dao;
     private final ThreadPoolExecutor threadPoolExecutor;
-    private final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
+    private final static String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
 
     public TimofeevServer(ServiceConfig serviceConfig, ReferenceDao dao,
                           ThreadPoolExecutor threadPoolExecutor) throws IOException {

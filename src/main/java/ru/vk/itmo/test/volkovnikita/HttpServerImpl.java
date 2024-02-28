@@ -150,7 +150,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
-            boolean isHttp = e instanceof HttpException;
+            boolean isHttp = e.getClass() == HttpException.class;
 
             sendResponse(session, isHttp ? new Response(Response.BAD_REQUEST, Response.EMPTY) :
                     new Response(Response.INTERNAL_ERROR, Response.EMPTY));

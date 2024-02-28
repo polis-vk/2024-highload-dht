@@ -47,7 +47,7 @@ public class RequestHandler {
         };
     }
 
-    public Response get(final Request request) {
+    private Response get(final Request request) {
         String id = request.getParameter(ID);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
@@ -60,7 +60,7 @@ public class RequestHandler {
                 : new Response(OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    public Response put(final Request request) {
+    private Response put(final Request request) {
         String id = request.getParameter(ID);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
@@ -75,7 +75,7 @@ public class RequestHandler {
         return new Response(CREATED, Response.EMPTY);
     }
 
-    public Response delete(final Request request) {
+    private Response delete(final Request request) {
         String id = request.getParameter(ID);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);

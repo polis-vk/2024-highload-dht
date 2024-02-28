@@ -55,7 +55,7 @@ public class RequestExecutor {
         }
         // Переполнение очереди, невозможно взять новую задачу в исполнение
         catch (RejectedExecutionException e) {
-            logger.error("RejectedExecutionException", e);
+            logger.error("The queue is full, the task has not been processed", e);
             try {
                 session.sendResponse(
                         new Response(TOO_MANY_REQUESTS, Response.EMPTY)

@@ -73,7 +73,7 @@ public class DatabaseHttpServer extends HttpServer {
             try {
                 session.sendError(Response.SERVICE_UNAVAILABLE,
                         "Service temporary unavailable, retry later");
-            } catch (IOException _) {
+            } catch (IOException ignored) {
                 throw new NetworkException();
             }
         }

@@ -1,4 +1,4 @@
 package ru.vk.itmo.test.kislovdanil.service;
 
-public class NetworkException extends RuntimeException{
+public class NetworkException extends RuntimeException {
 }

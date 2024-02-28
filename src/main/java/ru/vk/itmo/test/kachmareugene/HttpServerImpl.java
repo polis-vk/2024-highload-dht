@@ -21,8 +21,17 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.*;
 
 public class HttpServerImpl extends HttpServer {
+
+    private final int CORE_POOL = 3;
+    private final int MAX_POOL = 5;
+    private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(100);
+    private final ExecutorService executorService =
+            new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
+                        0L, TimeUnit.MILLISECONDS,
+                                    queue);
 
     private static final Response NOT_FOUND =
              new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -62,6 +71,7 @@ public class HttpServerImpl extends HttpServer {
         super.stop();
         try {
             daoImpl.close();
+            executorService.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -113,11 +123,16 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
-            super.handleRequest(request, session);
-        } catch (RuntimeException e) {
-            session.sendError(Response.BAD_REQUEST, e.toString());
-        }
+        executorService.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (RuntimeException | IOException e) {
+                    try {
+                        session.sendError(Response.BAD_REQUEST, e.toString());
+                    } catch (IOException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                }});
     }
 
     @Override

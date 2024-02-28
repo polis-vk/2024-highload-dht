@@ -82,7 +82,7 @@ public class RequestExecutor {
         }
     }
 
-    public static void sendResponse(Response response, HttpSession session) {
+    private void sendResponse(Response response, HttpSession session) {
         try {
             session.sendResponse(response);
         } catch (IOException e) {

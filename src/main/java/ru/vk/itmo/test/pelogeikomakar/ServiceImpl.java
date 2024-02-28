@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
     private final Config daoConfig;
+
     private final ServiceConfig serviceConfig;
     private DaoHttpServer server;
 
@@ -21,7 +22,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
 
-        server = new DaoHttpServer(serviceConfig, daoConfig);
+        server = new DaoHttpServer(serviceConfig, daoConfig, ExecutorServiceFactory.getExecutorService());
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -32,7 +33,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

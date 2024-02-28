@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 
 public final class MainServ {
 
@@ -21,7 +22,9 @@ public final class MainServ {
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http://localhost", List.of("http://localhost"), daoPath);
         Config daoConfig = new Config(daoPath, 2048L);
 
-        DaoHttpServer server = new DaoHttpServer(serviceConfig, daoConfig);
+        ExecutorService execServ = ExecutorServiceFactory.getExecutorService();
+
+        DaoHttpServer server = new DaoHttpServer(serviceConfig, daoConfig, execServ);
 
         server.start();
     }

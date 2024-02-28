@@ -28,11 +28,11 @@ public class ServerImplementation extends HttpServer {
 
     private static final String ENTITY_PATH = "/v0/entity";
 
-    private static final int threadPoolSize = 4;
+    private static final int THREAD_POOL_SIZE = 4;
 
-    private static final int poolKeepAliveSeconds = 10;
+    private static final int POOL_KEEP_ALIVE_SECONDS = 10;
 
-    private static final int threadPoolQueueSize = 16;
+    private static final int THREAD_POOL_QUEUE_SIZE = 16;
 
     private final MemorySegmentDao memorySegmentDao;
 
@@ -41,8 +41,8 @@ public class ServerImplementation extends HttpServer {
     public ServerImplementation(ServiceConfig config, MemorySegmentDao memorySegmentDao) throws IOException {
         super(createServerConfig(config));
         this.memorySegmentDao = memorySegmentDao;
-        executor = new ThreadPoolExecutor(threadPoolSize, threadPoolSize, poolKeepAliveSeconds, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(threadPoolQueueSize));
+        executor = new ThreadPoolExecutor(THREAD_POOL_SIZE, THREAD_POOL_SIZE, POOL_KEEP_ALIVE_SECONDS, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE));
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {

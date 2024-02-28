@@ -131,11 +131,12 @@ public class HttpServerImpl extends HttpServer {
         executorService.execute(() -> {
                 try {
                     super.handleRequest(request, session);
-                } catch (RuntimeException | IOException e) {
+                } catch (IOException e) {
                     try {
                         session.sendError(Response.BAD_REQUEST, e.toString());
                     } catch (IOException ex) {
-                        throw new UncheckedIOException((IOException) ex.initCause(e));
+                        e.addSuppressed(ex);
+                        throw new UncheckedIOException(e);
                     }
                 }
         });

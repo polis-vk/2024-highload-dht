@@ -13,6 +13,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.Random;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public final class Server {
     private static final int ENTRIES_IN_DB = 500_000;
@@ -32,7 +36,15 @@ public final class Server {
         Dao<MemorySegment, Entry<MemorySegment>> dao =
                 new NotOnlyInMemoryDao(new Config(config.workingDir(), 4_194_304L));
 
-        StorageServer server = new StorageServer(config, dao);
+        ExecutorService executor = new ThreadPoolExecutor(
+                8,
+                8,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(128)
+        );
+
+        StorageServer server = new StorageServer(config, dao, executor);
         server.start();
 
         //fillFlush(dao);

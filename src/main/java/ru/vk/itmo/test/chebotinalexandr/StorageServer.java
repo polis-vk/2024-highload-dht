@@ -19,15 +19,18 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
 
 public class StorageServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(StorageServer.class);
     private static final String PATH = "/v0/entity";
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ExecutorService executor;
 
-    public StorageServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    public StorageServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executor) throws IOException {
         super(createConfig(config));
         this.dao = dao;
+        this.executor = executor;
     }
 
     private static HttpServerConfig createConfig(ServiceConfig config) {
@@ -36,7 +39,7 @@ public class StorageServer extends HttpServer {
         acceptorConfig.reusePort = true;
         acceptorConfig.port = config.selfPort();
 
-        httpServerConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
     }
@@ -48,21 +51,25 @@ public class StorageServer extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
-            super.handleRequest(request, session);
-        } catch (Exception e) {
-            log.error("Exception during handleRequest: ", e);
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+    public void handleRequest(Request request, HttpSession session) {
+        String id = request.getParameter("id=");
+        if (id == null || id.isBlank()) {
+            sendEmptyBodyResponse(Response.BAD_REQUEST, session);
+            return;
         }
+
+        executor.execute(() -> {
+            try {
+                super.handleRequest(request, session);
+            } catch (IOException e) {
+                log.error("Exception during handleRequest: ", e);
+                sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
+            }
+        });
     }
 
     @Path(PATH)
     public Response entity(Request request, @Param("id") String id) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 Entry<MemorySegment> entry = dao.get(fromString(id));
@@ -97,9 +104,13 @@ public class StorageServer extends HttpServer {
         }
     }
 
-    @Path("/hello")
-    public Response hello() {
-        return Response.ok("Hello, cruel world!".getBytes(StandardCharsets.UTF_8));
+    private static void sendEmptyBodyResponse(String responseCode, HttpSession session) {
+        Response emptyBodyResponse = new Response(responseCode, Response.EMPTY);
+        try {
+            session.sendResponse(emptyBodyResponse);
+        } catch (IOException e) {
+            log.error("Exception during send empty response ", e);
+        }
     }
 
     private static MemorySegment fromString(String data) {

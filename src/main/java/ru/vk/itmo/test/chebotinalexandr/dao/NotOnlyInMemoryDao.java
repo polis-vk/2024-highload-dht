@@ -32,7 +32,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
     private final SSTablesStorage ssTablesStorage;
     private final Config config;
     private final Arena arena;
-    private final AtomicReference<State> state;
+    private final AtomicReference<DaoState> state;
     private final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
@@ -67,12 +67,12 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
         Path path = config.basePath();
         List<MemorySegment> segments = SSTablesStorage.loadOrRecover(path, arena);
         ssTablesStorage = new SSTablesStorage(path);
-        state = new AtomicReference<>(State.initial(segments));
+        state = new AtomicReference<>(DaoState.initial(segments));
     }
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        State currState = this.state.get();
+        DaoState currState = this.state.get();
 
         PeekingIterator<Entry<MemorySegment>> rangeIterator = range(
                 memoryIterator(currState.getReadEntries(), from, to),
@@ -84,7 +84,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
 
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
-        State currState = this.state.get();
+        DaoState currState = this.state.get();
 
         Entry<MemorySegment> result = currState.getWriteEntries().get(key);
         if (result != null) {
@@ -98,7 +98,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
         return getFromDisk(key, currState);
     }
 
-    private Entry<MemorySegment> getFromDisk(MemorySegment key, State state) {
+    private Entry<MemorySegment> getFromDisk(MemorySegment key, DaoState state) {
         Entry<MemorySegment> result;
 
         for (MemorySegment sstable : state.getSstables()) {
@@ -178,7 +178,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
     public void compact() {
         bgExecutor.execute(() -> {
             try {
-                State currState = this.state.get();
+                DaoState currState = this.state.get();
                 MemorySegment newPage = performCompact(currState.getSstables());
                 this.state.set(currState.compact(newPage));
             } catch (IOException e) {
@@ -221,13 +221,13 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
     @Override
     public void flush() {
         bgExecutor.execute(() -> {
-            State prevState = state.get();
+            DaoState prevState = state.get();
             SortedMap<MemorySegment, Entry<MemorySegment>> writeEntries = prevState.getWriteEntries();
             if (writeEntries.isEmpty()) {
                 return;
             }
 
-            State nextState = prevState.beforeFlush();
+            DaoState nextState = prevState.beforeFlush();
             upsertLock.writeLock().lock();
             try {
                 state.set(nextState);

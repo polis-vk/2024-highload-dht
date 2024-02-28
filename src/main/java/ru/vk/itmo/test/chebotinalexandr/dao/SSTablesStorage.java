@@ -21,7 +21,6 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
@@ -39,6 +38,7 @@ public class SSTablesStorage {
     public static final int HASH_FUNCTIONS_NUM = 2;
     private static final SSTableOffsets offsetsConfig =
             new SSTableOffsets(Long.BYTES, 0, 2L * Long.BYTES);
+    private static int sstablesCount = 0;
 
     public SSTablesStorage(Path basePath) {
         this.basePath = basePath;
@@ -65,6 +65,7 @@ public class SSTablesStorage {
                                     arena);
 
                             sstables.add(readSegment);
+                            sstablesCount++;
                         } catch (FileNotFoundException | NoSuchFileException e) {
                             arena.close();
                         } catch (IOException e) {
@@ -218,6 +219,7 @@ public class SSTablesStorage {
         }
         //---------
 
+        sstablesCount++;
         return memorySegment;
     }
 
@@ -244,12 +246,6 @@ public class SSTablesStorage {
         newOffset += size;
 
         return newOffset;
-    }
-
-    private static List<Path> getPaths(Path basePath) throws IOException {
-        try (Stream<Path> s = Files.list(basePath)) {
-            return s.filter(path -> path.toString().endsWith(SSTABLE_EXTENSION)).collect(Collectors.toList());
-        }
     }
 
     public MemorySegment compact(Iterator<Entry<MemorySegment>> iterator,
@@ -295,18 +291,24 @@ public class SSTablesStorage {
             }
 
             memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), entryCount);
-
-            deleteOldSSTables(basePath);
-            Files.move(path, path.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),
-                    StandardCopyOption.ATOMIC_MOVE);
+            finishCompact(basePath);
         }
 
         return memorySegment;
     }
 
+    private static void finishCompact(Path basePath) throws IOException {
+        Path path = basePath.resolve(SSTABLE_NAME + ".tmp");
+
+        deleteOldSSTables(basePath);
+        Files.move(path, path.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),
+                StandardCopyOption.ATOMIC_MOVE);
+
+        sstablesCount = 1;
+    }
+
     private MemorySegment writeMappedSegment(long size, Arena arena) throws IOException {
-        int count = getPaths(basePath).size() + 1;
-        Path path = basePath.resolve(SSTABLE_NAME + count + SSTABLE_EXTENSION);
+        Path path = basePath.resolve(SSTABLE_NAME + sstablesCount + SSTABLE_EXTENSION);
         try (FileChannel channel = FileChannel.open(path,
                 StandardOpenOption.READ,
                 StandardOpenOption.WRITE,

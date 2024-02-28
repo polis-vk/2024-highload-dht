@@ -3,8 +3,10 @@ package ru.vk.itmo.test.grunskiialexey;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
+import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
+import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
@@ -22,12 +24,14 @@ import java.util.List;
 
 public class DaoServer extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 1028;
+    private final String ENDPOINT = "/v0/entity";
     private final ServiceConfig config;
     private MemorySegmentDao dao;
 
     public DaoServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
         this.config = config;
+        loadDao();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -55,50 +59,55 @@ public class DaoServer extends HttpServer {
         server.start();
     }
 
-    @Path("/v0/entity")
-//    :TODO Check profiling with request method s
-//    @RequestMethod(Request.METHOD_GET)
-    public void handleQueries(Request request, HttpSession session) throws IOException {
-        final String methodName = request.getMethodName();
-        String id = request.getParameter("id");
-        if (id == null || id.isBlank() || id.trim().equals("=")) {
-            session.sendError(Response.BAD_REQUEST, "Incorrect value of 'id' parameter");
-            return;
+    //    :TODO Check profiling with request method s
+    @Path(ENDPOINT)
+    @RequestMethod(Request.METHOD_GET)
+    public Response handleGet(@Param(value = "id", required = true) String id) {
+        System.out.println("1");
+        if (id == null || id.isBlank()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        final MemorySegment key = MemorySegment.ofArray(id.substring(1).getBytes(StandardCharsets.UTF_8));
-        switch (methodName) {
-            case "GET" -> {
-                final Entry<MemorySegment> entry = dao.get(key);
-                // :TODO should go to check how to working .get(key) - may it has entry.value() or not
-                //  :TODO but actualy it's not necessary
-                if (entry == null || entry.value() == null) {
-                    session.sendError(Response.NOT_FOUND, "Not found value associate with key" + id);
-                    return;
-                }
+        final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+        // :TODO should go to check how to working .get(key) - may it has entry.value() or not
+        // :TODO but actualy it's not necessary
+        final Entry<MemorySegment> entry = dao.get(key);
+        return (entry == null || entry.value() == null)
+                ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                : Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+    }
 
-                session.sendResponse(Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE)));
-            }
-            case "PUT" -> {
-                final Entry<MemorySegment> entry = new BaseEntry<>(key, MemorySegment.ofArray(request.getBody()));
-                dao.upsert(entry);
-
-                session.sendResponse(new Response(Response.CREATED));
-            }
-            case "DELETE" -> {
-                final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
-                dao.upsert(entry);
-
-                session.sendResponse(new Response(Response.ACCEPTED));
-            }
-            default -> session.sendError(Response.METHOD_NOT_ALLOWED, "Not allowed method");
+    @Path(ENDPOINT)
+    @RequestMethod(Request.METHOD_PUT)
+    public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
+        if (id == null || id.isBlank()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        session.close();
+        final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+        final Entry<MemorySegment> entry = new BaseEntry<>(key, MemorySegment.ofArray(request.getBody()));
+        dao.upsert(entry);
+        return new Response(Response.CREATED, Response.EMPTY);
+    }
+
+    @Path(ENDPOINT)
+    @RequestMethod(Request.METHOD_DELETE)
+    public Response handleDelete(@Param(value = "id", required = true) String id) {
+        if (id == null || id.isBlank()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+        final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+        final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
+        dao.upsert(entry);
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     // :TODO we need to handle exceptions
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        session.sendError(Response.BAD_REQUEST, "This path is unavailable");
+        if (request.getPath().equals(ENDPOINT)) {
+            session.sendError(Response.METHOD_NOT_ALLOWED, "Request must be: get, put, delete");
+        } else {
+            session.sendError(Response.BAD_REQUEST, "Incorrect request");
+        }
     }
 
     public void loadDao() throws IOException {

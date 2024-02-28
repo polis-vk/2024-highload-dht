@@ -58,10 +58,10 @@ public class DatabaseHttpServer extends HttpServer {
                 session.sendResponse(response);
                 return;
             } catch (IOException e) {
-                System.err.println(STR."\{e.getMessage()}, iteration \{i}");
+                System.err.printf("%s, iteration %d\n", e.getMessage(), i);
             }
         }
-        System.err.println(STR."Failed to send response \{response.toString()}");
+        System.err.printf("Failed to send response %s\n", response);
     }
 
     @Path(ENTITY_ACCESS_URL)

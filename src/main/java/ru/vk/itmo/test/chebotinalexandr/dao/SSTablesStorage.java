@@ -173,7 +173,8 @@ public class SSTablesStorage {
      * └─────────────────────┴──────────┴──────────┴────────────┴────────────┘
      * where j = 1, ... , entries count.
      */
-    public MemorySegment write(Collection<Entry<MemorySegment>> dataToFlush, double bloomFilterFPP) throws IOException {
+    public static MemorySegment write(Collection<Entry<MemorySegment>> dataToFlush,
+                                      double bloomFilterFPP, Path basePath) throws IOException {
         long size = 0;
 
         for (Entry<MemorySegment> entry : dataToFlush) {
@@ -188,7 +189,7 @@ public class SSTablesStorage {
 
         MemorySegment memorySegment;
         Arena arenaForSave = Arena.ofShared();
-        memorySegment = writeMappedSegment(size, arenaForSave);
+        memorySegment = writeMappedSegment(basePath, size, arenaForSave);
 
         //Writing sstable header
         long headerOffset = 0;
@@ -223,7 +224,7 @@ public class SSTablesStorage {
         return memorySegment;
     }
 
-    private long writeEntry(Entry<MemorySegment> entry, MemorySegment dst, long offset) {
+    private static long writeEntry(Entry<MemorySegment> entry, MemorySegment dst, long offset) {
         long newOffset = writeSegment(entry.key(), dst, offset);
 
         if (entry.value() == null) {
@@ -236,7 +237,7 @@ public class SSTablesStorage {
         return newOffset;
     }
 
-    private long writeSegment(MemorySegment src, MemorySegment dst, long offset) {
+    private static long writeSegment(MemorySegment src, MemorySegment dst, long offset) {
         long size = src.byteSize();
         long newOffset = offset;
 
@@ -307,7 +308,7 @@ public class SSTablesStorage {
         sstablesCount = 1;
     }
 
-    private MemorySegment writeMappedSegment(long size, Arena arena) throws IOException {
+    private static MemorySegment writeMappedSegment(Path basePath, long size, Arena arena) throws IOException {
         Path path = basePath.resolve(SSTABLE_NAME + sstablesCount + SSTABLE_EXTENSION);
         try (FileChannel channel = FileChannel.open(path,
                 StandardOpenOption.READ,

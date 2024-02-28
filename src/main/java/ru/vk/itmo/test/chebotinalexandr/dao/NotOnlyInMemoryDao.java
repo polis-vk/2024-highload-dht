@@ -239,7 +239,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
             MemorySegment newPage;
             toFlush = writeEntries.values();
             try {
-                newPage = ssTablesStorage.write(toFlush, BLOOM_FILTER_FPP);
+                newPage = ssTablesStorage.write(toFlush, BLOOM_FILTER_FPP, config.basePath());
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

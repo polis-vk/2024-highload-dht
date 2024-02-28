@@ -21,11 +21,7 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class HttpServerImpl extends HttpServer {
 
@@ -127,19 +123,26 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
 
-        executorService.execute(() -> {
+            executorService.execute(() -> {
                 try {
                     super.handleRequest(request, session);
-                } catch (IOException e) {
+                } catch (RuntimeException | IOException e) {
                     try {
                         session.sendError(Response.BAD_REQUEST, e.toString());
                     } catch (IOException ex) {
-                        e.addSuppressed(ex);
-                        throw new UncheckedIOException(e);
+                        if (e instanceof IOException) {
+                            throw new UncheckedIOException((IOException) e);
+                        } else {
+                            throw new RuntimeException(e);
+                        }
                     }
                 }
-        });
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendError(Response.CONFLICT, e.toString());
+        }
     }
 
     @Override

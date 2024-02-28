@@ -83,6 +83,7 @@ public class Server extends HttpServer {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+        
         Entry<MemorySegment> entry = dao.get(DaoFactory.fromString(id));
         if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);

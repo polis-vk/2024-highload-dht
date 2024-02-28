@@ -106,7 +106,7 @@ public class Server extends HttpServer {
                 try {
                     handleRequestWrapper(request, session);
                 } catch (IOException e) {
-                    throw new UncheckedIOException("Error while trying wrap request: " + request , e);
+                    throw new UncheckedIOException("Error while trying wrap request: " + request, e);
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -168,7 +168,7 @@ public class Server extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
-        serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
     }

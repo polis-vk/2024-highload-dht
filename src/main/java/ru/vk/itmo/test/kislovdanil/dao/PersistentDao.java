@@ -52,7 +52,7 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
     private final Arena filesArena = Arena.ofShared();
     // Limit for SSTables on drive
-    private final static int COMPACTION_THRESHOLD = 5;
+    private static final int COMPACTION_THRESHOLD = 5;
 
     private long getMaxTablesId(Iterable<SSTable> tableIterable) {
         long curMaxId = -1;

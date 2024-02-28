@@ -53,15 +53,14 @@ public class DatabaseHttpServer extends HttpServer {
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         }
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 3;) {
             try {
                 session.sendResponse(response);
                 return;
             } catch (IOException e) {
-                System.err.printf("%s, iteration %d\n", e.getMessage(), i);
+                i++;
             }
         }
-        System.err.printf("Failed to send response %s\n", response);
     }
 
     @Path(ENTITY_ACCESS_URL)
@@ -74,8 +73,8 @@ public class DatabaseHttpServer extends HttpServer {
             try {
                 session.sendError(Response.SERVICE_UNAVAILABLE,
                         "Service temporary unavailable, retry later");
-            } catch (IOException e2) {
-                System.err.printf("Failed to send error message, %s\n", request.toString());
+            } catch (IOException _) {
+                throw new NetworkException();
             }
         }
     }

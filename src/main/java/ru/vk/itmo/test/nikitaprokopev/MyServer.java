@@ -44,6 +44,7 @@ public class MyServer extends HttpServer {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
         httpServerConfig.selectors = 4;
         AcceptorConfig acceptorConfig = new AcceptorConfig();
+        acceptorConfig.threads = 4;
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 

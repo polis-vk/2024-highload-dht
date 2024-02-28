@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.maximtarazanov.dao;
+package ru.vk.itmo.test.tarazanovmaxim.dao;
 
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;

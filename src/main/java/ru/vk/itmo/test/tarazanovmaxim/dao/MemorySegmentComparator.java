@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.maximtarazanov.dao;
+package ru.vk.itmo.test.tarazanovmaxim.dao;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;

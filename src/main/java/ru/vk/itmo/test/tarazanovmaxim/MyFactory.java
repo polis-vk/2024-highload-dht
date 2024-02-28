@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.maximtarazanov;
+package ru.vk.itmo.test.tarazanovmaxim;
 
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;

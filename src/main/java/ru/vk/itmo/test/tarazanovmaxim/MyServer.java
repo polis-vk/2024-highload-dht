@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.maximtarazanov;
+package ru.vk.itmo.test.tarazanovmaxim;
 
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -9,26 +9,36 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.maximtarazanov.dao.ReferenceDao;
+import ru.vk.itmo.test.tarazanovmaxim.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class MyServer extends HttpServer {
 
     private final ReferenceDao dao;
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20;
     private static final String PATH = "/v0/entity";
+    private static final long REQUEST_TTL = TimeUnit.SECONDS.toNanos(100);
+    private final ExecutorService executorService;
+    private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() / 2 + 1);
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -49,9 +59,11 @@ public class MyServer extends HttpServer {
     }
 
     public void close() {
+        executorService.close();
         try {
             dao.close();
         } catch (IOException e) {
+            logger.error("IOException in close()->dao.close()");
             throw new RuntimeException(e);
         }
     }
@@ -122,8 +134,45 @@ public class MyServer extends HttpServer {
     }
 
     @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
+    public void handleDefault(Request request, HttpSession session) {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
+        sendResponse(response, session);
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) {
+        try {
+            long startTime = System.nanoTime();
+            executorService.execute(() -> {
+                if (System.nanoTime() > startTime + REQUEST_TTL) {
+                    sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), session);
+                    return;
+                }
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    logger.error("IOException in handleRequest->executorService.execute()");
+                    System.out.println(e.getClass());
+                    sendResponse(
+                        new Response(
+                            e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
+                            Response.EMPTY
+                        ),
+                        session
+                    );
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error("RejectedExecutionException in handleRequest: " + request + session);
+            sendResponse(new Response("429 Too Many Requests", Response.EMPTY), session);
+        }
+    }
+
+    public void sendResponse(Response response, HttpSession session) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("IOException in sendResponse: " + response + session);
+        }
     }
 }

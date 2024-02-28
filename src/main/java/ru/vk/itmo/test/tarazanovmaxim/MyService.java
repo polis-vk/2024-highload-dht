@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.maximtarazanov;
+package ru.vk.itmo.test.tarazanovmaxim;
 
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
@@ -9,7 +9,7 @@ import java.util.concurrent.CompletableFuture;
 public class MyService implements Service {
     private MyServer server;
 
-    private ServiceConfig config;
+    private final ServiceConfig config;
 
     public MyService(ServiceConfig config) {
         this.config = config;

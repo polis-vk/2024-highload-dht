@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.maximtarazanov;
+package ru.vk.itmo.test.tarazanovmaxim;
 
 import ru.vk.itmo.ServiceConfig;
 
@@ -7,6 +7,11 @@ import java.nio.file.Files;
 import java.util.List;
 
 public class ServerMain {
+
+    private ServerMain() {
+
+    }
+
     public static void main(String[] args) throws IOException {
         MyServer server = new MyServer(
             new ServiceConfig(

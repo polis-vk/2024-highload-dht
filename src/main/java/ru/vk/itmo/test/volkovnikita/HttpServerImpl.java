@@ -129,17 +129,16 @@ public class HttpServerImpl extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session)  {
+    public void handleRequest(Request request, HttpSession session) {
         Duration timeout = Duration.of(1, ChronoUnit.SECONDS);
         LocalDateTime deadlineRequest = LocalDateTime.now(ServerZone).plus(timeout);
         try {
             executor.execute(() -> process(request, session, deadlineRequest));
         } catch (RejectedExecutionException e) {
             log.error(e.toString());
-            sendResponse(session,new Response("429 Too Many Requests", Response.EMPTY));
+            sendResponse(session, new Response("429 Too Many Requests", Response.EMPTY));
         }
     }
-
 
     private void process(Request request, HttpSession session, LocalDateTime deadlineRequest) {
         LocalDateTime now = LocalDateTime.now(ServerZone);
@@ -152,7 +151,7 @@ public class HttpServerImpl extends HttpServer {
             super.handleRequest(request, session);
         } catch (Exception e) {
             log.error(e.toString());
-            if(e instanceof HttpException) {
+            if (e instanceof HttpException) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             } else {
                 sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));

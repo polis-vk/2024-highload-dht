@@ -150,11 +150,14 @@ public class HttpServerImpl extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
-            log.error(e.toString());
-            if (e instanceof HttpException) {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-            } else {
-                sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            try {
+                if (e instanceof HttpException) {
+                    sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                } else {
+                    sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                }
+            } finally {
+                log.error(e.toString());
             }
         }
 

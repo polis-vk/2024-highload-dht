@@ -8,33 +8,38 @@ import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import static ru.vk.itmo.test.timofeevkirill.Settings.FLUSH_THRESHOLD_BYTES;
+import static ru.vk.itmo.test.timofeevkirill.Settings.getDefaultThreadPoolExecutor;
 
 public class TimofeevService implements Service {
 
     private final ServiceConfig config;
     private final Config daoConfig;
     private TimofeevServer server;
+    private final ThreadPoolExecutor threadPoolExecutor;
     private ReferenceDao dao;
 
     public TimofeevService(ServiceConfig serviceConfig) {
         this.config = serviceConfig;
+        this.threadPoolExecutor = getDefaultThreadPoolExecutor();
         this.daoConfig = new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES);
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        server = new TimofeevServer(config, dao);
+        server = new TimofeevServer(config, dao, threadPoolExecutor);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
-        server.stop();
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         dao.close();
+        threadPoolExecutor.close();
+        server.stop();
         return CompletableFuture.completedFuture(null);
     }
 

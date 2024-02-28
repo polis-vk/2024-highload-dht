@@ -17,7 +17,6 @@ import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.ExecutorService;
@@ -33,6 +32,7 @@ public class HttpServerImpl extends HttpServer {
         this.dao = dao;
         this.executorService = executorService;
     }
+
     @Override
     public void handleRequest(Request request, HttpSession session) {
         executorService.execute(() -> {
@@ -42,7 +42,7 @@ public class HttpServerImpl extends HttpServer {
                 try {
                     session.sendError(Response.BAD_REQUEST, e.getMessage());
                 } catch (IOException ex) {
-                    throw new UncheckedIOException(ex);
+                    Thread.currentThread().interrupt();
                 }
             }
         });

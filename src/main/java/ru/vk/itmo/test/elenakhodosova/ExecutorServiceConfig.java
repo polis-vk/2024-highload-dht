@@ -11,6 +11,9 @@ public class ExecutorServiceConfig {
     private static final int MAX_POOL_SIZE = 128;
     private static final int QUEUE_SIZE = 256;
 
+    private ExecutorServiceConfig() {
+    }
+
     public static ExecutorService getExecutorService() {
         return new ThreadPoolExecutor(POOL_SIZE, MAX_POOL_SIZE,
                 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(QUEUE_SIZE));

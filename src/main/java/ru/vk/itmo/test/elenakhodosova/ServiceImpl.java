@@ -15,6 +15,7 @@ public class ServiceImpl implements Service {
     private HttpServerImpl server;
     private ReferenceDao dao;
     private final ServiceConfig config;
+    private ExecutorService executorService;
     public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
 
     public ServiceImpl(ServiceConfig config) {
@@ -25,16 +26,21 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        ExecutorService executorService = ExecutorServiceConfig.getExecutorService();
+        executorService = ExecutorServiceConfig.getExecutorService();
         this.server = new HttpServerImpl(config, dao, executorService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public CompletableFuture<Void> stop() {
+        executorService.shutdownNow();
         server.stop();
-        dao.close();
+        try {
+            dao.close();
+        } catch (IOException e) {
+            Thread.currentThread().interrupt();
+        }
         return CompletableFuture.completedFuture(null);
     }
 

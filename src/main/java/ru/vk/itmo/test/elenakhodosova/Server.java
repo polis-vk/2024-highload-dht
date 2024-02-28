@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 
 public final class Server {
+
     public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
+
     private Server() {
 
     }

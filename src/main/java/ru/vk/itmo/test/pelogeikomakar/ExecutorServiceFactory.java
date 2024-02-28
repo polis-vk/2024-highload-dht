@@ -19,6 +19,10 @@ public final class ExecutorServiceFactory {
 
     private static final TimeUnit UNIT = TimeUnit.SECONDS;
 
+    private ExecutorServiceFactory() {
+        throw new UnsupportedOperationException("cannot be instantiated");
+    }
+
     public static ExecutorService getExecutorService() {
         return new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, KEEP_ALIVE_TIME, UNIT, QUEUE,
                 new MyThreadFactory(), new ThreadPoolExecutor.AbortPolicy());

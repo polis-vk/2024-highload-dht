@@ -87,7 +87,7 @@ public class Server extends HttpServer {
                 try {
                     handleDaoCall(request, session, key);
                 } catch (IOException e) {
-                    logger.error(STR."IO exception during request handling: \{e.getMessage()}");
+                    logger.error("IO exception during request handling: " + e.getMessage());
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -110,7 +110,7 @@ public class Server extends HttpServer {
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         } catch (Exception e) {
-            logger.error(STR."Internal error during request handling: \{e.getMessage()}");
+            logger.error("Internal error during request handling: " + e.getMessage());
             response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
 

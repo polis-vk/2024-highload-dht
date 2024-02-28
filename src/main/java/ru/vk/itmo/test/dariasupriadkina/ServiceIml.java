@@ -5,7 +5,8 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.dariasupriadkina.dao.exception.ServiceImplCreationException;
+import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
+import ru.vk.itmo.test.dariasupriadkina.workers.WorkerThreadPoolExecutor;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
@@ -16,26 +17,23 @@ public class ServiceIml implements Service {
 
     private Server server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private Config daoConfig;
-    private ServiceConfig serviceConfig;
+    private final Config daoConfig;
+    private final ServiceConfig serviceConfig;
+    private final WorkerConfig workerConfig;
+    private WorkerThreadPoolExecutor workerThreadPoolExecutor;
 
-    public ServiceIml(ServiceConfig serviceConfig, Config daoConfig) {
-        try {
-
-            this.daoConfig = daoConfig;
-            this.serviceConfig = serviceConfig;
-
-            this.dao = new ReferenceDao(daoConfig);
-
-        } catch (IOException e) {
-            throw new ServiceImplCreationException(e);
-        }
+    public ServiceIml(ServiceConfig serviceConfig, Config daoConfig, WorkerConfig workerConfig) {
+        this.daoConfig = daoConfig;
+        this.serviceConfig = serviceConfig;
+        this.workerConfig = workerConfig;
     }
 
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        server = new Server(serviceConfig, dao);
+        workerThreadPoolExecutor = new WorkerThreadPoolExecutor(workerConfig);
+
+        server = new Server(serviceConfig, dao, workerThreadPoolExecutor);
 
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -44,6 +42,7 @@ public class ServiceIml implements Service {
     @Override
     public synchronized CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        workerThreadPoolExecutor.shutdownAndAwaitTermination();
         dao.close();
 
         return CompletableFuture.completedFuture(null);

@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -19,16 +20,19 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 
 public class Server extends HttpServer {
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ExecutorService executorService;
     private final Set<Integer> permittedMethods =
             Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
 
-    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executorService) throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;
+        this.executorService = executorService;
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
@@ -38,7 +42,7 @@ public class Server extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
-        httpServerConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
 
         return httpServerConfig;
@@ -54,7 +58,7 @@ public class Server extends HttpServer {
     @RequestMethod(Request.METHOD_GET)
     public Response getHandler(@Param(value = "id", required = true) String id) {
         try {
-            if (id.length() == 0) {
+            if (id.isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
             Entry<MemorySegment> entry = getEntryById(id);
@@ -71,7 +75,7 @@ public class Server extends HttpServer {
     @RequestMethod(Request.METHOD_PUT)
     public Response putHandler(Request request, @Param(value = "id", required = true) String id) {
         try {
-            if (id.length() == 0) {
+            if (id.isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
             dao.upsert(convertToEntry(id, request.getBody()));
@@ -85,7 +89,7 @@ public class Server extends HttpServer {
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteHandler(@Param(value = "id", required = true) String id) {
         try {
-            if (id.length() == 0) {
+            if (id.isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
             dao.upsert(convertToEntry(id, null));
@@ -107,7 +111,26 @@ public class Server extends HttpServer {
         session.sendResponse(response);
     }
 
-        private Entry<MemorySegment> convertToEntry(String id, byte[] body) {
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        executorService.execute(() -> {
+            try {
+                super.handleRequest(request, session);
+            } catch (Exception e) {
+                try {
+                    if (e.getClass() == HttpException.class) {
+                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    } else {
+                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                    }
+                } catch (IOException ex) {
+//                    do nothing
+                }
+            }
+        });
+    }
+
+    private Entry<MemorySegment> convertToEntry(String id, byte[] body) {
         return new BaseEntry<>(convertByteArrToMemorySegment(id.getBytes(StandardCharsets.UTF_8)),
                 convertByteArrToMemorySegment(body));
     }

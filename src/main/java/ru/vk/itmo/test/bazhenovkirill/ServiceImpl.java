@@ -13,7 +13,6 @@ public class ServiceImpl implements Service {
 
     private ServerImpl server;
 
-
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }

@@ -17,7 +17,7 @@ public final class Settings {
             Request.METHOD_PUT,
             Request.METHOD_DELETE
     );
-    public static final long MAX_PROCESSING_TIME_FOR_REQUEST = TimeUnit.SECONDS.toNanos(1);
+    public static final long MAX_PROCESSING_TIME_FOR_REQUEST = TimeUnit.SECONDS.toNanos(2);
 
     public static ThreadPoolExecutor getDefaultThreadPoolExecutor() {
         return new ThreadPoolExecutor(

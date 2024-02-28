@@ -18,18 +18,18 @@ public class TimofeevService implements Service {
     private final ServiceConfig config;
     private final Config daoConfig;
     private TimofeevServer server;
-    private final ThreadPoolExecutor threadPoolExecutor;
+    private ThreadPoolExecutor threadPoolExecutor;
     private ReferenceDao dao;
 
     public TimofeevService(ServiceConfig serviceConfig) {
         this.config = serviceConfig;
-        this.threadPoolExecutor = getDefaultThreadPoolExecutor();
         this.daoConfig = new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES);
     }
 
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
+        threadPoolExecutor = getDefaultThreadPoolExecutor();
         server = new TimofeevServer(config, dao, threadPoolExecutor);
         server.start();
         return CompletableFuture.completedFuture(null);

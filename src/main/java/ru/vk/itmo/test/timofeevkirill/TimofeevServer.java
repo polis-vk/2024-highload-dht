@@ -32,8 +32,10 @@ public class TimofeevServer extends HttpServer {
     private static final String PATH = VERSION_PREFIX + "/entity";
     private final Dao dao;
     private final ThreadPoolExecutor threadPoolExecutor;
+    private final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
 
-    public TimofeevServer(ServiceConfig serviceConfig, ReferenceDao dao, ThreadPoolExecutor threadPoolExecutor) throws IOException {
+    public TimofeevServer(ServiceConfig serviceConfig, ReferenceDao dao,
+                          ThreadPoolExecutor threadPoolExecutor) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
         this.threadPoolExecutor = threadPoolExecutor;
@@ -110,8 +112,7 @@ public class TimofeevServer extends HttpServer {
                 }
             });
         } catch (RejectedExecutionException e) {
-            String TOO_MANY_REQUESTS = "429 Too Many Requests";
-            session.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY));
+            session.sendResponse(new Response(TOO_MANY_REQUESTS_RESPONSE, Response.EMPTY));
         }
     }
 

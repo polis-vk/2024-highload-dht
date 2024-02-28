@@ -15,8 +15,8 @@ import static ru.vk.itmo.test.timofeevkirill.Settings.getDefaultThreadPoolExecut
 public final class ApplicationServer {
 
     public static void main(String[] args) throws IOException {
-        Path workingDir = Path.of("/home/aphirri/IdeaProjects/2024-highload-dht" +
-                "/src/main/java/ru/vk/itmo/test/timofeevkirill/tmp");
+        Path workingDir = Path.of("/home/aphirri/IdeaProjects/2024-highload-dht"
+                + "/src/main/java/ru/vk/itmo/test/timofeevkirill/tmp");
         Files.createDirectories(workingDir);
 
         Config daoConfig = new Config(workingDir, FLUSH_THRESHOLD_BYTES);

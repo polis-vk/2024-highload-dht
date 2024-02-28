@@ -19,11 +19,14 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static one.nio.http.Response.INTERNAL_ERROR;
+
 public class RequestExecutor {
+    private static final Logger logger = LoggerFactory.getLogger(RequestExecutor.class);
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int KEEPALIVE_MILLIS = 3000;
-    private static final int MAX_WORKERS_COUNT = 100;
-    private static final Logger logger = LoggerFactory.getLogger(RequestExecutor.class);
+    private static final int MAX_WORKERS_COUNT = 300;
+    private static final long MAX_TASK_AWAITING_TIME_MILLIS = 3000;
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService workers;
@@ -48,21 +51,43 @@ public class RequestExecutor {
     }
 
     public void execute(Request request, HttpSession session) {
-        Runnable task = new ResponseGeneratorRunnable(request, session, requestHandler);
+        long currTime = System.currentTimeMillis();
 
         try {
-            workers.execute(task);
+            workers.execute(() -> {
+                Response response;
+
+                // Если дедлайн для выполнения задачи прошел
+                if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
+                    response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
+                } else {
+                    try {
+                        response = requestHandler.handle(request);
+                    } catch (Exception e) {
+                        logger.error("Internal error of the DAO operation", e);
+                        sendResponse(new Response(INTERNAL_ERROR, Response.EMPTY), session);
+                        return;
+                    }
+                }
+
+                sendResponse(response, session);
+            });
         }
         // Переполнение очереди, невозможно взять новую задачу в исполнение
         catch (RejectedExecutionException e) {
-            try {
-                session.sendResponse(
-                        new Response(TOO_MANY_REQUESTS, Response.EMPTY)
-                );
-            } catch (IOException ex) {
-                logger.error("Error when sending a response to the client", ex);
-                throw new UncheckedIOException(ex);
-            }
+            sendResponse(
+                    new Response(TOO_MANY_REQUESTS, Response.EMPTY),
+                    session
+            );
+        }
+    }
+
+    public static void sendResponse(Response response, HttpSession session) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("Error while sending a response to the client", e);
+            throw new UncheckedIOException(e);
         }
     }
 

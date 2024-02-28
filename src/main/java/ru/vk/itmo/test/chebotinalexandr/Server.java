@@ -67,7 +67,7 @@ public final class Server {
                 entries[index] ^= entries[i];
             }
         }
-
+  
         return entries;
     }
 

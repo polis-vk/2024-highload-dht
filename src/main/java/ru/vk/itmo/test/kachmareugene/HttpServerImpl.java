@@ -134,19 +134,15 @@ public class HttpServerImpl extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (RuntimeException | IOException e) {
-                    errorAccept(session, e);
+                    try {
+                        session.sendError(Response.BAD_REQUEST, e.toString());
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
                 }
             });
         } catch (RejectedExecutionException e) {
             session.sendError(Response.CONFLICT, e.toString());
-        }
-    }
-
-    private void errorAccept(HttpSession session, Exception e) {
-        try {
-            session.sendError(Response.BAD_REQUEST, e.toString());
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
         }
     }
 

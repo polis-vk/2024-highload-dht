@@ -16,7 +16,6 @@ public final class ServerStarter {
     }
 
     public static void main(String[] args) throws IOException {
-        //        Path tempPath = Files.createTempDirectory("DaoServer");
         Path tempPath = new File("/home/dmitrij/Документы/JavaProjects/DaoServerData/").toPath();
         ServerImplementation server = new ServerImplementation(new ServiceConfig(8080,
                 "http://localhost",

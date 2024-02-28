@@ -30,11 +30,11 @@ public class ServiceImpl implements Service {
         acceptorConfig.port = config.selfPort();
         acceptorConfig.reusePort = true;
 
-        HttpServerConfig serverConfig = new HttpServerConfig();
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-        serverConfig.closeSessions = true;
+        HttpServerConfig newServerConfig = new HttpServerConfig();
+        newServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        newServerConfig.closeSessions = true;
 
-        return serverConfig;
+        return newServerConfig;
     }
 
     @Override

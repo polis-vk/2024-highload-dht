@@ -32,8 +32,8 @@ public class ServerImpl extends HttpServer {
         super(createHttpServerConfig(config));
         executor = new ThreadPoolExecutor(
             50,
-            50,
-            20,
+            100,
+            30,
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(QUEUE_CAPACITY),
             new CustomThreadFactory("server-executor", false),

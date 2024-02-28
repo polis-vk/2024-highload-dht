@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 public class DatabaseHttpServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
-    private final ThreadPoolExecutor queryExecutor= new ThreadPoolExecutor(4, 8,
+    private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(4, 12,
             10, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100000));
 
     public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {

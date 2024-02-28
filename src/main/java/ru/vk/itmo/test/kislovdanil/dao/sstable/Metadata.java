@@ -6,26 +6,26 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 class Metadata {
-    private final SSTable table;
-    private final SSTable.Range keyRange;
-    private final SSTable.Range valueRange;
-    private final Boolean isDeletion;
     public static final long SIZE = Long.BYTES * 4 + 1;
 
-    public Metadata(long index, SSTable table) {
-        this.table = table;
+    private Metadata() {
+    }
+
+
+    public static MemorySegment readKey(SSTable table, long index) {
         long base = index * Metadata.SIZE;
-        keyRange = table.readRange(table.summaryFile, base);
-        valueRange = table.readRange(table.summaryFile, base + 2 * Long.BYTES);
-        isDeletion = table.summaryFile.get(ValueLayout.JAVA_BOOLEAN, base + 4 * Long.BYTES);
+        long keyOffset = table.summaryFile.get(ValueLayout.JAVA_LONG_UNALIGNED, base);
+        long keyLength = table.summaryFile.get(ValueLayout.JAVA_LONG_UNALIGNED, base + Long.BYTES);
+        return table.indexFile.asSlice(keyOffset, keyLength);
     }
 
-    public MemorySegment readKey() {
-        return table.indexFile.asSlice(keyRange.offset, keyRange.length);
-    }
-
-    public MemorySegment readValue() {
-        return isDeletion ? null : table.dataFile.asSlice(valueRange.offset, valueRange.length);
+    public static MemorySegment readValue(SSTable table, long index) {
+        long base = index * Metadata.SIZE;
+        boolean isDeletion = table.summaryFile.get(ValueLayout.JAVA_BOOLEAN, base + 4 * Long.BYTES);
+        if (isDeletion) return null;
+        long valueOffset = table.summaryFile.get(ValueLayout.JAVA_LONG_UNALIGNED, base + 2 * Long.BYTES);
+        long valueLength = table.summaryFile.get(ValueLayout.JAVA_LONG_UNALIGNED, base + 3 * Long.BYTES);
+        return table.dataFile.asSlice(valueOffset, valueLength);
     }
 
     public static void writeEntryMetadata(Entry<MemorySegment> entry, MemorySegment summaryFile,

@@ -1,9 +1,8 @@
-counter = 0
+counter = 100000000
 
 function request()
-    path = "/v0/entity?id=K" .. counter
     counter = counter + 1
     headers = {}
     headers["Host"] = "localhost:8080"
-    return wrk.format("GET", path, headers)
+    return wrk.format("GET", "/v0/entity?id=" .. counter, headers)
 end

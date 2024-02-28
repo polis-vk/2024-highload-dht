@@ -10,6 +10,7 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.bandurinvladislav.dao.ReferenceDao;
+import ru.vk.itmo.test.bandurinvladislav.util.Constants;
 import ru.vk.itmo.test.bandurinvladislav.util.MemSegUtil;
 import ru.vk.itmo.test.bandurinvladislav.util.StringUtil;
 
@@ -17,14 +18,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
 
 public class Server extends HttpServer {
-    private static final String ENDPOINT = "/v0/entity";
     private final ReferenceDao dao;
 
     public Server(HttpServerConfig serverConfig, java.nio.file.Path workingDir) throws IOException {
         super(serverConfig);
-        Config daoConfig = new Config(workingDir, 42 * 1024 * 1024);
+        Config daoConfig = new Config(workingDir, Constants.FLUSH_THRESHOLD_BYTES);
         dao = new ReferenceDao(daoConfig);
     }
 
@@ -37,6 +38,9 @@ public class Server extends HttpServer {
     }
 
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
+        if (request.getBody() == null || request.getBody().length == 0) {
+            return new Response(Response.BAD_REQUEST, "Request body can't be empty".getBytes(StandardCharsets.UTF_8));
+        }
         dao.upsert(
                 new BaseEntry<>(
                         MemSegUtil.fromString(id),
@@ -61,12 +65,12 @@ public class Server extends HttpServer {
         // пока не очень понятно, насколько масштабируемое решение относительно эндпоинтов и параметров
         // мы хотим, поэтому захардкожу для одного существующего, чтобы не создавать лишних объектов
         String path = request.getPath();
-        if (!path.equals(ENDPOINT)) {
+        if (!path.equals(Constants.ENDPOINT)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
-        String key = request.getParameter("id=");
+        String key = request.getParameter(Constants.PARAMETER_ID);
         if (StringUtil.isEmpty(key)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;

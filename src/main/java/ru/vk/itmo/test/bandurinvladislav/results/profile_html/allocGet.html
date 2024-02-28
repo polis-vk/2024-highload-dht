@@ -14,7 +14,7 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 224px}
+	#canvas {width: 100%; height: 288px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(14);
+	const levels = Array(18);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -254,23 +254,29 @@ const cpool = [
 ' byte[]',
 ' java.lang.String',
 '0[]',
-'%util.ArrayList$Itr',
 '$/lang/String.encode',
 '7UTF8',
 '1getBytes',
 '1substring',
 '0Latin1.newString',
+'*foreign/MemorySegment.ofArray',
 '*invoke/DirectMethodHandle.allocateInstance',
-'1LambdaForm$DMH.0x00007faf6c08d800.newInvokeSpecial',
-'<MH.0x00007faf6c08c400.invokeExact_MT',
-'%util/ArrayList.iterator',
-'/s.copyOfRange',
+'1LambdaForm$DMH.0x00007f49c80c9400.newInvokeSpecial',
+'<MH.0x00007f49c80c8000.invokeExact_MT',
+'%util/Arrays.copyOfRange',
 '<Byte',
-'*Collections$UnmodifiableCollection$1.<init>',
-'L.iterator',
-'!dk/internal/foreign/AbstractMemorySegmentImpl$$Lambda.0x00007faf6c04b270.apply',
-'N.lambda$toArray$1',
+'!dk.internal.foreign.GlobalSession',
+'5HeapMemorySegmentImpl$OfByte',
+'5MappedMemorySegmentImpl',
+'#/internal/foreign/AbstractMemorySegmentImpl$$Lambda.0x00007f49c80a6e48.apply',
+'N.asSlice',
+'VNoCheck',
+'Olambda$toArray$1',
 'OtoArray',
+'5HeapMemorySegmentImpl$OfByte.fromArray',
+'5MappedMemorySegmentImpl.asSlice',
+'Mdup',
+'6emorySessionImpl.heapSession',
 ' one.nio.http.Request',
 '/sponse',
 '(net.NativeSelector$2',
@@ -294,90 +300,97 @@ const cpool = [
 '(util/ByteArrayBuilder.<init>',
 '-Utf8.read',
 '2toAsciiString',
-' ru/vk/itmo/test/bandurinvladislav/Server.getEntity',
+' ru.vk.itmo.dao.BaseEntry',
+'"/vk/itmo/test/bandurinvladislav/Server.getEntity',
 'IhandleRequest',
 'Bdao/ReferenceDao.get',
+'FSSTable.get',
 'FTableSet.get',
 'Butil/MemSegUtil.fromString'
 ];
 unpack(cpool);
 
-n(3,1147)
-u(321)
-u(297,59)
-u(186)
-f(305,2,59,1088)
-u(225)
-u(217)
-u(201,682)
-u(361)
-u(233,220)
-u(241)
-u(289,160)
-u(329)
-u(10)
-f(313,9,160,60)
-u(194)
-f(257,7,60,86)
-u(65)
-u(65)
-u(73)
-u(18,44)
-n(113,42)
-u(121)
-u(10)
-f(265,7,42,103)
-u(65)
-u(73)
-u(18,44)
-n(113,59)
-u(121)
-u(10)
-f(353,7,59,273)
-u(161,17)
-u(161)
-u(145)
-u(153)
-u(10)
-f(178,8,17,20)
-n(273,100)
-u(10,41)
-n(18,23)
-n(26,36)
-f(281,8,36,68)
-u(178,8)
-n(273,60)
-u(10,22)
-n(18,15)
-n(26,23)
-f(369,8,23,28)
+n(3,2488)
+u(369)
+u(345,105)
+u(234)
+f(353,2,105,2383)
+u(273)
+u(265)
+u(249,1665)
+u(417)
+u(281,403)
+u(289)
+u(337,289)
 u(377)
-u(137)
-u(129)
-u(105)
-u(34)
-f(385,8,28,40)
-u(57)
-u(41)
-u(49)
 u(10)
-f(209,5,40,295)
-u(170,62)
-n(249,123)
+f(361,9,289,114)
+u(242)
+f(305,7,114,145)
+u(57)
+u(57)
+u(65)
+u(18,67)
+n(105,78)
+u(113)
+u(10)
+f(313,7,78,160)
+u(57)
+u(65)
+u(18,75)
+n(105,85)
+u(113)
+u(10)
+f(409,7,85,957)
+u(177,134)
+u(177)
+u(145)
+u(169)
+u(10)
+f(329,8,134,354)
+u(226,77)
+n(321,277)
+u(10,111)
+n(18,66)
+n(26,100)
+f(425,8,100,193)
+u(441)
+u(433)
+u(193,110)
+u(193)
+u(153)
+u(161)
+u(201)
+u(201)
+u(138)
+f(402,11,110,83)
+f(449,8,83,276)
+u(49,94)
+u(33)
+u(41)
+u(10)
+f(73,9,94,182)
+u(185)
+u(130,110)
+n(209,72)
+u(122)
+f(257,5,72,532)
+u(218,110)
+n(297,224)
 u(26)
-f(337,6,123,110)
-u(337)
-u(345)
-u(10,70)
-n(97,40)
+f(385,6,224,198)
+u(385)
+u(393)
+u(10,127)
+n(97,71)
 u(89)
 u(81)
 u(18)
-f(337,5,40,111)
-u(337)
-u(345)
-u(10,70)
-n(97,41)
+f(385,5,71,186)
+u(385)
+u(393)
+u(10,106)
+n(97,80)
 u(89)
 u(81)
 u(18)

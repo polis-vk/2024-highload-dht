@@ -127,6 +127,7 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+
         executorService.execute(() -> {
                 try {
                     super.handleRequest(request, session);
@@ -134,7 +135,7 @@ public class HttpServerImpl extends HttpServer {
                     try {
                         session.sendError(Response.BAD_REQUEST, e.toString());
                     } catch (IOException ex) {
-                        throw new RuntimeException(ex.initCause(e));
+                        throw new UncheckedIOException((IOException) ex.initCause(e));
                     }
                 }
         });

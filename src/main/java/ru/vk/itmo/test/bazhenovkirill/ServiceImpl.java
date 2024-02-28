@@ -9,9 +9,10 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
+    private final ServiceConfig config;
+
     private ServerImpl server;
 
-    private final ServiceConfig config;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;

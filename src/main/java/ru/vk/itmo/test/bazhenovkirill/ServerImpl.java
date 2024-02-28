@@ -6,12 +6,12 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.bazhenovkirill.dao.DaoImpl;
 
@@ -26,7 +26,7 @@ public class ServerImpl extends HttpServer {
 
     private static final String API_ENDPOINT = "/v0/entity";
 
-    private final DaoImpl dao;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public ServerImpl(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
@@ -45,46 +45,58 @@ public class ServerImpl extends HttpServer {
     }
 
     @Path(API_ENDPOINT)
-    public Response entity(Request request, @Param(value = "id") String id) {
+    public Response handleEntityRequst(Request request, @Param(value = "id") String id) {
         if (isInvalidId(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                MemorySegment key = convertStringToMemorySegment(id);
-                Entry<MemorySegment> entry = dao.get(key);
-
-                if (entry == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
-                }
-
-                return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+                return getEntityById(id);
             }
             case Request.METHOD_DELETE -> {
-                MemorySegment key = convertStringToMemorySegment(id);
-                try {
-                    dao.upsert(new BaseEntry<>(key, null));
-                } catch (IllegalStateException ex) {
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                }
-                return new Response(Response.ACCEPTED, Response.EMPTY);
+                return deleteEntityById(id);
             }
             case Request.METHOD_PUT -> {
-                MemorySegment key = convertStringToMemorySegment(id);
-                MemorySegment value = MemorySegment.ofArray(request.getBody());
-                try {
-                    dao.upsert(new BaseEntry<>(key, value));
-                } catch (IllegalStateException ex) {
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                }
-
-                return new Response(Response.CREATED, Response.EMPTY);
+                return putEntity(id, request);
             }
             default -> {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         }
+    }
+
+    private Response deleteEntityById(String id) {
+        MemorySegment key = convertStringToMemorySegment(id);
+        try {
+            dao.upsert(new BaseEntry<>(key, null));
+        } catch (IllegalStateException ex) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+        return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private Response getEntityById(String id) {
+        MemorySegment key = convertStringToMemorySegment(id);
+        Entry<MemorySegment> entry = dao.get(key);
+
+        if (entry == null) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
+
+        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+    }
+
+    private Response putEntity(String id, Request request) {
+        MemorySegment key = convertStringToMemorySegment(id);
+        MemorySegment value = MemorySegment.ofArray(request.getBody());
+        try {
+            dao.upsert(new BaseEntry<>(key, value));
+        } catch (IllegalStateException ex) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Override

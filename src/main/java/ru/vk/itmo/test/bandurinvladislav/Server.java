@@ -38,9 +38,6 @@ public class Server extends HttpServer {
     }
 
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
-        if (request.getBody() == null || request.getBody().length == 0) {
-            return new Response(Response.BAD_REQUEST, "Request body can't be empty".getBytes(StandardCharsets.UTF_8));
-        }
         dao.upsert(
                 new BaseEntry<>(
                         MemSegUtil.fromString(id),

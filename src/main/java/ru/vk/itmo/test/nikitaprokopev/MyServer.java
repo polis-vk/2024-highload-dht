@@ -23,7 +23,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public class MyServer extends HttpServer {
-    private final static Logger log = LoggerFactory.getLogger(MyServer.class);
+    private final Logger log = LoggerFactory.getLogger(MyServer.class);
     private static final String BASE_PATH = "/v0/entity";
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
@@ -123,10 +123,6 @@ public class MyServer extends HttpServer {
             super.handleRequest(request, session);
         } catch (Exception e) {
             log.error("Error while handling request", e);
-            if (e instanceof HttpException) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }

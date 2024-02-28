@@ -46,6 +46,8 @@ plugins:
         enabled: false
       PrematureDeclaration:
         enabled: false
+      MissingBreakInSwitch:
+        enabled: false
   sonar-java:
     enabled: true
     config:

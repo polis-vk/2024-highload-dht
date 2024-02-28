@@ -46,12 +46,6 @@ test {
     jvmArgs += ["--enable-preview"]
 }
 
-run {
-    maxHeapSize = "128m"
-    mainClass = "ru.vk.itmo.test.tuzikovalexandr.Server"
-    jvmArgs += ["--enable-preview"]
-}
-
 checkstyle {
     configFile = new File("checkstyle.xml")
     checkstyleTest.enabled = false

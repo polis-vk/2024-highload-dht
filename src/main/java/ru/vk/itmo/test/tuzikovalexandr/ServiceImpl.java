@@ -12,8 +12,8 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
-    private ServerImpl server;
     private final ServiceConfig config;
+    private ServerImpl server;
     private Dao dao;
 
     public ServiceImpl(ServiceConfig config) {
@@ -22,7 +22,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        dao = new ReferenceDao(new Config(config.workingDir(), 64));
+        dao = new ReferenceDao(new Config(config.workingDir(), 1024 * 1024));
         server = new ServerImpl(config, dao);
         server.start();
         return CompletableFuture.completedFuture(null);

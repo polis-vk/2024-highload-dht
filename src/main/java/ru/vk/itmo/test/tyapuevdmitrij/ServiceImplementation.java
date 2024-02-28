@@ -13,7 +13,7 @@ import java.util.concurrent.CompletableFuture;
 public class ServiceImplementation implements ru.vk.itmo.Service {
 
     private final ServiceConfig config;
-    private static final long FLUSH_THRESHOLD_BYTES = (128 / 3) << 20; // 42 MB
+    private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
     private ServerImplementation server;
     private MemorySegmentDao memorySegmentDao;
 

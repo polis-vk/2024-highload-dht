@@ -146,8 +146,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             session.sendError(Response.BAD_REQUEST, e.toString());
         } catch (IOException ex) {
-            e.addSuppressed(ex);
-            throw new UncheckedIOException((IOException) e);
+            throw new UncheckedIOException(ex);
         }
     }
 

@@ -47,8 +47,8 @@ public final class Server {
         StorageServer server = new StorageServer(config, dao, executor);
         server.start();
 
-        //fillFlush(dao);
-        //fillManyFlushes(dao);
+        fillFlush(dao);
+        fillManyFlushes(dao);
     }
 
     private static int[] getRandomArray() {

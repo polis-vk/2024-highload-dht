@@ -20,6 +20,9 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
@@ -27,6 +30,16 @@ import static one.nio.http.Request.METHOD_PUT;
 
 public class DhtServer extends HttpServer {
     public static final byte[] EMPTY_BODY = new byte[0];
+    public static final int THREADS_PER_PROCESSOR = 2;
+    public static final long KEEP_ALIVE_TIME_MS = 1000;
+    public static final int REQUEST_TIMEOUT_MS = 1024;
+    private final ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+            Runtime.getRuntime().availableProcessors(),
+            Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
+            KEEP_ALIVE_TIME_MS,
+            TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(1 << 16)
+    );
     private final ReferenceDao dao;
 
     public DhtServer(ServiceConfig config) throws IOException {
@@ -46,35 +59,78 @@ public class DhtServer extends HttpServer {
 
     @RequestMethod(METHOD_GET)
     @Path("/v0/entity")
-    public Response entity(@Param(value = "id") String id) {
+    public void entity(@Param(value = "id") String id, HttpSession session) throws IOException {
         if (isKeyIncorrect(id)) {
-            return new Response(Response.BAD_REQUEST, EMPTY_BODY);
+            session.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+        } else {
+            long start = System.currentTimeMillis();
+            threadPoolExecutor.execute(
+                    () -> {
+                        try {
+                            if (System.currentTimeMillis() - start >= REQUEST_TIMEOUT_MS) {
+                                session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
+                                return;
+                            }
+                            Entry<MemorySegment> entry = dao.get(keyFor(id));
+                            if (entry == null) {
+                                session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+                            } else {
+                                session.sendResponse(new Response(Response.OK, valueFor(entry)));
+                            }
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+            );
         }
-        Entry<MemorySegment> entry = dao.get(keyFor(id));
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, EMPTY_BODY);
-        }
-        return new Response(Response.OK, valueFor(entry));
     }
 
     @RequestMethod(METHOD_PUT)
     @Path("/v0/entity")
-    public Response putEntity(@Param(value = "id") String id, Request request) {
+    public void putEntity(@Param(value = "id") String id, HttpSession httpSession, Request request) throws IOException {
         if (isKeyIncorrect(id)) {
-            return new Response(Response.BAD_REQUEST, EMPTY_BODY);
+            httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+        } else {
+            long start = System.currentTimeMillis();
+            threadPoolExecutor.execute(
+                    () -> {
+                        try {
+                            if (System.currentTimeMillis() - start > KEEP_ALIVE_TIME_MS) {
+                                httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
+                                return;
+                            }
+                            dao.upsert(new BaseEntry<>(keyFor(id), MemorySegment.ofArray(request.getBody())));
+                            httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+            );
         }
-        dao.upsert(new BaseEntry<>(keyFor(id), MemorySegment.ofArray(request.getBody())));
-        return new Response(Response.CREATED, EMPTY_BODY);
     }
 
     @RequestMethod(METHOD_DELETE)
     @Path("/v0/entity")
-    public Response deleteEntity(@Param("id") String id) {
+    public void deleteEntity(@Param("id") String id, HttpSession httpSession) throws IOException {
         if (isKeyIncorrect(id)) {
-            return new Response(Response.BAD_REQUEST, EMPTY_BODY);
+            httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+        } else {
+            long start = System.currentTimeMillis();
+            threadPoolExecutor.execute(
+                    () -> {
+                        try {
+                            if (System.currentTimeMillis() - start > KEEP_ALIVE_TIME_MS) {
+                                httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
+                                return;
+                            }
+                            dao.upsert(new BaseEntry<>(keyFor(id), null));
+                            httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+            );
         }
-        dao.upsert(new BaseEntry<>(keyFor(id), null));
-        return new Response(Response.ACCEPTED, EMPTY_BODY);
     }
 
     @Override
@@ -95,6 +151,7 @@ public class DhtServer extends HttpServer {
         HttpServerConfig config = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
+        acceptorConfig.reusePort = true;
         config.acceptors = new AcceptorConfig[] {acceptorConfig};
         config.closeSessions = true;
         return config;

@@ -8,7 +8,7 @@
 
     function getRandomId()
         minId = 1
-        maxId = 1000
+        maxId = 100000
         return math.random(minId, maxId)
     end
 

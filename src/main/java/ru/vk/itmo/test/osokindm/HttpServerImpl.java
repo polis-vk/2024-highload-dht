@@ -18,10 +18,10 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -29,7 +29,8 @@ public class HttpServerImpl extends HttpServer {
 
     private static final String DEFAULT_PATH = "/v0/entity";
     private static final String ID_REQUEST = "id=";
-    private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
+    private static final long KEEP_ALIVE_TIME = 60L;
+    private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ExecutorService requestWorkers;
     private final DaoWrapper daoWrapper;
 
@@ -37,16 +38,30 @@ public class HttpServerImpl extends HttpServer {
     public HttpServerImpl(ServiceConfig config, DaoWrapper daoWrapper) throws IOException {
         super(createServerConfig(config));
         this.daoWrapper = daoWrapper;
-        requestWorkers = new ThreadPoolExecutor(64, 64, 60L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(128));
+        // maximumPoolSize > availableProcessors, which may lead to increased context switching
+        // corePoolSize and maximumPoolSize will be configured later with using wrk and profiler
+        requestWorkers = new ThreadPoolExecutor(
+                Runtime.getRuntime().availableProcessors(),
+                64,
+                KEEP_ALIVE_TIME,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(128),
+                new ThreadPoolExecutor.DiscardOldestPolicy());
     }
 
     @Override
     public synchronized void stop() {
         try {
             daoWrapper.stop();
-            requestWorkers.close();
+            requestWorkers.shutdown();
+            if (!requestWorkers.awaitTermination(KEEP_ALIVE_TIME, TimeUnit.SECONDS)) {
+                requestWorkers.shutdownNow();
+            }
         } catch (IOException e) {
-            logger.error("Error occurred while closing database");
+            LOGGER.error("Error occurred while closing database");
+        } catch (InterruptedException e) {
+            requestWorkers.shutdownNow();
+            LOGGER.error("Error occurred while stopping request workers");
         }
         super.stop();
     }
@@ -59,51 +74,27 @@ public class HttpServerImpl extends HttpServer {
 
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                Future<Response> response = requestWorkers.submit(() -> {
+                return executeRequest("GET", () -> {
                     Entry<MemorySegment> result = daoWrapper.get(id);
                     if (result != null && result.value() != null) {
                         return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
                     }
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 });
-                try {
-                    return response.get();
-                } catch (InterruptedException e) {
-                    logger.error("GET operation was interrupted");
-                } catch (ExecutionException e) {
-                    logger.error("Error occurred while executing GET");
-                }
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             }
 
             case Request.METHOD_PUT -> {
-                Future<Response> response = requestWorkers.submit(() -> {
+                return executeRequest("PUT", () -> {
                     daoWrapper.upsert(id, request);
                     return new Response(Response.CREATED, Response.EMPTY);
                 });
-                try {
-                    return response.get();
-                } catch (InterruptedException e) {
-                    logger.error("UPSERT operation was interrupted");
-                } catch (ExecutionException e) {
-                    logger.error("Error occurred while executing UPSERT");
-                }
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             }
 
             case Request.METHOD_DELETE -> {
-                Future<Response> response = requestWorkers.submit(() -> {
+                return executeRequest("DELETE", () -> {
                     daoWrapper.delete(id);
                     return new Response(Response.ACCEPTED, Response.EMPTY);
                 });
-                try {
-                    return response.get();
-                } catch (InterruptedException e) {
-                    logger.error("DELETE operation was interrupted");
-                } catch (ExecutionException e) {
-                    logger.error("Error occurred while executing DELETE");
-                }
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             }
 
             default -> {
@@ -114,7 +105,6 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
-//        requestWorkers.execute(() -> {
         String id = request.getParameter(ID_REQUEST);
         if (id != null && id.isEmpty()) {
             try {
@@ -129,7 +119,6 @@ public class HttpServerImpl extends HttpServer {
                 throw new UncheckedIOException(e);
             }
         }
-//        });
     }
 
     @Override
@@ -151,8 +140,19 @@ public class HttpServerImpl extends HttpServer {
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
-
         return serverConfig;
+    }
+
+    private Response executeRequest(String method, Callable<Response> request) {
+        Future<Response> response = requestWorkers.submit(request);
+        try {
+            return response.get();
+        } catch (InterruptedException e) {
+            LOGGER.error(STR."\{method} operation was interrupted");
+        } catch (ExecutionException e) {
+            LOGGER.error(STR."Error occurred while executing\{method}");
+        }
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
 
 }

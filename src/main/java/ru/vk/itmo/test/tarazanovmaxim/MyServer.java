@@ -58,14 +58,9 @@ public class MyServer extends HttpServer {
         return MemorySegment.ofArray(string.getBytes(StandardCharsets.UTF_8));
     }
 
-    public void close() {
+    public void close() throws IOException {
         executorService.close();
-        try {
-            dao.close();
-        } catch (IOException e) {
-            logger.error("IOException in close()->dao.close()");
-            throw new RuntimeException(e);
-        }
+        dao.close();
     }
 
     @Path(PATH)
@@ -152,7 +147,6 @@ public class MyServer extends HttpServer {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
                     logger.error("IOException in handleRequest->executorService.execute()");
-                    System.out.println(e.getClass());
                     sendResponse(
                         new Response(
                             e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,

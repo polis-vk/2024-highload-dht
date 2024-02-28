@@ -6,9 +6,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
-public class ServerMain {
+public final class ServerMain {
 
-    private ServerMain() {
+     private ServerMain() {
 
     }
 

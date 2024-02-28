@@ -152,6 +152,7 @@ Requests/sec:  29999.85
 Transfer/sec:      1.92MB
 
 ```
+
 ![](../wrk_results/stage1/upsert-stable-rps.png)
 
 Видим что среднее Latency - 0.81 ms, а по перцентилям гистограммы выше видно, что деградации не наблюдалось.
@@ -189,7 +190,6 @@ Transfer/sec:    485.70KB
 Detailed Percentile spectrum тут не нужен, и так видно, что база просто моментально захлебнулась таким количеством бинарных поисков.
 
 Возьмем стабильную 7.5k rps
-
 ```
 ./wrk -c 1 -d 20 -t 1 -L -R 7500 -s get-script.lua http://localhost:8080
 
@@ -400,7 +400,9 @@ Transfer/sec:      1.64MB
 
 # 1) ALLOC
 
+
 ![](../wrk_results/stage1/bf-get-20krps-alloc.png)
+
 
 Около 80% аллокаций приходится на метод getFromDisk(), а он содержит в себе метод вычисления хеш-функции Murmur3 Hash для ключей. Это используется в фильтре Блума, чтобы определить, лежит ли в данном SSTable такой ключ или нет, для этого вычисляется хеш.
 
@@ -416,6 +418,7 @@ Transfer/sec:      1.64MB
 
 # 1) ALLOC
 
+
 ![](../wrk_results/stage1/upsert-30krps-alloc.png)
 
 Видно что много аллокаций приходится на SSTablesStorage.write - это как раз сброс данных с memtable на диск. При этом большинство аллокаций возникают в SSTablesStorage.getPaths(). Поскольку этот метод нужен был только для подсчета количества таблиц на диске, метод можно убрать и использовать просто переменную int sstablesCount, которая будет инкрементироваться c каждым flush и становиться равной единице после завершения compaction.
@@ -425,6 +428,7 @@ Transfer/sec:      1.64MB
 ![](../wrk_results/stage1/upsert-30krps-cpu.png)
 
 Видно, что затраты процессора вызывает flush (метод SSTablesStorage.write). Метод SSTablesStorage.getPaths() был убран в целях оптимизации.  
+
 
 
 

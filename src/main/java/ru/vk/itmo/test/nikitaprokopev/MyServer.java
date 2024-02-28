@@ -18,6 +18,7 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -122,8 +123,20 @@ public class MyServer extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
-            log.error("Error while handling request", e);
+            handleRequestException(session, e);
+        }
+    }
+
+    private void handleRequestException(HttpSession session, Exception e) {
+        log.error("Error while handling request", e);
+        try {
+            if (e instanceof HttpException) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
         }
     }
 }

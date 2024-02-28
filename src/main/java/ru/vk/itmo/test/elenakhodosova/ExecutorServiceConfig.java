@@ -5,7 +5,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-public class ExecutorServiceConfig {
+public final class ExecutorServiceConfig {
 
     private static final int POOL_SIZE = 64;
     private static final int MAX_POOL_SIZE = 128;

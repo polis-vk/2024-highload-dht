@@ -9,9 +9,12 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.khadyrovalmasgali.dao.ReferenceDao;
 
@@ -28,7 +31,7 @@ import java.util.concurrent.TimeUnit;
 
 public class DaoServer extends HttpServer {
 
-    private ReferenceDao dao;
+    private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ServiceConfig config;
     private final ExecutorService executorService = new ThreadPoolExecutor(
             0,
@@ -36,8 +39,9 @@ public class DaoServer extends HttpServer {
             50,
             TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(128));
-    private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1MB
+    private static final Logger log = LoggerFactory.getLogger(DaoServer.class);
     private static final String ENTITY_PATH = "/v0/entity";
+    private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1MB
 
     public DaoServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config));
@@ -76,6 +80,7 @@ public class DaoServer extends HttpServer {
                 }
             });
         } catch (RejectedExecutionException e) {
+            log.error("Can't handle request", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }
@@ -112,6 +117,7 @@ public class DaoServer extends HttpServer {
     @Override
     public synchronized void stop() {
         super.stop();
+        executorService.shutdown();
         try {
             dao.close();
         } catch (IOException e) {

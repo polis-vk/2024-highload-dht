@@ -94,7 +94,7 @@ public class HttpServerImpl extends HttpServer {
 
     @Path(value = "/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response up(@Param(value = "id", required = true) String id, Request request) {
+    public Response putEntry(@Param(value = "id", required = true) String id, Request request) {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -145,6 +145,7 @@ public class HttpServerImpl extends HttpServer {
         LocalDateTime now = LocalDateTime.now(ServerZone);
         if (now.isAfter(deadlineRequest)) {
             sendResponse(session, new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            return;
         }
 
         try {

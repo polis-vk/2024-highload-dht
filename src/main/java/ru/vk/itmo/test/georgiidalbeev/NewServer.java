@@ -11,25 +11,22 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.georgiidalbeev.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public class NewServer extends HttpServer {
 
-    private final ReferenceDao dao;
-    private static final long FLUSH_THRESHOLD = 5242880;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String PATH = "/v0/entity";
 
-    public NewServer(ServiceConfig config) throws IOException {
+    public NewServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(configureServer(config));
-        dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
+        this.dao = dao;
     }
 
     private static HttpServerConfig configureServer(ServiceConfig serviceConfig) {
@@ -51,12 +48,16 @@ public class NewServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                key,
-                MemorySegment.ofArray(request.getBody())
-        );
+        try {
+            Entry<MemorySegment> entry = new BaseEntry<>(
+                    key,
+                    MemorySegment.ofArray(request.getBody())
+            );
 
-        dao.upsert(entry);
+            dao.upsert(entry);
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
 
         return new Response(Response.CREATED, Response.EMPTY);
     }
@@ -69,13 +70,17 @@ public class NewServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        Entry<MemorySegment> entry = dao.get(key);
+        try {
+            Entry<MemorySegment> entry = dao.get(key);
 
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+            if (entry == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
+
+            return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     @Path(PATH)
@@ -86,12 +91,16 @@ public class NewServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                key,
-                null
-        );
+        try {
+            Entry<MemorySegment> entry = new BaseEntry<>(
+                    key,
+                    null
+            );
 
-        dao.upsert(entry);
+            dao.upsert(entry);
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
@@ -109,13 +118,5 @@ public class NewServer extends HttpServer {
 
     private MemorySegment validateId(String id) {
         return (id == null || id.isEmpty()) ? null : MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-    }
-
-    public void terminate() {
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Error closing DAO: ", e);
-        }
     }
 }

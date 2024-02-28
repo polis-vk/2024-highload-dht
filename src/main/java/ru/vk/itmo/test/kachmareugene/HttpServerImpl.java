@@ -25,8 +25,8 @@ import java.util.concurrent.*;
 
 public class HttpServerImpl extends HttpServer {
 
-    private final int CORE_POOL = 3;
-    private final int MAX_POOL = 5;
+    private static final int CORE_POOL = 3;
+    private static final int MAX_POOL = 5;
     private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(100);
     private final ExecutorService executorService =
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
@@ -130,9 +130,10 @@ public class HttpServerImpl extends HttpServer {
                     try {
                         session.sendError(Response.BAD_REQUEST, e.toString());
                     } catch (IOException ex) {
-                        throw new RuntimeException(ex);
+                        throw new RuntimeException(ex.initCause(e));
                     }
-                }});
+                }
+        });
     }
 
     @Override

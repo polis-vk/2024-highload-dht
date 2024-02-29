@@ -24,7 +24,7 @@ public class ServerImpl extends HttpServer {
 
     private static final String HTTP_SERVICE_NOT_AVAILABLE = "503";
     private static final String EMPTY_RESPONSE = "";
-    private static final int QUEUE_CAPACITY = 2000;
+    private static final int QUEUE_CAPACITY = 2500;
 
     private final ThreadPoolExecutor executor;
 
@@ -32,10 +32,10 @@ public class ServerImpl extends HttpServer {
         super(createHttpServerConfig(config));
         executor = new ThreadPoolExecutor(
             50,
-            100,
-            30,
+            150,
+            15,
             TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(QUEUE_CAPACITY),
+            new ArrayBlockingQueue<>(QUEUE_CAPACITY, true),
             new CustomThreadFactory("server-executor", false),
             new ThreadPoolExecutor.AbortPolicy()
         );

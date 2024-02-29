@@ -21,18 +21,55 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.RejectedExecutionException;
 
 public class MyServer extends HttpServer {
 
     private static final String ROOT = "/v0/entity";
+    private static long DURATION = 1000L;
 
     private final ReferenceDao dao;
+
+    private final MyExecutor executor;
 
     private static final Set<Integer> METHOD_SET = new ConcurrentSkipListSet<>(List.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
     ));
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            long exp = System.currentTimeMillis() + DURATION;
+            executor.execute(() -> {
+                try {
+                    if (System.currentTimeMillis() > exp) {
+                        sendEmpty(session, Response.SERVICE_UNAVAILABLE);
+                    } else {
+                        super.handleRequest(request, session);
+                    }
+                } catch (IOException e) {
+                    System.err.println(e.getMessage());
+                    sendEmpty(session, Response.INTERNAL_ERROR);
+                } catch (Exception e) {
+                    System.err.println(e.getMessage());
+                    sendEmpty(session, Response.BAD_REQUEST);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            System.err.println(e.getMessage());
+            sendEmpty(session, "429 Too Many Requests");
+        }
+    }
+
+    private void sendEmpty(HttpSession session, String message) {
+        try {
+            session.sendResponse(new Response(message, Response.EMPTY));
+        } catch (IOException e) {
+            System.err.println(e.getMessage());
+        }
+    }
 
     private static HttpServerConfig generateServerConfig(ServiceConfig config) {
         var serverConfig = new HttpServerConfig();
@@ -49,6 +86,7 @@ public class MyServer extends HttpServer {
     public MyServer(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(generateServerConfig(config));
         this.dao = dao;
+        this.executor = new MyExecutor(Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().availableProcessors());
     }
 
     private boolean isStringInvalid(String param) {
@@ -120,5 +158,11 @@ public class MyServer extends HttpServer {
                         new Response(Response.BAD_REQUEST, Response.EMPTY) :
                         new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY)
                 );
+    }
+
+    @Override
+    public synchronized void stop() {
+        this.executor.shutdown();
+        super.stop();
     }
 }

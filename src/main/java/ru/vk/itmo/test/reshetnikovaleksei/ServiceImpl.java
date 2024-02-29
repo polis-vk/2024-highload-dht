@@ -27,7 +27,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        server = new HttpServerImpl(serviceConfig, dao);
+        server = new HttpServerImpl(serviceConfig, dao, ExecutorServiceFactory.createExecutorService());
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -39,7 +39,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -49,6 +49,6 @@ public class ServiceImpl implements Service {
     }
 
     private static Config createDaoConfig(ServiceConfig serviceConfig) {
-        return new Config(serviceConfig.workingDir(), 1024);
+        return new Config(serviceConfig.workingDir(), 2048);
     }
 }

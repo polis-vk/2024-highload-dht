@@ -20,8 +20,8 @@ public final class ServerRunnerApp {
         Path path = Path.of("/Users/alreshetnikov/IdeaProjects/2024-highload-dht/data");
 
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http:localhost", List.of("http:localhost"), path);
-        Dao<MemorySegment, Entry<MemorySegment>> dao = new ReferenceDao(new Config(path, 1024));
-        HttpServerImpl server = new HttpServerImpl(serviceConfig, dao);
+        Dao<MemorySegment, Entry<MemorySegment>> dao = new ReferenceDao(new Config(path, 2048));
+        HttpServerImpl server = new HttpServerImpl(serviceConfig, dao, ExecutorServiceFactory.createExecutorService());
 
         server.start();
     }

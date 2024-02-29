@@ -5,14 +5,9 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.andreycheshev.dao.PersistentReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.foreign.MemorySegment;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -51,26 +46,24 @@ public class RequestExecutor {
         long currTime = System.currentTimeMillis();
 
         try {
-            workers.execute(
-                    () -> {
-                        Response response;
+            workers.execute(() -> {
+                Response response;
 
-                        // Если дедлайн для выполнения задачи прошел
-                        if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
-                            response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
-                        } else {
-                            try {
-                                response = requestHandler.handle(request);
-                            } catch (Exception e) {
-                                logger.error("Internal error of the DAO operation", e);
-                                sendResponse(new Response(INTERNAL_ERROR, Response.EMPTY), session);
-                                return;
-                            }
-                        }
-
-                        sendResponse(response, session);
+                // Если дедлайн для выполнения задачи прошел
+                if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
+                    response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
+                } else {
+                    try {
+                        response = requestHandler.handle(request);
+                    } catch (Exception e) {
+                        logger.error("Internal error of the DAO operation", e);
+                        sendResponse(new Response(INTERNAL_ERROR, Response.EMPTY), session);
+                        return;
                     }
-            );
+                }
+
+                sendResponse(response, session);
+            });
         }
         // Переполнение очереди, невозможно взять новую задачу в исполнение
         catch (RejectedExecutionException e) {

@@ -53,19 +53,19 @@ public class DatabaseHttpServer extends HttpServer {
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         }
-        for (int i = 0; i < 3;) {
+        for (int i = 0; i < 3; i++) {
             try {
                 session.sendResponse(response);
                 return;
-            } catch (IOException e) {
-                i++;
+            } catch (IOException ignored) {
             }
         }
+        throw new NetworkException();
     }
 
     @Path(ENTITY_ACCESS_URL)
     public void handleEntityRequest(Request request, HttpSession session,
-                                        @Param(value = "id", required = true) String entityKey) {
+                                    @Param(value = "id", required = true) String entityKey) {
         try {
             queryExecutor.execute(() -> handleEntityRequestTask(request.getMethod(),
                     entityKey, request.getBody(), session));

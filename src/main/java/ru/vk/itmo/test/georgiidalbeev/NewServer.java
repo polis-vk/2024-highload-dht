@@ -31,7 +31,10 @@ public class NewServer extends HttpServer {
     private static final String PATH = "/v0/entity";
     private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
 
-    public NewServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executorService) throws IOException {
+    public NewServer(ServiceConfig config,
+                     Dao<MemorySegment, Entry<MemorySegment>> dao,
+                     ExecutorService executorService
+    ) throws IOException {
         super(configureServer(config));
         this.dao = dao;
         this.executorService = executorService;

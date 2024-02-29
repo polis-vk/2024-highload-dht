@@ -28,7 +28,7 @@ public class RequestHandler {
 
     public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao) {
         this.dao = dao;
-    };
+    }
 
     public Response handle(Request request) {
 

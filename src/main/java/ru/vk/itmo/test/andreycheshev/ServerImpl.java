@@ -4,18 +4,22 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.*;
+import ru.vk.itmo.test.andreycheshev.dao.*;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.*;
 
 public class ServerImpl extends HttpServer {
     private final RequestExecutor executor;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
     public ServerImpl(HttpServerConfig config, Config daoConfig) throws IOException {
         super(config);
 
-        this.executor = new RequestExecutor(daoConfig);
+        this.dao = new PersistentReferenceDao(daoConfig);
+        this.executor = new RequestExecutor(new RequestHandler(dao));
     }
 
     @Override
@@ -28,6 +32,7 @@ public class ServerImpl extends HttpServer {
         super.stop();
         try {
             executor.shutdown();
+            dao.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

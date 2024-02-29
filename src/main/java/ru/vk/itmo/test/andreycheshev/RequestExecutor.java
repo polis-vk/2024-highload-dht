@@ -25,19 +25,16 @@ public class RequestExecutor {
     private static final Logger logger = LoggerFactory.getLogger(RequestExecutor.class);
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int KEEPALIVE_MILLIS = 3000;
-    private static final int MAX_WORKERS_COUNT = 300;
     private static final long MAX_TASK_AWAITING_TIME_MILLIS = 3000;
+    private static final int MAX_WORKERS_COUNT = 300;
 
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService workers;
     private final RequestHandler requestHandler;
 
     static final String TOO_MANY_REQUESTS = "429 Too many requests";
 
-    public RequestExecutor(Config daoConfig) throws IOException {
-        this.dao = new PersistentReferenceDao(daoConfig);
-
-        this.requestHandler = new RequestHandler(this.dao);
+    public RequestExecutor(RequestHandler requestHandler) throws IOException {
+        this.requestHandler = requestHandler;
 
         this.workers = new ThreadPoolExecutor(
                 CPU_THREADS_COUNT,
@@ -54,24 +51,26 @@ public class RequestExecutor {
         long currTime = System.currentTimeMillis();
 
         try {
-            workers.execute(() -> {
-                Response response;
+            workers.execute(
+                    () -> {
+                        Response response;
 
-                // Если дедлайн для выполнения задачи прошел
-                if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
-                    response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
-                } else {
-                    try {
-                        response = requestHandler.handle(request);
-                    } catch (Exception e) {
-                        logger.error("Internal error of the DAO operation", e);
-                        sendResponse(new Response(INTERNAL_ERROR, Response.EMPTY), session);
-                        return;
+                        // Если дедлайн для выполнения задачи прошел
+                        if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
+                            response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
+                        } else {
+                            try {
+                                response = requestHandler.handle(request);
+                            } catch (Exception e) {
+                                logger.error("Internal error of the DAO operation", e);
+                                sendResponse(new Response(INTERNAL_ERROR, Response.EMPTY), session);
+                                return;
+                            }
+                        }
+
+                        sendResponse(response, session);
                     }
-                }
-
-                sendResponse(response, session);
-            });
+            );
         }
         // Переполнение очереди, невозможно взять новую задачу в исполнение
         catch (RejectedExecutionException e) {
@@ -96,7 +95,5 @@ public class RequestExecutor {
         // Такой подход уместен, поскольку, если произойдет зависание,
         // система мониторинга обнаружит этот факт и нода будет перезапущена.
         workers.close();
-
-        dao.close();
     }
 }

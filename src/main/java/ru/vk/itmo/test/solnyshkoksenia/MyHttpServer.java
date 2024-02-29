@@ -27,9 +27,8 @@ import java.util.concurrent.TimeUnit;
 
 public class MyHttpServer extends HttpServer {
     private final DaoImpl dao;
-    private static final int PROCESSORS = Runtime.getRuntime().availableProcessors();
-    private final ExecutorService executorService = new ThreadPoolExecutor(PROCESSORS, Integer.MAX_VALUE,
-            5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(),
+    private final ExecutorService executorService = new ThreadPoolExecutor(8, 16,
+            5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(128),
             (r, executor) -> {
                 HttpSession session = ((Task) r).session;
                 try {
@@ -56,7 +55,7 @@ public class MyHttpServer extends HttpServer {
     }
 
     private static Config createConfig(ServiceConfig config) {
-        return new Config(config.workingDir(), Math.round(0.33 * 128 * 1024 * 1024)); // 0.33 * 128mb
+        return new Config(config.workingDir(), Math.round(0.33 * 128 * 1024 * 1024));
     }
 
     @Override

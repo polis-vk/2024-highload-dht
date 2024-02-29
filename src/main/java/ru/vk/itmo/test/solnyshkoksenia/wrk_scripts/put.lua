@@ -18,7 +18,7 @@ request_put = function()
     local headers = {}
     headers["Host"] = "localhost:8080"
 
-    local length = math.random(10, 100)
+    local length = 3
     local id = randomString(length)
     local body = randomString(300)
 

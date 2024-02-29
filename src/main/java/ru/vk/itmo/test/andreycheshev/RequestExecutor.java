@@ -64,9 +64,7 @@ public class RequestExecutor {
 
                 sendResponse(response, session);
             });
-        }
-        // Переполнение очереди, невозможно взять новую задачу в исполнение
-        catch (RejectedExecutionException e) {
+        } catch (RejectedExecutionException e) { // Переполнение очереди
             sendResponse(
                     new Response(TOO_MANY_REQUESTS, Response.EMPTY),
                     session

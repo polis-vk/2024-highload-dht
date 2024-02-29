@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.klimplyasov;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -9,6 +10,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
@@ -19,14 +22,22 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class PlyasovServer extends HttpServer {
 
     private final ReferenceDao dao;
+    private final ExecutorService executorService;
+    private static final Logger logger = LoggerFactory.getLogger(Server.class.getName());
 
-    public PlyasovServer(ServiceConfig config, ReferenceDao dao) throws IOException {
+    public PlyasovServer(ServiceConfig config, ReferenceDao dao, ExecutorService executorService) throws IOException {
         super(createConfig(config));
         this.dao = dao;
+        this.executorService = executorService;
     }
 
     public static HttpServerConfig createConfig(ServiceConfig serviceConfig) {
@@ -87,6 +98,47 @@ public class PlyasovServer extends HttpServer {
                 : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
 
         session.sendResponse(response);
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        executorService.execute(() -> {
+            handleRequestAsync(request, session);
+        });
+    }
+
+    public void handleRequestAsync(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (RejectedExecutionException executionException) {
+            handleRejectedExecutionException(executionException, session);
+        } catch (Exception e) {
+            handleOtherExceptions(e, session);
+        }
+    }
+
+    private void handleRejectedExecutionException(RejectedExecutionException executionException, HttpSession session) {
+        try {
+            logger.error("Error handling rejected execution", executionException);
+            session.sendError(Response.SERVICE_UNAVAILABLE, "");
+        } catch (IOException ioException) {
+            handleIoException(ioException, session);
+        }
+    }
+
+    private void handleOtherExceptions(Exception e, HttpSession session) {
+        try {
+            String response = e instanceof HttpException ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
+            session.sendError(response, "");
+        } catch (IOException ex) {
+            handleIoException(ex, session);
+        }
+    }
+
+    private void handleIoException(IOException ioException, HttpSession session) {
+        logger.error("IO Exception occurred", ioException);
+        session.close();
+        Thread.currentThread().interrupt();
     }
 
     @Path("/v0/status")

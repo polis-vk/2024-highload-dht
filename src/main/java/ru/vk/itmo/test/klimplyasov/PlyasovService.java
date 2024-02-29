@@ -8,13 +8,18 @@ import ru.vk.itmo.test.klimplyasov.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class PlyasovService implements Service {
 
     private PlyasovServer server;
     private ReferenceDao dao;
     private final ServiceConfig config;
+    private ExecutorService executorService;
 
     public PlyasovService(ServiceConfig config) {
         this.config = config;
@@ -24,7 +29,8 @@ public class PlyasovService implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), 48000));
         try {
-            server = new PlyasovServer(config, dao);
+            executorService = ExecutorConfig.getExecutorService();
+            server = new PlyasovServer(config, dao, executorService);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -35,11 +41,12 @@ public class PlyasovService implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        executorService.close();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

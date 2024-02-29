@@ -7,6 +7,10 @@ import ru.vk.itmo.test.klimplyasov.dao.ReferenceDao;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public final class Server {
 
@@ -22,7 +26,8 @@ public final class Server {
                 Files.createTempDirectory(".")
         );
         ReferenceDao dao = createDao(serviceConfig);
-        PlyasovServer server = new PlyasovServer(serviceConfig, dao);
+        ExecutorService executorService = ExecutorConfig.getExecutorService();
+        PlyasovServer server = new PlyasovServer(serviceConfig, dao, executorService);
         server.start();
     }
 

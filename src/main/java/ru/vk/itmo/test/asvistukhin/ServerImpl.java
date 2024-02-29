@@ -24,7 +24,7 @@ public class ServerImpl extends HttpServer {
 
     private static final String HTTP_SERVICE_NOT_AVAILABLE = "503";
     private static final String EMPTY_RESPONSE = "";
-    private static final int QUEUE_CAPACITY = 2500;
+    private static final int QUEUE_CAPACITY = 3000;
 
     private final ThreadPoolExecutor executor;
 

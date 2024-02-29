@@ -147,8 +147,8 @@ public class MyServer extends HttpServer {
                     }
             );
         } catch (RejectedExecutionException e) {
-            log.error("RejectedExecutionException", e);
-            session.sendResponse(new Response(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), Response.EMPTY));
+            log.error("Workers pool queue overflow", e);
+            session.sendError(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), null);
         } catch (Exception e) {
             handleRequestException(session, e);
         }
@@ -163,7 +163,8 @@ public class MyServer extends HttpServer {
             }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
+            log.error("Exception while sending close connection", e);
+            session.scheduleClose();
         }
     }
 

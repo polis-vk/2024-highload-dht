@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
+import one.nio.async.CustomThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
@@ -13,10 +14,9 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyService implements Service {
 
@@ -44,42 +44,39 @@ public class MyService implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws InterruptedException, IOException {
+    public CompletableFuture<Void> stop() throws IOException {
         server.stop();
         dao.close();
-        workerPool.shutdown();
-        workerPool.awaitTermination(AWAIT_TERMINATION_TIMEOUT, TimeUnit.SECONDS);
+        shutdownAndAwaitTermination(workerPool);
         return CompletableFuture.completedFuture(null);
     }
 
+    private void shutdownAndAwaitTermination(ExecutorService pool) {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(AWAIT_TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+                if (!pool.awaitTermination(AWAIT_TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
+                    System.err.println("Pool did not terminate");
+                }
+            }
+        } catch (InterruptedException ex) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private ThreadPoolExecutor createPool() {
-        return new ThreadPoolExecutor(
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(
                 MAX_THREADS,
                 MAX_THREADS,
                 KEEP_ALIVE_TIME,
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(MAX_QUEUE_LENGTH),
-                new MyThreadFactory(),
+                new CustomThreadFactory("WorkerPoolThread", true),
                 new ThreadPoolExecutor.AbortPolicy()
         );
-    }
-
-    private static class MyThreadFactory implements ThreadFactory {
-        private static final Logger log = LoggerFactory.getLogger(MyThreadFactory.class);
-        private final AtomicInteger index;
-
-        public MyThreadFactory() {
-            this.index = new AtomicInteger();
-        }
-
-        @Override
-        public Thread newThread(Runnable r) {
-            Thread thread = new Thread(r, "WorkerPoolThread-" + index.getAndIncrement());
-            thread.setDaemon(true);
-            thread.setUncaughtExceptionHandler((t, e) -> {
-                log.error("Uncaught exception in thread " + t.getName(), e);
-            });
-            return thread;
-        }
+        pool.prestartAllCoreThreads();
+        return pool;
     }
 }

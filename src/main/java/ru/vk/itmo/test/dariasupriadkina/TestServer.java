@@ -25,7 +25,7 @@ public final class TestServer {
                 Paths.get("./"));
         ReferenceDao dao = new ReferenceDao(
                 new Config(serviceConfig.workingDir(), 1024 * 128));
-        ExecutorService executorService = new WorkerThreadPoolExecutor(new WorkerConfig(10, 10, 100));
+        ExecutorService executorService = new WorkerThreadPoolExecutor(new WorkerConfig(10, 10, 100, 30));
         Server server = new Server(serviceConfig, dao, executorService);
         server.start();
     }

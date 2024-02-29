@@ -10,6 +10,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -24,12 +26,14 @@ import java.util.concurrent.ExecutorService;
 
 public class Server extends HttpServer {
 
+    private static final Logger logger = LoggerFactory.getLogger(Server.class.getName());
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
     private final Set<Integer> permittedMethods =
             Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
 
-    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executorService) throws IOException {
+    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executorService)
+            throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;
         this.executorService = executorService;
@@ -124,7 +128,7 @@ public class Server extends HttpServer {
                         session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                     }
                 } catch (IOException ex) {
-//                    do nothing
+                    logger.error("Handling request failed");
                 }
             }
         });
@@ -142,5 +146,4 @@ public class Server extends HttpServer {
     private Entry<MemorySegment> getEntryById(String id) {
         return dao.get(convertByteArrToMemorySegment(id.getBytes(StandardCharsets.UTF_8)));
     }
-
 }

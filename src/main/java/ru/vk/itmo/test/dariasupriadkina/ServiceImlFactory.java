@@ -17,11 +17,13 @@ public class ServiceImlFactory implements ServiceFactory.Factory {
     private static final int CORE_POOL_SIZE = 10;
     private static final int MAXIMUM_POOL_SIZE = 10;
     private static final int QUEUE_SIZE = 100;
+    private static final int SHUTDOWN_TIMEOUT_SEC = 30;
 
     @Override
     public Service create(ServiceConfig serviceConfig) {
         Config referenceDaoConfig = new Config(Path.of(serviceConfig.workingDir().toUri()), FLUSH_THRESHOLD_BYTES);
-        WorkerConfig workerConfig = new WorkerConfig(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, QUEUE_SIZE);
+        WorkerConfig workerConfig = new WorkerConfig(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE,
+                QUEUE_SIZE, SHUTDOWN_TIMEOUT_SEC);
         return new ServiceIml(serviceConfig, referenceDaoConfig, workerConfig);
     }
 }

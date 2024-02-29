@@ -11,6 +11,7 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 public class ServiceImpl implements Service {
 
@@ -18,6 +19,7 @@ public class ServiceImpl implements Service {
     private final Config daoConfig;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private HttpServerImpl server;
+    private ExecutorService executorService;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -27,7 +29,8 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        server = new HttpServerImpl(serviceConfig, dao, ExecutorServiceFactory.createExecutorService());
+        executorService = ExecutorServiceFactory.createExecutorService();
+        server = new HttpServerImpl(serviceConfig, dao, executorService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -36,6 +39,7 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
         dao.close();
+        executorService.close();
         return CompletableFuture.completedFuture(null);
     }
 

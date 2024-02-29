@@ -18,16 +18,20 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
 public class ServerImpl extends HttpServer {
 
     private final Dao<MemorySegment, Entry<MemorySegment>> referenceDao;
+    private final ExecutorService executorService;
 
     public ServerImpl(ServiceConfig serviceConfig,
-                      Dao<MemorySegment, Entry<MemorySegment>> referenceDao) throws IOException {
+                      Dao<MemorySegment, Entry<MemorySegment>> referenceDao,
+                      ExecutorService executorService) throws IOException {
         super(createServerConfig(serviceConfig));
         this.referenceDao = referenceDao;
+        this.executorService = executorService;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -39,6 +43,21 @@ public class ServerImpl extends HttpServer {
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) {
+        executorService.execute(() -> {
+            try {
+                super.handleRequest(request, session);
+            } catch (Exception e) {
+                try {
+                    session.sendError(Response.BAD_REQUEST, e.getMessage());
+                } catch (IOException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
     }
 
     @Path("/v0/entity")

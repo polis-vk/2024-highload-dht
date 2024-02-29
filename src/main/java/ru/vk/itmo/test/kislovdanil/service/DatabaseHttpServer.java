@@ -53,14 +53,11 @@ public class DatabaseHttpServer extends HttpServer {
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         }
-        for (int i = 0; i < 3; i++) {
-            try {
-                session.sendResponse(response);
-                return;
-            } catch (IOException ignored) {
-            }
+        try {
+            session.sendResponse(response);
+        } catch (IOException ignored) {
+            throw new NetworkException();
         }
-        throw new NetworkException();
     }
 
     @Path(ENTITY_ACCESS_URL)

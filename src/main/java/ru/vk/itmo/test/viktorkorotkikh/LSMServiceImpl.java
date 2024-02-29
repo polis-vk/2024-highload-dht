@@ -143,7 +143,7 @@ public class LSMServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

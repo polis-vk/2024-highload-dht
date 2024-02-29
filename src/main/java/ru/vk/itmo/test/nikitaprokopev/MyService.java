@@ -19,7 +19,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyService implements Service {
-
+    private final Logger log = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1 MB
     private static final int MAX_QUEUE_LENGTH = 1000;
     private static final int MAX_THREADS = 8;
@@ -57,7 +57,7 @@ public class MyService implements Service {
             if (!pool.awaitTermination(AWAIT_TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
                 if (!pool.awaitTermination(AWAIT_TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
-                    System.err.println("Pool did not terminate");
+                    log.error("Pool did not terminate");
                 }
             }
         } catch (InterruptedException ex) {

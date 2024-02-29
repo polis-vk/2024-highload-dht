@@ -14,7 +14,7 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 368px}
+	#canvas {width: 100%; height: 272px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(23);
+	const levels = Array(17);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -251,16 +251,11 @@
 
 const cpool = [
 'all',
-' RequestHandler1_put.handleRequest',
+' RequestHandler0_get.handleRequest',
 ' java.util.concurrent.locks.ReentrantLock$NonfairSync',
-'DReadWriteLock$NonfairSync',
 '$/lang/Thread.run',
 '4With',
-'%util/concurrent/AbstractExecutorService.submit',
-'5Executors$DelegatedExecutorService.submit',
-'?RunnableAdapter.call',
-'5FutureTask.run',
-'5LinkedBlockingQueue.offer',
+'%util/concurrent/LinkedBlockingQueue.offer',
 'IsignalNotEmpty',
 'Itake',
 '5ThreadPoolExecutor$Worker.run',
@@ -270,14 +265,11 @@ const cpool = [
 '5locks/AbstractQueuedSynchronizer$ConditionObject.await',
 'U.acquire',
 ']Interruptibly',
-']Shared',
 ';LockSupport.park',
 ';ReentrantLock$Sync.lock',
 'RInterruptibly',
 'H.lock',
 'MInterruptibly',
-'DReadWriteLock$ReadLock.lock',
-'RWriteLock.lock',
 '!dk/internal/misc/Unsafe.park',
 ' one.nio.http.HttpSession',
 '#/nio/http/HttpServer.handleRequest',
@@ -287,94 +279,59 @@ const cpool = [
 '9sendResponse',
 '(net/Session.process',
 '(server/SelectorThread.run',
-' ru/vk/itmo/test/tarazanovmaxim/MyServer$$Lambda.0x00007fba5008ea40.run',
+' ru/vk/itmo/test/tarazanovmaxim/MyServer$$Lambda.0x00007f1ef808ec68.run',
 'G.handleRequest',
-'Hlambda$handleRequest$0',
-'Hput',
-'?dao/ReferenceDao$$Lambda.0x00007fba5008f090.run',
-'O.initiateFlush',
-'Plambda$initiateFlush$2',
-'Pupsert'
+'Hlambda$handleRequest$0'
 ];
 unpack(cpool);
 
-n(3,161029)
-u(33,136016)
-u(41)
-u(105)
-u(129)
-u(73,46)
+n(3,2203)
+u(25,1704)
+u(33)
 u(65)
-u(329)
-u(345)
-u(217)
-u(145)
-u(145)
-u(169)
-u(225)
-u(26)
-f(121,5,46,115210)
-u(97)
-u(137,62104)
-u(145)
-u(169)
-u(225)
-u(18)
-f(201,7,62104,53106)
-u(185)
-u(153)
-u(145)
-u(169)
-u(225)
-u(18)
-f(297,5,53106,20760)
-u(313)
-u(241)
-u(9)
-u(273,20467)
-u(234)
-f(321,9,20467,293)
-u(353)
-u(209,291)
-u(161)
-u(145)
-u(169)
-u(225)
-u(26)
-f(337,11,291,2)
+u(89)
+u(81,1692)
 u(57)
-u(49)
-u(113)
-u(81)
-u(193)
-u(177)
-u(145)
-u(145)
-u(169)
-u(225)
+u(97,570)
+u(105)
+u(121)
+u(161)
 u(18)
-f(289,1,2,25013)
-u(281)
-u(265)
-u(257)
+f(153,7,570,1122)
+u(137)
+u(113)
+u(105)
+u(121)
+u(161)
+u(18)
+f(233,5,1122,12)
 u(249)
-u(305)
-u(113)
-u(81)
-u(89,22821)
+u(177)
+u(9)
+u(209)
+u(170)
+f(225,1,12,499)
+u(217)
+u(201)
 u(193)
-u(177)
+u(185)
+u(241)
+u(73)
+u(41)
+u(49,79)
 u(145)
-u(145)
-u(169)
-u(225)
+u(129)
+u(105)
+u(105)
+u(121)
+u(161)
 u(18)
-f(193,9,22821,2192)
-u(177)
-u(145)
-u(145)
-u(169)
-u(225)
+f(145,9,79,420)
+u(129)
+u(105)
+u(105)
+u(121)
+u(161)
 u(18)
 
 search();

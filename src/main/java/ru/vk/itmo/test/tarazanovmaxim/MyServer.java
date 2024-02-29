@@ -21,9 +21,10 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyServer extends HttpServer {
@@ -38,7 +39,19 @@ public class MyServer extends HttpServer {
     public MyServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() / 2 + 1);
+
+        int corePoolSize = Runtime.getRuntime().availableProcessors() / 2 + 1;
+        long keepAliveTime = 0L;
+        int queueCapacity = 100;
+
+        executorService = new ThreadPoolExecutor(
+                corePoolSize,
+                corePoolSize,
+                keepAliveTime,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {

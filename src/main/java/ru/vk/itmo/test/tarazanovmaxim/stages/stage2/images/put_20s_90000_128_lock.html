@@ -14,11 +14,11 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 320px}
+	#canvas {width: 100%; height: 368px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
-<h1>Allocation profile</h1>
+<h1>Lock profile</h1>
 <header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
 <header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
 <canvas id='canvas'></canvas>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(20);
+	const levels = Array(23);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -251,205 +251,132 @@
 
 const cpool = [
 'all',
-' RequestHandler0_get.handleRequest',
-' byte[]',
-' java.lang.String',
-'0[]',
-'%util.concurrent.LinkedBlockingQueue$Node',
-'5locks.AbstractQueuedSynchronizer$ConditionNode',
-'VExclusiveNode',
-'$/lang/String.encode',
-'7UTF8',
-'1getBytes',
-'1substring',
-'0Latin1.newString',
-'*Thread.run',
+' RequestHandler1_put.handleRequest',
+' java.util.concurrent.locks.ReentrantLock$NonfairSync',
+'DReadWriteLock$NonfairSync',
+'$/lang/Thread.run',
 '4With',
-'*foreign/MemorySegment.ofArray',
-'*invoke/DirectMethodHandle.allocateInstance',
-'1LambdaForm$DMH.0x00007fba50091800.newInvokeSpecial',
-'N3800.newInvokeSpecial',
-'<MH.0x00007fba50091000.invokeExact_MT',
-'M2000.linkToTargetMethod',
-'%util/Arrays.copyOfRange',
-'<Byte',
-'*concurrent/LinkedBlockingQueue.offer',
+'%util/concurrent/AbstractExecutorService.submit',
+'5Executors$DelegatedExecutorService.submit',
+'?RunnableAdapter.call',
+'5FutureTask.run',
+'5LinkedBlockingQueue.offer',
+'IsignalNotEmpty',
 'Itake',
 '5ThreadPoolExecutor$Worker.run',
 'G.execute',
 'HgetTask',
 'HrunWorker',
 '5locks/AbstractQueuedSynchronizer$ConditionObject.await',
-'fnewConditionNode',
 'U.acquire',
 ']Interruptibly',
-';ReentrantLock$Sync.lockInterruptibly',
-'H.lockInterruptibly',
-'!dk.internal.foreign.GlobalSession',
-'5HeapMemorySegmentImpl$OfByte',
-'5MappedMemorySegmentImpl',
-'#/internal/foreign/AbstractMemorySegmentImpl$$Lambda.0x00007fba500f05a8.apply',
-'N.asSlice',
-'VNoCheck',
-'Olambda$toArray$1',
-'OtoArray',
-'5HeapMemorySegmentImpl$OfByte.fromArray',
-'5MappedMemorySegmentImpl.asSlice',
-'Mdup',
-'6emorySessionImpl.heapSession',
-' one.nio.http.Request',
-'/sponse',
-'(net.NativeSelector$2',
-',Session$ArrayQueueItem',
+']Shared',
+';LockSupport.park',
+';ReentrantLock$Sync.lock',
+'RInterruptibly',
+'H.lock',
+'MInterruptibly',
+'DReadWriteLock$ReadLock.lock',
+'RWriteLock.lock',
+'!dk/internal/misc/Unsafe.park',
+' one.nio.http.HttpSession',
 '#/nio/http/HttpServer.handleRequest',
 '3ssion.handleParsedRequest',
-'9parseRequest',
-':rocessHttpBuffer',
+'9processHttpBuffer',
 '@Read',
 '9sendResponse',
-'9writeResponse',
-'-Request.<init>',
-'5getParameter',
-':th',
-'8RequiredParameter',
-'/sponse.<init>',
-'6ok',
-'6toBytes',
-'(net/NativeSelector.select',
-',Session.process',
-'4write',
+'(net/Session.process',
 '(server/SelectorThread.run',
-'(util/ByteArrayBuilder.<init>',
-'-Utf8.read',
-'2toAsciiString',
-' ru.vk.itmo.dao.BaseEntry',
-'+test.tarazanovmaxim.MyServer$$Lambda.0x00007fba5008ea40',
-'"/vk/itmo/test/tarazanovmaxim/MyServer$$Lambda.0x00007fba5008ea40.run',
-'G.get',
-'HhandleRequest',
+' ru/vk/itmo/test/tarazanovmaxim/MyServer$$Lambda.0x00007f1ef808ec68.run',
+'G.handleRequest',
 'Hlambda$handleRequest$0',
-'HtoMemorySegment',
-'?dao/ReferenceDao.get',
-'CSSTable.get',
-'CTableSet.get'
+'Hput',
+'?dao/ReferenceDao$$Lambda.0x00007f1ef808f928.run',
+'O.initiateFlush',
+'Plambda$initiateFlush$2',
+'Pupsert'
 ];
 unpack(cpool);
 
-n(3,3720)
-u(105,2322)
-u(113)
-u(201)
+n(3,192435)
+u(33,156030)
+u(41)
+u(105)
+u(129)
+u(73,10)
+u(65)
+u(329)
+u(345)
+u(217)
+u(145)
+u(145)
+u(169)
 u(225)
-u(217,23)
-u(193)
-u(233,15)
+u(26)
+f(121,5,10,134956)
+u(97)
+u(137,45717)
+u(145)
+u(169)
+u(225)
+u(18)
+f(201,7,45717,89239)
+u(185)
+u(153)
+u(145)
+u(169)
+u(225)
+u(18)
+f(297,5,89239,21064)
+u(313)
 u(241)
-u(50)
-f(273,7,15,8)
-u(265)
+u(9)
+u(273,20949)
+u(234)
+f(321,9,20949,115)
+u(353)
+u(209,101)
+u(161)
+u(145)
+u(169)
+u(225)
+u(26)
+f(337,11,101,14)
+u(57)
+u(49)
+u(113)
+u(81)
+u(193)
+u(177)
+u(145)
+u(145)
+u(169)
+u(225)
+u(18)
+f(289,1,14,36405)
+u(281)
+u(234,1)
+n(265,36404)
 u(257)
 u(249)
-u(58)
-f(593,5,8,2299)
-u(617)
-u(409)
-u(9,2063)
-u(449,569)
-u(457)
-u(513,415)
-u(553)
-u(18)
-f(537,11,415,154)
-u(402)
-f(489,9,154,226)
-u(473)
-u(89)
-u(89)
-u(97)
-u(26,101)
-n(169,125)
-u(177)
-u(18)
-f(601,9,125,1268)
-u(337,121)
-u(337)
 u(305)
-u(329)
-u(18)
-f(386,10,121,49)
-n(497,160)
-u(18,63)
-n(26,52)
-n(34,45)
-f(505,10,45,329)
-u(386,55)
-n(497,274)
-u(18,114)
-n(26,71)
-n(34,89)
-f(625,10,89,452)
-u(81,147)
-u(65)
-u(73)
-u(18)
-f(121,11,147,305)
-u(345)
-u(290,171)
-n(369,134)
-u(282)
-f(633,10,134,157)
-u(649)
-u(641)
-u(353,94)
-u(353)
-u(313)
-u(321)
-u(361)
-u(361)
-u(298)
-f(578,13,94,63)
-f(481,8,63,236)
-u(89)
-u(97)
-u(26,109)
-n(169,127)
+u(113)
+u(81)
+u(89,22186)
+u(193)
 u(177)
+u(145)
+u(145)
+u(169)
+u(225)
 u(18)
-f(545,1,127,1398)
-u(521,109)
-u(394)
-f(529,2,109,1289)
-u(441)
-u(433)
-u(417,220)
-u(609)
-u(161,124)
-u(137)
-u(129)
-u(586)
-f(209,7,124,96)
-u(185)
-u(42)
-f(425,5,96,795)
-u(378,189)
-n(465,329)
-u(34)
-f(561,6,329,277)
-u(561)
-u(569)
-u(18,175)
-n(153,102)
+f(193,9,22186,14218)
+u(177)
 u(145)
-u(129)
-u(26)
-f(561,5,102,274)
-u(561)
-u(569)
-u(18,176)
-n(153,98)
 u(145)
-u(129)
-u(26)
+u(169)
+u(225)
+u(18)
 
 search();
 </script></body></html>

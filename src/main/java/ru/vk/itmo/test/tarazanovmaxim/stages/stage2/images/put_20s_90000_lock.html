@@ -14,7 +14,7 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 16px}
+	#canvas {width: 100%; height: 272px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(1);
+	const levels = Array(17);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -250,11 +250,76 @@
 	}
 
 const cpool = [
-'all'
+'all',
+' RequestHandler1_put.handleRequest',
+' java.util.concurrent.locks.ReentrantLock$NonfairSync',
+'DReadWriteLock$NonfairSync',
+'$/lang/Thread.run',
+'4With',
+'%util/concurrent/LinkedBlockingQueue.offer',
+'IsignalNotEmpty',
+'5ThreadPoolExecutor$Worker.run',
+'G.execute',
+'HrunWorker',
+'5locks/AbstractQueuedSynchronizer.acquire',
+']Shared',
+';LockSupport.park',
+';ReentrantLock$Sync.lock',
+'H.lock',
+'DReadWriteLock$ReadLock.lock',
+'!dk/internal/misc/Unsafe.park',
+' one.nio.http.HttpSession',
+'#/nio/http/HttpServer.handleRequest',
+'3ssion.handleParsedRequest',
+'9processHttpBuffer',
+'@Read',
+'9sendResponse',
+'(net/Session.process',
+'(server/SelectorThread.run',
+' ru/vk/itmo/test/tarazanovmaxim/MyServer$$Lambda.0x00007f1ef808ec68.run',
+'G.handleRequest',
+'Hlambda$handleRequest$0',
+'Hput',
+'?dao/ReferenceDao.upsert'
 ];
 unpack(cpool);
 
-n(2)
+n(3,60)
+u(33,35)
+u(41)
+u(65)
+u(81)
+u(209)
+u(225)
+u(153)
+u(9)
+u(185,19)
+u(146)
+f(233,9,19,16)
+u(241)
+u(129)
+u(97)
+u(89)
+u(105)
+u(137)
+u(26)
+f(201,1,16,25)
+u(193)
+u(146,15)
+n(177,10)
+u(169)
+u(161)
+u(217)
+u(73)
+u(49)
+u(57)
+u(121)
+u(113)
+u(89)
+u(89)
+u(105)
+u(137)
+u(18)
 
 search();
 </script></body></html>

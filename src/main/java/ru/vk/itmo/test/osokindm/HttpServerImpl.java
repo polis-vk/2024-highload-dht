@@ -34,7 +34,6 @@ public class HttpServerImpl extends HttpServer {
     private final ExecutorService requestWorkers;
     private final DaoWrapper daoWrapper;
 
-
     public HttpServerImpl(ServiceConfig config, DaoWrapper daoWrapper) throws IOException {
         super(createServerConfig(config));
         this.daoWrapper = daoWrapper;

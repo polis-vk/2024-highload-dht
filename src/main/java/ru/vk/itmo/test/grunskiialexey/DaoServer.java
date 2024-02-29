@@ -59,17 +59,13 @@ public class DaoServer extends HttpServer {
         server.start();
     }
 
-    //    :TODO Check profiling with request method s
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id", required = true) String id) {
-        System.out.println("1");
-        if (id == null || id.isBlank()) {
+        if (id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        // :TODO should go to check how to working .get(key) - may it has entry.value() or not
-        // :TODO but actualy it's not necessary
         final Entry<MemorySegment> entry = dao.get(key);
         return (entry == null || entry.value() == null)
                 ? new Response(Response.NOT_FOUND, Response.EMPTY)
@@ -79,7 +75,7 @@ public class DaoServer extends HttpServer {
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
-        if (id == null || id.isBlank()) {
+        if (id.isBlank() || request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
@@ -91,7 +87,7 @@ public class DaoServer extends HttpServer {
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id == null || id.isBlank()) {
+        if (id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
@@ -100,7 +96,6 @@ public class DaoServer extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    // :TODO we need to handle exceptions
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         if (request.getPath().equals(ENDPOINT)) {

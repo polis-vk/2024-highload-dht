@@ -8,11 +8,8 @@ import ru.vk.itmo.test.klimplyasov.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 public class PlyasovService implements Service {
 

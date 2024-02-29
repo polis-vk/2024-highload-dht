@@ -45,26 +45,26 @@ public class HttpServerImpl extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (IOException e) {
-                    LOGGER.error("Failed to send response for request: {} with error: {}", request, e.getMessage());
+                    logIOError(request, e);
                 } catch (Exception e) {
                     LOGGER.error("Failed to handle request: {} with error: {}", request, e.getMessage());
                     try {
-                        if (e instanceof HttpException) {
+                        if (e.getClass() == HttpException.class) {
                             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                         } else {
                             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                         }
                     } catch (IOException ex) {
-                        LOGGER.error("Failed to send response for request: {} with error: {}", request, e.getMessage());
+                        logIOError(request, ex);
                     }
                 }
             });
         } catch (RejectedExecutionException e) {
-            LOGGER.error("Got error while processing request: {} with error: {}", request, e.getMessage());
+            LOGGER.error("Failed to execute task for request: {} with error: {}", request, e.getMessage());
             try {
                 session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-            } catch (IOException ioException) {
-                LOGGER.error("Failed to send response for request: {} with error: {}", request, e.getMessage());
+            } catch (IOException ex) {
+                logIOError(request, ex);
             }
         }
     }
@@ -96,11 +96,7 @@ public class HttpServerImpl extends HttpServer {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
 
-            try {
-                dao.upsert(new BaseEntry<>(parseToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
-            } catch (IllegalStateException e) {
-                return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
-            }
+            dao.upsert(new BaseEntry<>(parseToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (Exception e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -132,6 +128,10 @@ public class HttpServerImpl extends HttpServer {
 
     private MemorySegment parseToMemorySegment(String input) {
         return MemorySegment.ofArray(input.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void logIOError(Request request, IOException e) {
+        LOGGER.error("Failed to send response for request: {} with error: {}", request, e.getMessage());
     }
 
     private static HttpServerConfig createConfig(ServiceConfig config) {

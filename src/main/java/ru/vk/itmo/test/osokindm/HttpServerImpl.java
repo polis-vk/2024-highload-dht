@@ -148,9 +148,9 @@ public class HttpServerImpl extends HttpServer {
         try {
             return response.get();
         } catch (InterruptedException e) {
-            LOGGER.error(STR."\{method} operation was interrupted");
+            LOGGER.error(method + "operation was interrupted");
         } catch (ExecutionException e) {
-            LOGGER.error(STR."Error occurred while executing\{method}");
+            LOGGER.error("Error occurred while executing" + method);
         }
         return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }

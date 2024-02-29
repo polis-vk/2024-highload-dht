@@ -60,8 +60,9 @@ public class HttpServerImpl extends HttpServer {
         } catch (IOException e) {
             LOGGER.error("Error occurred while closing database");
         } catch (InterruptedException e) {
-            requestWorkers.shutdownNow();
             LOGGER.error("Error occurred while stopping request workers");
+            requestWorkers.shutdownNow();
+            Thread.currentThread().interrupt();
         }
         super.stop();
     }
@@ -149,6 +150,7 @@ public class HttpServerImpl extends HttpServer {
             return response.get();
         } catch (InterruptedException e) {
             LOGGER.error(method + "operation was interrupted");
+            Thread.currentThread().interrupt();
         } catch (ExecutionException e) {
             LOGGER.error("Error occurred while executing" + method);
         }

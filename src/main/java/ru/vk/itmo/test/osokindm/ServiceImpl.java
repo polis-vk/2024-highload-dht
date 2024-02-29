@@ -10,7 +10,6 @@ import ru.vk.itmo.test.ServiceFactory;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
-
 public class ServiceImpl implements Service {
 
     private static final int MEMORY_LIMIT_BYTES = 8 * 1024 * 1024;

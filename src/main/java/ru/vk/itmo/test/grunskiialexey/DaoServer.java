@@ -24,14 +24,14 @@ import java.util.List;
 
 public class DaoServer extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 1028;
-    private final String ENDPOINT = "/v0/entity";
+    private static final String ENDPOINT = "/v0/entity";
     private final ServiceConfig config;
     private MemorySegmentDao dao;
 
     public DaoServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
         this.config = config;
-        loadDao();
+        dao = createDao(config);
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {

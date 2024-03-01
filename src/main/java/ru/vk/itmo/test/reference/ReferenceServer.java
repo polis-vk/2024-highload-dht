@@ -13,15 +13,28 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.Queue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ReferenceServer extends HttpServer {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
 
+    private final Executor executor;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+//    private final Queue<Runnable> workersQueue;
 
-    public ReferenceServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+//    private AtomicLong previousTime = new AtomicLong(System.currentTimeMillis());
+
+    public ReferenceServer(ServiceConfig config,
+                           Executor executor,
+                           Queue<Runnable> workersQueue,
+                           Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createServerConfig(config));
+//        this.workersQueue = workersQueue;
+        this.executor = executor;
         this.dao = dao;
     }
 
@@ -38,11 +51,29 @@ public class ReferenceServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+//        long now = System.currentTimeMillis();
+//        long previous = previousTime.getAndSet(now);
+//        if (previous / 1000 < now / 1000) {
+//            log.info("Current queue size = {}", workersQueue.size());
+//        }
+
         try {
-            super.handleRequest(request, session);
-        } catch (Exception e) {
-            log.error("Exception during handleRequest: ", e);
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            executor.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    log.error("Exception during handleRequest", e);
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, null);
+                    } catch (IOException ex) {
+                        log.error("Exception while sending close connection", e);
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("Workers pool queue overflow", e);
+            session.sendError(Response.SERVICE_UNAVAILABLE, null);
         }
     }
 

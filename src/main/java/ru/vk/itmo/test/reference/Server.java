@@ -11,15 +11,16 @@ import java.util.List;
 
 public class Server {
 
-    public static void main(String[] args) throws IOException {
-        ReferenceServer server = new ReferenceServer(new ServiceConfig(
-            8080, "http://localhost",
-            List.of("http://localhost"),
-            Paths.get("tmp/db")
-        ), new ReferenceDao(new Config(
-            Paths.get("tmp/db"),
-            1024 * 1024)
-        ));
-        server.start();
-    }
+//    public static void main(String[] args) throws IOException {
+//        ReferenceServer server = new ReferenceServer(new ServiceConfig(
+//            8080, "http://localhost",
+//            List.of("http://localhost"),
+//            Paths.get("tmp/db")
+//        ),
+//            , new ReferenceDao(new Config(
+//            Paths.get("tmp/db"),
+//            1024 * 1024)
+//        ));
+//        server.start();
+//    }
 }

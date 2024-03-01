@@ -72,8 +72,9 @@ public class HttpServerImpl extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         if (request.getMethod() == Request.METHOD_GET) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        } else {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
-        session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
     }
 
     private MemorySegment parseToMemorySegment(String input) {

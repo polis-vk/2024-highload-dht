@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.logging.Logger;
 
 public class MyServer extends HttpServer {
 
@@ -31,6 +32,8 @@ public class MyServer extends HttpServer {
     private final ReferenceDao dao;
 
     private final MyExecutor executor;
+
+    private final Logger logger;
 
     private static final Set<Integer> METHOD_SET = new ConcurrentSkipListSet<>(List.of(
             Request.METHOD_GET,
@@ -50,15 +53,15 @@ public class MyServer extends HttpServer {
                         super.handleRequest(request, session);
                     }
                 } catch (IOException e) {
-                    System.err.println(e.getMessage());
+                    logger.info(e.getMessage());
                     sendEmpty(session, Response.INTERNAL_ERROR);
                 } catch (Exception e) {
-                    System.err.println(e.getMessage());
+                    logger.info(e.getMessage());
                     sendEmpty(session, Response.BAD_REQUEST);
                 }
             });
         } catch (RejectedExecutionException e) {
-            System.err.println(e.getMessage());
+            logger.info(e.getMessage());
             sendEmpty(session, "429 Too Many Requests");
         }
     }
@@ -67,7 +70,7 @@ public class MyServer extends HttpServer {
         try {
             session.sendResponse(new Response(message, Response.EMPTY));
         } catch (IOException e) {
-            System.err.println(e.getMessage());
+            logger.info(e.getMessage());
         }
     }
 
@@ -86,7 +89,11 @@ public class MyServer extends HttpServer {
     public MyServer(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(generateServerConfig(config));
         this.dao = dao;
-        this.executor = new MyExecutor(Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().availableProcessors());
+        this.executor = new MyExecutor(
+                Runtime.getRuntime().availableProcessors(),
+                Runtime.getRuntime().availableProcessors()
+        );
+        this.logger = Logger.getLogger(MyServer.class.getName());
     }
 
     private boolean isStringInvalid(String param) {

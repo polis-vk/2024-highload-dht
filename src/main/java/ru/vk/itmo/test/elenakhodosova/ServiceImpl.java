@@ -9,6 +9,7 @@ import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
@@ -17,6 +18,9 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private ExecutorService executorService;
     public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
+    public static final int TERMINATION_TIMEOUT_MS = 500;
+
+
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -33,14 +37,17 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() {
-        executorService.shutdownNow();
+    public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        executorService.shutdown();
         try {
-            dao.close();
-        } catch (IOException e) {
+            if (!executorService.awaitTermination(TERMINATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        dao.close();
         return CompletableFuture.completedFuture(null);
     }
 

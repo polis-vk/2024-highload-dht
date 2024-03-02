@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.elenakhodosova;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -10,6 +11,8 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -20,12 +23,15 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 public class HttpServerImpl extends HttpServer {
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String PATH_NAME = "/v0/entity";
+    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     private final ExecutorService executorService;
+    private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
 
     public HttpServerImpl(ServiceConfig config, ReferenceDao dao, ExecutorService executorService) throws IOException {
         super(createServerConfig(config));
@@ -34,18 +40,33 @@ public class HttpServerImpl extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
-        executorService.execute(() -> {
-            try {
-                super.handleRequest(request, session);
-            } catch (Exception e) {
-                try {
-                    session.sendError(Response.BAD_REQUEST, e.getMessage());
-                } catch (IOException ex) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        });
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            executorService.execute(() -> processRequest(request, session));
+        } catch (RejectedExecutionException e) {
+            logger.error(e.toString());
+            session.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY));
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            session.scheduleClose();
+        }
+    }
+
+    private void processRequest(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            sendError(session, e);
+        }
+    }
+
+    private void sendError(HttpSession session, Exception e) {
+        try {
+            String responseCode = e.getClass() == HttpException.class ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
+            session.sendError(responseCode, e.getMessage());
+        } catch (Exception ex) {
+            logger.error(ex.getMessage());
+        }
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {

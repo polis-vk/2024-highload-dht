@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -31,15 +30,13 @@ public class Server extends HttpServer {
 
     public Server(HttpServerConfig serverConfig, java.nio.file.Path workingDir) throws IOException {
         super(serverConfig);
-        int availableProcessors = Runtime.getRuntime().availableProcessors();
         workerPool = new DaoWorkerPool(
-                availableProcessors,
-                availableProcessors * 2,
+                Constants.THREADS,
+                Constants.THREADS,
                 60,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(30_000)
+                TimeUnit.SECONDS
         );
-
+        workerPool.prestartAllCoreThreads();
         Config daoConfig = new Config(workingDir, Constants.FLUSH_THRESHOLD_BYTES);
         dao = new ReferenceDao(daoConfig);
         logger.info("Server started");
@@ -93,15 +90,19 @@ public class Server extends HttpServer {
                     handleDaoCall(request, session, key);
                 } catch (IOException e) {
                     logger.error("IO exception during request handling: " + e.getMessage());
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, null);
+                    } catch (IOException ex) {
+                        logger.error("Exception while sending close connection:", e);
+                    }
                 }
             });
         } catch (RejectedExecutionException e) {
             if (workerPool.isShutdown()) {
-                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                session.sendError(Response.SERVICE_UNAVAILABLE, null);
+                return;
             }
-            session.sendResponse(
-                    new Response(Constants.TOO_MANY_REQUESTS, Response.EMPTY)
-            );
+            session.sendError(Constants.TOO_MANY_REQUESTS, null);
         }
     }
 

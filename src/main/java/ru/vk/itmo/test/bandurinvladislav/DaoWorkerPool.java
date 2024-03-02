@@ -3,11 +3,13 @@ package ru.vk.itmo.test.bandurinvladislav;
 import one.nio.server.PayloadThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.vk.itmo.test.bandurinvladislav.concurrent.DeadlineRunnable;
+import ru.vk.itmo.test.bandurinvladislav.util.Constants;
 
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 final class DaoWorkerPool extends ThreadPoolExecutor implements ThreadFactory, Thread.UncaughtExceptionHandler {
@@ -18,9 +20,8 @@ final class DaoWorkerPool extends ThreadPoolExecutor implements ThreadFactory, T
     DaoWorkerPool(int corePoolSize,
                   int maximumPoolSize,
                   long keepAliveTime,
-                  TimeUnit unit,
-                  BlockingQueue<Runnable> workQueue) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+                  TimeUnit unit) {
+        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new DeadlineArrayBlockingQueue(Constants.QUEUE_SIZE));
         setThreadFactory(this);
         this.index = new AtomicInteger();
     }
@@ -52,5 +53,17 @@ final class DaoWorkerPool extends ThreadPoolExecutor implements ThreadFactory, T
     @Override
     public void uncaughtException(Thread t, Throwable e) {
         log.error("Uncaught exception in {}", t, e);
+    }
+
+    private static final class DeadlineArrayBlockingQueue extends ArrayBlockingQueue<Runnable> {
+
+        public DeadlineArrayBlockingQueue(int capacity) {
+            super(capacity);
+        }
+
+        @Override
+        public boolean offer(Runnable r) {
+            return super.offer(new DeadlineRunnable(r, System.currentTimeMillis()));
+        }
     }
 }

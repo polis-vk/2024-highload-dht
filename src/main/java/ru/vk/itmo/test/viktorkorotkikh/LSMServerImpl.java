@@ -71,9 +71,10 @@ public class LSMServerImpl extends HttpServer {
                 } catch (Exception e) {
                     log.error("Unexpected error occurred: ", e);
                     try {
-                        session.sendResponse(LSMConstantResponse.serviceUnavailable(request));
+                        session.sendResponse(LSMConstantResponse.SERVICE_UNAVAILABLE_CLOSE);
                     } catch (IOException ex) {
                         log.error("I/O error occurred when sending response");
+                        session.scheduleClose();
                     }
                 }
             });

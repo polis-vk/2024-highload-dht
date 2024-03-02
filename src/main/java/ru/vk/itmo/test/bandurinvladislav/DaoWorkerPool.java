@@ -6,10 +6,10 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.bandurinvladislav.concurrent.DeadlineRunnable;
 import ru.vk.itmo.test.bandurinvladislav.util.Constants;
 
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 final class DaoWorkerPool extends ThreadPoolExecutor implements ThreadFactory, Thread.UncaughtExceptionHandler {

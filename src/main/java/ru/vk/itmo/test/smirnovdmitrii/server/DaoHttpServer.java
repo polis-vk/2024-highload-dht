@@ -19,6 +19,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -58,6 +59,7 @@ public class DaoHttpServer extends HttpServer {
         } else {
             this.workerPool = null;
         }
+        this.useWorkers = config.useWorkers;
     }
 
     public Response get(final MemorySegment key) {
@@ -87,7 +89,16 @@ public class DaoHttpServer extends HttpServer {
     @Override
     public void handleRequest(final Request request, final HttpSession session) {
         if (useWorkers) {
-            workerPool.execute(() -> handleRequestTask(request, session));
+            try {
+                workerPool.execute(() -> handleRequestTask(request, session));
+            } catch (final RejectedExecutionException e) {
+                logger.error("rejected request handle", e);
+                try (session) {
+                    session.sendError(Response.SERVICE_UNAVAILABLE, null);
+                } catch (final IOException ignored) {
+                    // do nothing
+                }
+            }
         } else {
             handleRequestTask(request, session);
         }

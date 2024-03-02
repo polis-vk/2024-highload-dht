@@ -25,6 +25,7 @@ public class DaoWorkerPool extends ThreadPoolExecutor implements ThreadFactory, 
     ) {
 
         super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+        setThreadFactory(this);
         this.index = new AtomicInteger();
     }
 

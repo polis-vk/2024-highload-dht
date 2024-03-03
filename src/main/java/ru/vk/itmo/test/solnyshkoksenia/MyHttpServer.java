@@ -122,7 +122,6 @@ public class MyHttpServer extends HttpServer {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
-        }, session));
     }
 
     @Path("/v0/entity")

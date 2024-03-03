@@ -4,35 +4,24 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import one.nio.server.AcceptorConfig;
-import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.andreycheshev.dao.PersistentReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.MemorySegment;
 
 public class ServerImpl extends HttpServer {
-    private static final int THRESHOLD_BYTES = 100000;
     private final RequestExecutor executor;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public ServerImpl(ServiceConfig config) throws IOException {
-        super(createServerConfig(config));
+    public ServerImpl(HttpServerConfig config, Config daoConfig) throws IOException {
+        super(config);
 
-        Config daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);
-
-        this.executor = new RequestExecutor(daoConfig);
-    }
-
-    public static HttpServerConfig createServerConfig(ServiceConfig config) {
-        AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = config.selfPort();
-        acceptorConfig.reusePort = true;
-
-        HttpServerConfig serverConfig = new HttpServerConfig();
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-        serverConfig.closeSessions = true;
-
-        return serverConfig;
+        this.dao = new PersistentReferenceDao(daoConfig);
+        this.executor = new RequestExecutor(new RequestHandler(dao));
     }
 
     @Override
@@ -45,6 +34,7 @@ public class ServerImpl extends HttpServer {
         super.stop();
         try {
             executor.shutdown();
+            dao.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

@@ -3,11 +3,11 @@ package ru.vk.itmo.test.andreycheshev;
 import java.util.concurrent.ThreadFactory;
 
 public class WorkerThreadFactory implements ThreadFactory {
-    private int counter = 0;
-    private static final String prefix = "RequestWorkerThread-";
+    private static final String PREFIX = "RequestProcessingWorkerThread-";
+    private int counter;
 
     @Override
     public Thread newThread(Runnable runnable) {
-        return new Thread(runnable, prefix + counter++);
+        return new Thread(runnable, PREFIX + counter++);
     }
 }

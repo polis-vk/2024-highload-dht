@@ -107,9 +107,7 @@ public class Server extends HttpServer {
             final String path,
             final String id
     ) {
-        if (!path.startsWith(REQUEST_PATH)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } else if (isInvalidKey(id)) {
+        if (!path.startsWith(REQUEST_PATH) || isInvalidKey(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         return null;

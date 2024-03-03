@@ -63,7 +63,7 @@ public class TimofeevService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

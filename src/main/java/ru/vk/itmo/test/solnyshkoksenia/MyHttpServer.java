@@ -125,7 +125,6 @@ public class MyHttpServer extends HttpServer {
         }, session));
     }
 
-
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public void delete(final HttpSession session,

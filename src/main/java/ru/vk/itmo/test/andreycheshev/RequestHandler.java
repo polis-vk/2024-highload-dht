@@ -10,19 +10,12 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-import static one.nio.http.Request.METHOD_DELETE;
-import static one.nio.http.Request.METHOD_GET;
-import static one.nio.http.Request.METHOD_PUT;
-import static one.nio.http.Response.ACCEPTED;
-import static one.nio.http.Response.BAD_REQUEST;
-import static one.nio.http.Response.CREATED;
-import static one.nio.http.Response.METHOD_NOT_ALLOWED;
-import static one.nio.http.Response.NOT_FOUND;
-import static one.nio.http.Response.OK;
+import static one.nio.http.Request.*;
+import static one.nio.http.Response.*;
 
 public class RequestHandler {
     private static final String REQUEST_PATH = "/v0/entity";
-    private static final String ID = "id=";
+    private static final String ID_PARAMETER = "id=";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
@@ -48,20 +41,20 @@ public class RequestHandler {
     }
 
     private Response get(final Request request) {
-        String id = request.getParameter(ID);
+        String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = dao.get(fromString(id));
 
-        return (entry == null)
+        return entry == null
                 ? new Response(NOT_FOUND, Response.EMPTY)
                 : new Response(OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     private Response put(final Request request) {
-        String id = request.getParameter(ID);
+        String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
         }
@@ -76,7 +69,7 @@ public class RequestHandler {
     }
 
     private Response delete(final Request request) {
-        String id = request.getParameter(ID);
+        String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
             return new Response(BAD_REQUEST, Response.EMPTY);
         }
@@ -87,7 +80,7 @@ public class RequestHandler {
         return new Response(ACCEPTED, Response.EMPTY);
     }
 
-    private MemorySegment fromString(String data) {
+    private static MemorySegment fromString(String data) {
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 }

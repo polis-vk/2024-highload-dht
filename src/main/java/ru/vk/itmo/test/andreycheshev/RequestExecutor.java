@@ -17,26 +17,26 @@ import java.util.concurrent.TimeUnit;
 import static one.nio.http.Response.INTERNAL_ERROR;
 
 public class RequestExecutor {
-    private static final Logger logger = LoggerFactory.getLogger(RequestExecutor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int KEEPALIVE_MILLIS = 3000;
     private static final long MAX_TASK_AWAITING_TIME_MILLIS = 3000;
-    private static final int MAX_WORKERS_COUNT = 300;
+    private static final int MAX_WORK_QUEUE_SIZE = 300;
 
-    private final ExecutorService workers;
+    private final ExecutorService executor;
     private final RequestHandler requestHandler;
 
     static final String TOO_MANY_REQUESTS = "429 Too many requests";
 
-    public RequestExecutor(RequestHandler requestHandler) throws IOException {
+    public RequestExecutor(RequestHandler requestHandler) {
         this.requestHandler = requestHandler;
 
-        this.workers = new ThreadPoolExecutor(
+        this.executor = new ThreadPoolExecutor(
                 CPU_THREADS_COUNT,
-                CPU_THREADS_COUNT * 10,
+                CPU_THREADS_COUNT,
                 KEEPALIVE_MILLIS,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(MAX_WORKERS_COUNT),
+                new ArrayBlockingQueue<>(MAX_WORK_QUEUE_SIZE),
                 new WorkerThreadFactory(),
                 new ThreadPoolExecutor.AbortPolicy()
         );
@@ -46,25 +46,25 @@ public class RequestExecutor {
         long currTime = System.currentTimeMillis();
 
         try {
-            workers.execute(() -> {
+            executor.execute(() -> {
                 Response response;
 
-                // Если дедлайн для выполнения задачи прошел
+                // If the deadline for completing the task has passed
                 if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
+                    LOGGER.error("The server is overloaded with too many requests");
                     response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
                 } else {
                     try {
                         response = requestHandler.handle(request);
                     } catch (Exception e) {
-                        logger.error("Internal error of the DAO operation", e);
-                        sendResponse(new Response(INTERNAL_ERROR, Response.EMPTY), session);
-                        return;
+                        LOGGER.error("Internal error of the DAO operation", e);
+                        response = new Response(INTERNAL_ERROR, Response.EMPTY);
                     }
                 }
 
                 sendResponse(response, session);
             });
-        } catch (RejectedExecutionException e) { // Переполнение очереди
+        } catch (RejectedExecutionException e) { // Queue overflow
             sendResponse(
                     new Response(TOO_MANY_REQUESTS, Response.EMPTY),
                     session
@@ -76,15 +76,15 @@ public class RequestExecutor {
         try {
             session.sendResponse(response);
         } catch (IOException e) {
-            logger.error("Error while sending a response to the client", e);
+            LOGGER.error("Error when sending a response to the client", e);
             throw new UncheckedIOException(e);
         }
     }
 
     public void shutdown() throws IOException {
-        // Используем бесконенчое ожидание.
-        // Такой подход уместен, поскольку, если произойдет зависание,
-        // система мониторинга обнаружит этот факт и нода будет перезапущена.
-        workers.close();
+        // We use endless waiting.
+        // This approach is appropriate, because if we meet with endless waiting,
+        // the monitoring system will detect this fact and the node will be restarted.
+        executor.close();
     }
 }

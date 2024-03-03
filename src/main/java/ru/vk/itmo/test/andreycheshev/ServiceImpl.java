@@ -13,7 +13,7 @@ import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    private static final int THRESHOLD_BYTES = 100000;
+    private static final int THRESHOLD_BYTES = 1024 * 128; // 128 kb
 
     private final HttpServerConfig serverConfig;
     private final Config daoConfig;

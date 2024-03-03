@@ -1,15 +1,16 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.HttpServerConfig;
-import one.nio.server.AcceptorConfig;
-import ru.vk.itmo.dao.Config;
+
+
+import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 public final class ServerStarter {
-    private static final Path DIR_PATH = Path.of("/home/andrey/andrey/tmp");
-    private static final int THRESHOLD_BYTES = 100000;
+    private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/tmp");
+    private static final String SELF_URL = "http://localhost";
     private static final int PORT = 8080;
 
     private ServerStarter() {
@@ -17,17 +18,14 @@ public final class ServerStarter {
     }
 
     public static void main(String[] args) throws IOException {
-        AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = PORT;
-        acceptorConfig.reusePort = true;
-        HttpServerConfig serverConfig = new HttpServerConfig();
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-        serverConfig.closeSessions = true;
-
-        Config daoConfig = new Config(DIR_PATH, THRESHOLD_BYTES);
-
-        ServerImpl server = new ServerImpl(serverConfig, daoConfig);
-
-        server.start();
+        ServiceImpl service = new ServiceImpl(
+                new ServiceConfig(
+                        PORT,
+                        SELF_URL,
+                        List.of(SELF_URL),
+                        STORAGE_DIR_PATH
+                )
+        );
+        service.start();
     }
 }

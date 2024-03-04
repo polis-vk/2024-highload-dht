@@ -1,15 +1,14 @@
 package ru.vk.itmo.test.andreycheshev;
 
-
-
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public final class ServerStarter {
-    private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/tmp");
+    private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/get_storage");
     private static final String SELF_URL = "http://localhost";
     private static final int PORT = 8080;
 
@@ -26,6 +25,11 @@ public final class ServerStarter {
                         STORAGE_DIR_PATH
                 )
         );
-        service.start();
+
+        try {
+            service.start().get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

@@ -11,8 +11,10 @@ final class WorkerPool {
     public final ExecutorService pool;
 
     public WorkerPool(WorkerPoolConfig config) {
-        pool = new ThreadPoolExecutor(config.corePoolSize, config.maxPoolSize, config.keepAliveTime, config.timeUnit,
+        ThreadPoolExecutor preStartedPool = new ThreadPoolExecutor(config.corePoolSize, config.maxPoolSize, config.keepAliveTime, config.timeUnit,
                 config.workQueue, config.threadFactory, config.rejectedExecutionHandler);
+        preStartedPool.prestartAllCoreThreads();
+        pool = preStartedPool;
     }
 
     void gracefulShutdown() {
@@ -28,6 +30,7 @@ final class WorkerPool {
             pool.awaitTermination(HARD_SHUT_DOWN_TIME, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            throw new RuntimeException("The task completion wait has been interrupted");
         }
     }
 }

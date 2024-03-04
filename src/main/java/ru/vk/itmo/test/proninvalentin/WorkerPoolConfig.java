@@ -1,15 +1,16 @@
 package ru.vk.itmo.test.proninvalentin;
 
+import one.nio.async.CustomThreadFactory;
+
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class WorkerPoolConfig {
-    private static final int MAX_QUEUE_SIZE = 4200;
+    private static final int MAX_QUEUE_SIZE = 256;
     public final int corePoolSize;
     public final int maxPoolSize;
     public final long keepAliveTime;
@@ -17,8 +18,6 @@ public class WorkerPoolConfig {
     public final BlockingQueue<Runnable> workQueue;
     public final ThreadFactory threadFactory;
     public final RejectedExecutionHandler rejectedExecutionHandler;
-
-    private static final AtomicInteger index = new AtomicInteger();
 
     public WorkerPoolConfig(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit timeUnit,
                             BlockingQueue<Runnable> workQueue, ThreadFactory threadFactory,
@@ -33,17 +32,14 @@ public class WorkerPoolConfig {
     }
 
     public static WorkerPoolConfig defaultConfig() {
+        int poolSize = Runtime.getRuntime().availableProcessors() * 2;
         return new WorkerPoolConfig(
-                Runtime.getRuntime().availableProcessors(),
-                Runtime.getRuntime().availableProcessors(),
+                poolSize,
+                poolSize,
                 60L,
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(MAX_QUEUE_SIZE),
-                r -> {
-                    Thread thread = new Thread(r, "Pool worker #" + index.incrementAndGet());
-                    thread.setDaemon(true);
-                    return thread;
-                },
-                new ThreadPoolExecutor.AbortPolicy());
+                new CustomThreadFactory("Custom worker", true),
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 }

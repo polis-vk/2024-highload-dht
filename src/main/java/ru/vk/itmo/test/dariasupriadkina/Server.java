@@ -46,7 +46,7 @@ public class Server extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
-        httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        httpServerConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
         httpServerConfig.closeSessions = true;
 
         return httpServerConfig;

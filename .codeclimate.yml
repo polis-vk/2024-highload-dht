@@ -9,7 +9,6 @@ plugins:
     enabled: true
     config:
       file: "checkstyle.xml"
-      channel: "10.13.0"
   pmd:
     enabled: true
     config:

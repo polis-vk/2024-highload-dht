@@ -2,7 +2,29 @@
 
 ## Stage 2
 
-### PUT
+
+## Параметры 
+
+### ArrayBlockingQueue
+
+В качестве очереди была выбрана ArrayBlockingQueue.
+ArrayBlockingQueue обеспечивает более высокую производительность в сценариях с высокой 
+загруженостью, благодаря фиксированному размеру массива и 
+меньшему количеству операций по изменению ссылок по сравнению с LinkedBlockingQueue.
+
+### THREADS_POOL_SIZE
+
+Был выбран в размере 8, это значение оказалось оптимальным при -с 128 и -t 128
+
+### AbortPolicy
+
+Для отправки ошибки о большом количестве ошибок 
+
+### handleRequest
+
+Ошибки обрабатываются в handleRequest, если это HttpException.class, то выкидываем 400, иначе 500
+
+## PUT
 
 В результате исследования было получено значение RPS: 88000 при -с 128 и -t 128
 с более высокми значениями производительность начинает сильно падать, замеры приозводились при RPS c 6000 до 105000 и
@@ -143,7 +165,23 @@ Transfer/sec:      5.63MB
 как в первой работе результат хуже из-за новых накладных расходов.
 
 
-### GET
+[profile-88000-cpu-put.html](..%2Fdata%2Fstage2%2Fput%2Fprofile-88000-cpu-put.html)
+
+Больше всего времени занимает отправка ответа
+
+[profile-88000-alloc-put.html](..%2Fdata%2Fstage2%2Fput%2Fprofile-88000-alloc-put.html)
+
+Тут же отправка ответа занимает не так много врмени, зато много времени
+занимает работа с базой данных и самим запросом
+
+[profile-88000-lock-put.html](..%2Fdata%2Fstage2%2Fput%2Fprofile-88000-lock-put.html)
+
+Много фигурирует ArrayBlockingQueue и ThreadPoolExecutor 
+
+![Histogram_put_88000.png](..%2Fdata%2Fstage2%2Fput%2FHistogram_put_88000.png)
+
+
+## GET
 
 В результате исследования было получено значение RPS: 80000 при -с 128 и -t 128,
 остальное аналогично исследованию в put запросе, за исключением параметра d
@@ -281,4 +319,21 @@ Value   Percentile   TotalCount 1/(1-Percentile)
 2398663 requests in 29.97s, 180.25MB read
 Requests/sec:  80031.68
 Transfer/sec:      6.01MB
+
+[profile-80000-cpu-get.html](..%2Fdata%2Fstage2%2Fget%2Fprofile-80000-cpu-get.html)
+
+
+[profile-80000-alloc-get.html](..%2Fdata%2Fstage2%2Fget%2Fprofile-80000-alloc-get.html)
+
+
+[profile-80000-lock-get.html](..%2Fdata%2Fstage2%2Fget%2Fprofile-80000-lock-get.html)
+
+Больше всего ресурсов уходит на обработку ответа в handleRequest -> process
+
+![Histogram_80000_get.png](..%2Fdata%2Fstage2%2Fget%2FHistogram_80000_get.png)
+
+
+
+
+
 

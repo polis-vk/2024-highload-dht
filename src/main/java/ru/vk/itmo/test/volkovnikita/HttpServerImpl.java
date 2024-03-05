@@ -17,6 +17,7 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -39,12 +40,15 @@ public class HttpServerImpl extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Logger log = LoggerFactory.getLogger(HttpServerImpl.class);
     private final Executor executor;
+    private static final Integer KEEP_ALIVE = 30;
+    private static final Integer QUEUE_SIZE = 1500;
+    private static final Integer POOL_SIZE = 8;
     static final Set<String> METHODS = Set.of(
             "GET",
             "PUT",
             "DELETE"
     );
-    private static final ZoneId ServerZone = ZoneId.of("UTC");
+    private static final ZoneId SERVER_ZONE = ZoneId.of("UTC");
 
     public HttpServerImpl(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(createServerConfig(config));
@@ -55,12 +59,13 @@ public class HttpServerImpl extends HttpServer {
                 new Thread(r, "HttpServerImplThread: " + threadCounter.getAndIncrement());
 
         this.executor = new ThreadPoolExecutor(
-                this.getSelectorCount(),
-                Runtime.getRuntime().availableProcessors(),
-                60,
+                POOL_SIZE,
+                POOL_SIZE,
+                KEEP_ALIVE,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(3000),
-                threadFactory
+                new ArrayBlockingQueue<>(QUEUE_SIZE),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy()
         );
     }
 
@@ -131,17 +136,17 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         Duration timeout = Duration.of(1, ChronoUnit.SECONDS);
-        LocalDateTime deadlineRequest = LocalDateTime.now(ServerZone).plus(timeout);
+        LocalDateTime deadlineRequest = LocalDateTime.now(SERVER_ZONE).plus(timeout);
         try {
             executor.execute(() -> process(request, session, deadlineRequest));
         } catch (RejectedExecutionException e) {
             log.error(e.toString());
-            sendResponse(session, new Response("429 Too Many Requests", Response.EMPTY));
+            sendResponse(session, new Response(CustomHttpStatus.TOO_MANY_REQUESTS.toString(), Response.EMPTY));
         }
     }
 
     private void process(Request request, HttpSession session, LocalDateTime deadlineRequest) {
-        LocalDateTime now = LocalDateTime.now(ServerZone);
+        LocalDateTime now = LocalDateTime.now(SERVER_ZONE);
         if (now.isAfter(deadlineRequest)) {
             sendResponse(session, new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;

@@ -53,7 +53,6 @@ public class HttpServerImpl extends HttpServer {
     public HttpServerImpl(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
-
         AtomicInteger threadCounter = new AtomicInteger(0);
         ThreadFactory threadFactory = r ->
                 new Thread(r, "HttpServerImplThread: " + threadCounter.getAndIncrement());

@@ -14,6 +14,6 @@ public enum CustomHttpStatus {
 
     @Override
     public String toString() {
-        return "" + this.value + " " + this.reasonPhrase;
+        return this.value + this.reasonPhrase;
     }
 }

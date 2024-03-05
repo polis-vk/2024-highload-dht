@@ -2,6 +2,7 @@ package ru.vk.itmo.test.pelogeikomakar;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.test.pelogeikomakar.dao.ReferenceDaoPel;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,9 +23,9 @@ public final class MainServ {
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http://localhost", List.of("http://localhost"), daoPath);
         Config daoConfig = new Config(daoPath, 2048L);
 
-        ExecutorService execServ = ExecutorServiceFactory.getExecutorService();
+        ExecutorService execServ = ExecutorServiceFactory.newExecutorService();
 
-        DaoHttpServer server = new DaoHttpServer(serviceConfig, daoConfig, execServ);
+        DaoHttpServer server = new DaoHttpServer(serviceConfig, new ReferenceDaoPel(daoConfig), execServ);
 
         server.start();
     }

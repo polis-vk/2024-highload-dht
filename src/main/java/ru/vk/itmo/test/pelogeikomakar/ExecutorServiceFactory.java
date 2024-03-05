@@ -6,33 +6,32 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ExecutorServiceFactory {
-    private static final int CORE_POOL_SIZE = 10;
-    private static final int MAXIMUM_POOL_SIZE = 256;
+    private static final int CORE_POOL_SIZE = 20;
 
-    private static final long KEEP_ALIVE_TIME = 2;
-
-    private static final int CAPACITY = 2048;
-
-    private static final BlockingQueue<Runnable> QUEUE = new ArrayBlockingQueue<>(CAPACITY);
-
+    private static final long KEEP_ALIVE_TIME_SEC = 2;
     private static final TimeUnit UNIT = TimeUnit.SECONDS;
+
+    private static final int QUEUE_CAPACITY = 127;
+
+    private static final BlockingQueue<Runnable> QUEUE = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
 
     private ExecutorServiceFactory() {
         throw new UnsupportedOperationException("cannot be instantiated");
     }
 
-    public static ExecutorService getExecutorService() {
-        return new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, KEEP_ALIVE_TIME, UNIT, QUEUE,
-                new MyThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
-    }
-
-    public static final class MyThreadFactory implements ThreadFactory {
-
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "ExecutorServiceThread");
-        }
+    public static ExecutorService newExecutorService() {
+        ThreadPoolExecutor tpe = new ThreadPoolExecutor(CORE_POOL_SIZE, CORE_POOL_SIZE, KEEP_ALIVE_TIME_SEC, UNIT, QUEUE,
+                new ThreadFactory() {
+                    private final AtomicInteger id = new AtomicInteger(0);
+                    @Override
+                    public Thread newThread(Runnable r) {
+                        return new Thread(r, "ExecutorServiceThread-" + id.incrementAndGet());
+                    }
+                }, new ThreadPoolExecutor.AbortPolicy());
+        tpe.prestartAllCoreThreads();
+        return tpe;
     }
 }

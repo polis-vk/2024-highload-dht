@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.pelogeikomakar.dao.ReferenceDaoPel;
 import ru.vk.itmo.test.reference.ReferenceServer;
@@ -33,12 +34,11 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     private final ExecutorService executorService;
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
-    private final Config daoConfig;
-    private ReferenceDaoPel dao;
+    private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public DaoHttpServer(ServiceConfig config, Config daoConfig, ExecutorService executorService) throws IOException {
+    public DaoHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executorService) throws IOException {
         super(createHttpServerConfig(config));
-        this.daoConfig = daoConfig;
+        this.dao = dao;
         this.executorService = executorService;
     }
 
@@ -51,6 +51,14 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
+    }
+
+    public Dao<MemorySegment, Entry<MemorySegment>> getDao() {
+        return dao;
+    }
+
+    public ExecutorService getExecutorService() {
+        return executorService;
     }
 
     @Path("/v0/entity")
@@ -131,27 +139,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
         session.sendResponse(response);
-    }
-
-    @Override
-    public synchronized void start() {
-        try {
-            dao = new ReferenceDaoPel(daoConfig);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
-        super.start();
-    }
-
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 
     private MemorySegment stringToMemorySegment(String str) {

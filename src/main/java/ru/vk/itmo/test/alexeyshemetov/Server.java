@@ -6,7 +6,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
@@ -25,7 +24,7 @@ import java.nio.charset.StandardCharsets;
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String ENTITY_PATH = "/v0/entity";
-    private static final long MEM_DAO_SIZE = 1L << 16;
+    private static final long MEM_DAO_SIZE = 1L << 22;
 
     public Server(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
@@ -37,14 +36,23 @@ public class Server extends HttpServer {
     }
 
     @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response getById(
-        @Param(value = "id", required = true) final String id
+    public Response entityById(
+        @Param(value = "id", required = true) final String id,
+        Request request
     ) {
         if (id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> getById(id);
+            case Request.METHOD_PUT -> putById(id, request);
+            case Request.METHOD_DELETE -> deleteById(id);
+            default -> notAllowed();
+        };
+    }
+
+    public Response getById(final String id) {
         MemorySegment key = toMemorySegment(id);
         Entry<MemorySegment> segmentEntry = dao.get(key);
         if (segmentEntry == null) {
@@ -53,40 +61,20 @@ public class Server extends HttpServer {
         return Response.ok(segmentEntry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response putById(
-        @Param(value = "id", required = true) final String id,
-        Request request
-    ) {
-        if (id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
+    public Response putById(final String id, Request request) {
         MemorySegment key = toMemorySegment(id);
         MemorySegment value = MemorySegment.ofArray(request.getBody());
         dao.upsert(new BaseEntry<>(key, value));
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteById(
-        @Param(value = "id", required = true) final String id
-    ) {
-        if (id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
+    public Response deleteById(final String id) {
         MemorySegment key = toMemorySegment(id);
         dao.upsert(new BaseEntry<>(key, null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path(ENTITY_PATH)
-    public Response notAllowed(
-        @Param(value = "id", required = true) final String id
-    ) {
+    public Response notAllowed() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 

@@ -6,14 +6,17 @@ import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.tyapuevdmitrij.dao.DAOException;
 import ru.vk.itmo.test.tyapuevdmitrij.dao.MemorySegmentDao;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImplementation implements ru.vk.itmo.Service {
 
-    private final ServiceConfig config;
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
+    private final ServiceConfig config;
     private ServerImplementation server;
     private MemorySegmentDao memorySegmentDao;
 
@@ -44,12 +47,21 @@ public class ServiceImplementation implements ru.vk.itmo.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
         public ru.vk.itmo.Service create(ServiceConfig config) {
             return new ServiceImplementation(config);
         }
+    }
+
+    public static void main(String[] args) throws IOException {
+        Path tempPath = new File("/home/dmitrij/Документы/JavaProjects/DaoServerData/").toPath();
+        ServerImplementation server = new ServerImplementation(new ServiceConfig(8080,
+                "http://localhost",
+                List.of("http://localhost"),
+                tempPath), new MemorySegmentDao(new Config(tempPath, FLUSH_THRESHOLD_BYTES)));
+        server.start();
     }
 }

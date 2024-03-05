@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.tyapuevdmitrij;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -19,6 +20,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -28,11 +30,13 @@ public class ServerImplementation extends HttpServer {
 
     private static final String ENTITY_PATH = "/v0/entity";
 
-    private static final int THREAD_POOL_SIZE = 4;
+    private static final String REQUEST_KEY = "id=";
+
+    private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
 
     private static final int POOL_KEEP_ALIVE_SECONDS = 10;
 
-    private static final int THREAD_POOL_QUEUE_SIZE = 16;
+    private static final int THREAD_POOL_QUEUE_SIZE = 64;
 
     private final MemorySegmentDao memorySegmentDao;
 
@@ -41,8 +45,64 @@ public class ServerImplementation extends HttpServer {
     public ServerImplementation(ServiceConfig config, MemorySegmentDao memorySegmentDao) throws IOException {
         super(createServerConfig(config));
         this.memorySegmentDao = memorySegmentDao;
-        executor = new ThreadPoolExecutor(THREAD_POOL_SIZE, THREAD_POOL_SIZE, POOL_KEEP_ALIVE_SECONDS, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE));
+        this.executor = new ThreadPoolExecutor(THREAD_POOL_SIZE,
+                THREAD_POOL_SIZE,
+                POOL_KEEP_ALIVE_SECONDS,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
+                new CustomThreadFactory("worker", true),
+                new ThreadPoolExecutor.AbortPolicy());
+        ((ThreadPoolExecutor) executor).prestartAllCoreThreads();
+    }
+
+    @Override
+    public synchronized void stop() {
+        super.stop();
+        executor.close();
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            executor.execute(() -> {
+                try {
+                    if (!request.getPath().equals(ENTITY_PATH)) {
+                        handleDefault(request, session);
+                        return;
+                    }
+                    int requestMethod = request.getMethod();
+                    String id = request.getParameter(REQUEST_KEY);
+                    switch (requestMethod) {
+                        case Request.METHOD_GET -> session.sendResponse(get(id));
+                        case Request.METHOD_PUT -> session.sendResponse(put(id, request));
+                        case Request.METHOD_DELETE -> session.sendResponse(delete(id));
+                        default -> session.sendResponse(getUnsupportedMethodResponse());
+                    }
+                } catch (Exception e) {
+                    logger.error("Exception in request method", e);
+                    sendErrorResponse(session, Response.INTERNAL_ERROR);
+                }
+            });
+        } catch (RejectedExecutionException exception) {
+            logger.warn("ThreadPool queue overflow", exception);
+            sendErrorResponse(session, Response.SERVICE_UNAVAILABLE);
+        }
+
+    }
+
+    @Override
+    public void handleDefault(Request request, HttpSession session) throws IOException {
+        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        session.sendResponse(response);
+    }
+
+    private static void sendErrorResponse(HttpSession session, String error) {
+        try {
+            session.sendResponse(new Response(error, Response.EMPTY));
+        } catch (IOException ex) {
+            logger.error("can't send response", ex);
+            session.close();
+        }
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -65,39 +125,6 @@ public class ServerImplementation extends HttpServer {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-    }
-
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        executor.close();
-    }
-
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        executor.execute(() -> {
-            try {
-                if (!request.getPath().equals(ENTITY_PATH)) {
-                    handleDefault(request, session);
-                }
-                int requestMethod = request.getMethod();
-                switch (requestMethod) {
-                    case Request.METHOD_GET -> session.sendResponse(get(request.getParameter("id=")));
-                    case Request.METHOD_PUT -> session.sendResponse(put(request.getParameter("id="), request));
-                    case Request.METHOD_DELETE -> session.sendResponse(delete(request.getParameter("id=")));
-                    default -> session.sendResponse(unsupportedMethods());
-                }
-            } catch (Exception e) {
-                logger.error("Exception in request method :", e);
-                try {
-                    session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                } catch (IOException ex) {
-                    logger.error("can't send response", e);
-                    session.close();
-                }
-            }
-
-        });
     }
 
     private Response put(String id, Request request) {
@@ -123,16 +150,9 @@ public class ServerImplementation extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
-    }
-
-    private Response unsupportedMethods() {
+    private Response getUnsupportedMethodResponse() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
-
 }
 
 

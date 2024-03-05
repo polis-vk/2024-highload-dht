@@ -55,7 +55,7 @@ public class ServerImpl extends HttpServer {
     }
 
     @Path(API_ENDPOINT)
-    public void handleEntityRequst(Request request, @Param(value = "id") String id, HttpSession session) {
+    public void handleEntityRequest(Request request, @Param(value = "id") String id, HttpSession session) {
         try {
             executorService.execute(() -> {
                 Response response = processRequest(request, id);

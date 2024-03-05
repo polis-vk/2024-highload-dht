@@ -48,7 +48,7 @@ public class WorkerThreadPoolExecutor extends ThreadPoolExecutor {
 
         @Override
         public Thread newThread(Runnable r) {
-            return new Thread(r, STR."\{PREFIX}\{THREAD_COUNTER.getAndIncrement()}");
+            return new Thread(r, PREFIX + THREAD_COUNTER.getAndIncrement());
         }
 
     }

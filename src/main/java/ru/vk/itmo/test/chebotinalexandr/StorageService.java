@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
-import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -14,7 +13,6 @@ import java.lang.foreign.MemorySegment;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 

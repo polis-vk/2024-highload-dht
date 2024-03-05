@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit;
 public class WorkerConfig {
 
     public static final long KEEP_ALIVE_TIME = 0L;
-    public static final TimeUnit UNIT = TimeUnit.SECONDS;
+    public static final TimeUnit KEEP_ALIVE_TIME_SECONDS = TimeUnit.SECONDS;
 
     private final int corePoolSize;
     private final int maximumPoolSize;

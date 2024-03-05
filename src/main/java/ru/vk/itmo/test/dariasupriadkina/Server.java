@@ -23,6 +23,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 public class Server extends HttpServer {
 
@@ -117,21 +118,29 @@ public class Server extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        executorService.execute(() -> {
-            try {
-                super.handleRequest(request, session);
-            } catch (Exception e) {
+        try {
+            executorService.execute(() -> {
                 try {
-                    if (e.getClass() == HttpException.class) {
-                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    } else {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    logger.error("Unexpected error", e);
+                    try {
+                        if (e.getClass() == HttpException.class) {
+                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        } else {
+                            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                        }
+                    } catch (IOException ex) {
+                        logger.error("Failed to send error response", e);
+                        session.close();
                     }
-                } catch (IOException ex) {
-                    logger.error("Handling request failed");
                 }
-            }
-        });
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error("Service is unavailable", e);
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+
+        }
     }
 
     private Entry<MemorySegment> convertToEntry(String id, byte[] body) {

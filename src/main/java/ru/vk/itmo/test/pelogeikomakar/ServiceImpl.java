@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.pelogeikomakar;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -19,6 +21,8 @@ public class ServiceImpl implements Service {
 
     private final ServiceConfig serviceConfig;
     private DaoHttpServer server;
+
+    private static final Logger log = LoggerFactory.getLogger(ServiceImpl.class);
 
     public ServiceImpl(ServiceConfig config) {
         daoConfig = new Config(config.workingDir(), 2048L);
@@ -48,7 +52,9 @@ public class ServiceImpl implements Service {
           if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
             pool.shutdownNow();
             if (!pool.awaitTermination(60, TimeUnit.SECONDS))
-                System.err.println("Pool did not terminate");
+            {
+                log.error("Pool did not terminate");
+            }
           }
         } catch (InterruptedException ex) {
           pool.shutdownNow();

@@ -12,14 +12,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.pelogeikomakar.dao.ReferenceDaoPel;
-import ru.vk.itmo.test.reference.ReferenceServer;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -29,14 +25,15 @@ import java.util.concurrent.RejectedExecutionException;
 
 public class DaoHttpServer extends one.nio.http.HttpServer {
 
-    private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
+    private static final Logger log = LoggerFactory.getLogger(DaoHttpServer.class);
 
     private final ExecutorService executorService;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public DaoHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executorService) throws IOException {
+    public DaoHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
+                         ExecutorService executorService) throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;
         this.executorService = executorService;

@@ -23,7 +23,8 @@ public final class ExecutorServiceFactory {
     }
 
     public static ExecutorService newExecutorService() {
-        ThreadPoolExecutor tpe = new ThreadPoolExecutor(CORE_POOL_SIZE, CORE_POOL_SIZE, KEEP_ALIVE_TIME_SEC, UNIT, QUEUE,
+        ThreadPoolExecutor tpe = new ThreadPoolExecutor(CORE_POOL_SIZE, CORE_POOL_SIZE,
+                KEEP_ALIVE_TIME_SEC, UNIT, QUEUE,
                 new ThreadFactory() {
                     private final AtomicInteger id = new AtomicInteger(0);
                     @Override

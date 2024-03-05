@@ -14,7 +14,6 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -34,7 +33,7 @@ public class TimofeevServer extends HttpServer {
     private final ThreadPoolExecutor threadPoolExecutor;
     private static final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
 
-    public TimofeevServer(ServiceConfig serviceConfig, ReferenceDao dao,
+    public TimofeevServer(ServiceConfig serviceConfig, Dao dao,
                           ThreadPoolExecutor threadPoolExecutor) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;

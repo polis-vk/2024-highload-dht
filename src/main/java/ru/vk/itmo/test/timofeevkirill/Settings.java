@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class Settings {
     public static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1мб
-    public static final int MAX_QUEUE_SIZE = 3000;
+    public static final int MAX_QUEUE_SIZE = 8192;
     public static final String VERSION_PREFIX = "/v0";
     public static final Set<Integer> SUPPORTED_METHODS = Set.of(
             Request.METHOD_GET,

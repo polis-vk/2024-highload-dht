@@ -1,8 +1,11 @@
 package ru.vk.itmo.test.timofeevkirill;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
 
@@ -16,12 +19,12 @@ import static ru.vk.itmo.test.timofeevkirill.Settings.FLUSH_THRESHOLD_BYTES;
 import static ru.vk.itmo.test.timofeevkirill.Settings.getDefaultThreadPoolExecutor;
 
 public class TimofeevService implements Service {
-
+    private static final Logger logger = LoggerFactory.getLogger(TimofeevService.class);
     private final ServiceConfig config;
     private final Config daoConfig;
     private TimofeevServer server;
     private ThreadPoolExecutor threadPoolExecutor;
-    private ReferenceDao dao;
+    private Dao dao;
 
     public TimofeevService(ServiceConfig serviceConfig) {
         this.config = serviceConfig;
@@ -52,8 +55,9 @@ public class TimofeevService implements Service {
             if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
                 pool.shutdownNow(); // Cancel currently executing tasks
                 // Wait a while for tasks to respond to being cancelled
-                if (!pool.awaitTermination(60, TimeUnit.SECONDS))
-                    System.err.println("Pool did not terminate");
+                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                    logger.error("Pool did not terminate");
+                }
             }
         } catch (InterruptedException ex) {
             // (Re-)Cancel if current thread also interrupted

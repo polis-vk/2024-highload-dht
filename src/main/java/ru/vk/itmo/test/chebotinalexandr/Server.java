@@ -59,7 +59,7 @@ public final class Server {
         }
 
         int index;
-        for (int i = ENTRIES_IN_DB; i > 0; i--) {
+        for (int i = ENTRIES_IN_DB - 1; i > 0; i--) {
             index = RANDOM.nextInt(i + 1);
             if (index != i) {
                 entries[index] ^= entries[i];

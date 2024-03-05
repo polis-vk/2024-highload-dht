@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -13,6 +14,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -50,9 +52,22 @@ public class StorageService implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
-        executor.shutdownNow();
+        waitForShutdown();
         dao.close();
         return CompletableFuture.completedFuture(null);
+    }
+
+    public void waitForShutdown() {
+        executor.shutdown();
+
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.MINUTES)) {
+                throw new InterruptedException("Timeout");
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     @ServiceFactory(stage = 2)

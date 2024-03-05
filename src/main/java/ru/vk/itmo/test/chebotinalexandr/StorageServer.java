@@ -20,6 +20,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 public class StorageServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(StorageServer.class);
@@ -63,14 +64,20 @@ public class StorageServer extends HttpServer {
             return;
         }
 
-        executor.execute(() -> {
-            try {
-                super.handleRequest(request, session);
-            } catch (IOException e) {
-                log.error("Exception during handleRequest: ", e);
-                sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
-            }
-        });
+        try {
+            executor.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (IOException e) {
+                    log.error("Exception during handleRequest: ", e);
+                    sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
+                    session.close();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.error("Request rejected", e);
+            sendEmptyBodyResponse(Response.SERVICE_UNAVAILABLE, session);
+        }
     }
 
     @Path(PATH)

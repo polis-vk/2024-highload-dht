@@ -93,7 +93,7 @@ public class ServiceImpl implements ru.vk.itmo.Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

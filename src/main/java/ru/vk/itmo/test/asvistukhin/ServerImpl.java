@@ -12,7 +12,7 @@ import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -24,7 +24,7 @@ public class ServerImpl extends HttpServer {
 
     private static final String HTTP_SERVICE_NOT_AVAILABLE = "503";
     private static final String EMPTY_RESPONSE = "";
-    private static final int QUEUE_CAPACITY = 2500;
+    private static final int QUEUE_CAPACITY = 3000;
 
     private final ThreadPoolExecutor executor;
 
@@ -33,9 +33,9 @@ public class ServerImpl extends HttpServer {
         executor = new ThreadPoolExecutor(
             50,
             150,
-            15,
+            30,
             TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(QUEUE_CAPACITY, true),
+            new LinkedBlockingQueue<>(QUEUE_CAPACITY),
             new CustomThreadFactory("server-executor", false),
             new ThreadPoolExecutor.AbortPolicy()
         );

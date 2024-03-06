@@ -1,6 +1,13 @@
 package ru.vk.itmo.test.osipovdaniil;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -8,6 +15,7 @@ import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.osipovdaniil.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -110,7 +118,7 @@ public class ServerImpl extends HttpServer {
             session.sendResponse(response);
         } catch (IOException e) {
             logger.info("IO exception in execution request: " + request + "\n" + e);
-            throw new RuntimeException(e);
+            throw new UncheckedIOException(e);
         }
     }
 
@@ -128,8 +136,9 @@ public class ServerImpl extends HttpServer {
         try {
             if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS))
+                if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
                     logger.info("Pool did not terminate");
+                }
             }
         } catch (InterruptedException ie) {
             pool.shutdownNow();

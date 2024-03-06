@@ -2,8 +2,10 @@ package ru.vk.itmo.test.andreycheshev;
 
 import ru.vk.itmo.ServiceConfig;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public final class ServerStarter {
     private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/get_storage");
@@ -14,7 +16,7 @@ public final class ServerStarter {
 
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         ServiceImpl service = new ServiceImpl(
                 new ServiceConfig(
                         PORT,

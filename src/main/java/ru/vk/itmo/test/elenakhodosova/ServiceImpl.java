@@ -20,8 +20,6 @@ public class ServiceImpl implements Service {
     public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
     public static final int TERMINATION_TIMEOUT_MS = 500;
 
-
-
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
 

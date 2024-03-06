@@ -23,7 +23,6 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
-
 public class DaoHttpServer extends one.nio.http.HttpServer {
 
     private static final Logger log = LoggerFactory.getLogger(DaoHttpServer.class);
@@ -32,7 +31,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
-
 
     public DaoHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
                          ExecutorService executorService) throws IOException {

@@ -215,3 +215,4 @@ put-profile-8th-1000con-80000-alloc.html и put-profile-8th-1000con-80000-lock.h
 более предпочтительный вариант, но в этой реализации выбран следующий.
 2. LinkedBlockingDeque. Работает по принципу LIFO. Обрабатываем свежие запросы.
 3. PriorityBlockingQueue. Просто поиздеваться надо пользователями)))
+

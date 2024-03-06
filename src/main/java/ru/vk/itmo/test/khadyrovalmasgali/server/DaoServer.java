@@ -133,8 +133,9 @@ public class DaoServer extends HttpServer {
         try {
             if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(60, TimeUnit.SECONDS))
-                    System.err.println("Pool did not terminate");
+                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                    log.error("Pool did not terminate");
+                }
             }
         } catch (InterruptedException ie) {
             pool.shutdownNow();

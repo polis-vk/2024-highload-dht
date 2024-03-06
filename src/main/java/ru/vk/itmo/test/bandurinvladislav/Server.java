@@ -72,6 +72,31 @@ public class Server extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            workerPool.execute(() -> {
+                try {
+                    handleDaoCall(request, session);
+                } catch (IOException e) {
+                    logger.error("IO exception during request handling: " + e.getMessage());
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, null);
+                    } catch (IOException ex) {
+                        logger.error("Exception while sending close connection:", e);
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            logger.info("queue is full");
+            if (workerPool.isShutdown()) {
+                session.sendError(Response.SERVICE_UNAVAILABLE, null);
+                return;
+            }
+            session.sendError(Constants.TOO_MANY_REQUESTS, null);
+        }
+    }
+
+    private void handleDaoCall(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
         if (!path.equals(Constants.ENDPOINT)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -84,29 +109,6 @@ public class Server extends HttpServer {
             return;
         }
 
-        try {
-            workerPool.execute(() -> {
-                try {
-                    handleDaoCall(request, session, key);
-                } catch (IOException e) {
-                    logger.error("IO exception during request handling: " + e.getMessage());
-                    try {
-                        session.sendError(Response.INTERNAL_ERROR, null);
-                    } catch (IOException ex) {
-                        logger.error("Exception while sending close connection:", e);
-                    }
-                }
-            });
-        } catch (RejectedExecutionException e) {
-            if (workerPool.isShutdown()) {
-                session.sendError(Response.SERVICE_UNAVAILABLE, null);
-                return;
-            }
-            session.sendError(Constants.TOO_MANY_REQUESTS, null);
-        }
-    }
-
-    private void handleDaoCall(Request request, HttpSession session, String key) throws IOException {
         Response response;
         try {
             response = switch (request.getMethod()) {

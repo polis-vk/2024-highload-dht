@@ -21,8 +21,6 @@ import java.util.concurrent.TimeUnit;
 public final class Server {
     private static final Random RANDOM = new Random();
     private static final int ENTRIES_IN_DB = 500_000;
-    private static final int POOL_SIZE = 20;
-    private static final int QUEUE_CAPACITY = 128;
 
     private Server() {
 
@@ -40,17 +38,17 @@ public final class Server {
                 new NotOnlyInMemoryDao(new Config(config.workingDir(), 4_194_304L));
 
         ExecutorService executor = new ThreadPoolExecutor(
-                POOL_SIZE,
-                POOL_SIZE,
+                8,
+                8,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+                new ArrayBlockingQueue<>(128)
         );
 
         StorageServer server = new StorageServer(config, dao, executor);
         server.start();
 
-        //fillFlush(dao);
+        fillFlush(dao);
         fillManyFlushes(dao);
     }
 
@@ -76,7 +74,6 @@ public final class Server {
     /**
      * Just fills memtable without flushing.
      */
-    /*
     private static void fillMemtable(Dao<MemorySegment, Entry<MemorySegment>> dao) {
         int[] entries = getRandomArray();
         for (int entry : entries) {
@@ -84,18 +81,13 @@ public final class Server {
         }
     }
 
-     */
-
     /**
      * Fills memtable with one flush.
      */
-    /*
     private static void fillFlush(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         fillMemtable(dao);
         dao.flush();
     }
-
-     */
 
     /**
      * Fills dao with multiple sstables.

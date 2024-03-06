@@ -2,8 +2,8 @@ package ru.vk.itmo.test.proninvalentin;
 
 import one.nio.async.CustomThreadFactory;
 
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -38,7 +38,7 @@ public class WorkerPoolConfig {
                 poolSize,
                 60L,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(MAX_QUEUE_SIZE),
+                new LinkedBlockingQueue<>(MAX_QUEUE_SIZE),
                 new CustomThreadFactory("Custom worker", true),
                 new ThreadPoolExecutor.CallerRunsPolicy());
     }

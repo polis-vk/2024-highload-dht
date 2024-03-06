@@ -29,17 +29,17 @@ import java.util.logging.Logger;
 public class ServerImpl extends HttpServer {
 
     private static final String ENTITY_PATH = "/v0/entity";
+    private static final Integer MAX_THREADS = 64;
     private static final String ID = "id=";
     private final ExecutorService requestExecutor;
     private final Logger logger;
-    private static final Integer maxThreads = 64;
 
     private final ReferenceDao dao;
 
     public ServerImpl(final ServiceConfig serviceConfig, ReferenceDao dao) throws IOException {
         super(createHttpServerConfig(serviceConfig));
         this.dao = dao;
-        this.requestExecutor = Executors.newFixedThreadPool(maxThreads);
+        this.requestExecutor = Executors.newFixedThreadPool(MAX_THREADS);
         this.logger = Logger.getLogger(ServerImpl.class.getName());
     }
 
@@ -117,7 +117,7 @@ public class ServerImpl extends HttpServer {
             }
             session.sendResponse(response);
         } catch (IOException e) {
-            logger.info("IO exception in execution request: " + request + "\n" + e);
+            logger.info("IO exception in execution request: " + request + "\n");
             throw new UncheckedIOException(e);
         }
     }
@@ -127,7 +127,7 @@ public class ServerImpl extends HttpServer {
         try {
             requestExecutor.execute(() -> handleRequestTask(request, session));
         } catch (RejectedExecutionException e) {
-            logger.info("Execution has been rejected in request: " + request + "\n" + e);
+            logger.info("Execution has been rejected in request: " + request + "\n");
             session.sendError(Response.SERVICE_UNAVAILABLE, "");
         }
     }

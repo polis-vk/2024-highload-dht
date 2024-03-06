@@ -10,9 +10,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-import static one.nio.http.Request.*;
-import static one.nio.http.Response.*;
-
 public class RequestHandler {
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID_PARAMETER = "id=";
@@ -27,36 +24,36 @@ public class RequestHandler {
 
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
-            return new Response(BAD_REQUEST, Response.EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         int method = request.getMethod();
 
         return switch (method) {
-            case METHOD_GET -> get(request);
-            case METHOD_PUT -> put(request);
-            case METHOD_DELETE -> delete(request);
-            default -> new Response(METHOD_NOT_ALLOWED, Response.EMPTY);
+            case Request.METHOD_GET -> get(request);
+            case Request.METHOD_PUT -> put(request);
+            case Request.METHOD_DELETE -> delete(request);
+            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         };
     }
 
     private Response get(final Request request) {
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
-            return new Response(BAD_REQUEST, Response.EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = dao.get(fromString(id));
 
         return entry == null
-                ? new Response(NOT_FOUND, Response.EMPTY)
-                : new Response(OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
+                ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     private Response put(final Request request) {
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
-            return new Response(BAD_REQUEST, Response.EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = new BaseEntry<>(
@@ -65,19 +62,19 @@ public class RequestHandler {
         );
         dao.upsert(entry);
 
-        return new Response(CREATED, Response.EMPTY);
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     private Response delete(final Request request) {
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
-            return new Response(BAD_REQUEST, Response.EMPTY);
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = new BaseEntry<>(fromString(id), null);
         dao.upsert(entry);
 
-        return new Response(ACCEPTED, Response.EMPTY);
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     private static MemorySegment fromString(String data) {

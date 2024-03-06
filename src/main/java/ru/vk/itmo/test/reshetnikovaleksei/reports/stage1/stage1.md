@@ -199,7 +199,7 @@ Transfer/sec:    491.50KB
 
 #### Запуск профилирования для PUT
 ```shell
-./bin/asprof -e alloc -d 30 -f ./put_alloc.html ServerRunnerApp
+./bin/asprof -e alloc -d 30 -f ./put_alloc_t8_c64_R70000.html ServerRunnerApp
 ./bin/asprof -e cpu -d 30 -f ./put_cpu.html ServerRunnerApp
 ```
 

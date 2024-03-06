@@ -2,21 +2,21 @@
 Опытным путём было выяснено, что dao становится плохо уже на 11к RPS,
 поэтому тестирование проводилось на 10k RPS.
 
-[lua get запросы](./scripts/get.lua)
+[lua get запросы](scriptset.lua)
 
-[lua put запросы](./scripts/put.lua)
+[lua put запросы](scriptsut.lua)
 
-[wrk2 get output](./wrk/get.txt)
+[wrk2 get output](wrket.txt)
 
-[wrk2 put output](./wrk/put.txt)
+[wrk2 put output](wrkut.txt)
 
-[get cpu profile](./asprof/get_cpu.html)
+[get cpu profile](asprofet_cpu.html)
 
-[put cpu profile](./asprof/put_cpu.html)
+[put cpu profile](asprofut_cpu.html)
 
-[get alloc profile](./asprof/get_alloc.html)
+[get alloc profile](asprofet_alloc.html)
 
-[put alloc profile](./asprof/put_alloc.html)
+[put alloc profile](asprofut_alloc.html)
 
 ## Выводы
 Видно, что в методе GET много ресурсов процессора уходит

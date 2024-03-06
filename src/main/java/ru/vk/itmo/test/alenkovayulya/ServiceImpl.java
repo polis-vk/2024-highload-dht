@@ -43,6 +43,12 @@ public class ServiceImpl implements Service {
     }
 
     private void shutdownExecutorService() {
+        executorService.shutdown();
+        try {
+            executorService.awaitTermination(15, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         executorService.shutdownNow();
         try {
             executorService.awaitTermination(10, TimeUnit.SECONDS);

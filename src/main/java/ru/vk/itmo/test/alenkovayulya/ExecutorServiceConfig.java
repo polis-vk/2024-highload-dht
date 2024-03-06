@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.alenkovayulya;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -11,29 +13,33 @@ public class ExecutorServiceConfig {
     public final int poolSize;
     public final int queueSize;
     public final long keepAliveTimeSec;
-    public final BlockingQueueType blockingQueueType;
+    public final BlockingQueue<Runnable> blockingQueue;
     public final RejectedExecutionHandler rejectedExecutionHandler;
     public final String executorName;
 
     public ExecutorServiceConfig(int poolSize, int queueSize, long keepAliveTimeSec,
-                                 BlockingQueueType blockingQueueType,
+                                 BlockingQueue<Runnable> blockingQueue,
                                  RejectedExecutionHandler rejectedExecutionHandler, String executorName) {
         this.poolSize = validateValue(poolSize, MAX_POOL_SIZE);
         this.queueSize = validateValue(queueSize, MAX_QUEUE_SIZE);
         this.keepAliveTimeSec = keepAliveTimeSec;
-        this.blockingQueueType = blockingQueueType;
+        this.blockingQueue = blockingQueue;
         this.rejectedExecutionHandler = rejectedExecutionHandler;
         this.executorName = executorName;
     }
 
     private int validateValue(int value, int maxPossibleValue) {
-        return (value == 0 || value > maxPossibleValue) ? maxPossibleValue : value;
+        if (value == 0 || value > maxPossibleValue) {
+            throw new IllegalArgumentException(
+                    "The set value reaches the maximum or is equal to 0, maximum = " + maxPossibleValue);
+        }
+        return value;
     }
 
     public static ExecutorServiceConfig defaultConfig() {
         return new ExecutorServiceConfig(
-                500, 100, 30,
-                BlockingQueueType.ARRAY,
+                256, 16, 30,
+                new ArrayBlockingQueue<>(16),
                 new ThreadPoolExecutor.AbortPolicy(),
                 "yulalenkExecutor");
     }

@@ -9,6 +9,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -22,6 +24,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
 public class ServerImpl extends HttpServer {
+
+    private static final Logger logger = LoggerFactory.getLogger(ServerImpl.class);
 
     private final Dao<MemorySegment, Entry<MemorySegment>> referenceDao;
     private final ExecutorService executorService;
@@ -54,7 +58,8 @@ public class ServerImpl extends HttpServer {
                 try {
                     session.sendError(Response.BAD_REQUEST, e.getMessage());
                 } catch (IOException ex) {
-                    Thread.currentThread().interrupt();
+                    logger.info("Exception during sending the response: ", ex);
+                    session.close();
                 }
             }
         });

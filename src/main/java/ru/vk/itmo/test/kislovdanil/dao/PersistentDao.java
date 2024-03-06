@@ -54,7 +54,6 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
     // Limit for SSTables on drive
     private static final int COMPACTION_THRESHOLD = 5;
 
-
     private long getMaxTablesId(Iterable<SSTable> tableIterable) {
         long curMaxId = -1;
         for (SSTable table : tableIterable) {

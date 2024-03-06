@@ -14,17 +14,17 @@ public final class ExecutorServiceFactory {
     private static final long KEEP_ALIVE_TIME_SEC = 2;
     private static final TimeUnit UNIT = TimeUnit.SECONDS;
 
-    private static final int QUEUE_CAPACITY = 127;
-
-    private static final BlockingQueue<Runnable> QUEUE = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
+    private static final int QUEUE_CAPACITY = 128;
 
     private ExecutorServiceFactory() {
         throw new UnsupportedOperationException("cannot be instantiated");
     }
 
     public static ExecutorService newExecutorService() {
+
+        BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
         ThreadPoolExecutor tpe = new ThreadPoolExecutor(CORE_POOL_SIZE, CORE_POOL_SIZE,
-                KEEP_ALIVE_TIME_SEC, UNIT, QUEUE,
+                KEEP_ALIVE_TIME_SEC, UNIT, queue,
                 new ThreadFactory() {
                     private final AtomicInteger id = new AtomicInteger(0);
                     @Override

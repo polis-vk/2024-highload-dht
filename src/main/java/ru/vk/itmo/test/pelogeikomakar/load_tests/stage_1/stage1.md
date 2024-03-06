@@ -16,6 +16,11 @@ wrk -d 30 -t 1 -c 1 -R 65000 -L -s ./put_req.lua http://127.0.0.1:8080
 ```shell
 wrk -d 30 -t 1 -c 1 -R 90 -L -s ./get_req.lua http://127.0.0.1:8080 
 ```
+Вставка:
+```shell
+wrk -d 70 -t 1 -c 1 -R 5300 -L -s ./../put_req.lua http://127.0.0.1:8080
+```
+
 
 Проверка наличия данных:
 ```shell

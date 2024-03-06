@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 
 public final class MainServ {
 
@@ -17,15 +18,16 @@ public final class MainServ {
     }
 
     public static void main(String[] args) throws IOException {
-        Path basePath = Path.of("/media/user/DATA/projects/gitproj/DWS-ITMO-2023/sem 2/dao_content");
+        Path basePath = Path.of("/media/user/DATA/projects/gitproj/DWS-ITMO-2023/sem_2/dao_content");
         Path daoPath = Files.createTempDirectory(basePath, "tmpServ");
 
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http://localhost", List.of("http://localhost"), daoPath);
         Config daoConfig = new Config(daoPath, 2048L);
 
         ExecutorService execServ = ExecutorServiceFactory.newExecutorService();
+        ThreadPoolExecutor tpe = (ThreadPoolExecutor) execServ;
 
-        DaoHttpServer server = new DaoHttpServer(serviceConfig, new ReferenceDaoPel(daoConfig), execServ);
+        DaoHttpServer server = new DaoHttpServer(serviceConfig, new ReferenceDaoPel(daoConfig), execServ, tpe.getQueue());
 
         server.start();
     }

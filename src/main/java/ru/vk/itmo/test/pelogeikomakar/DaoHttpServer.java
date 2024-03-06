@@ -20,8 +20,12 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class DaoHttpServer extends one.nio.http.HttpServer {
 
@@ -31,6 +35,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
+
 
     public DaoHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
                          ExecutorService executorService) throws IOException {
@@ -68,8 +73,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         try {
             dao.upsert(requestToEntry(id, request.getBody()));
         } catch (IllegalStateException e) {
-            log.error("Exception during upsert: ", e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            log.error("Exception during upsert (key: {})", id, e);
+            return new Response(Response.CONFLICT, Response.EMPTY);
         }
 
         return new Response(Response.CREATED, Response.EMPTY);
@@ -99,29 +104,34 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        dao.upsert(requestToEntry(id, null));
+        try {
+            dao.upsert(requestToEntry(id, null));
+        } catch (IllegalStateException e) {
+            log.error("Exception during delete-upsert", e);
+            return new Response(Response.CONFLICT, Response.EMPTY);
+        }
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-
         try {
             executorService.execute(() -> {
                 try {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
-                    log.error("Exception during handleRequest: ", e);
+                    log.error("Exception during handleRequest", e);
                     try {
                         session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                     } catch (IOException ex) {
-                        log.error("IOException while sendResponse ExecServer: ", ex);
+                        log.error("IOException while sendResponse ExecServer", ex);
+                        session.scheduleClose();
                     }
                 }
             });
         } catch (RejectedExecutionException e) {
-            log.error("Exception during adding request to ExecServ queue: ", e);
+            log.error("Exception during adding request to ExecServ queue", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }

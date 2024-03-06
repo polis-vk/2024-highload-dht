@@ -18,7 +18,7 @@ public class RequestThreadExecutor extends ThreadPoolExecutor {
                     Runtime.getRuntime().availableProcessors(),
                     30,
                     TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(1000));
+                    new LinkedBlockingQueue<>(100));
         }
 
     }
@@ -35,14 +35,14 @@ public class RequestThreadExecutor extends ThreadPoolExecutor {
     public void shutdown() {
         super.shutdown();
         try {
-            super.awaitTermination(2, TimeUnit.SECONDS);
+            super.awaitTermination(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 
         super.shutdownNow();
         try {
-            super.awaitTermination(1, TimeUnit.SECONDS);
+            super.awaitTermination(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

@@ -36,7 +36,7 @@ public class DaoHttpServer extends HttpServer {
             Request.METHOD_DELETE
     );
 
-    private final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
+    private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final RequestThreadExecutor executor;
 

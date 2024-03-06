@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
 
 public final class MainServ {
 
@@ -22,12 +21,11 @@ public final class MainServ {
         Path daoPath = Files.createTempDirectory(basePath, "tmpServ");
 
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http://localhost", List.of("http://localhost"), daoPath);
-        Config daoConfig = new Config(daoPath, 2048L);
+        Config daoConfig = new Config(daoPath, 16_384L);
 
         ExecutorService execServ = ExecutorServiceFactory.newExecutorService();
-        ThreadPoolExecutor tpe = (ThreadPoolExecutor) execServ;
 
-        DaoHttpServer server = new DaoHttpServer(serviceConfig, new ReferenceDaoPel(daoConfig), execServ, tpe.getQueue());
+        DaoHttpServer server = new DaoHttpServer(serviceConfig, new ReferenceDaoPel(daoConfig), execServ);
 
         server.start();
     }

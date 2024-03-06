@@ -21,7 +21,9 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -41,10 +43,10 @@ public class HttpServerImpl extends HttpServer {
         // corePoolSize and maximumPoolSize will be configured later with using wrk and profiler
         requestWorkers = new ThreadPoolExecutor(
                 Runtime.getRuntime().availableProcessors(),
-                64,
+                Runtime.getRuntime().availableProcessors(),
                 KEEP_ALIVE_TIME,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(128),
+                new ArrayBlockingQueue<>(600),
                 new ThreadPoolExecutor.DiscardOldestPolicy());
     }
 

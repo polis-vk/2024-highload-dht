@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
 public class ServiceImpl implements Service {
+    private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1mb
 
     private final ServiceConfig serviceConfig;
     private final Config daoConfig;
@@ -53,6 +54,6 @@ public class ServiceImpl implements Service {
     }
 
     private static Config createDaoConfig(ServiceConfig serviceConfig) {
-        return new Config(serviceConfig.workingDir(), 2048);
+        return new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES);
     }
 }

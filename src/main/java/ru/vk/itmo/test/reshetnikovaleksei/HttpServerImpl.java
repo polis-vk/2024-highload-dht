@@ -45,7 +45,7 @@ public class HttpServerImpl extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (IOException e) {
-                    logIOError(request, e);
+                    processIOException(request, session, e);
                 } catch (Exception e) {
                     LOGGER.error("Failed to handle request: {} with error: {}", request, e.getMessage());
                     try {
@@ -55,7 +55,7 @@ public class HttpServerImpl extends HttpServer {
                             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                         }
                     } catch (IOException ex) {
-                        logIOError(request, ex);
+                        processIOException(request, session, ex);
                     }
                 }
             });
@@ -64,7 +64,7 @@ public class HttpServerImpl extends HttpServer {
             try {
                 session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
             } catch (IOException ex) {
-                logIOError(request, ex);
+                processIOException(request, session, ex);
             }
         }
     }
@@ -130,8 +130,9 @@ public class HttpServerImpl extends HttpServer {
         return MemorySegment.ofArray(input.getBytes(StandardCharsets.UTF_8));
     }
 
-    private void logIOError(Request request, IOException e) {
+    private void processIOException(Request request, HttpSession session, IOException e) {
         LOGGER.error("Failed to send response for request: {} with error: {}", request, e.getMessage());
+        session.close();
     }
 
     private static HttpServerConfig createConfig(ServiceConfig config) {

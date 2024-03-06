@@ -10,13 +10,14 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +30,8 @@ public class NewServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
     private static final String PATH = "/v0/entity";
-    private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
+    private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toNanos(1);
+    private final Logger log = LoggerFactory.getLogger(NewServer.class);
 
     public NewServer(ServiceConfig config,
                      Dao<MemorySegment, Entry<MemorySegment>> dao,
@@ -135,16 +137,18 @@ public class NewServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        long createdAt = System.currentTimeMillis();
+        long createdAt = System.nanoTime();
         try {
             executorService.execute(
                     () -> {
-                        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
+                        if (System.nanoTime() - createdAt > MAX_RESPONSE_TIME) {
                             try {
                                 session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
                                 return;
                             } catch (IOException e) {
-                                throw new UncheckedIOException(e);
+                                log.error("Exception while sending close connection", e);
+                                session.scheduleClose();
+                                return;
                             }
                         }
 
@@ -156,6 +160,7 @@ public class NewServer extends HttpServer {
                     }
             );
         } catch (RejectedExecutionException e) {
+            log.error("Pool queue overflow", e);
             session.sendResponse(new Response(NewResponseCodes.TOO_MANY_REQUESTS.getCode(), Response.EMPTY));
         } catch (Exception e) {
             handleRequestException(session, e);
@@ -170,7 +175,8 @@ public class NewServer extends HttpServer {
             }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
+            log.error("Exception while sending close connection", e);
+            session.scheduleClose();
         }
     }
 }

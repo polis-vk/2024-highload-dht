@@ -19,6 +19,7 @@ import static one.nio.http.Response.INTERNAL_ERROR;
 public class RequestExecutor {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
+    private static final int MAX_CPU_THREADS_TIMES = 1;
     private static final int KEEPALIVE_MILLIS = 3000;
     private static final long MAX_TASK_AWAITING_TIME_MILLIS = 3000;
     private static final int MAX_WORK_QUEUE_SIZE = 300;
@@ -33,7 +34,7 @@ public class RequestExecutor {
 
         this.executor = new ThreadPoolExecutor(
                 CPU_THREADS_COUNT,
-                CPU_THREADS_COUNT,
+                CPU_THREADS_COUNT * MAX_CPU_THREADS_TIMES,
                 KEEPALIVE_MILLIS,
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(MAX_WORK_QUEUE_SIZE),
@@ -65,6 +66,7 @@ public class RequestExecutor {
                 sendResponse(response, session);
             });
         } catch (RejectedExecutionException e) { // Queue overflow
+            LOGGER.error("Work queue overflow: task cannot be processed", e);
             sendResponse(
                     new Response(TOO_MANY_REQUESTS, Response.EMPTY),
                     session

@@ -1,6 +1,5 @@
 math.randomseed(os.time())
 
-id = 0
 headers = {}
 headers["Host"] = "localhost:8080"
 
@@ -15,6 +14,6 @@ end
 
 request = function()
     length = math.random(3, 100)
-    id = id + 1
+    id = math.random(0, 100000)
     return wrk.format("PUT", "/v0/entity?id=" .. id, headers, strand(length))
 end

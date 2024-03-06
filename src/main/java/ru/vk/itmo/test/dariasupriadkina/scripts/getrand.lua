@@ -5,6 +5,6 @@ headers = {}
 headers["Host"] = "localhost:8080"
 
 request = function()
-    id = math.random(0, 100000)
+    id = math.random(0, 1000000)
     return wrk.format("GET", url .. id, headers)
 end

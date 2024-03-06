@@ -34,7 +34,8 @@ public class Server extends HttpServer {
     private final Set<Integer> permittedMethods =
             Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
 
-    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ThreadPoolExecutor executorService)
+    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
+                  ThreadPoolExecutor executorService)
             throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;

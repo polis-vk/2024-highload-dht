@@ -12,7 +12,7 @@ import java.util.concurrent.ExecutionException;
 public final class TestServer {
 
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
-    private static final int QUEUE_SIZE = 256;
+    private static final int QUEUE_SIZE = 1024;
 
     private TestServer() {
     }
@@ -25,7 +25,7 @@ public final class TestServer {
                 List.of(url),
                 Paths.get("./"));
       ServiceIml serviceIml = new ServiceIml(serviceConfig, new Config(serviceConfig.workingDir(), 1024 * 1024),
-                new WorkerConfig(THREADS * 2, THREADS * 2, QUEUE_SIZE, 30));
+                new WorkerConfig(THREADS, THREADS, QUEUE_SIZE, 30));
         serviceIml.start().get();
     }
 }

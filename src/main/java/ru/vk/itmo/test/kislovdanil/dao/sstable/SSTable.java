@@ -220,5 +220,4 @@ public class SSTable implements Comparable<SSTable>, Iterable<Entry<MemorySegmen
     public int compareTo(SSTable o) {
         return Long.compare(this.tableId, o.tableId);
     }
-
 }

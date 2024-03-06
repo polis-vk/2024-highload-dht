@@ -35,6 +35,7 @@ final class Metadata {
         summaryFile.set(ValueLayout.JAVA_BOOLEAN, sumOffset + 4 * Long.BYTES, entry.value() == null);
         summaryFile.set(ValueLayout.JAVA_LONG_UNALIGNED, sumOffset + 3 * Long.BYTES,
                 entry.value() == null ? 0 : entry.value().byteSize());
+
     }
 
 }

@@ -19,8 +19,8 @@ import java.util.concurrent.TimeUnit;
 public class StorageService implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
-    private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
-    private static final int QUEUE_CAPACITY = 128;
+    private static final int POOL_SIZE = 32;
+    private static final int QUEUE_CAPACITY = 256;
     private StorageServer server;
     private ExecutorService executor;
     private final ServiceConfig config;

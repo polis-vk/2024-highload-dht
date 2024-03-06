@@ -45,7 +45,6 @@ public class StorageServer extends HttpServer {
         acceptorConfig.port = config.selfPort();
       
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
     }

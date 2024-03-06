@@ -14,11 +14,11 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 368px}
+	#canvas {width: 100%; height: 256px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
-<h1>Flame Graph</h1>
+<h1>Lock profile</h1>
 <header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
 <header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
 <canvas id='canvas'></canvas>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(23);
+	const levels = Array(16);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -251,338 +251,80 @@
 
 const cpool = [
 'all',
-' AbsSeq::davg',
-'!gent_OnAttach',
-' C2Compiler::compile_method',
-'!ompile::Code_Gen',
-'+mpile',
-')Optimize',
-'\'Broker::compiler_thread_loop',
-'/invoke_compiler_on_method',
-'"ncurrentGCThread::run',
-' FlightRecorder::timerTick',
-' G1ConcurrentRefine::adjust_threads_periodically',
-'2Thread::run_service',
-'"EvacuateRegionsBaseTask::evacuate_live_objects',
-';work',
-'"ParEvacuateFollowersClosure::do_void',
-'%ScanThreadState::do_copy_to_survivor_space',
-'6steal_and_trim_queue',
-'6trim_queue_to_threshold',
-'#olicy::calculate_young_desired_length',
-'*predict_base_time_ms',
-'3ytes_to_copy',
-'*revise_young_list_target_length',
-'#rimaryConcurrentRefineThread::do_refinement_step',
-' JNIEnv_::NewObject',
-'!avaThread::thread_main_inner',
-'!vmtiAgent::load',
-'*List::load_agent',
-'*Thread::start_function_wrapper',
-' Mutex::lock_without_safepoint_check',
-' OS::getTotalCpuTime',
-' Parse::Parse',
-'\'do_all_blocks',
-'*call',
-'*one_block',
-'%Generator::generate',
-'!haseCFG::do_global_code_motion',
-'*global_code_motion',
-'*schedule_early',
-'&haitin::Register_Allocate',
-'.gather_lrg_masks',
-'%IdealLoop::build_and_optimize',
-'6loop_late',
-'0optimize',
-'!redictedCallGenerator::generate',
-'"ofiler::runInternal',
-'*start',
-'/Timer',
-'*timerLoop',
-' Recording::cpuMonitorCycle',
-'"gMask::is_vector',
-'"questHandler0_get.handleRequest',
-' SuspendibleThreadSet::join',
-' Thread::call_run',
-' WorkerThread::run',
-' __commpage_gettimeofday_internal',
-'!pthread_start',
-' attach_listener_thread_entry',
-' clock_gettime',
-'!onvertReturnVal',
-' gettimeofday',
-' host_processor_info',
-' java/lang/System$2.getCarrierThreadLocal',
-'*ThreadLocal.getCarrierThreadLocal',
-'*foreign/MemorySegment.get',
-'@mismatch',
-'*invoke/VarHandleGuards.guard_LJ_I',
-':SegmentAsBytes.get',
-'%nio/ByteBuffer.put',
-'7Buffer',
-')HeapByteBuffer.put',
-'%util/ArrayDeque.elementAt',
-'5pollFirst',
-'*concurrent/locks/AbstractQueuedSynchronizer.release',
-'VsignalNext',
-';ReentrantLock.unlock',
-'!byte_arraycopy',
-'&disjoint_arraycopy',
-'!dk/internal/foreign/AbstractMemorySegmentImpl.mismatch',
-'5MemorySessionImpl.checkValidStateRaw',
-'-misc/CarrierThreadLocal.get',
-'2ScopedMemoryAccess.copyMemory',
-'OInternal',
-'EgetByte',
-'LInternal',
-'2Unsafe.checkOffset',
-'>Pointer',
-'?rimitivePointer',
-':opyMemory',
-'CChecks',
-' kevent',
-' loadLNode::out_RegMask',
-'$_agent',
-' mach_absolute_time',
-'%msg2_trap',
-' one/nio/http/HttpServer.handleRequest',
+' RequestHandler0_entity.handleRequest',
+' java.util.concurrent.locks.ReentrantLock$NonfairSync',
+'$/lang/Thread.run',
+'4With',
+'%util/concurrent/ArrayBlockingQueue.offer',
+'Htake',
+'5ThreadPoolExecutor$Worker.run',
+'G.execute',
+'HgetTask',
+'HrunWorker',
+'5locks/AbstractQueuedSynchronizer$ConditionObject.await',
+'U.acquire',
+']Interruptibly',
+';LockSupport.park',
+';ReentrantLock$Sync.lock',
+'RInterruptibly',
+'H.lock',
+'MInterruptibly',
+'!dk/internal/misc/Unsafe.park',
+' one.nio.http.HttpSession',
+'#/nio/http/HttpServer.handleRequest',
 '3ssion.handleParsedRequest',
-'9parseRequest',
-':rocessHttpBuffer',
+'9processHttpBuffer',
 '@Read',
 '9sendResponse',
-'9writeResponse',
-'-Request.getHeader',
-'8Parameter',
-'/sponse.toBytes',
-'(net/JavaSelector.iteratorFor',
-'9select',
-'1ocket.read',
-'7write',
-',Session$ArrayQueueItem.write',
-'3.process',
-'4read',
-'4write',
+'(net/Session.process',
 '(server/SelectorThread.run',
-'(util/ByteArrayBuilder.append',
-'-Utf8.isAsciiString',
-'2length',
-'2read',
-'2write',
-'!s::javaTimeMillis',
-' read',
-'!u/vk/itmo/test/chebotinalexandr/StorageServer.get',
-'Adao/BloomFilter.sstableMayContain',
-'EMurmurHash.hash64',
-'ENotOnlyInMemoryDao.get',
-'[FromDisk',
-'ESSTableUtils.binarySearch',
-'Rget',
-' sun/nio/ch/IOUtil.read',
-'6IntoNativeBuffer',
-'2write',
-'7FromNativeBuffer',
-'+KQueue.poll',
-'1SelectorImpl.doSelect',
-'>processEvents',
-'+SelectorImpl.lockAndDoSelect',
-'8processDeregisterQueue',
-'8select',
-',ocketChannelImpl.read',
-'=write',
-'1Dispatcher.read',
-'@0',
-'<write',
-'A0',
-'+Util.getTemporaryDirectBuffer',
-' thread_native_entry',
-'\'start',
-'!lv_get_addr',
-' unknown_Java',
-' void G1ScanEvacuatedObjClosure::do_oop_work<narrowOop>',
-'%OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>',
-' write'
+' ru/vk/itmo/test/chebotinalexandr/StorageServer$$Lambda.0x000000012e0cfa78.run',
+'N.handleRequest',
+'Olambda$handleRequest$0'
 ];
 unpack(cpool);
 
-n(3,640)
-u(905,622)
-u(849,125,1,0,0)
-u(841,1)
-n(1097,124,1,0,0)
-u(1081,124,1,0,0)
-f(1065,5,1,123)
-f(1057,6,3,117)
-f(723,7,2,115)
-f(1073,6,115,2)
-n(1090,1)
-u(578)
-u(570)
-f(881,2,1,497)
-u(793,497,2,0,0)
-f(785,4,1,434)
-f(769,5,1,426,1,0,0)
-u(761,426,1,0,0)
-f(409,7,1,425)
-u(801,62,4,0,0)
-u(809,59,1,0,0)
-f(833,10,1,3)
-u(914)
-u(930,2)
-u(619)
-f(946,12,2,1)
-u(946)
-f(897,10,1,55)
-u(897)
-u(873,55,5,0,0)
-u(865,55,5,0,0)
-u(1113,55,5,0,0)
-u(602,3)
-u(586)
-u(594)
-u(956)
-u(467)
-u(443,1)
-n(483,2)
-u(443)
-u(747)
-f(1041,15,2,52,2,0,0)
-u(1041,52,2,0,0)
-u(1049,51,1,0,0)
-u(1137,51,1,0,0)
-u(1145,51,1,0,0)
-f(475,20,1,1)
-n(1211,49)
-f(1154,17,49,1)
-u(642)
-u(498)
-u(506)
-f(818,9,1,3)
-f(611,10,1,1)
-n(619)
-f(826,8,1,5)
-f(611,9,3,1)
-n(619)
-f(969,8,1,358)
-u(993)
-u(993)
-u(1001)
-f(978,12,8,211,91,0,0)
-f(985,13,91,120)
-f(1017,12,120,139,20,0,0)
-u(1009,139,20,0,0)
-u(514,9,7,0,0)
-u(530,9,7,0,0)
-u(538,9,7,0,0)
-u(666,9,7,0,0)
-u(674,9,7,0,0)
-u(634,9,7,0,0)
-f(625,20,7,2)
-f(521,14,2,130,13,0,0)
-f(625,15,13,117)
-f(778,5,117,3)
-u(938)
-u(938)
-u(922)
-f(938,5,3,4)
-u(938)
-u(922)
-f(889,4,4,62,1,0,0)
-u(857,62,1,0,0)
-u(1105,62,1,0,0)
-u(602,1)
-u(586)
-u(594)
-u(956)
-u(467)
-u(483)
-u(443)
-u(747)
-f(1025,7,1,61)
-u(1025)
-u(562,2)
-u(546)
-u(554)
-u(650)
-u(658)
-u(706)
-u(714)
-u(698)
-u(690)
-u(682)
-f(1033,9,2,59,2,0,0)
-u(1121,59,2,0,0)
-u(1129,59,2,0,0)
-u(475,2)
-n(963,57)
-f(1171,1,57,17)
-u(451)
-u(1163)
-u(428)
-u(76,2)
-u(100)
-u(188,1)
-u(92)
-u(180)
-u(156)
-u(164)
-u(172)
-u(12)
-f(420,7,1)
-u(236)
-f(204,5,1,7)
-u(60,5)
-u(68)
-u(28)
-u(44)
-u(36,3)
-u(292,1)
-u(300)
-u(308)
-f(316,11,1,2)
-u(324,1)
-u(404)
-f(732,12,1)
-f(52,10,1)
-u(348)
-u(332)
-u(340)
-f(284,10,1)
-u(252)
-u(260)
-u(276)
-u(268)
-u(356)
-u(284)
-u(252)
-u(1179)
-f(228,6,1)
-u(388)
-u(84)
-u(396)
-u(244)
-u(491)
-u(755)
-f(459,6,1)
-u(739)
-u(220)
-u(212)
-u(19)
-u(364)
-u(372)
-u(380)
-u(196)
-f(436,5,1,8)
-u(116)
-u(108)
-u(124)
-u(140)
-u(148)
-f(132,11,1,7)
-f(1204,12,6,1)
-u(1196)
-f(1187,1,1)
-u(956)
+n(3,92732)
+u(25,51000)
+u(33)
+u(57)
+u(81)
+u(73,49630)
+u(49)
+u(89,8537)
+u(97)
+u(113)
+u(153)
+u(18)
+f(145,7,8537,41093)
+u(129)
+u(105)
+u(97)
+u(113)
+u(153)
+u(18)
+f(225,5,41093,1370)
+u(241)
+u(169)
+u(9)
+u(201)
+u(162)
+f(217,1,1370,41732)
+u(209)
+u(162,3636)
+n(193,38096)
+u(185)
+u(177)
+u(233)
+u(65)
+u(41)
+u(137)
+u(121)
+u(97)
+u(97)
+u(113)
+u(153)
+u(18)
 
 search();
 </script></body></html>

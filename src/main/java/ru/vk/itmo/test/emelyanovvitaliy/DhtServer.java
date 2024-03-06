@@ -20,7 +20,7 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -34,11 +34,11 @@ public class DhtServer extends HttpServer {
     public static final long KEEP_ALIVE_TIME_MS = 1000;
     public static final int REQUEST_TIMEOUT_MS = 1024;
     private final ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-            Runtime.getRuntime().availableProcessors(),
+            Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
             Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
             KEEP_ALIVE_TIME_MS,
             TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(1 << 16)
+            new SynchronousQueue<>()
     );
     private final ReferenceDao dao;
 

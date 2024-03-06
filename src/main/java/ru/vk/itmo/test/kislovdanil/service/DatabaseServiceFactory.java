@@ -15,7 +15,7 @@ public class DatabaseServiceFactory implements ServiceFactory.Factory {
     public Service create(ServiceConfig serverConfig) {
         Config daoConfig = new Config(
                 serverConfig.workingDir().resolve(Paths.get("dao", "memtables")),
-                1024 * 1024 * 10); // ~1/3 of working memory
+                1024 * 1024 * 10);
         try {
             return new DatabaseService(serverConfig, daoConfig);
         } catch (IOException e) {

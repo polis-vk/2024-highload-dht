@@ -25,8 +25,12 @@ import java.util.concurrent.TimeUnit;
 public class DatabaseHttpServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
-    private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(4, 12,
-            10, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100000));
+    private static final int CORE_POOL_SIZE = 4;
+    private static final int MAX_POOL_SIZE = 12;
+    private static final int KEEP_ALIVE_TIME_SECONDS = 10;
+    private static final int QUEUE_CAPACITY = 100000;
+    private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE,
+            KEEP_ALIVE_TIME_SECONDS, TimeUnit.SECONDS, new ArrayBlockingQueue<>(QUEUE_CAPACITY));
 
     public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(transformConfig(config));

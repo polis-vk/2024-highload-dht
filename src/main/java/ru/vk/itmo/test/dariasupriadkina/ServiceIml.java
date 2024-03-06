@@ -32,6 +32,7 @@ public class ServiceIml implements Service {
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
         workerThreadPoolExecutor = new WorkerThreadPoolExecutor(workerConfig);
+        workerThreadPoolExecutor.prestartAllCoreThreads();
 
         server = new Server(serviceConfig, dao, workerThreadPoolExecutor);
 

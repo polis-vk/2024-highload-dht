@@ -1,3 +1,5 @@
+math.randomseed(os.time())
+
 id = 0
 headers = {}
 headers["Host"] = "localhost:8080"

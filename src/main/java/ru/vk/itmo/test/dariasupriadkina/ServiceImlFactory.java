@@ -14,9 +14,9 @@ public class ServiceImlFactory implements ServiceFactory.Factory {
     private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024;
 
     //    Оптималные значения будут подбираться в ходе выполнения отчета
-    private static final int CORE_POOL_SIZE = 10;
-    private static final int MAXIMUM_POOL_SIZE = 10;
-    private static final int QUEUE_SIZE = 100;
+    private static final int CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors();
+    private static final int MAXIMUM_POOL_SIZE = Runtime.getRuntime().availableProcessors();
+    private static final int QUEUE_SIZE = 1024;
     private static final int SHUTDOWN_TIMEOUT_SEC = 30;
 
     @Override

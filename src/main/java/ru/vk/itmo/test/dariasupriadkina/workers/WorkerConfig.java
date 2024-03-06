@@ -6,13 +6,13 @@ import java.util.concurrent.TimeUnit;
 
 public class WorkerConfig {
 
-    public static final long KEEP_ALIVE_TIME = 0L;
+    public static final long KEEP_ALIVE_TIME = 1000L;
     public static final TimeUnit KEEP_ALIVE_TIME_SECONDS = TimeUnit.SECONDS;
 
     private final int corePoolSize;
     private final int maximumPoolSize;
     private final int shutdownTimeoutSec;
-    private final BlockingQueue<Runnable> workQueue;
+    private final ArrayBlockingQueue<Runnable> workQueue;
 
     public WorkerConfig(int corePoolSize, int maximumPoolSize, int queueSize, int shutdownTimeoutSec) {
         this.corePoolSize = corePoolSize;

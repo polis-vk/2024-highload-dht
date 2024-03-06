@@ -32,11 +32,9 @@ import java.util.concurrent.TimeUnit;
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String ENTITY_PATH = "/v0/entity";
-    private static final long MEM_DAO_SIZE = 1L << 16;
-    private static final int KEEP_ALIVE_THREAD = 30;
-    private static final TimeUnit KEEP_ALIVE_THREAD_UNIT = TimeUnit.SECONDS;
-    private static final int AWAIT_TERMINATION_TIME = 5;
-    private static final TimeUnit AWAIT_TERMINATION_UNIT = TimeUnit.MINUTES;
+    private static final long MEM_DAO_SIZE = 1L << 22;
+    private static final int KEEP_ALIVE_THREAD_SECONDS = 30;
+    private static final int AWAIT_TERMINATION_TIME_MINUTES = 5;
     public static final int QUEUE_CAPACITY = 1024;
     private final ExecutorService executorService;
 
@@ -47,7 +45,7 @@ public class Server extends HttpServer {
         } catch (IOException e) {
             throw new UncheckedIOException("Can't start server", e);
         }
-        executorService = getExecutorService();
+        executorService = createExecutorService();
     }
 
     @Path(ENTITY_PATH)
@@ -102,31 +100,35 @@ public class Server extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            Future<?> submit = executorService.submit(() -> {
-                try {
-                    handleRequestWrapper(request, session);
-                } catch (IOException e) {
-                    throw new UncheckedIOException("Error while trying wrap request: " + request, e);
-                }
-            });
+            Future<?> submit = executorService.submit(() ->
+                handleRequestWrapper(request, session)
+            );
         } catch (RejectedExecutionException e) {
             Response response = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
             session.sendResponse(response);
         }
     }
 
-    private void handleRequestWrapper(Request request, HttpSession session) throws IOException {
+    private void handleRequestWrapper(Request request, HttpSession session) {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
+            errorWrapper(request, session);
+        }
+    }
+
+    private void errorWrapper(Request request, HttpSession session) {
+        try {
             handleDefault(request, session);
+        } catch (IOException ignore) {
+            // ignore
         }
     }
 
     @Override
     public synchronized void stop() {
-        shutdownAwait(executorService);
         super.stop();
+        shutdownAwait(executorService);
         try {
             dao.close();
         } catch (IOException e) {
@@ -137,7 +139,7 @@ public class Server extends HttpServer {
     private static void shutdownAwait(ExecutorService executorService) {
         executorService.shutdown();
         try {
-            if (!executorService.awaitTermination(AWAIT_TERMINATION_TIME, AWAIT_TERMINATION_UNIT)) {
+            if (!executorService.awaitTermination(AWAIT_TERMINATION_TIME_MINUTES, TimeUnit.MINUTES)) {
                 executorService.shutdownNow();
             }
         } catch (InterruptedException e) {
@@ -145,13 +147,13 @@ public class Server extends HttpServer {
         }
     }
 
-    private static ExecutorService getExecutorService() {
+    private static ExecutorService createExecutorService() {
         int cores = Runtime.getRuntime().availableProcessors();
         return new ThreadPoolExecutor(
             cores / 2,
             cores,
-            KEEP_ALIVE_THREAD,
-            KEEP_ALIVE_THREAD_UNIT,
+            KEEP_ALIVE_THREAD_SECONDS,
+            TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(QUEUE_CAPACITY),
             Executors.defaultThreadFactory(),
             new ThreadPoolExecutor.DiscardOldestPolicy()

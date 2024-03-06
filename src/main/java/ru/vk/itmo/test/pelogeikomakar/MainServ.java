@@ -21,7 +21,7 @@ public final class MainServ {
         Path daoPath = Files.createTempDirectory(basePath, "tmpServ");
 
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http://localhost", List.of("http://localhost"), daoPath);
-        Config daoConfig = new Config(daoPath, 16_384L);
+        Config daoConfig = new Config(daoPath, 160_384L);
 
         ExecutorService execServ = ExecutorServiceFactory.newExecutorService();
 

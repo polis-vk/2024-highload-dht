@@ -18,7 +18,7 @@ wrk -d 30 -t 1 -c 1 -R 90 -L -s ./get_req.lua http://127.0.0.1:8080
 ```
 Вставка:
 ```shell
-wrk -d 70 -t 1 -c 1 -R 5300 -L -s ./../put_req.lua http://127.0.0.1:8080
+wrk -d 55 -t 1 -c 1 -R 7000 -L -s ./lua/put_req.lua http://127.0.0.1:8080
 ```
 
 
@@ -202,6 +202,7 @@ Transfer/sec:      7.05KB
 
 Настройка окружения:
 ```shell
+cd /opt/async-profiler-3.0-linux-x64
 export PATH=$PATH:/opt/async-profiler-3.0-linux-x64
 export JAVA_HOME=/home/user/.jdks/openjdk-21.0.1
 export PATH=$JAVA_HOME/bin:$PATH

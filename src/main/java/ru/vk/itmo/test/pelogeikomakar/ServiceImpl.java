@@ -25,7 +25,7 @@ public class ServiceImpl implements Service {
     private static final Logger log = LoggerFactory.getLogger(ServiceImpl.class);
 
     public ServiceImpl(ServiceConfig config) {
-        daoConfig = new Config(config.workingDir(), 16_384L);
+        daoConfig = new Config(config.workingDir(), 160_384L);
         serviceConfig = config;
     }
 
@@ -61,7 +61,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

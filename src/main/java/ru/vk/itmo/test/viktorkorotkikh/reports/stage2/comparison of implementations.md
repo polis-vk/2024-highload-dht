@@ -18,7 +18,7 @@
             - [ThreadPool ArrayBlockingQueue CPU](#threadpool-arrayblockingqueue-cpu-1)
             - [Virtual Threads Alloc](#virtual-threads-alloc-1)
             - [ThreadPool LinkedBlockingQueue Alloc](#threadpool-linkedblockingqueue-alloc-1)
-            - [ThreadPool ArrayBlockingQueue CPU](#threadpool-arrayblockingqueue-cpu-2)
+            - [ThreadPool ArrayBlockingQueue Alloc](#threadpool-arrayblockingqueue-alloc-1)
             - [Virtual Threads Lock](#virtual-threads-lock-1)
             - [ThreadPool LinkedBlockingQueue Lock](#threadpool-linkedblockingqueue-lock-1)
             - [ThreadPool ArrayBlockingQueue Lock](#threadpool-arrayblockingqueue-lock-1)
@@ -26,20 +26,20 @@
         + [PUT](#put-1)
             - [Virtual Threads CPU](#virtual-threads-cpu-2)
             - [ThreadPool LinkedBlockingQueue CPU](#threadpool-linkedblockingqueue-cpu-2)
-            - [ThreadPool ArrayBlockingQueue CPU](#threadpool-arrayblockingqueue-cpu-3)
+            - [ThreadPool ArrayBlockingQueue CPU](#threadpool-arrayblockingqueue-cpu-2)
             - [Virtual Threads Alloc](#virtual-threads-alloc-2)
             - [ThreadPool LinkedBlockingQueue Alloc](#threadpool-linkedblockingqueue-alloc-2)
-            - [ThreadPool ArrayBlockingQueue Alloc](#threadpool-arrayblockingqueue-alloc-1)
+            - [ThreadPool ArrayBlockingQueue Alloc](#threadpool-arrayblockingqueue-alloc-2)
             - [Virtual Threads Lock](#virtual-threads-lock-2)
             - [ThreadPool LinkedBlockingQueue Lock](#threadpool-linkedblockingqueue-lock-2)
             - [ThreadPool ArrayBlockingQueue Lock](#threadpool-arrayblockingqueue-lock-2)
         + [GET](#get-1)
             - [Virtual Threads CPU](#virtual-threads-cpu-3)
             - [ThreadPool LinkedBlockingQueue CPU](#threadpool-linkedblockingqueue-cpu-3)
-            - [ThreadPool ArrayBlockingQueue CPU](#threadpool-arrayblockingqueue-cpu-4)
+            - [ThreadPool ArrayBlockingQueue CPU](#threadpool-arrayblockingqueue-cpu-3)
             - [Virtual Threads Alloc](#virtual-threads-alloc-3)
             - [ThreadPool LinkedBlockingQueue Alloc](#threadpool-linkedblockingqueue-alloc-3)
-            - [ThreadPool ArrayBlockingQueue CPU](#threadpool-arrayblockingqueue-cpu-5)
+            - [ThreadPool ArrayBlockingQueue Alloc](#threadpool-arrayblockingqueue-alloc-3)
             - [Virtual Threads Lock](#virtual-threads-lock-3)
             - [ThreadPool LinkedBlockingQueue Lock](#threadpool-linkedblockingqueue-lock-3)
             - [ThreadPool ArrayBlockingQueue Lock](#threadpool-arrayblockingqueue-lock-3)
@@ -154,7 +154,7 @@ ArrayBlockingQueue тратит больше времени на блокиро�
 
 ![GET-1connection-pool-linkedqueue-60k-alloc.png](GET-1connection-pool-linkedqueue-alloc.png)
 
-#### ThreadPool ArrayBlockingQueue CPU
+#### ThreadPool ArrayBlockingQueue Alloc
 
 ![GET-1connection-pool-arrayqueue-60k-alloc.png](GET-1connection-pool-arrayqueue-alloc.png)
 
@@ -186,7 +186,7 @@ ArrayBlockingQueue блокируется только на LSMCustomSession, в
 
 ### PUT
 
-| [virtualThreads](PUT-64connection-virtualthreads-60k.txt)                                                                                                                                                                                                                                                                                                                                                              | [TP + LinkedBQ](PUT-1connection-pool-linkedqueue-60k.txt)                                                                                                                                                                                                                                                                                                                                                              | [TP + ArrayBQ](PUT-1connection-pool-arrayqueue-60k.txt)                                                                                                                                                                                                                                                                                                                                                                |
+| [virtualThreads](PUT-64connection-virtualthreads-60k.txt)                                                                                                                                                                                                                                                                                                                                                              | [TP + LinkedBQ](PUT-64connection-pool-linkedqueue-60k.txt)                                                                                                                                                                                                                                                                                                                                                             | [TP + ArrayBQ](PUT-64connection-pool-arrayqueue-60k.txt)                                                                                                                                                                                                                                                                                                                                                               |
 |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | <pre>  Thread Stats   Avg      Stdev     Max   +/- Stdev<br>    Latency     1.12ms  722.77us  12.70ms   80.67%<br>    Req/Sec    63.44k     6.15k  134.78k    81.52%<br>  Latency Distribution (HdrHistogram - Recorded Latency)<br> 50.000%    1.10ms<br> 75.000%    1.45ms<br> 90.000%    1.81ms<br> 99.000%    2.37ms<br> 99.900%    9.94ms<br> 99.990%   11.53ms<br> 99.999%   12.14ms<br>100.000%   12.71ms</pre> | <pre>  Thread Stats   Avg      Stdev     Max   +/- Stdev<br>    Latency     1.05ms  508.43us   3.52ms   65.01%<br>    Req/Sec    63.17k     4.48k   77.89k    72.38%<br>  Latency Distribution (HdrHistogram - Recorded Latency)<br> 50.000%    1.07ms<br> 75.000%    1.41ms<br> 90.000%    1.75ms<br> 99.000%    2.18ms<br> 99.900%    2.43ms<br> 99.990%    2.62ms<br> 99.999%    3.00ms<br>100.000%    3.52ms</pre> | <pre>  Thread Stats   Avg      Stdev     Max   +/- Stdev<br>    Latency     1.06ms  511.41us   3.84ms   65.04%<br>    Req/Sec    63.21k     4.59k   78.11k    73.15%<br>  Latency Distribution (HdrHistogram - Recorded Latency)<br> 50.000%    1.08ms<br> 75.000%    1.41ms<br> 90.000%    1.76ms<br> 99.000%    2.20ms<br> 99.900%    2.45ms<br> 99.990%    2.69ms<br> 99.999%    3.40ms<br>100.000%    3.84ms</pre> |
 | ![PUT-1connection-virtualthreads-60k-histogram.png](PUT-64connection-virtualthreads-60k-histogram.png)                                                                                                                                                                                                                                                                                                                 | ![PUT-64connection-pool-linkedqueue-60k-histogram.png](PUT-64connection-pool-linkedqueue-60k-histogram.png)                                                                                                                                                                                                                                                                                                            | ![PUT-64connection-pool-arrayqueue-60k-histogram.png](PUT-64connection-pool-arrayqueue-60k-histogram.png)                                                                                                                                                                                                                                                                                                              |
@@ -211,7 +211,7 @@ LinkedBlockingQueue.
 
 #### ThreadPool ArrayBlockingQueue CPU
 
-![PUT-1connection-pool-arrayqueue-60k-cpu.png](PUT-1connection-pool-arrayqueue-60k-cpu.png)
+![PUT-64connection-pool-arrayqueue-60k-cpu.png](PUT-64connection-pool-arrayqueue-60k-cpu.png)
 
 Профиль CPU arrayqueue и linkedqueue имеют примерно одинаковый.
 
@@ -284,7 +284,7 @@ Virtual Threads тоже есть, но ближе к концу. Также т�
 
 ![GET-64connection-pool-linkedqueue-60k-alloc.png](GET-64connection-pool-linkedqueue-alloc.png)
 
-#### ThreadPool ArrayBlockingQueue CPU
+#### ThreadPool ArrayBlockingQueue Alloc
 
 ![GET-64connection-pool-arrayqueue-60k-alloc.png](GET-64connection-pool-arrayqueue-alloc.png)
 

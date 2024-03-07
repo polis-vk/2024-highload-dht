@@ -21,7 +21,12 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class HttpServerImpl extends HttpServer {
 
@@ -63,28 +68,29 @@ public class HttpServerImpl extends HttpServer {
         super.start();
     }
 
-    private void stopExecutor() {
-        boolean terminated = executorService.isTerminated();
-        if (!terminated) {
-            executorService.shutdown();
-            boolean interrupted = false;
-            while (!terminated) {
-                try {
-                    terminated = executorService.awaitTermination(1L, TimeUnit.MILLISECONDS);
-                } catch (InterruptedException e) {
-                    if (!interrupted) {
-                        executorService.shutdownNow();
-                        interrupted = true;
-                    }
+    private static void closeExecutorService(ExecutorService exec) {
+        if (exec == null) {
+            return;
+        }
+
+        exec.shutdownNow();
+        while (!exec.isTerminated()) {
+            try {
+                if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
+                    exec.shutdownNow();
                 }
+            } catch (InterruptedException e) {
+                exec.shutdownNow();
+                System.err.println("Exception while closing service" + e.getMessage());
             }
         }
     }
+
     @Override
     public synchronized void stop() {
         super.stop();
         try {
-            stopExecutor();
+            closeExecutorService(executorService);
             daoImpl.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);

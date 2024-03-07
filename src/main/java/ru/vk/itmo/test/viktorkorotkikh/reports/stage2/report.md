@@ -74,14 +74,6 @@ ArrayBlockingQueue почему-то не блокируется на сесси
 
 Профили CPU такие же, как и при 1 connection 1 thread.
 
-#### Virtual Threads Alloc
-
-![GET-64connection-virtualthreads-alloc.png](GET-64connection-virtualthreads-alloc.png)
-
-#### ThreadPool LinkedBlockingQueue Alloc
-
-![GET-64connection-pool-linkedqueue-60k-alloc.png](GET-64connection-pool-linkedqueue-alloc.png)
-
 #### Alloc profile
 
 ![GET-64connection-pool-arrayqueue-60k-alloc.png](GET-64connection-pool-arrayqueue-alloc.png)
@@ -89,3 +81,134 @@ ArrayBlockingQueue почему-то не блокируется на сесси
 #### Lock profile
 
 ![GET-64connection-pool-arrayqueue-lock.png](GET-64connection-pool-arrayqueue-lock.png)
+
+
+## 4 threads, 64 connections
+
+Использовать будем модифицированные скрипты:
+
+[stage-2-GET.lua](../../scripts/stage-2-GET.lua)
+
+[stage-2-PUT.lua](../../scripts/stage-2-PUT.lua)
+
+### PUT
+
+[PUT-60k-4threads.txt](PUT-60k-4threads.txt)
+
+```
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   816.87us  360.50us   3.39ms   57.14%
+    Req/Sec    15.47k   706.00    18.89k    74.65%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%  811.00us
+ 75.000%    1.13ms
+ 90.000%    1.31ms
+ 99.000%    1.46ms
+ 99.900%    1.58ms
+ 99.990%    2.04ms
+ 99.999%    3.01ms
+100.000%    3.39ms
+```
+
+![PUT-60k-4threads-histogram.png](PUT-60k-4threads-histogram.png)
+
+Есть полка около 1.5мс с 90% до 99.9%. Затем рост задержки.
+
+Есть не двухсотые ответы - всё дело в фоновых флашах.
+
+Относительно одного треда тут задержки чуть подросли. Возможно дело в том, что wrk2 запускается на той же машине.
+
+#### CPU profile
+
+![PUT-60k-4threads-cpu.png](PUT-60k-4threads-cpu.png)
+
+#### Alloc profile
+
+![PUT-60k-4threads-alloc.png](PUT-60k-4threads-alloc.png)
+
+#### Lock profile
+
+![PUT-60k-4threads-lock.png](PUT-60k-4threads-lock.png)
+
+В целом ничего нового.
+
+
+### GET
+
+[GET-30k-4threads-16workers-2.txt](GET-30k-4threads-16workers-2.txt)
+
+
+```
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   817.85us  380.91us  11.99ms   59.88%
+    Req/Sec     8.02k   398.13    10.22k    65.03%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%  825.00us
+ 75.000%    1.13ms
+ 90.000%    1.32ms
+ 99.000%    1.55ms
+ 99.900%    1.76ms
+ 99.990%    2.60ms
+ 99.999%    5.82ms
+100.000%   12.00ms
+```
+
+![GET-30k-4threads-histogram.png](GET-30k-4threads-histogram.png)
+
+Тут нам повезло - мы попали по всем ключам. Хотя всё равно есть резкий рост в конце. Возможно там мы ходили в самые 
+старые sstable. 
+
+[GET-30k-4threads-unlacky.txt](GET-30k-4threads-unlacky.txt)
+
+````
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.15ms    7.84ms 219.26ms   97.89%
+    Req/Sec     7.91k     0.93k   19.00k    91.00%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.21ms
+ 75.000%    1.68ms
+ 90.000%    2.15ms
+ 99.000%   27.34ms
+ 99.900%  122.18ms
+ 99.990%  183.29ms
+ 99.999%  211.84ms
+100.000%  219.39ms
+````
+
+А вот тут уже невезуха - пришлось все sstable обойти. К тому же очень много запросов мимо: 1735743 из 1798859.
+
+#### CPU profile
+
+![GET-30k-4threads-cpu.png](GET-30k-4threads-cpu.png)
+
+В целом всё как обычно - много времени на mistmatch, так как по всем таблицам делаем бинарный поиск.
+
+#### Alloc profile
+
+![GET-30k-4threads-alloc.png](GET-30k-4threads-alloc.png)
+
+#### Lock profile
+
+![GET-30k-4threads-lock.png](GET-30k-4threads-lock.png)
+
+## Увеличим количество wokrers до 256
+
+[GET-30k-4threads-256workers-2.txt](GET-30k-4threads-256workers-2.txt)
+
+```
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.12ms
+ 75.000%    1.51ms
+ 90.000%    1.82ms
+ 99.000%    2.32ms
+ 99.900%    2.68ms
+ 99.990%    9.42ms
+ 99.999%   12.22ms
+100.000%   13.82ms
+```
+
+![GET-30k-4threads-256workers-2-histogram.png](GET-30k-4threads-256workers-2-histogram.png)
+
+Тут мы тоже попали и увеличение сыграло нам на руку - задержки уменьшились. Но если нам приходится обходить все sstable 
+и мы ключ не находим, то увеличение количества потоков не помогает. Возможно нужно ставить ещё больше, например 1024. 
+Тогда может быть и будет профит.

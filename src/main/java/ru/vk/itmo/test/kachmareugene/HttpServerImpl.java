@@ -27,7 +27,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 public class HttpServerImpl extends HttpServer {
 
@@ -75,14 +74,19 @@ public class HttpServerImpl extends HttpServer {
         }
 
         exec.shutdownNow();
-        while (!exec.isTerminated()) {
-            try {
-                if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
-                    exec.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                exec.shutdownNow();
+        try {
+            if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
+                return;
             }
+        } catch (InterruptedException e) {
+            exec.shutdownNow();
+        }
+
+        exec.shutdownNow();
+        try {
+            exec.awaitTermination(20, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            exec.shutdownNow();
         }
     }
 

@@ -27,10 +27,13 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
 public class HttpServerImpl extends HttpServer {
 
     private static final int CORE_POOL = 4;
+
+    private static final Logger logger = Logger.getAnonymousLogger();
     private static final int MAX_POOL = 8;
     private final BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(50);
     private final ExecutorService executorService =
@@ -81,7 +84,6 @@ public class HttpServerImpl extends HttpServer {
                 }
             } catch (InterruptedException e) {
                 exec.shutdownNow();
-                System.err.println("Exception while closing service" + e.getMessage());
             }
         }
     }

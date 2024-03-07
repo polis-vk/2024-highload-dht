@@ -18,23 +18,22 @@ public final class Main {
                         2 * 1024 * 1024
                 )
         );
-        if(Objects.isNull(args) || args.length < 2) {
-            throw new IllegalArgumentException("No arguments provided");
-        }
-        int corePoolSize = Integer.parseInt(args[0]);
-        int availableProcessors = Integer.parseInt(args[1]);
-        MyServer server = new MyServer(
-                new ServiceConfig(
-                        8080,
-                        "http://localhost",
-                        List.of("http://localhost"),
-                        data
-                ),
-                dao,
-                corePoolSize,
-                availableProcessors
+        ServiceConfig serviceConfig = new ServiceConfig(
+                8080,
+                "http://localhost",
+                List.of("http://localhost"),
+                data
         );
-        server.start();
+        MyServer myServer;
+
+        if (Objects.isNull(args) || args.length < 2) {
+            myServer = new MyServer(serviceConfig, dao);
+        } else {
+            int corePoolSize = Integer.parseInt(args[0]);
+            int availableProcessors = Integer.parseInt(args[1]);
+            myServer = new MyServer(serviceConfig, dao, corePoolSize, availableProcessors);
+        }
+        myServer.start();
     }
 
     private Main() {

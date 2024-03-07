@@ -11,7 +11,13 @@ public class MyExecutor extends ThreadPoolExecutor {
     private static final int QUEUE_CAPACITY = 1000;
 
     public MyExecutor(int corePoolSize, int maximumPoolSize) {
-        super(corePoolSize, maximumPoolSize, KEEP_ALIVE_TIME, TimeUnit.SECONDS, new LinkedBlockingQueue<>(QUEUE_CAPACITY));
+        super(
+                corePoolSize,
+                maximumPoolSize,
+                KEEP_ALIVE_TIME,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(QUEUE_CAPACITY)
+        );
     }
 
     @Override

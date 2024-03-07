@@ -90,7 +90,12 @@ public class MyServer extends HttpServer {
         this(config, dao, Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().availableProcessors());
     }
 
-    public MyServer(ServiceConfig config, ReferenceDao dao, int corePoolSize, int availableProcessors) throws IOException {
+    public MyServer(
+            ServiceConfig config,
+            ReferenceDao dao,
+            int corePoolSize,
+            int availableProcessors
+    ) throws IOException {
         super(generateServerConfig(config));
         this.dao = dao;
         this.executor = new MyExecutor(corePoolSize, availableProcessors);
@@ -165,7 +170,7 @@ public class MyServer extends HttpServer {
                         ?
                         new Response(Response.BAD_REQUEST, Response.EMPTY) :
                         new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY)
-                );
+        );
     }
 
     @Override

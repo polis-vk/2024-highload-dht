@@ -14,6 +14,6 @@ end
 
 request = function()
     length = math.random(3, 100)
-    id = math.random(0, 100000)
+    id = math.random(1, 100000000)
     return wrk.format("PUT", "/v0/entity?id=" .. id, headers, strand(length))
 end

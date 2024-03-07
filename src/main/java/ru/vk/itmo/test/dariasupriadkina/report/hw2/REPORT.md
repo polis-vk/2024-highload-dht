@@ -85,7 +85,7 @@ wrk -d 10 -t 1 -c 1 -R 4800  -L -s /Users/dariasupriadkina/IdeaProjects/2024-hig
 Об этом вероятно, может свидеельствовать и то, что никакие и зменения с точки зрения параметров запуска wrk -t (треды) и -c (connections)
 не меняли ситуацию (пробовала и на 64 конекшена, как укакзано в тз и много чего другого, но везде отличия в максимум 500rps)
 
-![](./screenshots/get_rand_2_5000rps.png)
+![get_rand_2_5000rps](./screenshots/get_rand_2_5000rps.png)
 
 Как видно на скрене, большую часть ресурсов отъедала именно работа worker'ов
 Сразу захотелось предположить, что, если мы немного увеличим количество потоков в тред-пуле, то ситуация может изменитьбся в лучшую сторону
@@ -140,24 +140,167 @@ Running 10s test @ http://localhost:8080
 
 ```
 
-Сервер из 1го этапа
+Сервер из 1го этапа - 110000rps
+
+```
+wrk -d 10 -t 8 -c 64 -R 110000  -L -s /Users/dariasupriadkina/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/dariasupriadkina/scripts/upsert.lua http://localhost:8081
+Running 10s test @ http://localhost:8081
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    22.01ms   39.77ms 294.66ms   88.20%
+    Req/Sec        nan       nan   0.00      0.00%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    3.40ms
+ 75.000%   23.39ms
+ 90.000%   71.42ms
+ 99.000%  190.08ms
+ 99.900%  262.91ms
+ 99.990%  279.55ms
+ 99.999%  293.38ms
+100.000%  294.91ms
 
 ```
 
+При этом асинхронный сервер прям вообще не держит нагрузку в 110rps...
+
+```
+wrk -d 10 -t 8 -c 64 -R 110000  -L -s /Users/dariasupriadkina/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/dariasupriadkina/scripts/upsert.lua http://localhost:8080
+Running 10s test @ http://localhost:8080
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   117.98ms  131.08ms   1.02s    85.08%
+    Req/Sec        nan       nan   0.00      0.00%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%   69.82ms
+ 75.000%  165.63ms
+ 90.000%  304.89ms
+ 99.000%  554.50ms
+ 99.900%  927.74ms
+ 99.990%    1.02s 
+ 99.999%    1.02s 
+100.000%    1.02s 
+Requests/sec: 107853.16
 ```
 
-Здесь возникало ощущение, что мы упирались в возможности самого wrk
+Снимем профили для локов и для cpu
 
-На одном потоке, он как будто бы не мог выполнить более 71000 запросов, после этого значения начинал терять запросы, при этом 
-сам сервер не отдавал никаких ошибок
+## Сервер 1 этапа - СPU
+
+![upsert_1_cpu.png](./screenshots/upsert_1_cpu.png)
+
+Фиолетовым выделена бизнес-логика, она занимает параядка 3% (upsert, handler…)
+Все остальное - работа one-nio (select, session.process)
+
+## Сервер 1 этапа - LOCK
+
+![upsert_1_lock.png](screenshots/upsert_1_lock.png)
+
+90% локов приходится на upsert (из селектор-тредов) и 10% - flush (отдельный поток)
+
+## Сервер 2 этапа - СPU
+
+![upsert_2_cpu.png](./screenshots/upsert_2_cpu.png)
+
+Фиолетовым выделена часть, отеосящаяся непосредмственно к разработанному в рамках данного этар па кода:
+
+requestHandler занимает 18%
+
+бизнес-логика занимает также параядка 3% (upsert)
+
+Можно заметить, что немало ресурсов тратится на ThreadPoolExecutor.getTask() и 
+соответственно другие сопутствующие методы по сопровождению работы с пулами потоков и непосредственно потоков 
+(ArrayBlockingQueue.take, managedBlock...)- 18%
+
+Здесь работа внутри воркеров 
+## Сервер 2 этапа - LOCK
+
+![upsert_2_lock.png](screenshots/upsert_2_lock.png)
+
+Здесь видно, что handleRequest() забирает 40% локов
+
+Исходя из профилирования, можно попробовать сделать вывод, что всему виной могут быть ресурсы, требуемые для работы с 
+потоками и пулами потоков
+
+Также можно обвинить wrk в том, что он отжероает часть ресурсов (особенно это касается потоков)
+
+Теперь попробуем поманипулировать данными, чтобы понять, как такие параметры ExecutorService, как размер очереди и 
+количество тредов влияют на работу системы
+
+Будем разбираться на get-запросах 
+
+## Количество тредов 
+
+Найдем максимальную пропускную способность на get-запросах для 64 соединений и 8 тредов
+
+Сервер начинает терять запросы на ≈62000rps
+
+```
+wrk -d 10 -t 8 -c 64 -R 62000  -L -s /Users/dariasupriadkina/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/dariasupriadkina/scripts/getrand.lua http://localhost:8080
+Running 10s test @ http://localhost:8080
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.42ms    1.30ms  69.18ms   95.15%
+    Req/Sec        nan       nan   0.00      0.00%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.23ms
+ 75.000%    1.69ms
+ 90.000%    2.23ms
+ 99.000%    5.41ms
+ 99.900%   16.77ms
+ 99.990%   42.37ms
+ 99.999%   64.99ms
+100.000%   69.25ms
+```
+![get_2_cpu.png](screenshots/get_2_cpu.png)
+
+О количеством потоков в тред-пуле, превышающем количество ядер уже размышлялось выше
+Теперь попробуем сильно уменьшить количество потоков. Оставим только 2 потока. RPS - 47000. 
+Значительно уменьшилась
+
+```
+wrk -d 10 -t 8 -c 64 -R 47000  -L -s /Users/dariasupriadkina/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/dariasupriadkina/scripts/getrand.lua http://localhost:8080
+Running 10s test @ http://localhost:8080
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    65.25ms   39.65ms 147.33ms   55.78%
+    Req/Sec        nan       nan   0.00      0.00%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%   65.92ms
+ 75.000%  101.95ms
+ 90.000%  117.63ms
+ 99.000%  131.58ms
+ 99.900%  142.85ms
+ 99.990%  146.69ms
+ 99.999%  147.33ms
+100.000%  147.46ms
+
+```
+
+### CPU
+![get_2_2_cpu.png](screenshots/get_2_2_cpu.png)
 
 
+## Размер очереди 
+
+Сепйчас очередь установлена в 1024, посмотрим, что произойдет, если ее значительно уменьшить, оставив все характеристики предыдущих замеров на 8 потоков thread-pool с пиковой нагрузкуой в 62000rps.
+Сделаем равной 10
+
+### LOCK
+
+![get_2_lock.png](screenshots/get_2_lock.png)
+Как видно, много лочек взял на себя логгер
+
+Очередь быстро переполняется и выбрасывается исключение RejectedException
+![rejected_exception.png](screenshots/rejected_exception.png)
 
 
+#### FanFact
 
+При попытке запустить upsert на ресурсах wrk равных: -t 64 -c 64 лично у меня ни одна таблица не сфлашилась :(
 
+По профилям нагрузки было заметно, что при увеличении коннектов и тредов wrk страдаеь flush.
 
-
+Его %CPU варьировался от 2% до 0% (полного отсутствия)
 
 
 

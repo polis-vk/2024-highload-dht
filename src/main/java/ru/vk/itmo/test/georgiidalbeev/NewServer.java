@@ -63,16 +63,12 @@ public class NewServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        try {
-            Entry<MemorySegment> entry = new BaseEntry<>(
-                    key,
-                    MemorySegment.ofArray(request.getBody())
-            );
+        Entry<MemorySegment> entry = new BaseEntry<>(
+                key,
+                MemorySegment.ofArray(request.getBody())
+        );
 
-            dao.upsert(entry);
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        dao.upsert(entry);
 
         return new Response(Response.CREATED, Response.EMPTY);
     }
@@ -85,17 +81,13 @@ public class NewServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        try {
-            Entry<MemorySegment> entry = dao.get(key);
+        Entry<MemorySegment> entry = dao.get(key);
 
-            if (entry == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-
-            return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        if (entry == null) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
+
+        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
     @Path(PATH)
@@ -106,16 +98,12 @@ public class NewServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        try {
-            Entry<MemorySegment> entry = new BaseEntry<>(
-                    key,
-                    null
-            );
+        Entry<MemorySegment> entry = new BaseEntry<>(
+                key,
+                null
+        );
 
-            dao.upsert(entry);
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        dao.upsert(entry);
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }

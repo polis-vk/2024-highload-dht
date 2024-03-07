@@ -1,18 +1,3 @@
-  128 threads and 128 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    46.72ms   38.76ms 245.76ms   67.61%
-    Req/Sec       -nan      -nan   0.00      0.00%
-  Latency Distribution (HdrHistogram - Recorded Latency)
- 50.000%   37.98ms
- 75.000%   70.21ms
- 90.000%  101.63ms
- 99.000%  162.43ms
- 99.900%  201.09ms
- 99.990%  229.25ms
- 99.999%  243.07ms
-100.000%  245.89ms
-
-  Detailed Percentile spectrum:
        Value   Percentile   TotalCount 1/(1-Percentile)
 
        0.046     0.000000            1         1.00
@@ -121,11 +106,3 @@
      245.759     0.999999      1737866   1497965.71
      245.887     0.999999      1737867   1747626.67
      245.887     1.000000      1737867          inf
-#[Mean    =       46.724, StdDeviation   =       38.759]
-#[Max     =      245.760, Total count    =      1737867]
-#[Buckets =           27, SubBuckets     =         2048]
-----------------------------------------------------------
-  1737995 requests in 9.97s, 119.80MB read
-  Non-2xx or 3xx responses: 313338
-Requests/sec: 174294.90
-Transfer/sec:     12.01MB

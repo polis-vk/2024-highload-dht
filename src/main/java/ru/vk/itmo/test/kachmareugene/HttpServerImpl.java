@@ -74,19 +74,16 @@ public class HttpServerImpl extends HttpServer {
         }
 
         exec.shutdownNow();
-        try {
-            if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
-                return;
-            }
-        } catch (InterruptedException e) {
-            exec.shutdownNow();
-        }
+        while (!exec.isTerminated()) {
+            try {
+                if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
+                    exec.shutdownNow();
+                }
 
-        exec.shutdownNow();
-        try {
-            exec.awaitTermination(20, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            exec.shutdownNow();
+            } catch (InterruptedException e) {
+                exec.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
     }
 

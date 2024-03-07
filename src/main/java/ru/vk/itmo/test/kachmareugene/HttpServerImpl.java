@@ -21,25 +21,17 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class HttpServerImpl extends HttpServer {
 
-    private static final int CORE_POOL = 3;
-    private static final int MAX_POOL = 5;
-    private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(100);
+    private static final int CORE_POOL = 4;
+    private static final int MAX_POOL = 8;
+    private final BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(50);
     private final ExecutorService executorService =
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
-                        0L, TimeUnit.MILLISECONDS,
+                        10L, TimeUnit.MILLISECONDS,
                                     queue);
-
-    private static final Response NOT_FOUND =
-             new Response(Response.NOT_FOUND, Response.EMPTY);
     private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
     Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
     private final ServiceConfig serviceConfig;
@@ -71,12 +63,29 @@ public class HttpServerImpl extends HttpServer {
         super.start();
     }
 
+    private void stopExecutor() {
+        boolean terminated = executorService.isTerminated();
+        if (!terminated) {
+            executorService.shutdown();
+            boolean interrupted = false;
+            while (!terminated) {
+                try {
+                    terminated = executorService.awaitTermination(1L, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    if (!interrupted) {
+                        executorService.shutdownNow();
+                        interrupted = true;
+                    }
+                }
+            }
+        }
+    }
     @Override
     public synchronized void stop() {
         super.stop();
         try {
+            stopExecutor();
             daoImpl.close();
-            executorService.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -88,13 +97,13 @@ public class HttpServerImpl extends HttpServer {
             @Param("id") String key) {
 
         if (key == null || key.isEmpty()) {
-            return BAD;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> result = daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
 
         if (result == null) {
-            return NOT_FOUND;
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
     }
@@ -133,8 +142,10 @@ public class HttpServerImpl extends HttpServer {
             executorService.execute(() -> {
                 try {
                     super.handleRequest(request, session);
-                } catch (RuntimeException | IOException e) {
-                    errorAccept(session, e);
+                } catch (RuntimeException e) {
+                    errorAccept(session, e, Response.BAD_REQUEST);
+                } catch (IOException e) {
+                    errorAccept(session, e, Response.CONFLICT);
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -142,9 +153,9 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private void errorAccept(HttpSession session, Exception e) {
+    private void errorAccept(HttpSession session, Exception e, String message) {
         try {
-            session.sendError(Response.BAD_REQUEST, e.toString());
+            session.sendError(message, e.toString());
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }

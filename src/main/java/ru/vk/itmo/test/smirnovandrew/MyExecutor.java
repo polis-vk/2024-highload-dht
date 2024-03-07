@@ -5,8 +5,13 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyExecutor extends ThreadPoolExecutor {
+
+    private static final int KEEP_ALIVE_TIME = 30;
+
+    private static final int QUEUE_CAPACITY = 1000;
+
     public MyExecutor(int corePoolSize, int maximumPoolSize) {
-        super(corePoolSize, maximumPoolSize, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(1000));
+        super(corePoolSize, maximumPoolSize, KEEP_ALIVE_TIME, TimeUnit.SECONDS, new LinkedBlockingQueue<>(QUEUE_CAPACITY));
     }
 
     @Override

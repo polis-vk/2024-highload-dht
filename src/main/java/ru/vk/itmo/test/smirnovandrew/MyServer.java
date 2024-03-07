@@ -17,10 +17,10 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.logging.Logger;
 
@@ -35,7 +35,7 @@ public class MyServer extends HttpServer {
 
     private final Logger logger;
 
-    private static final Set<Integer> METHOD_SET = new ConcurrentSkipListSet<>(List.of(
+    private static final Set<Integer> METHOD_SET = new HashSet<>(List.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
@@ -87,12 +87,13 @@ public class MyServer extends HttpServer {
     }
 
     public MyServer(ServiceConfig config, ReferenceDao dao) throws IOException {
+        this(config, dao, Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().availableProcessors());
+    }
+
+    public MyServer(ServiceConfig config, ReferenceDao dao, int corePoolSize, int availableProcessors) throws IOException {
         super(generateServerConfig(config));
         this.dao = dao;
-        this.executor = new MyExecutor(
-                Runtime.getRuntime().availableProcessors(),
-                Runtime.getRuntime().availableProcessors()
-        );
+        this.executor = new MyExecutor(corePoolSize, availableProcessors);
         this.logger = Logger.getLogger(MyServer.class.getName());
     }
 

@@ -7,6 +7,7 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 
 public final class Main {
     public static void main(String[] args) throws IOException {
@@ -17,6 +18,11 @@ public final class Main {
                         2 * 1024 * 1024
                 )
         );
+        if(Objects.isNull(args) || args.length < 2) {
+            throw new IllegalArgumentException("No arguments provided");
+        }
+        int corePoolSize = Integer.parseInt(args[0]);
+        int availableProcessors = Integer.parseInt(args[1]);
         MyServer server = new MyServer(
                 new ServiceConfig(
                         8080,
@@ -24,7 +30,9 @@ public final class Main {
                         List.of("http://localhost"),
                         data
                 ),
-                dao
+                dao,
+                corePoolSize,
+                availableProcessors
         );
         server.start();
     }

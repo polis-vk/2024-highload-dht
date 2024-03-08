@@ -68,7 +68,7 @@ public class LSMServiceImpl implements Service {
     }
 
     private static ExecutorService createExecutorService(final int workers, final int queueSize) {
-        return new ThreadPoolExecutor(
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 workers,
                 workers,
                 0L,
@@ -86,6 +86,8 @@ public class LSMServiceImpl implements Service {
                 },
                 new ThreadPoolExecutor.AbortPolicy()
         );
+        executor.prestartAllCoreThreads();
+        return executor;
     }
 
     private static void closeLSMDao(Dao<MemorySegment, Entry<MemorySegment>> dao) {

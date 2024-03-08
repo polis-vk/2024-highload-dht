@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 import static one.nio.http.Response.INTERNAL_ERROR;
 
 public class RequestExecutor {
+    static final String TOO_MANY_REQUESTS = "429 Too many requests";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int MAX_CPU_THREADS_TIMES = 1;
@@ -26,8 +28,6 @@ public class RequestExecutor {
 
     private final ExecutorService executor;
     private final RequestHandler requestHandler;
-
-    static final String TOO_MANY_REQUESTS = "429 Too many requests";
 
     public RequestExecutor(RequestHandler requestHandler) {
         this.requestHandler = requestHandler;
@@ -50,7 +50,7 @@ public class RequestExecutor {
             executor.execute(() -> {
                 Response response;
 
-                // If the deadline for completing the task has passed
+                // If the deadline for completing the task has passed.
                 if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
                     LOGGER.error("The server is overloaded with too many requests");
                     response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
@@ -65,7 +65,7 @@ public class RequestExecutor {
 
                 sendResponse(response, session);
             });
-        } catch (RejectedExecutionException e) { // Queue overflow
+        } catch (RejectedExecutionException e) { // Queue overflow.
             LOGGER.error("Work queue overflow: task cannot be processed", e);
             sendResponse(
                     new Response(TOO_MANY_REQUESTS, Response.EMPTY),

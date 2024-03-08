@@ -1,23 +1,41 @@
 package ru.vk.itmo.test.andreycheshev;
 
+import one.nio.http.Header;
+import one.nio.http.HttpClient;
+import one.nio.http.HttpException;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.pool.PoolException;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class RequestHandler {
+
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID_PARAMETER = "id=";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final Map<Integer, HttpClient> clusterConnections;
 
-    public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao) {
+    private final DataDistributor distributor;
+
+    public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao,
+                          Map<Integer, HttpClient> clusterConnections,
+                          DataDistributor distributor) {
         this.dao = dao;
+        this.clusterConnections = clusterConnections;
+
+        this.distributor = distributor;
     }
 
     public Response handle(Request request) {
@@ -27,22 +45,42 @@ public class RequestHandler {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        int method = request.getMethod();
-
-        return switch (method) {
-            case Request.METHOD_GET -> get(request);
-            case Request.METHOD_PUT -> put(request);
-            case Request.METHOD_DELETE -> delete(request);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        };
-    }
-
-    private Response get(final Request request) {
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        int method = request.getMethod();
+        byte[] body = request.getBody();
+
+        int currNodeNumber = distributor.getNode(id);
+        if (currNodeNumber > 0) { // Redirect.
+            try {
+                HttpClient client = clusterConnections.get(currNodeNumber);
+
+                String[] headers = request.getHeaders();
+
+                return switch (method) {
+                    case Request.METHOD_GET -> client.get(id, headers);
+                    case Request.METHOD_PUT -> client.put(id, body, headers);
+                    case Request.METHOD_DELETE -> client.delete(id, headers);
+                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                };
+            } catch (InterruptedException | PoolException | IOException | HttpException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        // Process locally.
+        return switch (method) {
+            case Request.METHOD_GET -> get(id);
+            case Request.METHOD_PUT -> put(id, body);
+            case Request.METHOD_DELETE -> delete(id);
+            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        };
+    }
+
+    private Response get(String id) {
         Entry<MemorySegment> entry = dao.get(fromString(id));
 
         return entry == null
@@ -50,27 +88,17 @@ public class RequestHandler {
                 : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    private Response put(final Request request) {
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
+    private Response put(String id, byte[] body) {
         Entry<MemorySegment> entry = new BaseEntry<>(
                 fromString(id),
-                MemorySegment.ofArray(request.getBody())
+                MemorySegment.ofArray(body)
         );
         dao.upsert(entry);
 
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    private Response delete(final Request request) {
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
+    private Response delete(String id) {
         Entry<MemorySegment> entry = new BaseEntry<>(fromString(id), null);
         dao.upsert(entry);
 

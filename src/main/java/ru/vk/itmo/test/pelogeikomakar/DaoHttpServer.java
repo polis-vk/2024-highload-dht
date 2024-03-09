@@ -49,7 +49,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         this.selfUrl = config.selfUrl();
         this.clients = new ConcurrentHashMap<>();
         for (String url : this.clusterUrls) {
-            this.clients.put(url, new HttpClient(new ConnectionString(url), STR."INTERNAL_RQ \{selfUrl}"));
+            this.clients.put(url, new HttpClient(new ConnectionString(url), "INTERNAL_RQ " + selfUrl));
         }
         this.dao = dao;
         this.executorService = executorService;
@@ -256,7 +256,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     }
 
     private String requestForKey(String key) {
-        return STR."/v0/entity?id=\{key}";
+        return "/v0/entity?id=" + key;
     }
 
     public void stopHTTPClients() {

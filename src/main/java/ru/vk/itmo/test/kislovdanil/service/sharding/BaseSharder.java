@@ -14,9 +14,9 @@ import java.net.http.HttpResponse;
 
 public abstract class BaseSharder implements Sharder {
     private final HttpClient client;
-    private final static HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
+    private static final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
 
-    public BaseSharder(HttpClient client) {
+    protected BaseSharder(HttpClient client) {
         this.client = client;
     }
 
@@ -56,6 +56,7 @@ public abstract class BaseSharder implements Sharder {
 
     @Override
     @SuppressWarnings("FutureReturnValueIgnored")
+    // Основные исключения будут обработаны, Runtime исключения при обработке одного запроса можно и проигнорировать
     public void proxyRequest(int method, String entityKey, byte[] body, String baseUrl, HttpSession session) {
         String entityUrl = baseUrl + "/v0/entity?id=" + entityKey;
         URI uri = URI.create(entityUrl);

@@ -10,6 +10,7 @@ public class RandevouzSharder extends BaseSharder {
         super(client);
         this.urls = urls;
     }
+
     @Override
     public String defineRequestProxyUrl(String entityKey) {
         int maxHash = Integer.MIN_VALUE;

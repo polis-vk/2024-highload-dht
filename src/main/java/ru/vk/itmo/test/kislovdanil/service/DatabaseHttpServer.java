@@ -12,6 +12,7 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kislovdanil.service.sharding.Sharder;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 public class DatabaseHttpServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final Sharder sharder;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
     private static final int CORE_POOL_SIZE = 4;
     private static final int MAX_POOL_SIZE = 12;
@@ -31,16 +33,28 @@ public class DatabaseHttpServer extends HttpServer {
     private static final int QUEUE_CAPACITY = 100000;
     private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE,
             KEEP_ALIVE_TIME_SECONDS, TimeUnit.SECONDS, new ArrayBlockingQueue<>(QUEUE_CAPACITY));
+    private final String selfUrl;
 
-    public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment,
+            Entry<MemorySegment>> dao, Sharder sharder) throws IOException {
         super(transformConfig(config));
         this.dao = dao;
+        this.selfUrl = config.selfUrl();
+        this.sharder = sharder;
     }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    public static void sendResponse(Response response, HttpSession session) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            throw new NetworkException();
+        }
     }
 
     private void handleEntityRequestTask(int method, String entityKey, byte[] body,
@@ -50,6 +64,11 @@ public class DatabaseHttpServer extends HttpServer {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else {
             MemorySegment key = fromString(entityKey);
+            String proxiedUrl = sharder.defineRequestProxyUrl(entityKey);
+            if (!proxiedUrl.equals(selfUrl)) {
+                sharder.proxyRequest(method, entityKey, body, proxiedUrl, session);
+                return;
+            }
             response = switch (method) {
                 case Request.METHOD_GET -> getEntity(key);
                 case Request.METHOD_PUT -> putEntity(key, body);
@@ -57,11 +76,7 @@ public class DatabaseHttpServer extends HttpServer {
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         }
-        try {
-            session.sendResponse(response);
-        } catch (IOException ignored) {
-            throw new NetworkException();
-        }
+        sendResponse(response, session);
     }
 
     @Path(ENTITY_ACCESS_URL)
@@ -71,12 +86,9 @@ public class DatabaseHttpServer extends HttpServer {
             queryExecutor.execute(() -> handleEntityRequestTask(request.getMethod(),
                     entityKey, request.getBody(), session));
         } catch (RejectedExecutionException e) {
-            try {
-                session.sendError(Response.SERVICE_UNAVAILABLE,
-                        "Service temporary unavailable, retry later");
-            } catch (IOException ignored) {
-                throw new NetworkException();
-            }
+            sendResponse(new Response(Response.SERVICE_UNAVAILABLE,
+                    "Service temporary unavailable, retry later"
+                            .getBytes(StandardCharsets.UTF_8)), session);
         }
     }
 

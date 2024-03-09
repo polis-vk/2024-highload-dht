@@ -12,6 +12,8 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
+import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -29,6 +31,7 @@ public class MyService implements Service {
     private MyServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ThreadPoolExecutor workerPool;
+    private HttpClient[] httpClients;
 
     public MyService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -38,7 +41,16 @@ public class MyService implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES));
         workerPool = createPool();
-        server = new MyServer(serviceConfig, dao, workerPool);
+        httpClients = new HttpClient[serviceConfig.clusterUrls().size() - 1];
+        for (int i = 0; i < serviceConfig.clusterUrls().size() - 1; i++) {
+            httpClients[i] = HttpClient.newHttpClient();
+        }
+        int node_id = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
+        if (node_id == -1) {
+            log.error("Node id not found in cluster urls");
+            return CompletableFuture.completedFuture(null);
+        }
+        server = new MyServer(serviceConfig, dao, workerPool, httpClients, node_id);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -46,8 +58,11 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
-        dao.close();
         shutdownAndAwaitTermination(workerPool);
+        for (HttpClient httpClient : httpClients) {
+            httpClient.close();
+        }
+        dao.close();
         return CompletableFuture.completedFuture(null);
     }
 

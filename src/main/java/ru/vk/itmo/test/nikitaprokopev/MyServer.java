@@ -18,9 +18,12 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -31,24 +34,29 @@ public class MyServer extends HttpServer {
     private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
     private final Logger log = LoggerFactory.getLogger(MyServer.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-
     private final ThreadPoolExecutor workerPool;
+    private final HttpClient[] httpClients;
+    private final int NODE_ID;
+    private final ServiceConfig serviceConfig;
 
     public MyServer(
             ServiceConfig serviceConfig,
             Dao<MemorySegment, Entry<MemorySegment>> dao,
-            ThreadPoolExecutor workerPool
+            ThreadPoolExecutor workerPool,
+            HttpClient[] httpClients,
+            int nodeId
     ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
         this.workerPool = workerPool;
+        this.httpClients = httpClients;
+        this.NODE_ID = nodeId;
+        this.serviceConfig = serviceConfig;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
-        httpServerConfig.selectors = 4;
         AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.threads = 4;
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
@@ -59,11 +67,17 @@ public class MyServer extends HttpServer {
 
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) {
-        MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
-        if (msKey == null) {
+    public Response put(@Param(value = "id", required = true) String id, Request request) throws IOException {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        int targetNode = hash(id);
+        if (targetNode != NODE_ID) {
+            return proxyRequest(Methods.PUT, id, targetNode, request.getBody());
+        }
+
+        MemorySegment msKey = toMemorySegment(id);
 
         Entry<MemorySegment> entry = new BaseEntry<>(
                 msKey,
@@ -77,11 +91,18 @@ public class MyServer extends HttpServer {
 
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
-        MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
-        if (msKey == null) {
+    public Response get(@Param(value = "id", required = true) String id) throws IOException {
+
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        int targetNode = hash(id);
+        if (targetNode != NODE_ID) {
+            return proxyRequest(Methods.GET, id, targetNode, Response.EMPTY);
+        }
+
+        MemorySegment msKey = toMemorySegment(id);
 
         Entry<MemorySegment> entry = dao.get(msKey);
 
@@ -94,11 +115,17 @@ public class MyServer extends HttpServer {
 
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
-        MemorySegment msKey = (id == null || id.isEmpty()) ? null : toMemorySegment(id);
-        if (msKey == null) {
+    public Response delete(@Param(value = "id", required = true) String id) throws IOException {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        int targetNode = hash(id);
+        if (targetNode != NODE_ID) {
+            return proxyRequest(Methods.DELETE, id, targetNode, Response.EMPTY);
+        }
+
+        MemorySegment msKey = toMemorySegment(id);
 
         Entry<MemorySegment> entry = new BaseEntry<>(
                 msKey,
@@ -117,7 +144,6 @@ public class MyServer extends HttpServer {
     }
 
     // For other requests - 400 Bad Request
-
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -133,10 +159,11 @@ public class MyServer extends HttpServer {
                         if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
                             try {
                                 session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
-                                return;
                             } catch (IOException e) {
-                                throw new UncheckedIOException(e);
+                                log.error("Exception while sending close connection", e);
+                                session.scheduleClose();
                             }
+                            return;
                         }
 
                         try {
@@ -149,8 +176,6 @@ public class MyServer extends HttpServer {
         } catch (RejectedExecutionException e) {
             log.error("Workers pool queue overflow", e);
             session.sendError(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), null);
-        } catch (Exception e) {
-            handleRequestException(session, e);
         }
     }
 
@@ -174,5 +199,71 @@ public class MyServer extends HttpServer {
 
     private byte[] toByteArray(MemorySegment ms) {
         return ms.toArray(ValueLayout.JAVA_BYTE);
+    }
+
+    private Response proxyResponse(HttpResponse<byte[]> response, byte[] body) {
+        String responseCode = switch (response.statusCode()) {
+            case 200 -> Response.OK;
+            case 201 -> Response.CREATED;
+            case 202 -> Response.ACCEPTED;
+            case 400 -> Response.BAD_REQUEST;
+            case 404 -> Response.NOT_FOUND;
+            default -> Response.INTERNAL_ERROR;
+        };
+
+        return new Response(responseCode, body);
+    }
+
+    private Response proxyRequest(Methods method, String id, int targetNode, byte[] body) throws IOException {
+        int idHttpClient = targetNode > NODE_ID ? targetNode - 1 : targetNode;
+        try {
+            switch (method) {
+                case PUT -> {
+                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
+                            .uri(URI.create(STR."\{serviceConfig.clusterUrls().get(targetNode)}\{BASE_PATH}?id=\{id}"))
+                            .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                            .build(), HttpResponse.BodyHandlers.ofByteArray());
+                    return proxyResponse(response, Response.EMPTY);
+                }
+                case GET -> {
+                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
+                            .uri(URI.create(STR."\{serviceConfig.clusterUrls().get(targetNode)}\{BASE_PATH}?id=\{id}"))
+                            .GET()
+                            .build(), HttpResponse.BodyHandlers.ofByteArray());
+                    return proxyResponse(response, response.body());
+                }
+                case DELETE -> {
+                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
+                            .uri(URI.create(STR."\{serviceConfig.clusterUrls().get(targetNode)}\{BASE_PATH}?id=\{id}"))
+                            .DELETE()
+                            .build(), HttpResponse.BodyHandlers.ofByteArray());
+                    return proxyResponse(response, Response.EMPTY);
+                }
+                default -> {
+                    log.error("Unknown method");
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                }
+            }
+        } catch (InterruptedException e) {
+            log.error("Exception while sending request", e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
+    private int hash(String id) {
+        int maxValue = Integer.MIN_VALUE;
+        int nodeId = 0;
+        for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
+            int hash = (id + i).hashCode();
+            if (hash > maxValue) {
+                maxValue = hash;
+                nodeId = i;
+            }
+        }
+        return nodeId;
+    }
+
+    private enum Methods {
+        PUT, GET, DELETE
     }
 }

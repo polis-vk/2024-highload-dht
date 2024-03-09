@@ -5,8 +5,6 @@ import one.nio.http.HttpException;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.pool.PoolException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
@@ -18,8 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 public class RequestHandler {
-    private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
-
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID_PARAMETER = "id=";
 

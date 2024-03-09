@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.HttpException;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -16,11 +15,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static one.nio.http.Response.INTERNAL_ERROR;
-import static one.nio.http.Response.SERVICE_UNAVAILABLE;
 
 public class RequestExecutor {
-    static final String TOO_MANY_REQUESTS = "429 Too many requests";
-
+    private static final String TOO_MANY_REQUESTS = "429 Too many requests";
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int MAX_CPU_THREADS_TIMES = 1;

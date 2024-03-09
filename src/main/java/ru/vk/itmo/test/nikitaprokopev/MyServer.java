@@ -254,15 +254,15 @@ public class MyServer extends HttpServer {
 
     private int hash(String id) {
         int maxValue = Integer.MIN_VALUE;
-        int nodeId = 0;
+        int maxHashNode = 0;
         for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
             int hash = (id + i).hashCode();
             if (hash > maxValue) {
                 maxValue = hash;
-                nodeId = i;
+                maxHashNode = i;
             }
         }
-        return nodeId;
+        return maxHashNode;
     }
 
     private enum Methods {

@@ -216,25 +216,26 @@ public class MyServer extends HttpServer {
 
     private Response proxyRequest(Methods method, String id, int targetNode, byte[] body) throws IOException {
         int idHttpClient = targetNode > NODE_ID ? targetNode - 1 : targetNode;
+        String targetPath = serviceConfig.clusterUrls().get(targetNode) + BASE_PATH + "?id=" + id;
         try {
             switch (method) {
                 case PUT -> {
                     HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(STR."\{serviceConfig.clusterUrls().get(targetNode)}\{BASE_PATH}?id=\{id}"))
+                            .uri(URI.create(targetPath))
                             .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
                             .build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, Response.EMPTY);
                 }
                 case GET -> {
                     HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(STR."\{serviceConfig.clusterUrls().get(targetNode)}\{BASE_PATH}?id=\{id}"))
+                            .uri(URI.create(targetPath))
                             .GET()
                             .build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, response.body());
                 }
                 case DELETE -> {
                     HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(STR."\{serviceConfig.clusterUrls().get(targetNode)}\{BASE_PATH}?id=\{id}"))
+                            .uri(URI.create(targetPath))
                             .DELETE()
                             .build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, Response.EMPTY);

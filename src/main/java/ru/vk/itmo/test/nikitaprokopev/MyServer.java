@@ -36,7 +36,7 @@ public class MyServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ThreadPoolExecutor workerPool;
     private final HttpClient[] httpClients;
-    private final int NODE_ID;
+    private final int nodeId;
     private final ServiceConfig serviceConfig;
 
     public MyServer(
@@ -50,7 +50,7 @@ public class MyServer extends HttpServer {
         this.dao = dao;
         this.workerPool = workerPool;
         this.httpClients = httpClients;
-        this.NODE_ID = nodeId;
+        this.nodeId = nodeId;
         this.serviceConfig = serviceConfig;
     }
 
@@ -73,7 +73,7 @@ public class MyServer extends HttpServer {
         }
 
         int targetNode = hash(id);
-        if (targetNode != NODE_ID) {
+        if (targetNode != nodeId) {
             return proxyRequest(Methods.PUT, id, targetNode, request.getBody());
         }
 
@@ -98,7 +98,7 @@ public class MyServer extends HttpServer {
         }
 
         int targetNode = hash(id);
-        if (targetNode != NODE_ID) {
+        if (targetNode != nodeId) {
             return proxyRequest(Methods.GET, id, targetNode, Response.EMPTY);
         }
 
@@ -121,7 +121,7 @@ public class MyServer extends HttpServer {
         }
 
         int targetNode = hash(id);
-        if (targetNode != NODE_ID) {
+        if (targetNode != nodeId) {
             return proxyRequest(Methods.DELETE, id, targetNode, Response.EMPTY);
         }
 
@@ -215,7 +215,7 @@ public class MyServer extends HttpServer {
     }
 
     private Response proxyRequest(Methods method, String id, int targetNode, byte[] body) throws IOException {
-        int idHttpClient = targetNode > NODE_ID ? targetNode - 1 : targetNode;
+        int idHttpClient = targetNode > nodeId ? targetNode - 1 : targetNode;
         String targetPath = serviceConfig.clusterUrls().get(targetNode) + BASE_PATH + "?id=" + id;
         try {
             switch (method) {
@@ -247,6 +247,7 @@ public class MyServer extends HttpServer {
             }
         } catch (InterruptedException e) {
             log.error("Exception while sending request", e);
+            Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }

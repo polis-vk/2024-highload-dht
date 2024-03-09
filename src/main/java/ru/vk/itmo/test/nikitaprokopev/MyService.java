@@ -13,7 +13,6 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
-import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -45,12 +44,12 @@ public class MyService implements Service {
         for (int i = 0; i < serviceConfig.clusterUrls().size() - 1; i++) {
             httpClients[i] = HttpClient.newHttpClient();
         }
-        int node_id = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
-        if (node_id == -1) {
+        int nodeId = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
+        if (nodeId == -1) {
             log.error("Node id not found in cluster urls");
             return CompletableFuture.completedFuture(null);
         }
-        server = new MyServer(serviceConfig, dao, workerPool, httpClients, node_id);
+        server = new MyServer(serviceConfig, dao, workerPool, httpClients, nodeId);
         server.start();
         return CompletableFuture.completedFuture(null);
     }

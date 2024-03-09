@@ -42,6 +42,8 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
         shutdownAndAwaitTermination(server.getExecutorService());
+        // Check resources release (this way may not be correct)
+        server.stopHTTPClients();
         server.getDao().close();
         return CompletableFuture.completedFuture(null);
     }
@@ -61,7 +63,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

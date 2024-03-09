@@ -1,10 +1,8 @@
 package ru.vk.itmo.test.andreycheshev;
 
 import one.nio.http.HttpClient;
-import one.nio.http.HttpException;
 import one.nio.http.HttpServerConfig;
 import one.nio.net.ConnectionString;
-import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.Server;
 import ru.vk.itmo.Service;
@@ -23,7 +21,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
     private static final int THRESHOLD_BYTES = 1024 * 128; // 128 kb
-    private static final int RESPONSE_AWAIT_TIMEOUT_MILLIS = 3000;
+    private static final int RESPONSE_AWAIT_TIMEOUT_MILLIS = 500; // 500 ms
 
     private final HttpServerConfig serverConfig;
     private final Config daoConfig;
@@ -33,10 +31,34 @@ public class ServiceImpl implements Service {
     private Server server;
 
     public ServiceImpl(ServiceConfig config) {
-        this.clusterConnections = getClusterConnections(config.clusterUrls(), config.selfUrl());
+
+        List<String> clusterUrls = config.clusterUrls();
+        this.clusterConnections  = new HashMap<>(clusterUrls.size());
+
+        // Init connections to other nodes.
+        String selfUrl = config.selfUrl();
+
+        Collections.sort(clusterUrls);
+        int nodeNumber = 1;
+        int thisNodeNumber = -1;
+        for (String serverUrl : clusterUrls) {
+            if (serverUrl.equals(selfUrl)) {
+                thisNodeNumber = nodeNumber++;
+                continue;
+            }
+
+            HttpClient client = new HttpClient(
+                    new ConnectionString(serverUrl)
+            );
+            client.setTimeout(RESPONSE_AWAIT_TIMEOUT_MILLIS);
+
+            clusterConnections.put(nodeNumber++, client);
+        }
+
+
         this.serverConfig = createServerConfig(config);
         this.daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);
-        this.dataDistributor = new DataDistributor(clusterConnections.size(), config.selfUrl());
+        this.dataDistributor = new DataDistributor(clusterUrls.size(), thisNodeNumber);
     }
 
     private HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -49,33 +71,6 @@ public class ServiceImpl implements Service {
         newServerConfig.closeSessions = true;
 
         return newServerConfig;
-    }
-
-    private Map<Integer, HttpClient> getClusterConnections(List<String> clusterServers, String selfUrl) {
-        Collections.sort(clusterServers);
-
-        Map<Integer, HttpClient> connections = new HashMap<>(clusterServers.size());
-        int clientNumber = 1;
-        for (String serverUrl : clusterServers) {
-            if (serverUrl.equals(selfUrl)) {
-                continue;
-            }
-
-            HttpClient client = new HttpClient(
-                    new ConnectionString(serverUrl)
-            );
-            client.setTimeout(RESPONSE_AWAIT_TIMEOUT_MILLIS);
-
-            try {
-                client.connect(serverUrl);
-            } catch (InterruptedException | PoolException | IOException | HttpException e) {
-                throw new RuntimeException(e);
-            }
-
-            connections.put(clientNumber++, client);
-        }
-
-        return connections;
     }
 
     @Override

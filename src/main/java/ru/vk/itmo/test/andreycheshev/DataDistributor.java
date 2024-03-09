@@ -2,21 +2,22 @@ package ru.vk.itmo.test.andreycheshev;
 
 public class DataDistributor {
     private final int nodeCount;
-    private final String selfUrl;
+    private final int thisNodeNumber;
 
-    public DataDistributor(int nodeCount, String selfUrl) {
+    public DataDistributor(int nodeCount, int thisNodeNumber) {
         this.nodeCount = nodeCount;
-        this.selfUrl = selfUrl;
+        this.thisNodeNumber = thisNodeNumber;
     }
 
     public int getNode(String stringKey) { // Rendezvous hashing algorithm.
         int key = stringToIntKey(stringKey);
         int maxHash = Integer.MIN_VALUE;
         int node = 0;
-        for (int i = 0; i < nodeCount; i++) {
-            int currHash = hashCode(i + key);
+        for (int i = 1; i <= nodeCount; i++) {
+            int currHash = hashCode(key + i);
             if (currHash > maxHash) {
-                node = selfUrl.equals(stringKey) ? -1 : i;
+                maxHash = currHash;
+                node = thisNodeNumber == i ? -1 : i;
             }
         }
         return node; // Return -1 if this node was selected.
@@ -30,9 +31,11 @@ public class DataDistributor {
         return intKey;
     }
 
-    private static int hashCode(int key) { // Multiplicative method.
-        double f = key * Math.random();
-        f = f - (int) f;
-        return (int) (f * 1024);
+    public static int hashCode(int key) {
+        int x = key;
+        x = ((x >> 16) ^ x) * 0x45d9f3b;
+        x = ((x >> 16) ^ x) * 0x45d9f3b;
+        x = (x >> 16) ^ x;
+        return x;
     }
 }

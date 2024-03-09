@@ -1,11 +1,12 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.Header;
 import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.pool.PoolException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
@@ -14,12 +15,10 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 public class RequestHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
 
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID_PARAMETER = "id=";
@@ -34,12 +33,12 @@ public class RequestHandler {
                           DataDistributor distributor) {
         this.dao = dao;
         this.clusterConnections = clusterConnections;
-
         this.distributor = distributor;
     }
 
-    public Response handle(Request request) {
+    public Response handle(Request request) throws HttpException, IOException, PoolException, InterruptedException {
 
+        // Checking the correctness.
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -54,24 +53,21 @@ public class RequestHandler {
         byte[] body = request.getBody();
 
         int currNodeNumber = distributor.getNode(id);
-        if (currNodeNumber > 0) { // Redirect.
-            try {
-                HttpClient client = clusterConnections.get(currNodeNumber);
+        System.out.println(currNodeNumber);
+        if (currNodeNumber > 0) { // Redirect request, processing on another node.
+            HttpClient client = clusterConnections.get(currNodeNumber);
 
-                String[] headers = request.getHeaders();
+            String uri = request.getURI();
 
-                return switch (method) {
-                    case Request.METHOD_GET -> client.get(id, headers);
-                    case Request.METHOD_PUT -> client.put(id, body, headers);
-                    case Request.METHOD_DELETE -> client.delete(id, headers);
-                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                };
-            } catch (InterruptedException | PoolException | IOException | HttpException e) {
-                throw new RuntimeException(e);
-            }
+            return switch (method) {
+                case Request.METHOD_GET -> client.get(uri);
+                case Request.METHOD_PUT -> client.put(uri, body);
+                case Request.METHOD_DELETE -> client.delete(uri);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
         }
 
-        // Process locally.
+        // Processing locally.
         return switch (method) {
             case Request.METHOD_GET -> get(id);
             case Request.METHOD_PUT -> put(id, body);

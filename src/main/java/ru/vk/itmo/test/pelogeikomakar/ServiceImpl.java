@@ -43,7 +43,7 @@ public class ServiceImpl implements Service {
         server.stop();
         shutdownAndAwaitTermination(server.getExecutorService());
         // Check resources release (this way may not be correct)
-        server.stopHTTPClients();
+        server.stopHttpClients();
         server.getDao().close();
         return CompletableFuture.completedFuture(null);
     }

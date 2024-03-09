@@ -195,7 +195,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
     private String getServerUrlForKey(String key) {
         int highestScore = Integer.MIN_VALUE;
-        String preferredUrl = null;
+        String preferredUrl = selfUrl;
         for (String url : clusterUrls) {
             int currentHash = Objects.hash(url, key);
             if (highestScore < currentHash) {
@@ -214,8 +214,11 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             synchronized (client) {
                 result = clients.get(serverUrl).get(requestForKey(key));
             }
-        } catch (InterruptedException | PoolException | IOException | HttpException e) {
+        } catch (PoolException | IOException | HttpException e) {
             log.error("Error in GET internal request", e);
+        } catch (InterruptedException e) {
+            log.error("Error in GET internal request", e);
+            Thread.currentThread().interrupt();
         }
 
         return result;
@@ -232,10 +235,13 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             }
             responseStatus = result.getHeaders()[0];
 
-        } catch (InterruptedException | PoolException | IOException | HttpException e) {
+        } catch (PoolException | IOException | HttpException e) {
             log.error("Error in PUT internal request", e);
 
-        }
+        } catch (InterruptedException e) {
+        log.error("Error in PUT internal request", e);
+        Thread.currentThread().interrupt();
+    }
         return responseStatus;
     }
 
@@ -247,8 +253,11 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             synchronized (client) {
                 result = clients.get(serverUrl).delete(requestForKey(key));
             }
-        } catch (InterruptedException | PoolException | IOException | HttpException e) {
+        } catch (PoolException | IOException | HttpException e) {
             log.error("Error in DELETE internal request", e);
+        } catch (InterruptedException e) {
+            log.error("Error in DELETE internal request", e);
+            Thread.currentThread().interrupt();
         }
 
         return result;
@@ -259,7 +268,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         return "/v0/entity?id=" + key;
     }
 
-    public void stopHTTPClients() {
+    public void stopHttpClients() {
         for (HttpClient client : clients.values()) {
             client.close();
         }

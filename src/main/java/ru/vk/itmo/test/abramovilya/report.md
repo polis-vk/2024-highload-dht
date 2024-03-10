@@ -9,19 +9,32 @@
 [get_6500rps.txt](wrk%2Fresults%2Fstage1%2Fget_6500rps.txt) \
 [put_22000rps.txt](wrk%2Fresults%2Fstage1%2Fput_22000rps.txt)
 
+Попробуем увеличить ```flushThresholdBytes``` в 10 раз (1047552 -> 10475520)
+
+[get_17000rps_flush_threshold_10x.txt](wrk%2Fresults%2Fstage1%2Fget_17000rps_flush_threshold_10x.txt) \
+_Сервер выдерживает 17000 get запросов_ \
+[get_20000rps_flush_threshold_10x.txt](wrk%2Fresults%2Fstage1%2Fget_20000rps_flush_threshold_10x.txt) \
+_Сервер не выдерживает 20000 get запросов_
+
+_Увеличение ```flushThresholdBytes``` уменьшило количество sstable'ов; мы стали тратить меньше ресурсов на чтение с диска_
+
 #### Результаты работы async-profiler:
+![get_alloc.png](asprof%2Fstage1%2Fget_alloc.png)
 [get_alloc.png](asprof%2Fstage1%2Fget_alloc.png) \
 _Видно, что аллокации распределены более-менее равномерно; вероятно, тут ничего оптимизировать не надо_
 
 [get_cpu.png](asprof%2Fstage1%2Fget_cpu.png) \
+![get_cpu.png](asprof%2Fstage1%2Fget_cpu.png)
 _Здесь можно увидеть, что значительную часть процессорного времени (45%) занимает метод ```memorySegment.mismatch()```. \
 Проанализировав свой код, я не нашел мест, где от вызова этого метода можно было бы избавиться_
 
 [put_alloc.png](asprof%2Fstage1%2Fput_alloc.png) \
+![put_alloc.png](asprof%2Fstage1%2Fput_alloc.png)
 _Тут аллокации тоже почти равномерные, однако выделяется ```byte[]``` внутри one.nio read \
 Я не думаю, что могу как-то уменьшить там число аллокаций_
 
 [put_cpu.png](asprof%2Fstage1%2Fput_cpu.png) \
+![put_cpu.png](asprof%2Fstage1%2Fput_cpu.png)
 _Основная часть времени уходит на read, write и kevent из one.nio \
 Возможно, можно сократить затраты процессорного времени, более тонко настроив сервер в one.nio_
 
@@ -70,11 +83,16 @@ new ThreadPoolExecutor(
     );
 ```
 
-[t4_c20_R50000_cs_4_ms_8_qs_80.txt](wrk%2Fresults%2Fstage2%2Ft4_c20_R50000_cs_4_ms_8_qs_80.txt) \
-_Такая конфигурация выдерживает 50000 rps при 20 соединениях_
+[t4_c20_R65000.txt](wrk%2Fresults%2Fstage2%2Ft4_c20_R65000.txt) \
+_Такая конфигурация выдерживает 60000 rps при 20 соединениях_
 
 [t4_c170_R22000_cs_4_ms_8_qs_80.txt](wrk%2Fresults%2Fstage2%2Ft4_c170_R22000_cs_4_ms_8_qs_80.txt) \
 _Или 22000 rps при 170 соединениях_
+
+[t4_c20_R65000.txt](wrk%2Fresults%2Fstage2%2Ft4_c20_R65000.txt)
+_Сервер не выдерживает 65000 rps при 20 соединениях_
+
+_Асинхронный сервер выдерживает больше rps на put за счет снятия нагрузки с selector тредов_
 
 [t4_c200_R22000_cs_4_ms_8_qs_80.txt](wrk%2Fresults%2Fstage2%2Ft4_c200_R22000_cs_4_ms_8_qs_80.txt) \
 _Сервер ломается при 200 соединениях_
@@ -89,19 +107,25 @@ _Сервер ломается при 700 соединениях_
 
 Сравним результаты профилирования cpu для очереди на 80 элементов и очереди на 200 элементов:
 
+![put_cpu_qs80.png](asprof%2Fstage2%2Fput_cpu_qs80.png)
 [put_cpu_qs80.png](asprof%2Fstage2%2Fput_cpu_qs80.png) \
+![put_cpu_qs200.png](asprof%2Fstage2%2Fput_cpu_qs200.png)
 [put_cpu_qs200.png](asprof%2Fstage2%2Fput_cpu_qs200.png) \
 _Видно что при увеличении размера очереди возрастает доля KQUeue.poll_
 
+![put_alloc_qs80.png](asprof%2Fstage2%2Fput_alloc_qs80.png)
 [put_alloc_qs80.png](asprof%2Fstage2%2Fput_alloc_qs80.png) \
 _По сравнению с прошлым этапом результаты особо не изменились_ \
+![put_alloc_qs200.png](asprof%2Fstage2%2Fput_alloc_qs200.png)
 [put_alloc_qs200.png](asprof%2Fstage2%2Fput_alloc_qs200.png) \
 _То же самое что и с queueSize = 80_
 
+![put_lock_qs80.png](asprof%2Fstage2%2Fput_lock_qs80.png)
 [put_lock_qs80.png](asprof%2Fstage2%2Fput_lock_qs80.png) \
 _Блокировки в основном приходятся на методы блокирующей очереди и 22.96% - на ```sendResponse``` из one.nio_
+![put_lock_qs200.png](asprof%2Fstage2%2Fput_lock_qs200.png)
 [put_lock_qs200.png](asprof%2Fstage2%2Fput_lock_qs200.png) \
-_Результаты аналогичны за тем исключением, что блокировка на ```take``` преобладает над блокировкой на ```poll``` _
+_Результаты аналогичны за тем исключением, что блокировка на ```take``` преобладает над блокировкой на ```poll```_
 
 
 
@@ -137,11 +161,22 @@ _Сервер не выдерживает 170 соединений_
 [get_c150_qs80.txt](wrk%2Fresults%2Fstage2%2Fget_c150_qs80.txt) \
 _Сервер выдерживает 150 соединений_
 
+[get_t4_c20_R15000.txt](wrk%2Fresults%2Fstage2%2Fget_t4_c20_R15000.txt)
+_Сервер выдерживает 15000 rps при 20 соединениях_
+
+[get_t4_c20_R19000.txt](wrk%2Fresults%2Fstage2%2Fget_t4_c20_R19000.txt)
+_Сервер не выдерживает 19000 rps при 20 соединениях_
+
+_Асинхронный сервер выдерживает больше rps на get за счет снятия нагрузки с selector тредов_
+
+![get_cpu_qs80.png](asprof%2Fstage2%2Fget_cpu_qs80.png)
 [get_cpu_qs80.png](asprof%2Fstage2%2Fget_cpu_qs80.png) \
 _Большая часть все так же тратится на поиск в файли (и на mismatch - в частности)_
 
+![get_alloc_qs80.png](asprof%2Fstage2%2Fget_alloc_qs80.png)
 [get_alloc_qs80.png](asprof%2Fstage2%2Fget_alloc_qs80.png) \
 _Много аллокаций приходится на метод ```tryAcquireShared``` внутри поиска вхождения в файле; не думаю что я могу поменять тут что-то_
 
+![get_lock_qs80.png](asprof%2Fstage2%2Fget_lock_qs80.png)
 [get_lock_qs80.png](asprof%2Fstage2%2Fget_lock_qs80.png) \
 _Большинство блокировок приходится на блокирующую очередь; ясно, что избавится от них мы не можем_

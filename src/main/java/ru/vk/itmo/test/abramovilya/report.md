@@ -179,4 +179,10 @@ _Много аллокаций приходится на метод ```tryAcquir
 
 ![get_lock_qs80.png](asprof%2Fstage2%2Fget_lock_qs80.png)
 [get_lock_qs80.png](asprof%2Fstage2%2Fget_lock_qs80.png) \
-_Большинство блокировок приходится на блокирующую очередь; ясно, что избавится от них мы не можем_
+_Большинство блокировок приходится на блокирующую очередь_
+
+Попробуем увеличить ```flushThresholdBytes``` в 10 раз
+
+![get_lock_qs80_ftb10x.png](asprof%2Fstage2%2Fget_lock_qs80_ftb10x.png)
+[get_lock_qs80_ftb10x.png](asprof%2Fstage2%2Fget_lock_qs80_ftb10x.png) \
+_Количество блокировок уменьшилось с 7094 до 6638_

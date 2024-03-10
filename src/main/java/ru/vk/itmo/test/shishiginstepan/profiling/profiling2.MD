@@ -12,18 +12,18 @@
 
 **Селектор**
 
-<img height="500" src="/home/stepan/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/shishiginstepan/profiling/profiling_artifacts_2/cpu-selector-thread.png" width="1280"/>
+<img height="500" src="../profiling/profiling_artifacts_2/cpu-selector-thread.png" width="1280"/>
 
 Можно заметить что порядка 10 процентов общего времени селекторы провели в блокировках при постановке в очередь тасков на обработку
 
 
 **Воркер**
 
-<img height="500" src="/home/stepan/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/shishiginstepan/profiling/profiling_artifacts_2/cpu-worker-thread.png" width="1200"/>
+<img height="500" src="../profiling/profiling_artifacts_2/cpu-worker-thread.png" width="1200"/>
 
 Воркеры же тратили на блокировку на этой очередь порядка 5 % общего времени выполнения
 
-<img height="400" src="/home/stepan/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/shishiginstepan/profiling/profiling_artifacts_2/img.png" width="800"/>
+<img height="400" src="../profiling/profiling_artifacts_2/img.png" width="800"/>
 
 
 

@@ -49,6 +49,6 @@ public class ServiceImpl implements Service {
     }
 
     private static Config createDaoConfig(ServiceConfig serviceConfig) {
-        return new Config(serviceConfig.workingDir(), 1024);
+        return new Config(serviceConfig.workingDir(), 1024 * 1024);
     }
 }

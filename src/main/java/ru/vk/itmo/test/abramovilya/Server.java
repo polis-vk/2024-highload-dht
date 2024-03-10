@@ -1,6 +1,7 @@
 package ru.vk.itmo.test.abramovilya;
 
 import one.nio.http.*;
+import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,8 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.*;
 
 public class Server extends HttpServer {
@@ -24,6 +27,8 @@ public class Server extends HttpServer {
     public static final int MAXIMUM_POOL_SIZE = 8;
     public static final int KEEP_ALIVE_TIME = 1;
     public static final int QUEUE_CAPACITY = 80;
+    private final Map<String, HttpClient> httpClients = new HashMap<>();
+    private final ServiceConfig config;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService = new ThreadPoolExecutor(
             CORE_POOL_SIZE,
@@ -32,10 +37,18 @@ public class Server extends HttpServer {
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(QUEUE_CAPACITY)
     );
+    private boolean alive = false;
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createConfig(config));
+        this.config = config;
         this.dao = dao;
+
+        for (String url : config.clusterUrls()) {
+            if (!url.equals(config.selfUrl())) {
+                httpClients.put(url, new HttpClient(new ConnectionString(url)));
+            }
+        }
     }
 
     private static HttpServerConfig createConfig(ServiceConfig serviceConfig) {
@@ -84,8 +97,17 @@ public class Server extends HttpServer {
     }
 
     @Override
+    public synchronized void start() {
+        super.start();
+        alive = true;
+    }
+
+    @Override
     public synchronized void stop() {
-        super.stop();
+        if (alive) {
+            super.stop();
+            alive = false;
+        }
         executorService.close();
     }
 
@@ -94,6 +116,17 @@ public class Server extends HttpServer {
     public Response getEntity(@Param(value = "id") String id) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        int nodeNumber = mod(id.hashCode(), config.clusterUrls().size());
+        String nodeUrl = config.clusterUrls().get(nodeNumber);
+        if (!nodeUrl.equals(config.selfUrl())) {
+            HttpClient client = httpClients.get(nodeUrl);
+            try {
+                return client.get(ENTITY_PATH + "?id=" + id);
+            } catch (Exception e) {
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
         }
 
         Entry<MemorySegment> entry = dao.get(DaoFactory.fromString(id));
@@ -109,6 +142,18 @@ public class Server extends HttpServer {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        int nodeNumber = mod(id.hashCode(), config.clusterUrls().size());
+        String nodeUrl = config.clusterUrls().get(nodeNumber);
+        if (!nodeUrl.equals(config.selfUrl())) {
+            HttpClient client = httpClients.get(nodeUrl);
+            try {
+                return client.put(ENTITY_PATH + "?id=" + id, request.getBody());
+            } catch (Exception e) {
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+        }
+
         dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(request.getBody())));
         return new Response(Response.CREATED, Response.EMPTY);
     }
@@ -119,10 +164,26 @@ public class Server extends HttpServer {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        int nodeNumber = mod(id.hashCode(), config.clusterUrls().size());
+        String nodeUrl = config.clusterUrls().get(nodeNumber);
+        if (!nodeUrl.equals(config.selfUrl())) {
+            HttpClient client = httpClients.get(nodeUrl);
+            try {
+                return client.delete(ENTITY_PATH + "?id=" + id);
+            } catch (Exception e) {
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+        }
+
         dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
+    private static int mod(int i1, int i2) {
+        int res = i1 % i2;
+        return res >= 0 ? res : res + i2;
+    }
     private static Response responseOk(MemorySegment memorySegment) {
         return new Response(Response.OK, memorySegment.toArray(ValueLayout.JAVA_BYTE));
     }

@@ -18,7 +18,6 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -128,7 +127,7 @@ public class TimofeevServer extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
-            if (e instanceof HttpException) {
+            if (e.getClass() == HttpException.class) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             } else {
                 // for like unexpected NPE

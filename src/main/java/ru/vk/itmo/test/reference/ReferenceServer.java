@@ -1,6 +1,12 @@
 package ru.vk.itmo.test.reference;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.Response;
+import one.nio.http.Param;
+import one.nio.http.Path;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
@@ -13,10 +19,8 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.Queue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class ReferenceServer extends HttpServer {
 
@@ -24,16 +28,11 @@ public class ReferenceServer extends HttpServer {
 
     private final Executor executor;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-//    private final Queue<Runnable> workersQueue;
-
-//    private AtomicLong previousTime = new AtomicLong(System.currentTimeMillis());
 
     public ReferenceServer(ServiceConfig config,
                            Executor executor,
-                           Queue<Runnable> workersQueue,
                            Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createServerConfig(config));
-//        this.workersQueue = workersQueue;
         this.executor = executor;
         this.dao = dao;
     }
@@ -51,16 +50,14 @@ public class ReferenceServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-//        long now = System.currentTimeMillis();
-//        long previous = previousTime.getAndSet(now);
-//        if (previous / 1000 < now / 1000) {
-//            log.info("Current queue size = {}", workersQueue.size());
-//        }
+        handleAsync(session, () -> super.handleRequest(request, session));
+    }
 
+    private void handleAsync(HttpSession session, ERunnable runnable) throws IOException {
         try {
             executor.execute(() -> {
                 try {
-                    super.handleRequest(request, session);
+                    runnable.run();
                 } catch (Exception e) {
                     log.error("Exception during handleRequest", e);
                     try {
@@ -79,8 +76,7 @@ public class ReferenceServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
+        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
     @Path("/v0/status")
@@ -119,6 +115,10 @@ public class ReferenceServer extends HttpServer {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         }
+    }
+
+    private interface ERunnable {
+        void run() throws Exception;
     }
 
 }

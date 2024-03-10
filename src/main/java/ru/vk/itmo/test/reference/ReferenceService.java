@@ -13,7 +13,12 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutionException;
 
 public class ReferenceService implements Service {
 
@@ -35,14 +40,14 @@ public class ReferenceService implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
         ArrayBlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_SIZE);
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(THREADS, THREADS, 
-            1000, TimeUnit.SECONDS, 
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(THREADS, THREADS,
+            1000, TimeUnit.SECONDS,
             queue,
             new CustomThreadFactory("worker", true),
             new ThreadPoolExecutor.AbortPolicy());
         executor.prestartAllCoreThreads();
         this.executor = executor;
-        server = new ReferenceServer(config, executor, queue, dao);
+        server = new ReferenceServer(config, executor, dao);
         server.start();
         return CompletableFuture.completedFuture(null);
     }

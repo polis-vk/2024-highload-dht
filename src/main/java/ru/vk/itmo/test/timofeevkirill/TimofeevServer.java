@@ -10,6 +10,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -27,7 +29,7 @@ import static ru.vk.itmo.test.timofeevkirill.Settings.MAX_PROCESSING_TIME_FOR_RE
 import static ru.vk.itmo.test.timofeevkirill.Settings.VERSION_PREFIX;
 
 public class TimofeevServer extends HttpServer {
-
+    private static final Logger logger = LoggerFactory.getLogger(TimofeevServer.class);
     private static final String PATH = VERSION_PREFIX + "/entity";
     private final Dao dao;
     private final ThreadPoolExecutor threadPoolExecutor;
@@ -107,7 +109,8 @@ public class TimofeevServer extends HttpServer {
                 try {
                     processRequest(request, session, start);
                 } catch (IOException e) {
-                    throw new UncheckedIOException(e);
+                    logger.error("Exception while sending close connection", e);
+                    session.scheduleClose();
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -125,7 +128,7 @@ public class TimofeevServer extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
-            if (e.getClass() == HttpException.class) {
+            if (e instanceof HttpException) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             } else {
                 // for like unexpected NPE

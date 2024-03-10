@@ -43,9 +43,9 @@ public class TimofeevService implements Service {
 
     @Override
     public synchronized CompletableFuture<Void> stop() throws IOException {
-        dao.close();
-        shutdownAndAwaitTermination(threadPoolExecutor);
         server.stop();
+        shutdownAndAwaitTermination(threadPoolExecutor);
+        dao.close();
         return CompletableFuture.completedFuture(null);
     }
 

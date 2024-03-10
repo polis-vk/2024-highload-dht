@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 
 public final class MemorySegmentFactory {
     private MemorySegmentFactory() {
-        // Suppress warning
     }
 
     public static byte[] toByteArray(MemorySegment data) {

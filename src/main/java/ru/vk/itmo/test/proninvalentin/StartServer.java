@@ -11,7 +11,6 @@ import java.util.List;
 
 public final class StartServer {
     private StartServer() {
-        // Suppress warning
     }
 
     public static void main(String[] args) throws IOException {

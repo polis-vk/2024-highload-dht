@@ -5,11 +5,11 @@ import one.nio.util.Utf8;
 
 import java.util.*;
 
-public class ConsistentHashAlgo implements ShardingAlgo {
+public class ConsistentHashing implements ShardingAlgorithm {
     private final int[] hashes;
     private final Map<Integer, String> vNodeMapping = new HashMap<>();
 
-    public ConsistentHashAlgo(ShardingConfig config) {
+    public ConsistentHashing(ShardingConfig config) {
         List<String> nodesUrls = config.nodesUrls();
         int virtualNodesNumber = config.virtualNodesNumber();
         int hashesNumber = nodesUrls.size() * virtualNodesNumber;

@@ -2,6 +2,11 @@ package ru.vk.itmo.test.proninvalentin;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
+import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
+import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
+import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
+import ru.vk.itmo.test.proninvalentin.workers.WorkerPoolConfig;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
@@ -24,11 +29,21 @@ public final class StartServer {
         Files.createDirectories(profilingDataPath);
 
         Config daoConfig = new Config(profilingDataPath, flushThresholdBytes);
-        ServiceConfig serviceConfig = new ServiceConfig(port, url, List.of(url), profilingDataPath);
         ReferenceDao referenceDao = new ReferenceDao(daoConfig);
-        WorkerPool workerPool = new WorkerPool(WorkerPoolConfig.defaultConfig());
 
-        Server server = new Server(serviceConfig, referenceDao, workerPool);
+        WorkerPoolConfig workerPoolConfig = WorkerPoolConfig.defaultConfig();
+        WorkerPool workerPool = new WorkerPool(workerPoolConfig);
+
+        List<String> nodesUrls = List.of(
+                url + ":" + port,
+                url + ":" + "44444",
+                url + ":" + "55555"
+                );
+        ShardingConfig shardingConfig = ShardingConfig.defaultConfig(nodesUrls);
+        ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
+
+        ServiceConfig serviceConfig = new ServiceConfig(port, url, nodesUrls, profilingDataPath);
+        Server server = new Server(serviceConfig, referenceDao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig());
         server.start();
     }
 }

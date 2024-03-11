@@ -1,5 +1,5 @@
 package ru.vk.itmo.test.proninvalentin.sharding;
 
-public interface ShardingAlgo {
+public interface ShardingAlgorithm {
     String getNodeByKey(String key);
 }

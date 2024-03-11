@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.proninvalentin;
+package ru.vk.itmo.test.proninvalentin.workers;
 
 import one.nio.async.CustomThreadFactory;
 

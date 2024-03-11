@@ -24,6 +24,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static one.nio.util.Hash.murmur3;
+
 public class ServerImplementation extends HttpServer {
 
     private static final Logger logger = LoggerFactory.getLogger(ServerImplementation.class);
@@ -42,8 +44,13 @@ public class ServerImplementation extends HttpServer {
 
     private final ExecutorService executor;
 
+    private final ServiceConfig config;
+    private final Client client;
+
     public ServerImplementation(ServiceConfig config, MemorySegmentDao memorySegmentDao) throws IOException {
         super(createServerConfig(config));
+        this.config = config;
+        this.client = new Client();
         this.memorySegmentDao = memorySegmentDao;
         this.executor = new ThreadPoolExecutor(THREAD_POOL_SIZE,
                 THREAD_POOL_SIZE,
@@ -70,13 +77,17 @@ public class ServerImplementation extends HttpServer {
                         handleDefault(request, session);
                         return;
                     }
-                    int requestMethod = request.getMethod();
                     String id = request.getParameter(REQUEST_KEY);
-                    switch (requestMethod) {
-                        case Request.METHOD_GET -> session.sendResponse(get(id));
-                        case Request.METHOD_PUT -> session.sendResponse(put(id, request));
-                        case Request.METHOD_DELETE -> session.sendResponse(delete(id));
-                        default -> session.sendResponse(getUnsupportedMethodResponse());
+                    if (id == null || id.isEmpty()) {
+                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        return;
+                    }
+                    String url = getTargetNodeUrl(id);
+                    if (url.equals(config.selfUrl())) {
+                        session.sendResponse(handleNodeRequest(request, id));
+                    } else {
+                        client.setUrl(url);
+                        session.sendResponse(client.handleProxyRequest(request));
                     }
                 } catch (Exception e) {
                     logger.error("Exception in request method", e);
@@ -84,7 +95,7 @@ public class ServerImplementation extends HttpServer {
                 }
             });
         } catch (RejectedExecutionException exception) {
-            logger.warn("ThreadPool queue overflow", exception);
+            logger.error("ThreadPool queue overflow", exception);
             sendErrorResponse(session, Response.SERVICE_UNAVAILABLE);
         }
 
@@ -116,9 +127,6 @@ public class ServerImplementation extends HttpServer {
     }
 
     private Response get(String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         Entry<MemorySegment> entry = memorySegmentDao.get(key);
         if (entry == null) {
@@ -128,9 +136,6 @@ public class ServerImplementation extends HttpServer {
     }
 
     private Response put(String id, Request request) {
-        if (id == null || id.isEmpty() || request.getBody() == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         byte[] requestBody = request.getBody();
         if (requestBody == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -142,9 +147,6 @@ public class ServerImplementation extends HttpServer {
     }
 
     private Response delete(String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         Entry<MemorySegment> entry = new BaseEntry<>(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)), null);
         memorySegmentDao.upsert(entry);
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -152,6 +154,40 @@ public class ServerImplementation extends HttpServer {
 
     private Response getUnsupportedMethodResponse() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
+
+    private Response handleNodeRequest(Request request, String id) {
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                return get(id);
+            }
+            case Request.METHOD_PUT -> {
+                return put(id, request);
+            }
+            case Request.METHOD_DELETE -> {
+                return delete(id);
+            }
+            default -> {
+                return getUnsupportedMethodResponse();
+            }
+        }
+    }
+
+    private String getTargetNodeUrl(String key) {
+        int max = 0;
+        int maxId = 0;
+        for (int i = 0; i < config.clusterUrls().size(); i++) {
+            int hash = getCustomHashCode(key, i);
+            if (hash > max) {
+                max = hash;
+                maxId = i;
+            }
+        }
+        return config.clusterUrls().get(maxId);
+    }
+
+    private int getCustomHashCode(String key, int nodeNumber) {
+        return (murmur3(key + nodeNumber) % 101);
     }
 }
 

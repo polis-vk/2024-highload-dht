@@ -11,12 +11,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 public class Client {
-    private final HttpClient client;
+    private final HttpClient httpClient;
 
     private String url;
 
     Client() {
-        client = HttpClient.newBuilder().build();
+        httpClient = HttpClient.newBuilder().build();
     }
 
     private byte[] getRequestBody(Request request) {
@@ -31,7 +31,7 @@ public class Client {
 
     private HttpResponse<byte[]> getProxyResponse(Request request) throws IOException,
             InterruptedException {
-        return client.send(getProxyRequest(request),
+        return httpClient.send(getProxyRequest(request),
                 HttpResponse.BodyHandlers.ofByteArray());
     }
 

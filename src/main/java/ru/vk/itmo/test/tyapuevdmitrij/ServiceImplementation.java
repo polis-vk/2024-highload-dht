@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.tyapuevdmitrij;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
@@ -18,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 public class ServiceImplementation implements ru.vk.itmo.Service {
 
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
+    private static final Logger logger = LoggerFactory.getLogger(ServiceImplementation.class);
     private final ServiceConfig config;
     private ServerImplementation server;
     private MemorySegmentDao memorySegmentDao;
@@ -83,7 +86,7 @@ public class ServiceImplementation implements ru.vk.itmo.Service {
             new ServerImplementation(cfg,
                     new MemorySegmentDao(new Config(paths[i],
                             FLUSH_THRESHOLD_BYTES))).start();
-            System.out.println("Socket is ready: " + url);
+            logger.info("Socket is ready: " + url);
         }
     }
 }

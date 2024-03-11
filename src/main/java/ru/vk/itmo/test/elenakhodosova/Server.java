@@ -19,7 +19,7 @@ public final class Server {
 
     public static void main(String[] args) throws IOException {
          ReferenceDao dao;
-         ExecutorService executorService = ExecutorServiceConfig.getExecutorService();
+         ExecutorService executorService = ExecutorServiceConfig.newExecutorService();
          ServiceConfig config = new ServiceConfig(
                 8080,
                 "http://localhost",

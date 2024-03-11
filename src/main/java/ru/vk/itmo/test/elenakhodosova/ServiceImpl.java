@@ -28,8 +28,8 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        executorService = ExecutorServiceConfig.getExecutorService();
-        this.server = new HttpServerImpl(config, dao, executorService);
+        executorService = ExecutorServiceConfig.newExecutorService();
+        server = new HttpServerImpl(config, dao, executorService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }

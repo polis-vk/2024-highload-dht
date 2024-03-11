@@ -44,11 +44,8 @@ public class HttpServerImpl extends HttpServer {
         try {
             executorService.execute(() -> processRequest(request, session));
         } catch (RejectedExecutionException e) {
-            logger.error(e.toString());
+            logger.error("Request rejected", e);
             session.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY));
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            session.scheduleClose();
         }
     }
 
@@ -56,6 +53,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
+            logger.error("Unexpected error when processing request", e);
             sendError(session, e);
         }
     }
@@ -63,9 +61,10 @@ public class HttpServerImpl extends HttpServer {
     private void sendError(HttpSession session, Exception e) {
         try {
             String responseCode = e.getClass() == HttpException.class ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
-            session.sendError(responseCode, e.getMessage());
+            logger.error("Send error", e);
+            session.sendError(responseCode, null);
         } catch (Exception ex) {
-            logger.error(ex.getMessage());
+            logger.error("Unexpected error when sending error", ex);
         }
     }
 

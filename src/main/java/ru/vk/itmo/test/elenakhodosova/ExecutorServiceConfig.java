@@ -16,7 +16,7 @@ public final class ExecutorServiceConfig {
     private ExecutorServiceConfig() {
     }
 
-    public static ExecutorService getExecutorService() {
+    public static ExecutorService newExecutorService() {
         AtomicInteger threadCounter = new AtomicInteger(0);
         ThreadFactory threadFactory = r ->
                 new Thread(r, "CustomWorkerThread: " + threadCounter.getAndIncrement());

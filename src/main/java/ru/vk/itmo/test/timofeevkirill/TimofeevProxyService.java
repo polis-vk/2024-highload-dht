@@ -42,7 +42,7 @@ public class TimofeevProxyService {
     public Response proxyRequest(int method, String id, byte[] body) throws IOException {
         int proxiedNodeId = getNodeIdByHash(id);
         int clientId = proxiedNodeId > selfId ? proxiedNodeId - 1 : proxiedNodeId;
-        URI uri = URI.create(STR."\{serviceConfig.clusterUrls().get(proxiedNodeId)}\{PATH}?id=\{id}");
+        URI uri = URI.create(serviceConfig.clusterUrls().get(proxiedNodeId) + PATH + "?id=" + id);
         try {
             HttpResponse<byte[]> response = httpClients.get(clientId).send(
                     requestBuilder

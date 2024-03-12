@@ -27,7 +27,7 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -40,7 +40,7 @@ public class Server extends HttpServer {
 
     private final Logger logger = Logger.getLogger("lsm-db-server");
 
-    private final Executor executor;
+    private final ExecutorService executor;
     private static final Duration defaultTimeout = Duration.of(200, ChronoUnit.MILLIS);
     private static final ZoneId ServerZoneId = ZoneId.of("+0");
 
@@ -184,5 +184,22 @@ public class Server extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    @Override
+    public synchronized void stop() {
+        super.stop();
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    System.err.println("Pool did not terminate");
+                }
+            }
+        } catch (InterruptedException ex) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }

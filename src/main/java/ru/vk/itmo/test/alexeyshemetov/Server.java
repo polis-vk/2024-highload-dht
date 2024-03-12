@@ -121,7 +121,7 @@ public class Server extends HttpServer {
         try {
             handleDefault(request, session);
         } catch (IOException ignore) {
-            // ignore
+            session.scheduleClose();
         }
     }
 

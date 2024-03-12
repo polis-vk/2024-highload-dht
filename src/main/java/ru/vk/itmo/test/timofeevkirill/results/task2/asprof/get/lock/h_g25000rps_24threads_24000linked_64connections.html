@@ -14,11 +14,11 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 336px}
+	#canvas {width: 100%; height: 256px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
-<h1>CPU profile</h1>
+<h1>Flame Graph</h1>
 <header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
 <header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
 <canvas id='canvas'></canvas>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(21);
+	const levels = Array(16);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -251,294 +251,65 @@
 
 const cpool = [
 'all',
-' BarrierSetC2::create_barrier_state',
-' C2Compiler::compile_method',
-'!hunkPool::clean',
-'!ollectedHeap::array_allocate',
-'"mpile::Code_Gen',
-'+mpile',
-')Optimize',
-'\'Broker::compiler_thread_loop',
-'/invoke_compiler_on_method',
-' JavaThread::thread_main_inner',
-'$_sun_nio_ch_KQueue_poll',
-' MachNode::rematerialize',
-'!onitor::wait_without_safepoint_check',
-'\'DeflationThread::monitor_deflation_thread_entry',
-' OptoRuntime::new_array_C',
-' ParsePredicateNode::Opcode',
-'!eriodicTask::real_time_tick',
-'!haseChaitin::Register_Allocate',
-'.Split',
-'%IdealLoop::PhaseIdealLoop',
-'0build_and_optimize',
-'6loop_late',
-'0optimize',
-'!latformMonitor::wait',
-' RequestHandler0_upsert.handleRequest',
-'.1_getById.handleRequest',
-' Thread::call_run',
-' WatcherThread::run',
-'/sleep',
-' [unknown_Java]',
-' __psynch_cvwait',
-'!pthread_start',
-' clock_gettime',
-'!onvertReturnVal',
-' gettimeofday',
-' int const static_fast_get_field_wrapper<10, int const>',
-' java/lang/String.hashCode',
-'1indexOf',
-'0Latin1.hashCode',
-'7indexOf',
-'*foreign/MemorySegment.mismatch',
-'%util/ArrayDeque.pollFirst',
-'*HashMap$HashIterator.<init>',
-'2KeyIterator.<init>',
-'5Set.iterator',
-'1.clear',
-'2get',
-'5Node',
-'2hash',
-'.Set.add',
-'2clear',
-'2iterator',
-'*concurrent/ConcurrentSkipListMap.cpr',
-'KdoGet',
-'Kget',
-'5locks/AbstractQueuedSynchronizer.releaseShared',
-'VsignalNext',
-';ReentrantLock$NonfairSync.initialTryLock',
-'ISync.lock',
+' java.util.concurrent.locks.ReentrantLock$NonfairSync',
+'$/lang/Thread.run',
+'4With',
+'%util/concurrent/LinkedBlockingQueue.offer',
+'Itake',
+'5ThreadPoolExecutor$Worker.run',
+'G.execute',
+'HgetTask',
+'HrunWorker',
+'5locks/AbstractQueuedSynchronizer.acquire',
+']Interruptibly',
+';LockSupport.park',
+';ReentrantLock$Sync.lock',
+'RInterruptibly',
 'H.lock',
-'DReadWriteLock$ReadLock.unlock',
-'!byte_arraycopy',
-'&disjoint_arraycopy',
-'!dk/internal/foreign/AbstractMemorySegmentImpl.mismatch',
-'-util/ArraysSupport.signedHashCode',
-'@vectorizedHashCode',
-'!int_disjoint_arraycopy',
-' kevent',
-' mach_absolute_time',
-' one/nio/http/HttpServer.handleRequest',
-'3ssion.handleParsedRequest',
-'9parseRequest',
-':rocessHttpBuffer',
+'MInterruptibly',
+'!dk/internal/misc/Unsafe.park',
+' one.nio.http.HttpSession',
+'#/nio/http/HttpSession.handleParsedRequest',
+'9processHttpBuffer',
 '@Read',
-'9sendResponse',
-'9writeResponse',
-'-PathMapper.find',
-'-Request.getParameter',
-'8RequiredParameter',
-'/sponse.toBytes',
-'(net/JavaSelector.iteratorFor',
-'9select',
-'1ocket.read',
-'7write',
-',Session$ArrayQueueItem.write',
-'3.process',
-'4read',
-'4write',
-'(server/SelectorThread.run',
-'(util/ByteArrayBuilder.append',
-'-URLEncoder.decode',
-'.tf8.isAsciiString',
-'2length',
-'2read',
-'2write',
-'!s::javaTimeMillis',
-',Nanos',
-' read',
-'!u/vk/itmo/test/tveritinalexandr/ServerImpl.getById',
-'Lupsert',
-'Adao/DaoImpl.get',
-'Mupsert',
-'EMemTable.get',
-'HorySegmentComparator.compare',
-'ETableSet.get',
-' sun/nio/ch/IOUtil.read',
-'6IntoNativeBuffer',
-'2write',
-'7FromNativeBuffer',
-'+KQueue.poll',
-'1SelectorImpl.doSelect',
-'>processEvents',
-'EUpdateQueue',
-'+SelectorImpl.lockAndDoSelect',
-'8processReadyEvents',
-'8select',
-',ocketChannelImpl.read',
-'=write',
-'1Dispatcher.read',
-'@0',
-'<write',
-'A0',
-'+Util$2.clear',
-'2iterator',
-'0BufferCache.get',
-'/.getTemporaryDirectBuffer',
-' thread_native_entry',
-'\'start',
-' unsafe_arraycopy',
-' write'
+'(net/Session.process',
+'(server/PayloadThread.run',
+'/SelectorThread.run',
+' ru/vk/itmo/test/timofeevkirill/TimofeevServer.handleRequest'
 ];
 unpack(cpool);
 
-n(3,816)
-u(243,7)
-u(657,3)
-u(555)
-f(705,2,3,1)
-u(772)
-u(267)
-u(283)
-u(555)
-f(772,2,1)
-n(780,2)
-f(713,1,2,789)
-u(657,238)
-u(650,2)
-f(994,4,1,1)
-u(418)
-u(362)
-u(354)
-u(346)
-f(929,3,1,234)
-u(913)
-u(889)
-u(881,227,1,0,0)
-u(91,1)
-n(547,226)
-f(898,6,226,3)
-f(922,7,1,2)
-f(402,8,1,1)
-f(906,6,1,4)
-f(338,7,3,1)
-f(986,3,1,2)
-u(410)
-u(370)
-f(689,2,2,551)
-u(593,551,6,0,0)
-u(585,280)
-u(569,264,9,0,0)
-u(561,264,9,0,0)
-u(202,5,4,0,0)
-u(602,3)
-f(507,9,2,1)
-f(634,8,1)
-u(626)
-f(801,8,1)
-u(817)
-u(489)
-u(449)
-u(457)
-u(124)
-u(36)
-f(209,7,1,256,2,0,0)
-f(601,8,2,220)
-u(609,220,2,0,0)
-f(641,10,1,6)
-f(722,11,1,5)
-f(746,12,1,3)
-n(762,1)
-u(762)
-f(705,10,1,213,1,0,0)
-f(641,11,1,1)
-n(705,211)
-u(681,210,6,0,0)
-u(673,210,6,0,0)
-u(945,210,6,0,0)
-u(865,210,6,0,0)
-u(865,210,6,0,0)
-u(873,210,6,0,0)
-u(969,210,6,0,0)
-f(539,19,2,2)
-n(977,205,1,0,0)
-u(275,1)
-n(1043,204)
-f(1035,19,204,1)
-f(977,12,1)
-f(633,8,1)
-u(625)
-u(729)
-u(306)
-u(306)
-u(322)
-f(793,8,1,33)
-u(809)
-u(841)
-u(825)
-u(441)
-u(433)
-f(426,14,6,27)
-u(834)
-u(834)
-u(330)
-u(330)
-u(514)
-f(618,7,27,3)
-u(378)
-u(386)
-f(394,10,1,2)
-u(298)
-u(314)
-u(530)
-u(522)
-f(578,5,2,1)
-u(754)
-u(754)
-u(738)
-f(754,5,1,15)
-u(754)
-u(738)
-f(697,4,15,271,6,0,0)
-u(665,271,6,0,0)
-u(937,271,6,0,0)
-u(481,1)
-u(473)
-u(465)
-u(585)
-f(849,7,1,270,6,0,0)
-f(849,8,6,264)
-u(857,263,3,0,0)
-u(953,263,3,0,0)
-f(961,11,3,260)
-u(292,1)
-n(787,259)
-f(1010,9,259,1)
-u(1002)
-u(499)
-f(1027,1,1,20)
-u(259)
-u(1020)
-u(220)
-u(84,5)
-u(68,3)
-u(76)
-u(20)
-u(12,1)
-n(52,2)
-u(44,1)
-u(148)
-u(156)
-u(100)
-f(60,10,1)
-u(188)
-u(164)
-u(172)
-u(180)
-u(132)
-f(116,6,1,2)
-u(108)
-u(196)
-u(251)
-f(228,5,2,15)
-u(140,1)
-u(28)
-f(236,6,1,14)
-u(108)
-u(196)
-u(251)
+n(3,706235)
+u(185,1519)
+u(17)
+u(25)
+u(49)
+u(73)
+u(65)
+u(41)
+u(129)
+u(113)
+u(89)
+u(81)
+u(97)
+u(137)
+u(10)
+f(193,1,1519,704716)
+u(177)
+u(146,704574)
+n(169,142)
+u(161)
+u(153)
+u(201)
+u(57)
+u(33)
+u(121)
+u(105)
+u(81)
+u(81)
+u(97)
+u(137)
+u(10)
 
 search();
 </script></body></html>

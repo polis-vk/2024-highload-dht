@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 public class MyService implements Service {
     private final Logger log = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1 MB
-    private static final int MAX_QUEUE_LENGTH = 1000;
+    private static final int MAX_QUEUE_LENGTH = 500;
     private static final int MAX_THREADS = 8;
     private static final int KEEP_ALIVE_TIME = 10;
     private static final int AWAIT_TERMINATION_TIMEOUT = 30;

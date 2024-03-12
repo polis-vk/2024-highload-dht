@@ -30,6 +30,9 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    private static class ShutdownInterruptedException extends RuntimeException {
+    }
+
     Future<?> flushNotification;
 
     private static final Comparator<MemorySegment> keyComparator = (o1, o2) -> {
@@ -144,18 +147,20 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     public void close() {
         if (closed.compareAndSet(false, true)) {
             this.flush();
+
             try {
                 flushNotification.get();
             } catch (InterruptedException | ExecutionException e) {
-                System.err.println("Unsuccessful flush at the end of DAO life");
+                throw new ShutdownInterruptedException();
             }
+
             this.persistentStorage.close();
             executor.shutdown();
             try {
                 if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
                     executor.shutdownNow();
                     if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                        System.err.println("Pool did not terminate");
+                        throw new ShutdownInterruptedException();
                     }
                 }
             } catch (InterruptedException ex) {

@@ -19,6 +19,9 @@ public class RemoteDaoNode implements Dao<MemorySegment, Entry<MemorySegment>> {
 
     private final HttpClient client;
 
+    private static final String BASE_REQUEST_PATH = "/v0/entity?id=";
+
+
     public RemoteDaoNode(String nodeUrl) {
         client = new HttpClient(new ConnectionString(nodeUrl)); // возможно стоит keepalive врубить
     }
@@ -45,9 +48,8 @@ public class RemoteDaoNode implements Dao<MemorySegment, Entry<MemorySegment>> {
     public Entry<MemorySegment> get(MemorySegment key) {
         Response response;
         try {
-            response = client.get("/v0/entity?id=" + segmentToString(key));
+            response = client.get(BASE_REQUEST_PATH + segmentToString(key));
         } catch (HttpException | InterruptedException | PoolException | IOException e) {
-            System.out.println("походу тут упали");
             throw new RemoteNodeAccessFailure(e);
         }
         if (response.getStatus() == 404) {
@@ -62,10 +64,10 @@ public class RemoteDaoNode implements Dao<MemorySegment, Entry<MemorySegment>> {
         Response response;
         try {
             if (entry.value() == null) {
-                response = client.delete("/v0/entity?id=" + segmentToString(entry.key()));
+                response = client.delete(BASE_REQUEST_PATH + segmentToString(entry.key()));
             } else {
                 response = client.put(
-                        "/v0/entity?id=" + segmentToString(entry.key()),
+                        BASE_REQUEST_PATH + segmentToString(entry.key()),
                         entry.value().toArray(ValueLayout.JAVA_BYTE)
                 );
             }

@@ -3,7 +3,6 @@ package ru.vk.itmo.test.shishiginstepan.server;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
-import javax.xml.crypto.dsig.DigestMethod;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -14,7 +13,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class DistributedDao implements Dao<MemorySegment, Entry<MemorySegment>> {
 

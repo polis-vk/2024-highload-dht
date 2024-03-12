@@ -24,9 +24,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
-import static one.nio.http.Request.METHOD_DELETE;
-import static one.nio.http.Request.METHOD_GET;
-import static one.nio.http.Request.METHOD_PUT;
 import static ru.vk.itmo.test.timofeevkirill.Settings.MAX_PROCESSING_TIME_FOR_REQUEST;
 import static ru.vk.itmo.test.timofeevkirill.Settings.VERSION_PREFIX;
 
@@ -68,12 +65,12 @@ public class TimofeevServer extends HttpServer {
     }
 
     @Path(PATH)
-    @RequestMethod(METHOD_GET)
+    @RequestMethod(Request.METHOD_GET)
     public Response get(@Param(value = "id", required = true) String id) throws IOException {
         if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
 
         if (proxyService.needProxyRequest(id)) {
-            return proxyService.proxyRequest(METHOD_GET, id, Response.EMPTY);
+            return proxyService.proxyRequest(Request.METHOD_GET, id, Response.EMPTY);
         }
 
         Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)));
@@ -84,12 +81,12 @@ public class TimofeevServer extends HttpServer {
     }
 
     @Path(PATH)
-    @RequestMethod(METHOD_PUT)
+    @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id, Request request) throws IOException {
         if (isEmptyParam(id) || isEmptyRequest(request)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
 
         if (proxyService.needProxyRequest(id)) {
-            return proxyService.proxyRequest(METHOD_PUT, id, request.getBody());
+            return proxyService.proxyRequest(Request.METHOD_PUT, id, request.getBody());
         }
 
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
@@ -100,12 +97,12 @@ public class TimofeevServer extends HttpServer {
     }
 
     @Path(PATH)
-    @RequestMethod(METHOD_DELETE)
+    @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(value = "id", required = true) String id) throws IOException {
         if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
 
         if (proxyService.needProxyRequest(id)) {
-            return proxyService.proxyRequest(METHOD_DELETE, id, Response.EMPTY);
+            return proxyService.proxyRequest(Request.METHOD_DELETE, id, Response.EMPTY);
         }
 
         dao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)), null));

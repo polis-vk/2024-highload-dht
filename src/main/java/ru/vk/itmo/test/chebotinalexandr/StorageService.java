@@ -68,7 +68,7 @@ public class StorageService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

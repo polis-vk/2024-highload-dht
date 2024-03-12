@@ -1,6 +1,14 @@
 package ru.vk.itmo.test.proninvalentin;
 
-import one.nio.http.*;
+import one.nio.http.HttpException;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -193,8 +201,12 @@ public class Server extends HttpServer {
                 }
                 httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
             }
-            case Request.METHOD_GET -> httpRequest = builder.GET().build();
-            case Request.METHOD_DELETE -> httpRequest = builder.DELETE().build();
+            case Request.METHOD_GET -> {
+                httpRequest = builder.GET().build();
+            }
+            case Request.METHOD_DELETE -> {
+                httpRequest = builder.DELETE().build();
+            }
             default -> {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
@@ -214,7 +226,8 @@ public class Server extends HttpServer {
             if (statusCode != null) {
                 sendResponse(session, new Response(statusCode, httpResponse.body()));
             } else {
-                logger.error("The proxied node returned a response with an unexpected status: " + httpResponse.statusCode());
+                logger.error("The proxied node returned a response with an unexpected status: "
+                        + httpResponse.statusCode());
                 sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
             }
         } catch (InterruptedException e) {

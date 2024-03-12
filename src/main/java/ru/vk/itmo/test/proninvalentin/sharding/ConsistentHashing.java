@@ -10,7 +10,7 @@ import java.util.Map;
 
 public class ConsistentHashing implements ShardingAlgorithm {
     private final int[] hashes;
-    private final Map<Integer, String> vNodeMapping = new HashMap<>();
+    private final Map<Integer, String> virtualNodeMapping = new HashMap<>();
 
     public ConsistentHashing(ShardingConfig config) {
         List<String> nodesUrls = config.nodesUrls();
@@ -27,7 +27,7 @@ public class ConsistentHashing implements ShardingAlgorithm {
                 String virtualNode = "[VN: " + (virtualNodesNumber * i + i) + "]" + nodeUrl;
                 int hash = hash(virtualNode);
                 hashes[i * virtualNodesNumber + j] = hash;
-                vNodeMapping.put(hash, nodeUrl);
+                virtualNodeMapping.put(hash, nodeUrl);
             }
         }
         Arrays.sort(hashes);
@@ -38,13 +38,13 @@ public class ConsistentHashing implements ShardingAlgorithm {
         int hash = hash(key);
         int nodeIndex = Arrays.binarySearch(hashes, hash);
         if (nodeIndex >= 0) {
-            return vNodeMapping.get(hashes[nodeIndex]);
+            return virtualNodeMapping.get(hashes[nodeIndex]);
         }
         nodeIndex = -nodeIndex - 2;
         if (nodeIndex < 0) {
-            return vNodeMapping.get(hashes[hashes.length - 1]);
+            return virtualNodeMapping.get(hashes[hashes.length - 1]);
         }
-        return vNodeMapping.get(hashes[nodeIndex]);
+        return virtualNodeMapping.get(hashes[nodeIndex]);
     }
 
     private int hash(String key) {

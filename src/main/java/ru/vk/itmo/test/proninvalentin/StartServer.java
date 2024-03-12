@@ -43,7 +43,8 @@ public final class StartServer {
         ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 
         ServiceConfig serviceConfig = new ServiceConfig(port, url, nodesUrls, profilingDataPath);
-        Server server = new Server(serviceConfig, referenceDao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig());
+        Server server = new Server(serviceConfig, referenceDao, workerPool, shardingAlgorithm,
+                ServerConfig.defaultConfig());
         server.start();
     }
 }

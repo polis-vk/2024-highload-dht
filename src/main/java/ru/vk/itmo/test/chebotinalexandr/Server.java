@@ -26,6 +26,7 @@ public final class Server {
 
     }
 
+    //Test
     public static void main(String[] args) throws IOException {
         ServiceConfig config = new ServiceConfig(
                 8080,

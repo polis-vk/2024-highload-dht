@@ -30,9 +30,6 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    private static class ShutdownInterruptedException extends RuntimeException {
-    }
-
     Future<?> flushNotification;
 
     private static final Comparator<MemorySegment> keyComparator = (o1, o2) -> {
@@ -74,6 +71,14 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     private final Path basePath;
 
     private static class MemStorageOverflowException extends RuntimeException {
+    }
+
+    private static class ShutdownInterruptedException extends RuntimeException {
+        public ShutdownInterruptedException(Exception e) {
+            super(e);
+        }
+
+        public ShutdownInterruptedException(){}
     }
 
     public InMemDaoImpl(Path basePath, long memStorageLimit) {
@@ -151,7 +156,7 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
             try {
                 flushNotification.get();
             } catch (InterruptedException | ExecutionException e) {
-                throw new ShutdownInterruptedException();
+                throw new ShutdownInterruptedException(e);
             }
 
             this.persistentStorage.close();

@@ -29,7 +29,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class Server extends HttpServer {
     public static final String ENTITY_PATH = "/v0/entity";
@@ -48,7 +52,7 @@ public class Server extends HttpServer {
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(QUEUE_CAPACITY)
     );
-    private boolean alive = false;
+    private boolean alive;
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createConfig(config));
@@ -152,10 +156,10 @@ public class Server extends HttpServer {
         HttpClient client = httpClients.get(nodeUrl);
         try {
             return Optional.of(responseProducer.getResponse(client));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Optional.of(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
             return Optional.of(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }

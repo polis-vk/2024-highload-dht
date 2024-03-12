@@ -77,7 +77,7 @@ public class RemoteDaoNode implements Dao<MemorySegment, Entry<MemorySegment>> {
             throw new RemoteNodeAccessFailure(e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RemoteNodeAccessFailure(e)
+            throw new RemoteNodeAccessFailure(e);
         }
         if (response.getStatus() >= 400) {
             throw new RemoteDaoNodeFailure();

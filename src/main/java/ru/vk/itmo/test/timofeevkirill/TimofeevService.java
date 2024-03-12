@@ -25,6 +25,7 @@ public class TimofeevService implements Service {
     private TimofeevServer server;
     private ThreadPoolExecutor threadPoolExecutor;
     private Dao dao;
+    private TimofeevProxyService proxyService;
 
     public TimofeevService(ServiceConfig serviceConfig) {
         this.config = serviceConfig;
@@ -36,7 +37,8 @@ public class TimofeevService implements Service {
         dao = new ReferenceDao(daoConfig);
         threadPoolExecutor = getDefaultThreadPoolExecutor();
         threadPoolExecutor.prestartAllCoreThreads();
-        server = new TimofeevServer(config, dao, threadPoolExecutor);
+        proxyService = new TimofeevProxyService(config);
+        server = new TimofeevServer(config, dao, threadPoolExecutor, proxyService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -45,6 +47,7 @@ public class TimofeevService implements Service {
     public synchronized CompletableFuture<Void> stop() throws IOException {
         server.stop();
         shutdownAndAwaitTermination(threadPoolExecutor);
+        proxyService.close();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -67,7 +70,7 @@ public class TimofeevService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

@@ -24,21 +24,28 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
+import static one.nio.http.Request.*;
 import static ru.vk.itmo.test.timofeevkirill.Settings.MAX_PROCESSING_TIME_FOR_REQUEST;
 import static ru.vk.itmo.test.timofeevkirill.Settings.VERSION_PREFIX;
 
 public class TimofeevServer extends HttpServer {
+    public static final String PATH = VERSION_PREFIX + "/entity";
     private static final Logger logger = LoggerFactory.getLogger(TimofeevServer.class);
-    private static final String PATH = VERSION_PREFIX + "/entity";
+    private static final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
     private final Dao dao;
     private final ThreadPoolExecutor threadPoolExecutor;
-    private static final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
+    private final TimofeevProxyService proxyService;
 
-    public TimofeevServer(ServiceConfig serviceConfig, Dao dao,
-                          ThreadPoolExecutor threadPoolExecutor) throws IOException {
+    public TimofeevServer(
+            ServiceConfig serviceConfig,
+            Dao dao,
+            ThreadPoolExecutor threadPoolExecutor,
+            TimofeevProxyService proxyService
+    ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
         this.threadPoolExecutor = threadPoolExecutor;
+        this.proxyService = proxyService;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -59,9 +66,13 @@ public class TimofeevServer extends HttpServer {
     }
 
     @Path(PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
+    @RequestMethod(METHOD_GET)
+    public Response get(@Param(value = "id", required = true) String id) throws IOException {
         if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
+
+        if (proxyService.needProxyRequest(id)) {
+            return proxyService.proxyRequest(METHOD_GET, id, Response.EMPTY);
+        }
 
         Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)));
 
@@ -71,9 +82,13 @@ public class TimofeevServer extends HttpServer {
     }
 
     @Path(PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) {
+    @RequestMethod(METHOD_PUT)
+    public Response put(@Param(value = "id", required = true) String id, Request request) throws IOException {
         if (isEmptyParam(id) || isEmptyRequest(request)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
+
+        if (proxyService.needProxyRequest(id)) {
+            return proxyService.proxyRequest(METHOD_PUT, id, request.getBody());
+        }
 
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         MemorySegment value = MemorySegment.ofArray(request.getBody());
@@ -83,9 +98,13 @@ public class TimofeevServer extends HttpServer {
     }
 
     @Path(PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
+    @RequestMethod(METHOD_DELETE)
+    public Response delete(@Param(value = "id", required = true) String id) throws IOException {
         if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
+
+        if (proxyService.needProxyRequest(id)) {
+            return proxyService.proxyRequest(METHOD_DELETE, id, Response.EMPTY);
+        }
 
         dao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)), null));
 
@@ -108,7 +127,7 @@ public class TimofeevServer extends HttpServer {
                 try {
                     processRequest(request, session, start);
                 } catch (IOException e) {
-                    logger.error("Exception while sending close connection", e);
+                    logger.error("Exception while sending close connection: ", e);
                     session.scheduleClose();
                 }
             });
@@ -128,9 +147,11 @@ public class TimofeevServer extends HttpServer {
             super.handleRequest(request, session);
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
+                logger.error("Http exception: ", e);
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             } else {
                 // for like unexpected NPE
+                logger.error("Unexpected exception: ", e);
                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
         }

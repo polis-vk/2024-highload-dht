@@ -36,9 +36,9 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        
+
         WorkerPoolConfig workerPoolConfig = WorkerPoolConfig.defaultConfig();
         workerPool = new WorkerPool(workerPoolConfig);
 
@@ -47,11 +47,15 @@ public class ServiceImpl implements Service {
 
         server = new Server(config, dao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig());
         server.start();
+        serverAlreadyClosed = false;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public synchronized CompletableFuture<Void> stop() throws IOException {
+        logger.debug("["
+                + config.selfUrl()
+                + "] Trying to stop server");
         if (serverAlreadyClosed) {
             logger.warn("Trying to close already closed server!");
             return CompletableFuture.completedFuture(null);
@@ -60,6 +64,9 @@ public class ServiceImpl implements Service {
         workerPool.gracefulShutdown();
         dao.close();
         serverAlreadyClosed = true;
+        logger.debug("["
+                + config.selfUrl()
+                + "] Server successfully closed");
         return CompletableFuture.completedFuture(null);
     }
 

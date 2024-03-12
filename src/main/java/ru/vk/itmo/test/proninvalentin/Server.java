@@ -19,8 +19,16 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.*;
-import java.util.concurrent.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class Server extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -28,9 +36,10 @@ public class Server extends HttpServer {
     private final ExecutorService workerPool;
     private final ShardingAlgorithm shardingAlgorithm;
     private final HttpClient httpClient;
+
     private final String selfUrl;
-    private final long REQUEST_MAX_PROCESSING_TIME;
-    public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    private final long requestMaxProcessingTime;
+    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     private static final String METHOD_ADDRESS = "/v0/entity";
     private static final String ID_PARAMETER_NAME = "id=";
     private static final String REQUEST_PATH = METHOD_ADDRESS + "?" + ID_PARAMETER_NAME;
@@ -60,7 +69,7 @@ public class Server extends HttpServer {
                 .executor(Executors.newFixedThreadPool(serverConfig.getMaxWorkersNumber()))
                 .build();
         this.selfUrl = config.selfUrl();
-        this.REQUEST_MAX_PROCESSING_TIME = TimeUnit.MILLISECONDS.toNanos(serverConfig.getRequestTimeoutInMilliseconds());
+        this.requestMaxProcessingTime = TimeUnit.MILLISECONDS.toNanos(serverConfig.getRequestTimeoutInMilliseconds());
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -90,7 +99,7 @@ public class Server extends HttpServer {
             } else {
                 responseCode = Response.INTERNAL_ERROR;
             }
-            session.sendResponse(new Response(responseCode, exception.getMessage().getBytes()));
+            session.sendResponse(new Response(responseCode, exception.getMessage().getBytes(StandardCharsets.UTF_8)));
         } catch (IOException e) {
             logger.error("Error while sending exception info", e);
         }
@@ -121,26 +130,41 @@ public class Server extends HttpServer {
     }
 
     private void processRequest(Request request, HttpSession session, long createdAt) {
-        boolean timeoutExpired = System.nanoTime() - createdAt > REQUEST_MAX_PROCESSING_TIME;
+        boolean timeoutExpired = System.nanoTime() - createdAt > requestMaxProcessingTime;
         if (timeoutExpired) {
             sendResponse(session, new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
 
-        try {
-            String parameter = request.getParameter(ID_PARAMETER_NAME);
-            if (isNullOrEmpty(parameter)) {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
+        // To prevent sending unnecessary proxied requests to the nodes
+        if (!hasHandler(request)) {
+            handleDefault(request, session);
+            return;
+        }
 
+        String parameter = request.getParameter(ID_PARAMETER_NAME);
+        if (isNullOrEmpty(parameter)) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        try {
             String nodeUrl = shardingAlgorithm.getNodeByKey(parameter);
             if (Objects.equals(selfUrl, nodeUrl)) {
-                logger.debug("[" + selfUrl + "] Process request: " + request.getMethodName() + request.getURI());
+                logger.debug("["
+                        + selfUrl
+                        + "] Process request: "
+                        + request.getMethodName()
+                        + request.getURI());
                 super.handleRequest(request, session);
             } else {
-                logger.debug("[" + selfUrl + "] Send request to node [" + nodeUrl + "]: " + request.getMethodName() +
-                        request.getURI());
+                logger.debug("["
+                        + selfUrl
+                        + "] Send request to node ["
+                        + nodeUrl
+                        + "]: "
+                        + request.getMethodName()
+                        + request.getURI());
                 handleProxyRequest(request, session, nodeUrl, parameter);
             }
         } catch (Exception e) {
@@ -153,29 +177,45 @@ public class Server extends HttpServer {
         }
     }
 
+    private boolean hasHandler(Request request) {
+        return request.getURI().startsWith(REQUEST_PATH);
+    }
+
     private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String parameter) {
-        // TODO: зарефакторить так, чтобы все запросы шли через один пайплайн
-        int httpMethod = request.getMethod();
-        if (!isSupportedMethod(httpMethod)) {
-            Response response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            sendResponse(session, response);
-            return;
+        HttpRequest httpRequest;
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + parameter));
+        switch (request.getMethod()) {
+            case Request.METHOD_PUT -> {
+                byte[] body = request.getBody();
+                if (body == null) {
+                    sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+                httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
+            }
+            case Request.METHOD_GET -> httpRequest = builder.GET().build();
+            case Request.METHOD_DELETE -> httpRequest = builder.DELETE().build();
+            default -> {
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
         }
 
-        // TODO: добавить валидацию на запрос
-        HttpRequest httpRequest = mapToHttpRequest(request, nodeUrl, parameter);
+        sendProxyRequest(session, httpRequest);
+    }
+
+    private void sendProxyRequest(HttpSession session, HttpRequest httpRequest) {
         try {
             HttpResponse<byte[]> httpResponse = httpClient
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(REQUEST_MAX_PROCESSING_TIME, TimeUnit.NANOSECONDS);
+                    .get(requestMaxProcessingTime, TimeUnit.NANOSECONDS);
 
-            byte[] body = Objects.requireNonNullElse(httpResponse.body(), new byte[0]);
             String statusCode = httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
             if (statusCode != null) {
-                sendResponse(session, new Response(statusCode, body));
+                sendResponse(session, new Response(statusCode, httpResponse.body()));
             } else {
                 logger.error("The proxied node returned a response with an unexpected status: " + httpResponse.statusCode());
-                sendResponse(session, new Response(Response.INTERNAL_ERROR, body));
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -188,21 +228,6 @@ public class Server extends HttpServer {
             logger.error("Request timed out. Maximum processing time exceeded", e);
             sendExceptionInfo(session, e);
         }
-    }
-
-    private HttpRequest mapToHttpRequest(Request request, String nodeUrl, String entityId) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + entityId));
-        HttpRequest httpRequest = null;
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> httpRequest = builder.GET().build();
-            case Request.METHOD_PUT -> {
-                byte[] body = request.getBody();
-//                if (body == null) // TODO: добавить проверку
-                httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
-            }
-            case Request.METHOD_DELETE -> httpRequest = builder.DELETE().build();
-        }
-        return httpRequest;
     }
 
     // region Handlers

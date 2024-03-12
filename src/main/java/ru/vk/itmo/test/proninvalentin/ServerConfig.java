@@ -18,7 +18,7 @@ public class ServerConfig {
         this.requestMaxProcessingTimeInMilliseconds = requestMaxProcessingTimeInMilliseconds;
     }
 
-    public static ServerConfig defaultConfig(){
+    public static ServerConfig defaultConfig() {
         int workersNumber = Runtime.getRuntime().availableProcessors() * 2;
         int requestMaxProcessingTimeInMilliseconds = 200;
         return new ServerConfig(workersNumber, requestMaxProcessingTimeInMilliseconds);

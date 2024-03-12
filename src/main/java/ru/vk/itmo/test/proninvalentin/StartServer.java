@@ -38,7 +38,7 @@ public final class StartServer {
                 url + ":" + port,
                 url + ":" + "44444",
                 url + ":" + "55555"
-                );
+        );
         ShardingConfig shardingConfig = ShardingConfig.defaultConfig(nodesUrls);
         ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 

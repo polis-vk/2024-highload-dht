@@ -3,7 +3,10 @@ package ru.vk.itmo.test.proninvalentin.sharding;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class ConsistentHashing implements ShardingAlgorithm {
     private final int[] hashes;
@@ -34,8 +37,7 @@ public class ConsistentHashing implements ShardingAlgorithm {
     public String getNodeByKey(String key) {
         int hash = hash(key);
         int nodeIndex = Arrays.binarySearch(hashes, hash);
-        if (nodeIndex >= 0)
-        {
+        if (nodeIndex >= 0) {
             return vNodeMapping.get(hashes[nodeIndex]);
         }
         nodeIndex = -nodeIndex - 2;

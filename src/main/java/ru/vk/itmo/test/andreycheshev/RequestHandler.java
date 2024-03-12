@@ -49,7 +49,6 @@ public class RequestHandler {
         byte[] body = request.getBody();
 
         int currNodeNumber = distributor.getNode(id);
-        System.out.println(currNodeNumber);
         if (currNodeNumber > 0) { // Redirect request, processing on another node.
             HttpClient client = clusterConnections.get(currNodeNumber);
 

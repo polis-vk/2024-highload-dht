@@ -15,11 +15,9 @@ public class ServerImpl extends HttpServer {
     private final RequestExecutor executor;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public ServerImpl(
-            HttpServerConfig config,
-            Dao<MemorySegment, Entry<MemorySegment>> dao,
-            RequestExecutor executor
-    ) throws IOException {
+    public ServerImpl(HttpServerConfig config,
+                      Dao<MemorySegment, Entry<MemorySegment>> dao,
+                      RequestExecutor executor) throws IOException {
         super(config);
 
         this.dao = dao;

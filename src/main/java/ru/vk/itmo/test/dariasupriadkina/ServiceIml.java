@@ -5,9 +5,9 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.dariasupriadkina.dao.ReferenceDao;
 import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
 import ru.vk.itmo.test.dariasupriadkina.workers.WorkerThreadPoolExecutor;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

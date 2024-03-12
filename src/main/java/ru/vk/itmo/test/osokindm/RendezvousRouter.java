@@ -2,42 +2,38 @@ package ru.vk.itmo.test.osokindm;
 
 import one.nio.util.Hash;
 
-import java.util.HashMap;
-import java.util.Map;
-import ru.vk.itmo.test.osokindm.ClusterNode.Node;
-import ru.vk.itmo.test.osokindm.ClusterNode.VirtualNode;
+import java.util.List;
 
 
 public class RendezvousRouter {
 
-    private static final int VNODES_PER_NODE = 10;
-    private Map<Integer, ClusterNode.VirtualNode> shards = new HashMap<>();
+    private List<Node> nodes;
 
-
-    public void addNode(Node node) {
-        for (int i = 0; i < VNODES_PER_NODE; i++) {
-            // здесь мы добавляем ноду, на каждую ноду должна быть виртуальная нода
-            int hash = Hash.murmur3(node.address + i);
-            VirtualNode vNode = new VirtualNode(i);
-            // обработать возможное появление коллизии
-            shards.put(hash, vNode);
-
+    public RendezvousRouter(List<String> nodeUrls) {
+        for (int i = 0; i < nodeUrls.size(); i++) {
+            addNode(new Node(nodeUrls.get(i), i));
         }
     }
 
-    public String getNode(String data) {
-        int max = 0;
-        for (int i = 0; i < shards.keySet().size(); i++) {
+    public void addNode(Node node) {
+        nodes.add(node);
+    }
 
-            int hash = Hash.murmur3(shards.get(i) + data);
+    public Node getNode(String key) {
+        if (key == null) {
+            return null;
+        }
+        int max = Integer.MIN_VALUE;
+        Node maxHashNode = null;
+        for (Node node : nodes) {
+
+            int hash = Hash.murmur3(node.name + key);
             if (hash > max) {
                 max = hash;
+                maxHashNode = node;
             }
         }
-        // вычисляем хэш функцию для каждой ноды, берем максимальную, добавляем в нужный кластер
-        // вычислив, в какую ноду мы хотим добавить элемент, мы берем адрес этой ноды и возвращаем его
-        // сервер уже делает запрос по этому адресу
-        return null;
+        return maxHashNode;
     }
 
 

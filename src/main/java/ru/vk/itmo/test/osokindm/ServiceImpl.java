@@ -56,7 +56,9 @@ public class ServiceImpl implements Service {
             daoWrapper = new DaoWrapper(new Config(config.workingDir(), MEMORY_LIMIT_BYTES));
             router = new RendezvousRouter(config.clusterUrls());
             server = new HttpServerImpl(createServerConfig(config.selfPort()));
+            server.addRequestHandlers(this);
             server.start();
+            LOGGER.debug("Server started");
         } catch (IOException e) {
             LOGGER.error("Error occurred while starting the server");
             throw new IOException(e);

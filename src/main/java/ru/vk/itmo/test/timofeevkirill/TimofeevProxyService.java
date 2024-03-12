@@ -57,6 +57,7 @@ public class TimofeevProxyService {
             return proxyResponse(response, response.body());
         } catch (InterruptedException e) {
             logger.error("Proxy request exception: ", e);
+            Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         } catch (IllegalArgumentException e) {
             logger.error("Unsupported method: ", e);

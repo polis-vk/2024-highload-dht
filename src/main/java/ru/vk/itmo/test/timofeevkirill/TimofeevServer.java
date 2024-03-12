@@ -24,7 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
-import static one.nio.http.Request.*;
+import static one.nio.http.Request.METHOD_DELETE;
+import static one.nio.http.Request.METHOD_GET;
+import static one.nio.http.Request.METHOD_PUT;
 import static ru.vk.itmo.test.timofeevkirill.Settings.MAX_PROCESSING_TIME_FOR_REQUEST;
 import static ru.vk.itmo.test.timofeevkirill.Settings.VERSION_PREFIX;
 

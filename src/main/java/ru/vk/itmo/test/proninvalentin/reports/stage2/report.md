@@ -141,7 +141,7 @@ Selector треды, тратя ~20% общего времени)
 
 ### Selector thread CPU Flame Graph
 
-![selector-cpu-thread-put.png](aprof%2Fput%2Fprofile-put-30000-1t-8c%2Fselector-cpu-thread-put.png)
+![selector-cpu-thread-get.png](aprof%2Fget%2Fprofile-get-20000-1t-8c%2Fselector-cpu-thread-get.png)
 
 На графике с применением пула можно увидеть ровно ту же самую картину, что и при рассмотрении работы Put метода.
 Селектор больше не занимается обработкой запроса самостоятельно

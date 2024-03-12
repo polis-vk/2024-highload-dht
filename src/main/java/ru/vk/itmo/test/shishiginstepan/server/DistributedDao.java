@@ -15,7 +15,6 @@ import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class DistributedDao implements Dao<MemorySegment, Entry<MemorySegment>> {
-
     private static int MULTIPLICATION_FACTOR = 3;
     private final SortedMap<byte[], Dao<MemorySegment, Entry<MemorySegment>>> nodeRing = new ConcurrentSkipListMap<>(
             (b1, b2) -> {
@@ -39,7 +38,13 @@ public class DistributedDao implements Dao<MemorySegment, Entry<MemorySegment>> 
         try {
             messageDigest = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
+            throw new MissingRequiredHashingAlgorytmException(e);
+        }
+    }
+
+    private static class MissingRequiredHashingAlgorytmException extends RuntimeException {
+        public MissingRequiredHashingAlgorytmException(Exception e) {
+            super(e);
         }
     }
 

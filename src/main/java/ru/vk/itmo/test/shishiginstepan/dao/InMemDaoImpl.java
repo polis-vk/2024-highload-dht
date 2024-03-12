@@ -78,7 +78,9 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
             super(e);
         }
 
-        public ShutdownInterruptedException(){}
+        public ShutdownInterruptedException() {
+            super();
+        }
     }
 
     public InMemDaoImpl(Path basePath, long memStorageLimit) {
@@ -156,6 +158,7 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
             try {
                 flushNotification.get();
             } catch (InterruptedException | ExecutionException e) {
+                Thread.currentThread().interrupt();
                 throw new ShutdownInterruptedException(e);
             }
 

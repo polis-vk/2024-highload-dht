@@ -294,7 +294,7 @@ Running 10s test @ http://localhost:8080
 ![rejected_exception.png](screenshots/rejected_exception.png)
 
 
-#### FanFact
+#### FunFact
 
 При попытке запустить upsert на ресурсах wrk равных: -t 64 -c 64 лично у меня ни одна таблица не сфлашилась :(
 

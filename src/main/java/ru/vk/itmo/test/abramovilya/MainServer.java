@@ -3,16 +3,20 @@ package ru.vk.itmo.test.abramovilya;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 
+import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public final class MainServer {
     private MainServer() {
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args)
+            throws URISyntaxException, IOException, ExecutionException, InterruptedException {
         List<String> serviceUrls = List.of(
                 "http://localhost:8080",
                 "http://localhost:8081"

@@ -14,28 +14,39 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.MurmurHash;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class StorageServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(StorageServer.class);
     private static final String PATH = "/v0/entity";
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executor;
+    private final List<String> clusterUrls;
+    private final String selfUrl;
+    private final HttpClient httpClient;
+    private AtomicBoolean closed = new AtomicBoolean();
 
-    public StorageServer(
-            ServiceConfig config,
-            Dao<MemorySegment, Entry<MemorySegment>> dao,
-            ExecutorService executor
-    ) throws IOException {
+    public StorageServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executor) throws IOException {
         super(createConfig(config));
         this.dao = dao;
         this.executor = executor;
+        this.clusterUrls = config.clusterUrls();
+        this.selfUrl = config.selfUrl();
+        this.httpClient = HttpClient.newHttpClient();
     }
 
     private static HttpServerConfig createConfig(ServiceConfig config) {
@@ -43,7 +54,7 @@ public class StorageServer extends HttpServer {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.reusePort = true;
         acceptorConfig.port = config.selfPort();
-      
+
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
@@ -53,6 +64,14 @@ public class StorageServer extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    @Override
+    public synchronized void stop() {
+        if (closed.getAndSet(true)) {
+            return;
+        }
+        super.stop();
     }
 
     @Override
@@ -66,8 +85,16 @@ public class StorageServer extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    super.handleRequest(request, session);
-                } catch (IOException e) {
+                    MemorySegment key = fromString(id);
+                    long hash = MurmurHash.hash(key, key.byteSize());
+                    int partition = selectPartition(hash);
+
+                    if (isCurrentPartition(partition)) {
+                        super.handleRequest(request, session);
+                    } else {
+                        routeRequest(partition, request, session);
+                    }
+                } catch (IOException | InterruptedException e) {
                     log.error("Exception during handleRequest: ", e);
                     sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
                     session.close();
@@ -77,6 +104,44 @@ public class StorageServer extends HttpServer {
             log.error("Request rejected", e);
             sendEmptyBodyResponse(Response.SERVICE_UNAVAILABLE, session);
         }
+    }
+
+    private void routeRequest(int partition, Request request, HttpSession session) throws IOException, InterruptedException {
+        String partitionUrl = getPartitionUrl(partition) + request.getURI();
+
+        HttpRequest newRequest = HttpRequest.newBuilder()
+                .uri(URI.create(partitionUrl))
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody()))
+                .build();
+
+        HttpResponse<byte[]> response = httpClient.send(newRequest, HttpResponse.BodyHandlers.ofByteArray());
+        session.sendResponse(extractResponseFromNode(response));
+    }
+
+    private Response extractResponseFromNode(HttpResponse<byte[]> response) {
+        String responseCode = switch (response.statusCode()) {
+            case HttpURLConnection.HTTP_OK -> Response.OK;
+            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
+            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
+            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
+            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
+            case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+            default -> throw new IllegalStateException("Can not define response code:" + response.statusCode());
+        };
+
+        return new Response(responseCode, response.body());
+    }
+
+    private boolean isCurrentPartition(int partitionNumber) {
+        return clusterUrls.get(partitionNumber).equals(selfUrl);
+    }
+
+    private int selectPartition(long hash) {
+        return (int) (hash % clusterUrls.size());
+    }
+
+    private String getPartitionUrl(int partition) {
+        return clusterUrls.get(partition);
     }
 
     @Path(PATH)

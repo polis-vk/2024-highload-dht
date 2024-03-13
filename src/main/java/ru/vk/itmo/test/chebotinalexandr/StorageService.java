@@ -18,11 +18,11 @@ import java.util.concurrent.TimeUnit;
 
 public class StorageService implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
-    private static final int POOL_SIZE = 32;
-    private static final int QUEUE_CAPACITY = 256;
     private StorageServer server;
     private ExecutorService executor;
+    private static final int POOL_SIZE = 20;
+    private static final int QUEUE_CAPACITY = 256;
+    private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
     private final ServiceConfig config;
 
     public StorageService(ServiceConfig config) {
@@ -31,7 +31,6 @@ public class StorageService implements Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        //Dao opens here in order to make it able to reopen
         this.dao = new NotOnlyInMemoryDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         this.executor = new ThreadPoolExecutor(
                 POOL_SIZE,
@@ -59,7 +58,7 @@ public class StorageService implements Service {
         executor.shutdown();
 
         try {
-            if (!executor.awaitTermination(5, TimeUnit.MINUTES)) {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
                 throw new InterruptedException("Timeout");
             }
         } catch (InterruptedException e) {

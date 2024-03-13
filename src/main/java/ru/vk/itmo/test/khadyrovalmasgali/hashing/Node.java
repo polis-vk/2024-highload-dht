@@ -2,6 +2,7 @@ package ru.vk.itmo.test.khadyrovalmasgali.hashing;
 
 import one.nio.http.HttpClient;
 import one.nio.net.ConnectionString;
+import one.nio.util.Hash;
 
 public class Node {
     private final String url;
@@ -29,7 +30,7 @@ public class Node {
     }
 
     public int computeScore(String key) {
-        int score = RendezvousHash.hashToUnitInterval(url + key);
+        int score = Hash.murmur3(url + key);
         return score * weight;
     }
 }

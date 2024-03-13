@@ -213,9 +213,14 @@ public class HttpServerImpl extends HttpServer {
         }
 
         try {
-            HttpResponse<byte[]> httpResponse = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> httpResponse =
+                    httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
             return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (IOException e) {
+            log.error("Exception in forward request at sending request", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
@@ -231,6 +236,4 @@ public class HttpServerImpl extends HttpServer {
             session.handleException(e);
         }
     }
-
-
 }

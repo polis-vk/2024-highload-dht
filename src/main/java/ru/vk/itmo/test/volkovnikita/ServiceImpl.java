@@ -15,7 +15,7 @@ import java.util.concurrent.CompletableFuture;
 public class ServiceImpl implements Service {
 
     public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
-    private volatile boolean isStopped = false;
+    private volatile boolean isStopped;
 
     private HttpServerImpl server;
     private final ServiceConfig config;

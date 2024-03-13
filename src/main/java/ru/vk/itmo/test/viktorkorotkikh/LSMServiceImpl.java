@@ -6,6 +6,7 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
 
 import java.io.IOException;
@@ -31,8 +32,11 @@ public class LSMServiceImpl implements Service {
     private boolean isRunning;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ExecutorService executorService;
+    private final ConsistentHashingManager consistentHashingManager;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
+//        Path tmpDir = Path.of("/home/vitekkor/IdeaProjects/2024-highload-dht/dao17050257925606627803");
+//        Path tmpDir = Path.of("/home/vitekkor/IdeaProjects/2024-highload-dht/dao14615289544735165519");
         Path tmpDir = Files.createTempDirectory("dao");
         tmpDir.toFile().deleteOnExit();
 
@@ -49,14 +53,16 @@ public class LSMServiceImpl implements Service {
 
     public LSMServiceImpl(ServiceConfig serviceConfig) throws IOException {
         this.serviceConfig = serviceConfig;
+        this.consistentHashingManager = new ConsistentHashingManager(10, serviceConfig.clusterUrls());
     }
 
     private static LSMServerImpl createServer(
             ServiceConfig serviceConfig,
             Dao<MemorySegment, Entry<MemorySegment>> dao,
-            ExecutorService executorService
+            ExecutorService executorService,
+            ConsistentHashingManager consistentHashingManager
     ) throws IOException {
-        return new LSMServerImpl(serviceConfig, dao, executorService);
+        return new LSMServerImpl(serviceConfig, dao, executorService, consistentHashingManager);
     }
 
     private static Dao<MemorySegment, Entry<MemorySegment>> createLSMDao(Path workingDir) {
@@ -106,7 +112,7 @@ public class LSMServiceImpl implements Service {
 
         executorService = createExecutorService(16, 1024);
 
-        httpServer = createServer(serviceConfig, dao, executorService);
+        httpServer = createServer(serviceConfig, dao, executorService, consistentHashingManager);
         httpServer.start();
 
         isRunning = true;
@@ -145,7 +151,7 @@ public class LSMServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

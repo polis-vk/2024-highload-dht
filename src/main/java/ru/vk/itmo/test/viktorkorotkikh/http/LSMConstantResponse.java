@@ -3,34 +3,41 @@ package ru.vk.itmo.test.viktorkorotkikh.http;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-public final class LSMConstantResponse {
+public final class LSMConstantResponse extends Response {
     private static final String CONNECTION_CLOSE_HEADER = "Connection: close";
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
-    public static final Response BAD_REQUEST_CLOSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
-    public static final Response CREATED_CLOSE = new Response(Response.CREATED, Response.EMPTY);
-    public static final Response ACCEPTED_CLOSE = new Response(Response.ACCEPTED, Response.EMPTY);
-    public static final Response NOT_FOUND_CLOSE = new Response(Response.NOT_FOUND, Response.EMPTY);
-    public static final Response METHOD_NOT_ALLOWED_CLOSE = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    public static final Response OK_CLOSE = new Response(Response.OK, Response.EMPTY);
-    public static final Response TOO_MANY_REQUESTS_CLOSE = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
+    public static final Response BAD_REQUEST_CLOSE = new LSMConstantResponse(Response.BAD_REQUEST, Response.EMPTY);
+    public static final Response CREATED_CLOSE = new LSMConstantResponse(Response.CREATED, Response.EMPTY);
+    public static final Response ACCEPTED_CLOSE = new LSMConstantResponse(Response.ACCEPTED, Response.EMPTY);
+    public static final Response NOT_FOUND_CLOSE = new LSMConstantResponse(Response.NOT_FOUND, Response.EMPTY);
+    public static final Response METHOD_NOT_ALLOWED_CLOSE =
+            new LSMConstantResponse(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    public static final Response OK_CLOSE = new LSMConstantResponse(Response.OK, Response.EMPTY);
+    public static final Response TOO_MANY_REQUESTS_CLOSE = new LSMConstantResponse(TOO_MANY_REQUESTS, Response.EMPTY);
     public static final Response ENTITY_TOO_LARGE_CLOSE =
-            new Response(Response.REQUEST_ENTITY_TOO_LARGE, Response.EMPTY);
+            new LSMConstantResponse(Response.REQUEST_ENTITY_TOO_LARGE, Response.EMPTY);
     public static final Response SERVICE_UNAVAILABLE_CLOSE =
-            new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            new LSMConstantResponse(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+
+    public static final Response GATEWAY_TIMEOUT_CLOSE =
+            new LSMConstantResponse(Response.GATEWAY_TIMEOUT, Response.EMPTY);
 
     private static final String CONNECTION_KEEP_ALIVE_HEADER = "Connection: Keep-Alive";
-    public static final Response BAD_REQUEST_KEEP_ALIVE = new Response(Response.BAD_REQUEST, Response.EMPTY);
-    public static final Response CREATED_KEEP_ALIVE = new Response(Response.CREATED, Response.EMPTY);
-    public static final Response ACCEPTED_KEEP_ALIVE = new Response(Response.ACCEPTED, Response.EMPTY);
-    public static final Response NOT_FOUND_KEEP_ALIVE = new Response(Response.NOT_FOUND, Response.EMPTY);
+    public static final Response BAD_REQUEST_KEEP_ALIVE = new LSMConstantResponse(Response.BAD_REQUEST, Response.EMPTY);
+    public static final Response CREATED_KEEP_ALIVE = new LSMConstantResponse(Response.CREATED, Response.EMPTY);
+    public static final Response ACCEPTED_KEEP_ALIVE = new LSMConstantResponse(Response.ACCEPTED, Response.EMPTY);
+    public static final Response NOT_FOUND_KEEP_ALIVE = new LSMConstantResponse(Response.NOT_FOUND, Response.EMPTY);
     public static final Response METHOD_NOT_ALLOWED_KEEP_ALIVE
-            = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    public static final Response OK_KEEP_ALIVE = new Response(Response.OK, Response.EMPTY);
-    public static final Response TOO_MANY_REQUESTS_KEEP_ALIVE = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
+            = new LSMConstantResponse(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    public static final Response OK_KEEP_ALIVE = new LSMConstantResponse(Response.OK, Response.EMPTY);
+    public static final Response TOO_MANY_REQUESTS_KEEP_ALIVE =
+            new LSMConstantResponse(TOO_MANY_REQUESTS, Response.EMPTY);
     public static final Response ENTITY_TOO_LARGE_KEEP_ALIVE =
-            new Response(Response.REQUEST_ENTITY_TOO_LARGE, Response.EMPTY);
+            new LSMConstantResponse(Response.REQUEST_ENTITY_TOO_LARGE, Response.EMPTY);
     public static final Response SERVICE_UNAVAILABLE_KEEP_ALIVE
-            = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            = new LSMConstantResponse(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+    public static final Response GATEWAY_TIMEOUT_KEEP_ALIVE =
+            new LSMConstantResponse(Response.GATEWAY_TIMEOUT, Response.EMPTY);
 
     static {
         BAD_REQUEST_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
@@ -42,6 +49,7 @@ public final class LSMConstantResponse {
         TOO_MANY_REQUESTS_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
         ENTITY_TOO_LARGE_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
         SERVICE_UNAVAILABLE_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
+        GATEWAY_TIMEOUT_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
 
         BAD_REQUEST_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         CREATED_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
@@ -52,6 +60,7 @@ public final class LSMConstantResponse {
         TOO_MANY_REQUESTS_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         ENTITY_TOO_LARGE_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         SERVICE_UNAVAILABLE_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
+        GATEWAY_TIMEOUT_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
     }
 
     public static Response ok(final Request request) {
@@ -90,6 +99,10 @@ public final class LSMConstantResponse {
         return keepAlive(request) ? SERVICE_UNAVAILABLE_KEEP_ALIVE : SERVICE_UNAVAILABLE_CLOSE;
     }
 
+    public static Response gatewayTimeout(Request request) {
+        return keepAlive(request) ? GATEWAY_TIMEOUT_KEEP_ALIVE : GATEWAY_TIMEOUT_CLOSE;
+    }
+
     public static boolean keepAlive(final Request request) {
         final String connection = request.getHeader("Connection:");
         return request.isHttp11()
@@ -97,6 +110,15 @@ public final class LSMConstantResponse {
                 : "Keep-Alive".equalsIgnoreCase(connection);
     }
 
-    private LSMConstantResponse() {
+    private final byte[] responseBytesFinal;
+
+    private LSMConstantResponse(String resultCode, byte[] body) {
+        super(resultCode, body);
+        this.responseBytesFinal = super.toBytes(true);
+    }
+
+    @Override
+    public byte[] toBytes(boolean includeBody) {
+        return responseBytesFinal;
     }
 }

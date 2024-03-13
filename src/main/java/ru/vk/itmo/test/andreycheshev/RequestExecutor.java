@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.SocketTimeoutException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -57,7 +58,11 @@ public class RequestExecutor {
                     try {
                         response = requestHandler.handle(request);
                     } catch (Exception e) {
-                        LOGGER.error("Internal error of the DAO operation", e);
+                        if (e instanceof SocketTimeoutException) {
+                            LOGGER.error("Request processing error on another node in the cluster", e);
+                        } else {
+                            LOGGER.error("Internal error of the DAO operation", e);
+                        }
                         response = new Response(INTERNAL_ERROR, Response.EMPTY);
                     }
                 }

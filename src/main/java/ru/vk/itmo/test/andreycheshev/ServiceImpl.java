@@ -21,7 +21,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
     private static final int THRESHOLD_BYTES = 1024 * 128; // 128 kb
-    private static final int RESPONSE_AWAIT_TIMEOUT_MILLIS = 500; // 500 ms
+    private static final int CLUSTER_NODE_RESPONSE_TIMEOUT_MILLIS = 1000;
 
     private final HttpServerConfig serverConfig;
     private final Config daoConfig;
@@ -36,13 +36,11 @@ public class ServiceImpl implements Service {
         this.clusterConnections  = new HashMap<>(clusterUrls.size());
 
         // Init connections to other nodes.
-        String selfUrl = config.selfUrl();
-
         Collections.sort(clusterUrls);
         int nodeNumber = 1;
         int thisNodeNumber = -1;
         for (String serverUrl : clusterUrls) {
-            if (serverUrl.equals(selfUrl)) {
+            if (serverUrl.equals(config.selfUrl())) {
                 thisNodeNumber = nodeNumber++;
                 continue;
             }
@@ -50,7 +48,7 @@ public class ServiceImpl implements Service {
             HttpClient client = new HttpClient(
                     new ConnectionString(serverUrl)
             );
-            client.setTimeout(RESPONSE_AWAIT_TIMEOUT_MILLIS);
+            client.setTimeout(CLUSTER_NODE_RESPONSE_TIMEOUT_MILLIS);
 
             clusterConnections.put(nodeNumber++, client);
         }

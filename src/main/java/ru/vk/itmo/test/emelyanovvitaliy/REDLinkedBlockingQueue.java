@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
-import java.util.Collection;
-import java.util.Iterator;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +16,7 @@ public class REDLinkedBlockingQueue<T> extends LinkedBlockingDeque<T> implements
     public REDLinkedBlockingQueue(int capacity) {
         super(capacity);
     }
+
     @Override
     public T remove() {
         if (shouldTakeLast()) {

@@ -7,6 +7,7 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
+import ru.vk.itmo.test.vadimershov.exceptions.NotFoundException;
 import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
 import ru.vk.itmo.test.vadimershov.hash.ConsistentHashing;
 import ru.vk.itmo.test.vadimershov.hash.VirtualNode;
@@ -36,15 +37,16 @@ public class ShardingDao {
     public byte[] get(String key) {
         VirtualNode virtualNode = consistentHashing.findVNode(key);
         if (virtualNode.url().equals(selfUrl)) {
+            Entry<MemorySegment> entry;
             try {
-                Entry<MemorySegment> entry = localDao.get(toMemorySegment(key));
-                if (entry == null) {
-                    return null;
-                }
-                return toByteArray(entry.value());
-            } catch (Exception e) {
+                entry = localDao.get(toMemorySegment(key));
+            } catch (Exception e){
                 throw new DaoException(e);
             }
+            if (entry == null) {
+                throw new NotFoundException();
+            }
+            return toByteArray(entry.value());
         }
         try {
             Response response = virtualNode.httpClient().get(ENTITY_URI + key);

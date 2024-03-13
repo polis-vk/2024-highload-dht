@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
+import ru.vk.itmo.test.vadimershov.exceptions.NotFoundException;
 import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
 
 import java.io.IOException;
@@ -118,8 +119,10 @@ public class DaoHttpServer extends HttpServer {
         if (id.isBlank()) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
-        byte[] value = dao.get(id);
-        if (value == null) {
+        byte[] value;
+        try {
+            value = dao.get(id);
+        } catch (NotFoundException e) {
             return DaoResponse.empty(DaoResponse.NOT_FOUND);
         }
         return DaoResponse.ok(value);

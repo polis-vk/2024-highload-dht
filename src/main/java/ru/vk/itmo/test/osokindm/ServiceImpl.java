@@ -78,7 +78,7 @@ public class ServiceImpl implements Service {
     }
 
     @Path(DEFAULT_PATH)
-    public Response entity(Request request, @Param(value = "id", required = true) String id) {
+    public Response entity(Request request, @Param(value = "id", required = true) String id) throws TimeoutException {
         if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -86,72 +86,73 @@ public class ServiceImpl implements Service {
         switch (request.getMethod()) {
 
             case Request.METHOD_GET -> {
-                return server.executeRequest("GET", () -> {
-                    Node node = router.getNode(id);
-                    if (node.isAlive()) {
-                        if (node.address.equals(config.selfUrl())) {
-                            Entry<MemorySegment> result = daoWrapper.get(id);
-                            if (result != null && result.value() != null) {
-                                return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
-                            }
-                            return new Response(Response.NOT_FOUND, Response.EMPTY);
-                        } else {
-                            try {
-                                return makeProxyRequest(request, node.address);
-                            } catch (TimeoutException e) {
-                                node.broken();
-                                LOGGER.error(node + " not responding");
-                                throw e;
-                            }
+                Node node = router.getNode(id);
+                if (node.isAlive()) {
+                    if (node.address.equals(config.selfUrl())) {
+                        Entry<MemorySegment> result = daoWrapper.get(id);
+                        if (result != null && result.value() != null) {
+                            return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
                         }
+                        return new Response(Response.NOT_FOUND, Response.EMPTY);
                     } else {
-                        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                        try {
+                            return makeProxyRequest(request, node.address);
+                        } catch (TimeoutException e) {
+                            node.broken();
+                            LOGGER.error(node + " not responding");
+                            throw e;
+                        } catch (ExecutionException | InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
-                });
+                } else {
+                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
             }
 
             case Request.METHOD_PUT -> {
-                return server.executeRequest("PUT", () -> {
-                    Node node = router.getNode(id);
-                    if (node.isAlive()) {
-                        if (node.address.equals(config.selfUrl())) {
-                            daoWrapper.upsert(id, request);
-                            return new Response(Response.CREATED, Response.EMPTY);
-                        } else {
-                            try {
-                                return makeProxyRequest(request, node.address);
-                            } catch (TimeoutException e) {
-                                node.broken();
-                                LOGGER.error(node + " not responding");
-                                throw e;
-                            }
-                        }
+                Node node = router.getNode(id);
+                if (node.isAlive()) {
+                    if (node.address.equals(config.selfUrl())) {
+                        daoWrapper.upsert(id, request);
+                        return new Response(Response.CREATED, Response.EMPTY);
                     } else {
-                        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                        try {
+                            return makeProxyRequest(request, node.address);
+                        } catch (TimeoutException e) {
+                            node.broken();
+                            LOGGER.error(node + " not responding");
+                            throw e;
+                        } catch (ExecutionException | InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
-                });
+                } else {
+                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
             }
 
             case Request.METHOD_DELETE -> {
-                return server.executeRequest("DELETE", () -> {
-                    Node node = router.getNode(id);
-                    if (node.isAlive()) {
-                        if (node.address.equals(config.selfUrl())) {
-                            daoWrapper.delete(id);
-                            return new Response(Response.ACCEPTED, Response.EMPTY);
-                        } else {
-                            try {
-                                return makeProxyRequest(request, node.address);
-                            } catch (TimeoutException e) {
-                                node.broken();
-                                LOGGER.error(node + " not responding");
-                                throw e;
-                            }
-                        }
+                Node node = router.getNode(id);
+                if (node.isAlive()) {
+                    if (node.address.equals(config.selfUrl())) {
+                        daoWrapper.delete(id);
+                        return new Response(Response.ACCEPTED, Response.EMPTY);
                     } else {
-                        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                        try {
+                            LOGGER.debug("request has been forwarded");
+                            return makeProxyRequest(request, node.address);
+                        } catch (TimeoutException e) {
+                            node.broken();
+                            LOGGER.error(node + " not responding");
+                            throw e;
+                        } catch (ExecutionException | InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
-                });
+                } else {
+                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
             }
 
             default -> {
@@ -183,7 +184,8 @@ public class ServiceImpl implements Service {
             case HttpURLConnection.HTTP_CREATED -> new Response(Response.CREATED, Response.EMPTY);
             case HttpURLConnection.HTTP_BAD_METHOD -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             case HttpURLConnection.HTTP_NOT_FOUND -> new Response(Response.NOT_FOUND, Response.EMPTY);
-            default -> new Response(response.toString(), Response.EMPTY);
+            case HttpURLConnection.HTTP_ACCEPTED -> new Response(Response.ACCEPTED, Response.EMPTY);
+            default -> new Response(String.valueOf(response.statusCode()), Response.EMPTY);
         };
     }
 
@@ -206,4 +208,5 @@ public class ServiceImpl implements Service {
             return new ServiceImpl(config);
         }
     }
+
 }

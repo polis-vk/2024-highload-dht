@@ -28,7 +28,6 @@ public class RendezvousRouter {
         int max = Integer.MIN_VALUE;
         Node maxHashNode = null;
         for (Node node : nodes) {
-
             int hash = Hash.murmur3(node.name + key);
             if (hash > max) {
                 max = hash;
@@ -37,6 +36,5 @@ public class RendezvousRouter {
         }
         return maxHashNode;
     }
-
 
 }

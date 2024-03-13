@@ -11,10 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -23,7 +20,7 @@ public class HttpServerImpl extends HttpServer {
     private static final String ID_REQUEST = "id=";
     private static final long KEEP_ALIVE_TIME = 60L;
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
-    private final ExecutorService requestWorkers;
+    private final ThreadPoolExecutor requestWorkers;
 
     public HttpServerImpl(HttpServerConfig config) throws IOException {
         super(config);
@@ -34,6 +31,7 @@ public class HttpServerImpl extends HttpServer {
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(600),
                 new ThreadPoolExecutor.DiscardOldestPolicy());
+        requestWorkers.prestartAllCoreThreads();
     }
 
     @Override
@@ -54,7 +52,7 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         String id = request.getParameter(ID_REQUEST);
-        if (id != null && id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             try {
                 handleDefault(request, session);
             } catch (IOException e) {
@@ -62,7 +60,7 @@ public class HttpServerImpl extends HttpServer {
             }
         } else {
             try {
-                super.handleRequest(request, session);
+                handleAsync(session, () -> super.handleRequest(request, session));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -71,26 +69,33 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        try {
-            session.sendResponse(response);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
+        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
-    public Response executeRequest(String method, Callable<Response> request) {
-        Future<Response> response = requestWorkers.submit(request);
+
+    private void handleAsync(HttpSession session, ERunnable runnable) throws IOException {
         try {
-            return response.get();
-        } catch (InterruptedException e) {
-            LOGGER.error(method + "operation was interrupted");
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException e) {
-            LOGGER.error("Error occurred while executing" + method);
+            requestWorkers.execute(() -> {
+                try {
+                    runnable.run();
+                } catch (Exception e) {
+                    LOGGER.error("Exception during handleRequest", e);
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, null);
+                    } catch (IOException ex) {
+                        LOGGER.error("Exception while sending close connection", e);
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            LOGGER.warn("Workers pool queue overflow", e);
+            session.sendError(Response.SERVICE_UNAVAILABLE, null);
         }
-        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    }
+
+    private interface ERunnable {
+        void run() throws Exception;
     }
 
 }

@@ -18,7 +18,6 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -73,7 +72,8 @@ public class ServerImpl extends HttpServer {
                 try {
                     processingRequest(request, session, processingStartTime);
                 } catch (IOException e) {
-                    throw new UncheckedIOException(e);
+                    log.error("Exception while sending close connection", e);
+                    session.scheduleClose();
                 }
             });
         } catch (RejectedExecutionException e) {

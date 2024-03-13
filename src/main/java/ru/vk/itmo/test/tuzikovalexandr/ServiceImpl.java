@@ -33,7 +33,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
-        worker.getExecutorService().close();
+        worker.shutdownAndAwaitTermination();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }

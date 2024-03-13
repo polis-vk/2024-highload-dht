@@ -12,8 +12,20 @@ import java.util.List;
 
 public class ServerShardingStrategyDecorator extends ServerStrategyDecorator {
 
-    private final List<ServerStrategy> clusterClients;
-    private final int clusterIndex;
+    public static final int PARTITIONS = 10000;
+    private final List<Partition> clusterPartitions;
+
+    private static final class Partition {
+        public final ServerStrategy strategy;
+        public final int start;
+        public final int end;
+
+        private Partition(ServerStrategy strategy, int start, int end) {
+            this.strategy = strategy;
+            this.start = start;
+            this.end = end;
+        }
+    }
 
     public ServerShardingStrategyDecorator(
             ServerStrategy httpServer,
@@ -21,38 +33,60 @@ public class ServerShardingStrategyDecorator extends ServerStrategyDecorator {
             String clusterUrl
     ) {
         super(httpServer);
-        this.clusterClients = new ArrayList<>(clusterUrls.size());
-        clusterUrls.forEach(url ->
-            clusterClients.add(
-                    url.equals(clusterUrl)
-                    ? this
-                    : new ServerRemoteStrategy(url)
-            )
-        );
-        this.clusterIndex = clusterUrls.indexOf(clusterUrl);
+        int clusterSize = clusterUrls.size();
+        this.clusterPartitions = new ArrayList<>(clusterSize);
+
+        int step = PARTITIONS / clusterUrls.size();
+        int offset = 0;
+        for (int i = 0; i < clusterSize; i++) {
+            int nextOffset = i + 1 == clusterSize ? PARTITIONS : offset + step;
+            String url = clusterUrls.get(i);
+            clusterPartitions.add(
+                    new Partition(
+                            url.equals(clusterUrl) ? this : new ServerRemoteStrategy(url),
+                            offset,
+                            nextOffset
+                    )
+            );
+            offset = nextOffset;
+        }
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        int keyClusterIndex = getClusterIndex(Parameters.getParameter(request, Parameters.ID));
-        if (keyClusterIndex == clusterIndex) {
+        ServerStrategy strategy = getPartitionStrategy(Parameters.getParameter(request, Parameters.ID));
+        if (strategy == this) {
             super.handleRequest(request, session);
         } else {
-            clusterClients.get(keyClusterIndex).handleRequest(request, session);
+            strategy.handleRequest(request, session);
         }
     }
 
-    private int getClusterIndex(String key) {
-        return Math.abs(key.hashCode() % clusterClients.size());
+    private ServerStrategy getPartitionStrategy(String key) {
+        int hashcode = Math.abs(key.hashCode() % PARTITIONS);
+        int l = 0;
+        int r = clusterPartitions.size();
+        while (true) {
+            int m = (r + l) / 2;
+            Partition partition = clusterPartitions.get(m);
+            if (partition.start <= hashcode && hashcode < partition.end) {
+                return partition.strategy;
+            } else if (hashcode >= partition.end) {
+                l = m;
+            } else {
+                r = m;
+            }
+        }
     }
 
     @Override
     public void close() throws IOException {
-        for (ServerStrategy clusterClient : clusterClients) {
-            if (clusterClient == this) {
+        for (Partition clusterClient : clusterPartitions) {
+            ServerStrategy strategy = clusterClient.strategy;
+            if (strategy == this) {
                 super.close();
             } else {
-                clusterClient.close();
+                strategy.close();
             }
         }
     }

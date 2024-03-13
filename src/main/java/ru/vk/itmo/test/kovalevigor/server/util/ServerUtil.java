@@ -48,4 +48,8 @@ public final class ServerUtil {
             Thread.currentThread().interrupt();
         }
     }
+
+    public static RuntimeException createIllegalState() {
+        return new IllegalStateException("Can't be");
+    }
 }

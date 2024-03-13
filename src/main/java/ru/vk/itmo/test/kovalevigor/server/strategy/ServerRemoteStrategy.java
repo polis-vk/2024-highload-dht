@@ -27,12 +27,12 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
         try {
             Response response = remoteClient.invoke(new Request(request), REMOTE_TIMEOUT);
             session.sendResponse(new Response(response));
-        } catch (InterruptedException | HttpException | PoolException e) {
+        } catch (HttpException | PoolException e) {
             log.log(Level.SEVERE, "Exception while redirection", e);
             session.sendError(Response.SERVICE_UNAVAILABLE, null);
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (InterruptedException e) {
+            session.sendError(Response.INTERNAL_ERROR, null);
+            Thread.currentThread().interrupt();
         }
     }
 

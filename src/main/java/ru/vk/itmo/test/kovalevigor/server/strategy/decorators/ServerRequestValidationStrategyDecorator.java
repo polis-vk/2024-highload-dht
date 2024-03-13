@@ -30,11 +30,13 @@ public class ServerRequestValidationStrategyDecorator extends ServerStrategyDeco
     public void handleRequest(Request request, HttpSession session) throws IOException {
         Paths path = Paths.getPath(request.getPath());
         if (path != null) {
-            if (!checkMethods(request, path)) {
+            if (checkMethods(request, path)) {
+                if (checkParameters(request, path)) {
+                    super.handleRequest(request, session);
+                    return;
+                }
+            } else {
                 session.sendResponse(Responses.NOT_ALLOWED.toResponse());
-                return;
-            } else if (checkParameters(request, path)) {
-                super.handleRequest(request, session);
                 return;
             }
         }

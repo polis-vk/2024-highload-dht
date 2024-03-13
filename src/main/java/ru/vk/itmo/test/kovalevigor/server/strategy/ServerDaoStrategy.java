@@ -23,6 +23,7 @@ import java.util.logging.Logger;
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
+import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.createIllegalState;
 
 public class ServerDaoStrategy extends ServerRejectStrategy {
     private static final Charset CHARSET = StandardCharsets.UTF_8;
@@ -44,10 +45,11 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
                             case METHOD_GET -> getEntity(key);
                             case METHOD_PUT -> createEntity(key, MemorySegment.ofArray(request.getBody()));
                             case METHOD_DELETE -> deleteEntity(key);
-                            default -> throw new IllegalStateException("Can't be");
+                            default -> throw createIllegalState();
                         }
                 );
             }
+            default -> throw createIllegalState();
         }
     }
 

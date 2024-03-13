@@ -6,7 +6,7 @@ import java.util.Set;
 import java.util.TreeMap;
 
 public class ConsistentHashing {
-    private final TreeMap<Integer, String> ring = new TreeMap<>();
+    private final TreeMap<Integer, String> ring = new TreeMap<Integer, String>();
     private final Hasher hasher = new Hasher();
 
     private int hashKey(String key) {
@@ -15,20 +15,12 @@ public class ConsistentHashing {
 
     public String getShardByKey(String key) {
         final Map.Entry<Integer, String> ent = ring.ceilingEntry(hashKey(key));
-        if (ent == null) {
-            return ring.firstEntry().getValue();
-        } else {
-            return ent.getValue();
-        }
+        return ent == null ? ring.firstEntry().getValue() : ent.getValue();
     }
 
-    public void addShard(String newShard, Set<Integer> vnodeHashes) {
-        for (final int vnodeHash : vnodeHashes) {
-            ring.put(vnodeHash, newShard);
+    public void addShard(String newShard, Set<Integer> nodeHashes) {
+        for (final int nodeHash : nodeHashes) {
+            ring.put(nodeHash, newShard);
         }
-    }
-
-    public void removeShard(final String shard) {
-        ring.values().removeIf((String x) -> x.equals(shard));
     }
 }

@@ -41,7 +41,7 @@ public class MyServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
-    private final HashMap<String, HttpClient> httpClients = new HashMap<>();
+    private final HashMap<String, HttpClient> httpClients = new HashMap<String, HttpClient>();
     private final ConsistentHashing shards;
     private final String selfUrl;
 

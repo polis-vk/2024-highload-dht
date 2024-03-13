@@ -154,7 +154,7 @@ public class DaoServer extends HttpServer {
 
     private Response handleRedirect(Request request, Node node, String id) {
         try {
-            String url = STR."\{ENTITY_PATH}?id=\{id}";
+            String url = ENTITY_PATH + "?id=" + id;
             switch (request.getMethod()) {
                 case Request.METHOD_GET -> {
                     return node.getClient().get(url);

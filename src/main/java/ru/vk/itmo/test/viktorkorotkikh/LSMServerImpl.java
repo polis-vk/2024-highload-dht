@@ -186,8 +186,10 @@ public class LSMServerImpl extends HttpServer {
             final HttpSession session
     ) {
         try {
-            HttpResponse<byte[]> clusterResponse = clusterClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+            HttpResponse<byte[]> clusterResponse = clusterClient
+                    .sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
                     .get(CLUSTER_REQUEST_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS);
+
             if (clusterResponse.body() == null || clusterResponse.body().length == 0) { // all responses except 200 GET
                 final int statusCode = clusterResponse.statusCode();
                 Response response = switch (statusCode) {

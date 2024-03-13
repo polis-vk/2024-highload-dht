@@ -16,7 +16,7 @@ public class Hasher {
             this.messageDigest = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
             logger.error("Error initializing Hasher: ", e.getMessage());
-            throw new RuntimeException("Error initializing Hasher", e);
+            throw new IllegalArgumentException("Error initializing Hasher", e);
         }
     }
 

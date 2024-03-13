@@ -20,7 +20,12 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -32,22 +37,28 @@ public class NewServer extends HttpServer {
     private static final String PATH = "/v0/entity";
     private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toNanos(1);
     private final Logger log = LoggerFactory.getLogger(NewServer.class);
+    private final List<HttpClient> httpClients;
+    private ConsistentHashing<String> consistentHashing;
+    private final String selfUrl;
 
     public NewServer(ServiceConfig config,
                      Dao<MemorySegment, Entry<MemorySegment>> dao,
-                     ExecutorService executorService
+                     ExecutorService executorService,
+                     List<String> clusterUrls,
+                     List<HttpClient> httpClients
     ) throws IOException {
         super(configureServer(config));
         this.dao = dao;
         this.executorService = executorService;
+        this.consistentHashing = new ConsistentHashing<>(String::hashCode, clusterUrls);
+        this.selfUrl = config.selfUrl();
+        this.httpClients = httpClients;
     }
 
     private static HttpServerConfig configureServer(ServiceConfig serviceConfig) {
         HttpServerConfig serverConfig = new HttpServerConfig();
-        serverConfig.selectors = 4;
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
-        acceptorConfig.threads = 4;
         acceptorConfig.reusePort = true;
 
         serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
@@ -63,6 +74,11 @@ public class NewServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        String node = consistentHashing.getNode(id);
+        if (!node.equals(this.selfUrl)) {
+            return proxyRequest(request, node, id, request.getBody());
+        }
+
         Entry<MemorySegment> entry = new BaseEntry<>(
                 key,
                 MemorySegment.ofArray(request.getBody())
@@ -75,10 +91,15 @@ public class NewServer extends HttpServer {
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
-    public Response getEntity(@Param(value = "id", required = true) String id) {
+    public Response getEntity(@Param(value = "id", required = true) String id, Request request) {
         MemorySegment key = validateId(id);
         if (key == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        String node = consistentHashing.getNode(id);
+        if (!node.equals(this.selfUrl)) {
+            return proxyRequest(request, node, id, null);
         }
 
         Entry<MemorySegment> entry = dao.get(key);
@@ -92,10 +113,15 @@ public class NewServer extends HttpServer {
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteEntity(@Param(value = "id", required = true) String id) {
+    public Response deleteEntity(@Param(value = "id", required = true) String id, Request request) {
         MemorySegment key = validateId(id);
         if (key == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        String node = consistentHashing.getNode(id);
+        if (!node.equals(this.selfUrl)) {
+            return proxyRequest(request, node, id, null);
         }
 
         Entry<MemorySegment> entry = new BaseEntry<>(
@@ -134,7 +160,7 @@ public class NewServer extends HttpServer {
                                 session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
                                 return;
                             } catch (IOException e) {
-                                log.error("Exception while sending close connection", e);
+                                log.error("Exception while handing request", e);
                                 session.scheduleClose();
                                 return;
                             }
@@ -163,8 +189,38 @@ public class NewServer extends HttpServer {
             }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (IOException ex) {
-            log.error("Exception while sending close connection", e);
+            log.error("Exception while handing request", e);
             session.scheduleClose();
         }
     }
+
+    private Response proxyRequest(Request request, String node, String id, byte[] body) {
+        HttpClient httpClient = httpClients.get(consistentHashing.getNodeIndex(node));
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(URI.create(node + PATH + "?id=" + id));
+
+        switch (request.getMethod()) {
+            case Request.METHOD_GET:
+                requestBuilder.GET();
+                break;
+            case Request.METHOD_PUT:
+                requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(body));
+                break;
+            case Request.METHOD_DELETE:
+                requestBuilder.DELETE();
+                break;
+            default:
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        }
+
+        HttpRequest httpRequest = requestBuilder.build();
+
+        try {
+            HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+            return new Response(String.valueOf(response.statusCode()), response.body());
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
 }

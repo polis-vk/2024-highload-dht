@@ -22,10 +22,15 @@ import ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
@@ -49,10 +54,12 @@ public class HttpServerImpl extends HttpServer {
             "DELETE"
     );
     private static final ZoneId SERVER_ZONE = ZoneId.of("UTC");
+    private final List<HttpClient> httpClients;
+    private final DistributedHash<String> distributedHash;
+    private final String selfUrl;
 
-    public HttpServerImpl(ServiceConfig config, ReferenceDao dao) throws IOException {
+    public HttpServerImpl(ServiceConfig config, ReferenceDao dao, List<HttpClient> httpClients) throws IOException {
         super(createServerConfig(config));
-        this.dao = dao;
         AtomicInteger threadCounter = new AtomicInteger(0);
         ThreadFactory threadFactory = r ->
                 new Thread(r, "HttpServerImplThread: " + threadCounter.getAndIncrement());
@@ -66,6 +73,11 @@ public class HttpServerImpl extends HttpServer {
                 threadFactory,
                 new ThreadPoolExecutor.AbortPolicy()
         );
+
+        this.dao = dao;
+        this.distributedHash = new DistributedHash<>(String::hashCode, config.clusterUrls());
+        this.httpClients = httpClients;
+        this.selfUrl = config.selfUrl();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -86,10 +98,15 @@ public class HttpServerImpl extends HttpServer {
 
     @Path(value = "/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response getEntry(@Param(value = "id", required = true) String id) {
+    public Response getEntry(@Param(value = "id", required = true) String id, Request request) {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+        String node = distributedHash.getNode(id);
+        if (!node.equals(this.selfUrl)) {
+            return forwardRequest(request, node, id, null);
+        }
+
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         Entry<MemorySegment> entry = dao.get(key);
         return entry == null ? new Response(Response.NOT_FOUND, Response.EMPTY) :
@@ -102,6 +119,11 @@ public class HttpServerImpl extends HttpServer {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        String node = distributedHash.getNode(id);
+        if (!node.equals(this.selfUrl)) {
+            return forwardRequest(request, node, id, request.getBody());
+        }
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         MemorySegment value = MemorySegment.ofArray(request.getBody());
         dao.upsert(new BaseEntry<>(key, value));
@@ -110,10 +132,16 @@ public class HttpServerImpl extends HttpServer {
 
     @Path(value = "/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteEntry(@Param(value = "id", required = true) String id) {
+    public Response deleteEntry(@Param(value = "id", required = true) String id, Request request) {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        String node = distributedHash.getNode(id);
+        if (!node.equals(this.selfUrl)) {
+            return forwardRequest(request, node, id, null);
+        }
+
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         dao.upsert(new BaseEntry<>(key, null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -164,6 +192,34 @@ public class HttpServerImpl extends HttpServer {
 
     }
 
+    private Response forwardRequest(Request request, String node, String id, byte[] body) {
+        int nodeIndex = distributedHash.getClusterNodeIndex(node);
+        if (nodeIndex == -1) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+
+        HttpClient httpClient = httpClients.get(nodeIndex);
+
+        URI uri = URI.create(String.format("%s/v0/entity?id=%s", node, id));
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().uri(uri);
+
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> requestBuilder.GET();
+            case Request.METHOD_PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(body));
+            case Request.METHOD_DELETE -> requestBuilder.DELETE();
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
+        }
+
+        try {
+            HttpResponse<byte[]> httpResponse = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
+        } catch (Exception e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
     private boolean isIdIncorrect(String id) {
         return id == null || id.isEmpty() || id.isBlank();
     }
@@ -175,4 +231,6 @@ public class HttpServerImpl extends HttpServer {
             session.handleException(e);
         }
     }
+
+
 }

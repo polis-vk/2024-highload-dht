@@ -3,12 +3,12 @@ package ru.vk.itmo.test.vadimershov.hash;
 import one.nio.http.HttpClient;
 import one.nio.net.ConnectionString;
 
-public class VNode {
+public class VirtualNode {
     private final HttpClient httpClient;
     private final String url;
     private final int replicaIndex;
 
-    public VNode(String url, int replicaIndex) {
+    public VirtualNode(String url, int replicaIndex) {
         this.httpClient = new HttpClient(new ConnectionString(url));
         this.url = url;
         this.replicaIndex = replicaIndex;

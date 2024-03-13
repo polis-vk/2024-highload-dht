@@ -1,6 +1,13 @@
 package ru.vk.itmo.test.vadimershov;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,7 +119,7 @@ public class DaoHttpServer extends HttpServer {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
         byte[] value = dao.get(id);
-        if (value == null) {
+        if (value.length == 0) {
             return DaoResponse.empty(DaoResponse.NOT_FOUND);
         }
         return DaoResponse.ok(value);

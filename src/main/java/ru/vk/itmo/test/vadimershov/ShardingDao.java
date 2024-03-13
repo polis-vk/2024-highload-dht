@@ -9,7 +9,7 @@ import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
 import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
 import ru.vk.itmo.test.vadimershov.hash.ConsistentHashing;
-import ru.vk.itmo.test.vadimershov.hash.VNode;
+import ru.vk.itmo.test.vadimershov.hash.VirtualNode;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -34,12 +34,12 @@ public class ShardingDao {
     }
 
     public byte[] get(String key) {
-        VNode vNode = consistentHashing.findVNode(key);
-        if (vNode.url().equals(selfUrl)) {
+        VirtualNode virtualNode = consistentHashing.findVNode(key);
+        if (virtualNode.url().equals(selfUrl)) {
             try {
                 Entry<MemorySegment> entry = localDao.get(toMemorySegment(key));
                 if (entry == null) {
-                    return null;
+                    return new byte[0];
                 }
                 return toByteArray(entry.value());
             } catch (Exception e) {
@@ -47,8 +47,8 @@ public class ShardingDao {
             }
         }
         try {
-            Response response = vNode.httpClient().get(ENTITY_URI + key);
-            checkCodeInRemoteResp(vNode.url(), response);
+            Response response = virtualNode.httpClient().get(ENTITY_URI + key);
+            checkCodeInRemoteResp(virtualNode.url(), response);
             return response.getBody();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -59,8 +59,8 @@ public class ShardingDao {
     }
 
     public void upsert(String key, byte[] value) {
-        VNode vNode = consistentHashing.findVNode(key);
-        if (vNode.url().equals(selfUrl)) {
+        VirtualNode virtualNode = consistentHashing.findVNode(key);
+        if (virtualNode.url().equals(selfUrl)) {
             try {
                 localDao.upsert(toEntity(key, value));
                 return;
@@ -69,8 +69,8 @@ public class ShardingDao {
             }
         }
         try {
-            Response response = vNode.httpClient().put(ENTITY_URI + key, value);
-            checkCodeInRemoteResp(vNode.url(), response);
+            Response response = virtualNode.httpClient().put(ENTITY_URI + key, value);
+            checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(e);
@@ -80,8 +80,8 @@ public class ShardingDao {
     }
 
     public void delete(String key) {
-        VNode vNode = consistentHashing.findVNode(key);
-        if (vNode.url().equals(selfUrl)) {
+        VirtualNode virtualNode = consistentHashing.findVNode(key);
+        if (virtualNode.url().equals(selfUrl)) {
             try {
                 localDao.upsert(toDeletedEntity(key));
                 return;
@@ -90,8 +90,8 @@ public class ShardingDao {
             }
         }
         try {
-            Response response = vNode.httpClient().delete(ENTITY_URI + key);
-            checkCodeInRemoteResp(vNode.url(), response);
+            Response response = virtualNode.httpClient().delete(ENTITY_URI + key);
+            checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(e);
@@ -108,6 +108,7 @@ public class ShardingDao {
             case 429 -> throw new RemoteServiceException(DaoResponse.TOO_MANY_REQUESTS, url);
             case 500 -> throw new RemoteServiceException(DaoResponse.INTERNAL_ERROR, url);
             case 503 -> throw new RemoteServiceException(DaoResponse.SERVICE_UNAVAILABLE, url);
+            default -> { }
         }
     }
 

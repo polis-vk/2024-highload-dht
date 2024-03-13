@@ -1,6 +1,6 @@
 # Отчёт по 1 заданию.
 
-Скрипты для теста методов лежат в папке [scripts](src/main/java/ru/vk/itmo/test/osipovdaniil/scripts) . 
+Скрипты для теста методов лежат в папке [scripts](../scripts) . 
 Последовательные `put, get, delete`. <br>
 `flushThresholdBytes = 2^20`<br>
 Реализация `Dao` взята с референса.

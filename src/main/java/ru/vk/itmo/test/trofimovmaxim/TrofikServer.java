@@ -9,6 +9,7 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -19,17 +20,23 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 
 public class TrofikServer extends HttpServer {
     private static final long FLUSH_THRESHOLD_BYTES = 42 * 1024 * 1024;
-    private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private static final Response BAD_REQUEST = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private static final Response INTERNAL_ERROR = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     private static final Response TIMEOUT = new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
     private ReferenceDao dao;
     private final ServiceConfig config;
     private final DaoOperationsExecutor executor;
+    private HttpClient httpClient;
 
     public TrofikServer(ServiceConfig config) throws IOException {
         super(convertConfig(config));
@@ -50,29 +57,71 @@ public class TrofikServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        session.sendResponse(BAD_RESPONSE);
+        session.sendResponse(BAD_REQUEST);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
-            executor.run(() -> {
-                try {
-                    super.handleRequest(request, session);
-                } catch (Exception e) {
+        String key = request.getParameter("id=");
+
+        String clusterUrl = rendezvousGetCluster(key);
+        if (clusterUrl == null) {
+            session.sendResponse(BAD_REQUEST);
+            return;
+        }
+        if (config.selfUrl().equals(clusterUrl)) {
+            try {
+                executor.run(() -> {
                     try {
-                        if (e instanceof HttpException) {
-                            session.sendResponse(BAD_RESPONSE);
-                        } else {
-                            session.sendResponse(INTERNAL_ERROR);
+                        super.handleRequest(request, session);
+                    } catch (Exception e) {
+                        try {
+                            if (e instanceof HttpException) {
+                                session.sendResponse(BAD_REQUEST);
+                            } else {
+                                session.sendResponse(INTERNAL_ERROR);
+                            }
+                        } catch (IOException ex) {
+                            throw new UncheckedIOException(ex);
                         }
-                    } catch (IOException ex) {
-                        throw new UncheckedIOException(ex);
                     }
-                }
-            });
-        } catch (RejectedExecutionException e) {
-            session.sendResponse(TIMEOUT);
+                });
+            } catch (RejectedExecutionException e) {
+                session.sendResponse(TIMEOUT);
+            }
+            return;
+        }
+
+        HttpRequest.Builder requestToCluster = HttpRequest.newBuilder(
+                URI.create(STR."\{clusterUrl}/v0/entity?id=\{key}")
+        );
+        switch (request.getMethod()) {
+            case Request.METHOD_PUT:
+                requestToCluster.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
+                break;
+            case Request.METHOD_GET:
+                requestToCluster.GET();
+                break;
+            case Request.METHOD_DELETE:
+                requestToCluster.DELETE();
+                break;
+            default:
+                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                return;
+        }
+        try {
+            HttpResponse<byte[]> response = httpClient.send(
+                    requestToCluster.build(),
+                    HttpResponse.BodyHandlers.ofByteArray()
+            );
+
+            session.sendResponse(
+                    new Response(responseByCode(
+                            response.statusCode()
+                    ), response.body())
+            );
+        } catch (Exception e) {
+            session.sendResponse(INTERNAL_ERROR);
         }
     }
 
@@ -84,6 +133,7 @@ public class TrofikServer extends HttpServer {
             throw new UncheckedIOException(e);
         }
         executor.start();
+        httpClient = HttpClient.newHttpClient();
         super.start();
     }
 
@@ -91,11 +141,48 @@ public class TrofikServer extends HttpServer {
     public synchronized void stop() {
         super.stop();
         executor.stop();
+        httpClient.close();
         try {
             dao.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    private String responseByCode(int code) {
+        return switch (code) {
+            case 200 -> Response.OK;
+            case 202 -> Response.ACCEPTED;
+            case 201 -> Response.CREATED;
+            case 405 -> Response.METHOD_NOT_ALLOWED;
+            case 404 -> Response.NOT_FOUND;
+            case 400 -> Response.BAD_REQUEST;
+            case 408 -> Response.REQUEST_TIMEOUT;
+            default -> Response.INTERNAL_ERROR;
+        };
+    }
+
+    private String rendezvousGetCluster(String key) {
+        if (key == null || key.isEmpty()) {
+            return null;
+        }
+
+        int maxHash = Integer.MIN_VALUE;
+        int maxIndex = -1;
+
+        List<String> clusters = config.clusterUrls();
+        for (int i = 0; i < clusters.size(); ++i) {
+            int hash = Hash.murmur3(clusters.get(i) + key);
+            if (hash > maxHash) {
+                maxHash = hash;
+                maxIndex = i;
+            }
+        }
+
+        if (maxIndex == -1) {
+            return null;
+        }
+        return clusters.get(maxIndex);
     }
 
     private Entry<MemorySegment> entry(String key, byte[] value) {
@@ -110,7 +197,7 @@ public class TrofikServer extends HttpServer {
     public Response v0Entity(Request request,
                              @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return BAD_RESPONSE;
+            return BAD_REQUEST;
         }
 
         return switch (request.getMethod()) {
@@ -132,7 +219,7 @@ public class TrofikServer extends HttpServer {
 
     public Response entityPut(Request request, String id) {
         if (request.getBody() == null) {
-            return BAD_RESPONSE;
+            return BAD_REQUEST;
         }
         dao.upsert(entry(id, request.getBody()));
 

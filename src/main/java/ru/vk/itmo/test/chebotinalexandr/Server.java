@@ -29,7 +29,7 @@ public final class Server {
     }
 
     public static void main(String[] args) throws IOException {
-        int ports[] = new int[]{8080, 8081, 8082};
+        int ports[] = new int[] {8080, 8081, 8082};
         List<String> clusterUrls = new ArrayList<>();
 
         for (int port : ports) {
@@ -44,7 +44,8 @@ public final class Server {
                     Files.createTempDirectory("tmp")
             );
 
-            Dao<MemorySegment, Entry<MemorySegment>> dao = new NotOnlyInMemoryDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+            Dao<MemorySegment, Entry<MemorySegment>> dao =
+                    new NotOnlyInMemoryDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
             ExecutorService executor = new ThreadPoolExecutor(
                     20,
                     20,
@@ -79,7 +80,6 @@ public final class Server {
 
         return entries;
     }
-
 
     /**
      * Just fills memtable without flushing.

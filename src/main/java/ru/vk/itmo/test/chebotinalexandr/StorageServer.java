@@ -40,7 +40,10 @@ public class StorageServer extends HttpServer {
     private final HttpClient httpClient;
     private AtomicBoolean closed = new AtomicBoolean();
 
-    public StorageServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executor) throws IOException {
+    public StorageServer(
+            ServiceConfig config,
+            Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executor
+    ) throws IOException {
         super(createConfig(config));
         this.dao = dao;
         this.executor = executor;
@@ -94,10 +97,12 @@ public class StorageServer extends HttpServer {
                     } else {
                         routeRequest(partition, request, session);
                     }
-                } catch (IOException | InterruptedException e) {
+                } catch (IOException e) {
                     log.error("Exception during handleRequest: ", e);
                     sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
                     session.close();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -106,12 +111,21 @@ public class StorageServer extends HttpServer {
         }
     }
 
-    private void routeRequest(int partition, Request request, HttpSession session) throws IOException, InterruptedException {
+    private void routeRequest(
+            int partition,
+            Request request,
+            HttpSession session
+    ) throws IOException, InterruptedException {
         String partitionUrl = getPartitionUrl(partition) + request.getURI();
 
         HttpRequest newRequest = HttpRequest.newBuilder()
                 .uri(URI.create(partitionUrl))
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody()))
+                .method(
+                        request.getMethodName(),
+                        HttpRequest.BodyPublishers.ofByteArray(
+                                request.getBody() == null ? Response.EMPTY : request.getBody()
+                        )
+                )
                 .build();
 
         HttpResponse<byte[]> response = httpClient.send(newRequest, HttpResponse.BodyHandlers.ofByteArray());

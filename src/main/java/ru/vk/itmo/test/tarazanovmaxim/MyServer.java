@@ -27,6 +27,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -41,7 +42,7 @@ public class MyServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
-    private final HashMap<String, HttpClient> httpClients = new HashMap<String, HttpClient>();
+    private final Map<String, HttpClient> httpClients = new HashMap<>();
     private final ConsistentHashing shards;
     private final String selfUrl;
 

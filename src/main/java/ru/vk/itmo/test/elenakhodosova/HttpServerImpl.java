@@ -10,7 +10,6 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Hash;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +53,7 @@ public class HttpServerImpl extends HttpServer {
         this.executorService = executorService;
         this.selfUrl = config.selfUrl();
         this.nodes = config.clusterUrls();
-        this.client = HttpClient.newHttpClient();
+        client = HttpClient.newHttpClient();
     }
 
     @Override
@@ -101,9 +100,9 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        String clusterUrl = hash(id);
-        if (!Objects.equals(clusterUrl, selfUrl)) {
-            return redirectRequest(AllowedMethods.GET, id, clusterUrl, new byte[0]);
+        String targetNode = hash(id);
+        if (!Objects.equals(targetNode, selfUrl)) {
+            return proxyRequest(AllowedMethods.GET, id, targetNode, new byte[0]);
         }
         try {
             Entry<MemorySegment> value = dao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
@@ -121,9 +120,9 @@ public class HttpServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         byte[] value = request.getBody();
-        String clusterUrl = hash(id);
-        if (!Objects.equals(clusterUrl, selfUrl)) {
-            return redirectRequest(AllowedMethods.PUT, id, clusterUrl, value);
+        String targetNode = hash(id);
+        if (!Objects.equals(targetNode, selfUrl)) {
+            return proxyRequest(AllowedMethods.PUT, id, targetNode, value);
         }
         try {
             dao.upsert(new BaseEntry<>(
@@ -139,9 +138,9 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        String clusterUrl = hash(id);
-        if (!Objects.equals(clusterUrl, selfUrl)) {
-            return redirectRequest(AllowedMethods.DELETE, id, clusterUrl, new byte[0]);
+        String targetNode = hash(id);
+        if (!Objects.equals(targetNode, selfUrl)) {
+            return proxyRequest(AllowedMethods.DELETE, id, targetNode, new byte[0]);
         }
         try {
             dao.upsert(new BaseEntry<>(MemorySegment.ofArray(Utf8.toBytes(id)), null));
@@ -162,10 +161,11 @@ public class HttpServerImpl extends HttpServer {
         session.sendResponse(badRequest);
     }
 
-    private Response redirectRequest(AllowedMethods method, String id, String clusterUrl, byte[] body) {
+    private Response proxyRequest(AllowedMethods method, String id, String targetNode, byte[] body) {
+        String targetPath = targetNode + PATH_NAME + "?id=" + id;
         try {
             HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder()
-                    .uri(URI.create(clusterUrl + PATH_NAME + "?id=" + id))
+                    .uri(URI.create(targetPath))
                     .method(method.name(), HttpRequest.BodyPublishers.ofByteArray(body)
                     ).build(), HttpResponse.BodyHandlers.ofByteArray());
             return new Response(getResponseByCode(response.statusCode()), response.body());
@@ -181,16 +181,16 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private String hash(String id) {
-        int maxHash = Integer.MIN_VALUE;
-        String nodeUrl = null;
+        int maxValue = Integer.MIN_VALUE;
+        String maxHashNode = null;
         for (String node : nodes) {
-            int hash = Hash.murmur3(id + node);
-            if (hash > maxHash) {
-                maxHash = hash;
-                nodeUrl = node;
+            int hash = (id + node).hashCode();
+            if (hash > maxValue) {
+                maxValue = hash;
+                maxHashNode = node;
             }
         }
-        return nodeUrl;
+        return maxHashNode;
     }
 
     private String getResponseByCode(int code) {

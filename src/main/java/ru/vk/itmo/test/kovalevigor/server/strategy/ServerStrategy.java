@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.strategy;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;

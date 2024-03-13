@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.strategy;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -9,6 +9,9 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.kovalevigor.config.DaoServerConfig;
 import ru.vk.itmo.test.kovalevigor.dao.DaoImpl;
+import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
+import ru.vk.itmo.test.kovalevigor.server.util.Paths;
+import ru.vk.itmo.test.kovalevigor.server.util.Responses;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

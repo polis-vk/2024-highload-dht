@@ -4,6 +4,12 @@ import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.kovalevigor.config.DaoServerConfig;
+import ru.vk.itmo.test.kovalevigor.server.strategy.ServerBasedOnStrategy;
+import ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy;
+import ru.vk.itmo.test.kovalevigor.server.strategy.ServerFull;
+import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerOneExecutorStrategyDecorator;
+import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerRequestValidationStrategyDecorator;
+import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerShardingStrategyDecorator;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;

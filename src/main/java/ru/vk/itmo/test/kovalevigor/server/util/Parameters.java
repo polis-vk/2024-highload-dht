@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.util;
 
 import one.nio.http.Request;
 
@@ -6,7 +6,6 @@ public enum Parameters {
     ID("id");
 
     private final String name;
-
 
     Parameters(String name) {
         this.name = name + "=";

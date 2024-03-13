@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.strategy;
 
 import one.nio.server.SelectorThread;
 import one.nio.server.ServerConfig;

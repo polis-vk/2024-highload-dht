@@ -1,7 +1,8 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.strategy.decorators;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
 
 import java.io.IOException;
 

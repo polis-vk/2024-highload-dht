@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.util;
 
 import one.nio.http.HttpSession;
 
@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import static ru.vk.itmo.test.kovalevigor.server.ServerDaoStrategy.log;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
 
 public final class ServerUtil {
 

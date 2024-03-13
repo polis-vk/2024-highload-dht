@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.strategy;
 
 import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
@@ -11,7 +11,7 @@ import one.nio.pool.PoolException;
 import java.io.IOException;
 import java.util.logging.Level;
 
-import static ru.vk.itmo.test.kovalevigor.server.ServerDaoStrategy.log;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
 
 public class ServerRemoteStrategy extends ServerRejectStrategy {
     public static final int REMOTE_TIMEOUT = 1000;

@@ -1,11 +1,12 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.strategy;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import ru.vk.itmo.test.kovalevigor.server.util.Responses;
 
 import java.io.IOException;
 
-import static ru.vk.itmo.test.kovalevigor.server.ServerUtil.sendResponseWithoutIo;
+import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.sendResponseWithoutIo;
 
 public class ServerRejectStrategy implements ServerStrategy {
     @Override

@@ -39,7 +39,7 @@ public class ShardingDao {
             try {
                 Entry<MemorySegment> entry = localDao.get(toMemorySegment(key));
                 if (entry == null) {
-                    return new byte[0];
+                    return null;
                 }
                 return toByteArray(entry.value());
             } catch (Exception e) {

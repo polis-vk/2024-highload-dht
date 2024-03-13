@@ -119,7 +119,7 @@ public class DaoHttpServer extends HttpServer {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
         byte[] value = dao.get(id);
-        if (value.length == 0) {
+        if (value == null) {
             return DaoResponse.empty(DaoResponse.NOT_FOUND);
         }
         return DaoResponse.ok(value);

@@ -29,7 +29,7 @@ public final class Server {
     }
 
     public static void main(String[] args) throws IOException {
-        int ports[] = new int[] {8080, 8081, 8082};
+        int[] ports = new int[]{8080, 8081, 8082};
         List<String> clusterUrls = new ArrayList<>();
 
         for (int port : ports) {

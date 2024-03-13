@@ -6,7 +6,6 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
 
 import java.io.IOException;
@@ -35,8 +34,6 @@ public class LSMServiceImpl implements Service {
     private final ConsistentHashingManager consistentHashingManager;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-//        Path tmpDir = Path.of("/home/vitekkor/IdeaProjects/2024-highload-dht/dao17050257925606627803");
-//        Path tmpDir = Path.of("/home/vitekkor/IdeaProjects/2024-highload-dht/dao14615289544735165519");
         Path tmpDir = Files.createTempDirectory("dao");
         tmpDir.toFile().deleteOnExit();
 

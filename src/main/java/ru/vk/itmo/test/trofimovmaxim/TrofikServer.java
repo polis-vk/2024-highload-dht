@@ -70,25 +70,7 @@ public class TrofikServer extends HttpServer {
             return;
         }
         if (config.selfUrl().equals(clusterUrl)) {
-            try {
-                executor.run(() -> {
-                    try {
-                        super.handleRequest(request, session);
-                    } catch (Exception e) {
-                        try {
-                            if (e instanceof HttpException) {
-                                session.sendResponse(BAD_REQUEST);
-                            } else {
-                                session.sendResponse(INTERNAL_ERROR);
-                            }
-                        } catch (IOException ex) {
-                            throw new UncheckedIOException(ex);
-                        }
-                    }
-                });
-            } catch (RejectedExecutionException e) {
-                session.sendResponse(TIMEOUT);
-            }
+            handleLocal(request, session);
             return;
         }
 
@@ -120,8 +102,30 @@ public class TrofikServer extends HttpServer {
                             response.statusCode()
                     ), response.body())
             );
-        } catch (Exception e) {
+        } catch (IOException | InterruptedException e) {
             session.sendResponse(INTERNAL_ERROR);
+        }
+    }
+
+    private void handleLocal(Request request, HttpSession session) throws IOException {
+        try {
+            executor.run(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    try {
+                        if (e instanceof HttpException) {
+                            session.sendResponse(BAD_REQUEST);
+                        } else {
+                            session.sendResponse(INTERNAL_ERROR);
+                        }
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(TIMEOUT);
         }
     }
 

@@ -23,10 +23,12 @@ public class ServiceImpl implements Service {
         server = new ServerBasedOnStrategy(
                 config,
                 new ServerOneExecutorStrategyDecorator(
-                        new ServerShardingStrategyDecorator(
-                                new ServerDaoStrategy(config),
-                                config.clusterUrls,
-                                config.selfUrl
+                        new ServerRequestValidationStrategyDecorator(
+                            new ServerShardingStrategyDecorator(
+                                    new ServerDaoStrategy(config),
+                                    config.clusterUrls,
+                                    config.selfUrl
+                            )
                         ),
                         config.corePoolSize, config.maximumPoolSize,
                         config.keepAliveTime, config.queueCapacity

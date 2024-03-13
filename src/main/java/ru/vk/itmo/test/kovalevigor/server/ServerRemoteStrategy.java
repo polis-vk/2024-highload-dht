@@ -17,6 +17,7 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
     public static final int REMOTE_TIMEOUT = 1000;
 
     private final HttpClient remoteClient;
+
     public ServerRemoteStrategy(String remoteUrl) {
         this.remoteClient = new HttpClient(new ConnectionString(remoteUrl));
     }
@@ -29,6 +30,9 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
         } catch (InterruptedException | HttpException | PoolException e) {
             log.log(Level.SEVERE, "Exception while redirection", e);
             session.sendError(Response.SERVICE_UNAVAILABLE, null);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 

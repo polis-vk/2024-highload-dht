@@ -11,6 +11,7 @@ public class ServerShardingStrategyDecorator extends ServerStrategyDecorator {
 
     private final List<ServerStrategy> clusterClients;
     private final int clusterIndex;
+
     public ServerShardingStrategyDecorator(
             ServerStrategy httpServer,
             List<String> clusterUrls,
@@ -30,12 +31,7 @@ public class ServerShardingStrategyDecorator extends ServerStrategyDecorator {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter("id=");
-        if (key == null || key.isEmpty()) {
-            super.handleDefault(request, session);
-            return;
-        }
-        int keyClusterIndex = getClusterIndex(key);
+        int keyClusterIndex = getClusterIndex(Parameters.getParameter(request, Parameters.ID));
         if (keyClusterIndex == clusterIndex) {
             super.handleRequest(request, session);
         } else {

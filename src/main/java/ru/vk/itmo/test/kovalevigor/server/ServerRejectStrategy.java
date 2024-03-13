@@ -24,5 +24,7 @@ public class ServerRejectStrategy implements ServerStrategy {
     }
 
     @Override
-    public void close() throws IOException {}
+    public void close() throws IOException {
+        // nothing to close
+    }
 }

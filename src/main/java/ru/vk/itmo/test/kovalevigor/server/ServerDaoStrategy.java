@@ -32,31 +32,20 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (request.getPath().equals(Paths.V0_ENTITY.path)) {
-            switch (request.getMethod()) {
-                case METHOD_GET:
-                case METHOD_PUT:
-                case METHOD_DELETE:
-                    String entityId = request.getParameter("id=");
-                    if (entityId == null || entityId.isEmpty()) {
-                        break;
-                    }
-                    MemorySegment key = fromString(entityId);
-                    session.sendResponse(
-                            switch (request.getMethod()) {
-                                case METHOD_GET -> getEntity(key);
-                                case METHOD_PUT -> createEntity(key, MemorySegment.ofArray(request.getBody()));
-                                case METHOD_DELETE -> deleteEntity(key);
-                                default -> throw new IllegalStateException("Can't be");
-                            }
-                    );
-                    return;
-                default:
-                    session.sendResponse(Responses.NOT_ALLOWED.toResponse());
-                    return;
+        switch (Paths.getPathOrThrow(request.getPath())) {
+            case V0_ENTITY -> {
+                String entityId = Parameters.getParameter(request, Parameters.ID);
+                MemorySegment key = fromString(entityId);
+                session.sendResponse(
+                        switch (request.getMethod()) {
+                            case METHOD_GET -> getEntity(key);
+                            case METHOD_PUT -> createEntity(key, MemorySegment.ofArray(request.getBody()));
+                            case METHOD_DELETE -> deleteEntity(key);
+                            default -> throw new IllegalStateException("Can't be");
+                        }
+                );
             }
         }
-        session.sendResponse(Responses.BAD_REQUEST.toResponse());
     }
 
     @Override

@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.vadimershov;
+package ru.vk.itmo.test.vadimershov.exceptions;
 
 public class DaoException extends RuntimeException {
 

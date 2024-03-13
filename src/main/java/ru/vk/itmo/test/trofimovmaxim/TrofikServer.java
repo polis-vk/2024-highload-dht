@@ -104,7 +104,7 @@ public class TrofikServer extends HttpServer {
             );
         } catch (IOException | InterruptedException e) {
             session.sendResponse(INTERNAL_ERROR);
-            return;
+            Thread.currentThread().interrupt();
         }
     }
 

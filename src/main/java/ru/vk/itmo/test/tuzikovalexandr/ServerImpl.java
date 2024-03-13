@@ -29,7 +29,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class ServerImpl extends HttpServer {
 
@@ -181,6 +186,20 @@ public class ServerImpl extends HttpServer {
             HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND
     );
 
+    private static void sendExceptionInfo(HttpSession session, Exception exception) {
+        try {
+            String responseCode;
+            if (exception.getClass().equals(TimeoutException.class)) {
+                responseCode = Response.REQUEST_TIMEOUT;
+            } else {
+                responseCode = Response.INTERNAL_ERROR;
+            }
+            session.sendResponse(new Response(responseCode, exception.getMessage().getBytes(StandardCharsets.UTF_8)));
+        } catch (IOException e) {
+            log.error("Error while sending exception info", e);
+        }
+    }
+
     private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String params) {
         HttpRequest httpRequest;
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params));
@@ -232,8 +251,11 @@ public class ServerImpl extends HttpServer {
                     log.error("Error sending response", e);
                 }
             }
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            sendExceptionInfo(session, e);
+        } catch (ExecutionException e) {
+            sendExceptionInfo(session, e);
         }
     }
 }

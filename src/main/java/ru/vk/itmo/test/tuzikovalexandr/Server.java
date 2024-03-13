@@ -27,7 +27,15 @@ public final class Server {
         ServiceConfig serviceConfig = new ServiceConfig(BASE_PORT, BASE_URL, List.of(BASE_URL), dataPath);
         Worker worker = new Worker(new WorkerConfig());
 
-        ServerImpl server = new ServerImpl(serviceConfig, dao, worker);
+        List<String> clusterUrls = List.of(
+                BASE_URL + ":" + BASE_PORT,
+                BASE_URL + ":" + "11111",
+                BASE_URL + ":" + "22222"
+        );
+
+        ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, 5);
+
+        ServerImpl server = new ServerImpl(serviceConfig, dao, worker, consistentHashing);
 
         server.start();
     }

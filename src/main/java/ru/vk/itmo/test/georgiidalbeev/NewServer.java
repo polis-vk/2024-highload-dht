@@ -38,7 +38,7 @@ public class NewServer extends HttpServer {
     private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toNanos(1);
     private final Logger log = LoggerFactory.getLogger(NewServer.class);
     private final List<HttpClient> httpClients;
-    private ConsistentHashing<String> consistentHashing;
+    private final ConsistentHashing<String> consistentHashing;
     private final String selfUrl;
 
     public NewServer(ServiceConfig config,
@@ -68,7 +68,7 @@ public class NewServer extends HttpServer {
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
-    public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
+    public Response putEntity(@Param(value = "id", required = true) String id, Request request) throws IOException {
         MemorySegment key = validateId(id);
         if (key == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -91,7 +91,7 @@ public class NewServer extends HttpServer {
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
-    public Response getEntity(@Param(value = "id", required = true) String id, Request request) {
+    public Response getEntity(@Param(value = "id", required = true) String id, Request request) throws IOException {
         MemorySegment key = validateId(id);
         if (key == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -113,7 +113,7 @@ public class NewServer extends HttpServer {
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteEntity(@Param(value = "id", required = true) String id, Request request) {
+    public Response deleteEntity(@Param(value = "id", required = true) String id, Request request) throws IOException {
         MemorySegment key = validateId(id);
         if (key == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -194,7 +194,7 @@ public class NewServer extends HttpServer {
         }
     }
 
-    private Response proxyRequest(Request request, String node, String id, byte[] body) {
+    private Response proxyRequest(Request request, String node, String id, byte[] body) throws IOException {
         HttpClient httpClient = httpClients.get(consistentHashing.getNodeIndex(node));
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(node + PATH + "?id=" + id));
@@ -218,9 +218,11 @@ public class NewServer extends HttpServer {
         try {
             HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
             return new Response(String.valueOf(response.statusCode()), response.body());
-        } catch (Exception e) {
+        }
+        catch (InterruptedException e) {
+            log.error("Exception while sending request", e);
+            Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
-
 }

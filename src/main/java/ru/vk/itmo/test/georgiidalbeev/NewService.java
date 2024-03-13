@@ -26,7 +26,7 @@ public class NewService implements Service {
     private static final int KEEP_ALIVE_TIME_SECONDS = 60;
     private static final int AWAIT_TERMINATION_SECONDS = 60;
     private static final int QUEUE_SIZE = 1000;
-    private volatile boolean isStopped = false;
+    private volatile boolean isStopped;
     private final ServiceConfig config;
     private NewServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -41,7 +41,6 @@ public class NewService implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
         executorService = createPool();
-
 
         httpClients = config.clusterUrls().stream()
                 .map(url -> HttpClient.newHttpClient())

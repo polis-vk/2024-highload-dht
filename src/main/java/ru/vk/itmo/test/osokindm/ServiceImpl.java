@@ -22,6 +22,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
@@ -80,81 +81,55 @@ public class ServiceImpl implements Service {
     @Path(DEFAULT_PATH)
     public Response entity(Request request, @Param(value = "id", required = true) String id) throws TimeoutException {
         if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8));
         }
 
+        Node node = router.getNode(id);
+        if (!node.isAlive()) {
+            return new Response(Response.SERVICE_UNAVAILABLE, "Node is unavailable".getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (!node.address.equals(config.selfUrl())) {
+            return forwardRequestToNode(request, node);
+        }
+
+        return handleRequestLocally(request, id);
+    }
+
+    private Response forwardRequestToNode(Request request, Node node) {
+        try {
+            LOGGER.debug("Request has been forwarded to {}", node.address);
+            return makeProxyRequest(request, node.address);
+        } catch (TimeoutException e) {
+            node.captureError();
+            LOGGER.error(node +" not responding", e);
+            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (ExecutionException e) {
+            LOGGER.error(node +" not responding", e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
+    private Response handleRequestLocally(Request request, String id) {
         switch (request.getMethod()) {
-
             case Request.METHOD_GET -> {
-                Node node = router.getNode(id);
-                if (node.isAlive()) {
-                    if (node.address.equals(config.selfUrl())) {
-                        Entry<MemorySegment> result = daoWrapper.get(id);
-                        if (result != null && result.value() != null) {
-                            return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
-                        }
-                        return new Response(Response.NOT_FOUND, Response.EMPTY);
-                    } else {
-                        try {
-                            return makeProxyRequest(request, node.address);
-                        } catch (TimeoutException e) {
-                            node.broken();
-                            LOGGER.error(node + " not responding");
-                            throw e;
-                        } catch (ExecutionException | InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                } else {
-                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                Entry<MemorySegment> result = daoWrapper.get(id);
+                if (result != null && result.value() != null) {
+                    return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
                 }
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
-
             case Request.METHOD_PUT -> {
-                Node node = router.getNode(id);
-                if (node.isAlive()) {
-                    if (node.address.equals(config.selfUrl())) {
-                        daoWrapper.upsert(id, request);
-                        return new Response(Response.CREATED, Response.EMPTY);
-                    } else {
-                        try {
-                            return makeProxyRequest(request, node.address);
-                        } catch (TimeoutException e) {
-                            node.broken();
-                            LOGGER.error(node + " not responding");
-                            throw e;
-                        } catch (ExecutionException | InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                } else {
-                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-                }
+                daoWrapper.upsert(id, request);
+                return new Response(Response.CREATED, Response.EMPTY);
             }
-
             case Request.METHOD_DELETE -> {
-                Node node = router.getNode(id);
-                if (node.isAlive()) {
-                    if (node.address.equals(config.selfUrl())) {
-                        daoWrapper.delete(id);
-                        return new Response(Response.ACCEPTED, Response.EMPTY);
-                    } else {
-                        try {
-                            LOGGER.debug("request has been forwarded");
-                            return makeProxyRequest(request, node.address);
-                        } catch (TimeoutException e) {
-                            node.broken();
-                            LOGGER.error(node + " not responding");
-                            throw e;
-                        } catch (ExecutionException | InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                } else {
-                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-                }
+                daoWrapper.delete(id);
+                return new Response(Response.ACCEPTED, Response.EMPTY);
             }
-
             default -> {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }

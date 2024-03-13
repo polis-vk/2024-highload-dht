@@ -5,7 +5,6 @@ import one.nio.util.Hash;
 import java.util.ArrayList;
 import java.util.List;
 
-
 public class RendezvousRouter {
 
     private final List<Node> nodes;

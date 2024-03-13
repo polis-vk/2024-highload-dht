@@ -72,7 +72,6 @@ public class HttpServerImpl extends HttpServer {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
-
     private void handleAsync(HttpSession session, ERunnable runnable) throws IOException {
         try {
             requestWorkers.execute(() -> {

@@ -91,8 +91,9 @@ public class SimpleServer extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         if (IMPLEMENTED_METHODS.contains(request.getMethod())) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        } else {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
-        session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
     }
 
     @Path(V0_BASE_PATH)

@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static one.nio.http.Response.INTERNAL_ERROR;
+import static one.nio.http.Response.SERVICE_UNAVAILABLE;
 
 public class RequestExecutor {
     private static final String TOO_MANY_REQUESTS = "429 Too many requests";
@@ -57,12 +58,11 @@ public class RequestExecutor {
                 } else {
                     try {
                         response = requestHandler.handle(request);
-                    } catch (Exception e) {
-                        if (e instanceof SocketTimeoutException) {
-                            LOGGER.error("Processing time exceeded on another node in the cluster", e);
-                        } else {
-                            LOGGER.error("Internal error of the DAO operation", e);
-                        }
+                    } catch (SocketTimeoutException e) {
+                        LOGGER.error("Processing time exceeded on another node in the cluster", e);
+                        response = new Response(SERVICE_UNAVAILABLE, Response.EMPTY);
+                    } catch (Exception ex) {
+                        LOGGER.error("Internal error of the DAO operation", ex);
                         response = new Response(INTERNAL_ERROR, Response.EMPTY);
                     }
                 }

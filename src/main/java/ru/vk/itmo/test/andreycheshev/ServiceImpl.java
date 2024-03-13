@@ -33,7 +33,7 @@ public class ServiceImpl implements Service {
     public ServiceImpl(ServiceConfig config) {
 
         List<String> clusterUrls = config.clusterUrls();
-        this.clusterConnections  = new HashMap<>(clusterUrls.size());
+        this.clusterConnections= new HashMap<>(clusterUrls.size());
 
         // Init connections to other nodes.
         Collections.sort(clusterUrls);
@@ -52,7 +52,6 @@ public class ServiceImpl implements Service {
 
             clusterConnections.put(nodeNumber++, client);
         }
-
 
         this.serverConfig = createServerConfig(config);
         this.daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);

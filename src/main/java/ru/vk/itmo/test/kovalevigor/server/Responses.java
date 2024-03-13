@@ -21,6 +21,10 @@ public enum Responses {
         return emptyResponse(responseCode);
     }
 
+    public String getResponseCode() {
+        return responseCode;
+    }
+
     private static Response emptyResponse(String resultCode) {
         return new Response(resultCode, Response.EMPTY);
     }

@@ -1,6 +1,9 @@
 package ru.vk.itmo.test.smirnovandrew;
 
-import java.util.concurrent.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class MyExecutor extends ThreadPoolExecutor {
 
@@ -11,7 +14,6 @@ public class MyExecutor extends ThreadPoolExecutor {
     private static final int FIRST_TIMEOUT = 2;
 
     private static final int SECOND_TIMEOUT = 2;
-
 
     public MyExecutor(int corePoolSize, int maximumPoolSize) {
         super(

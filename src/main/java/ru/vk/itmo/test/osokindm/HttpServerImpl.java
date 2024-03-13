@@ -60,7 +60,13 @@ public class HttpServerImpl extends HttpServer {
             }
         } else {
             try {
-                handleAsync(session, () -> super.handleRequest(request, session));
+                handleAsync(session, () -> {
+                    try {
+                        super.handleRequest(request, session);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -72,7 +78,7 @@ public class HttpServerImpl extends HttpServer {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
-    private void handleAsync(HttpSession session, ERunnable runnable) throws IOException {
+    private void handleAsync(HttpSession session, Runnable runnable) throws IOException {
         try {
             requestWorkers.execute(() -> {
                 try {
@@ -91,10 +97,6 @@ public class HttpServerImpl extends HttpServer {
             LOGGER.warn("Workers pool queue overflow", e);
             session.sendError(Response.SERVICE_UNAVAILABLE, null);
         }
-    }
-
-    private interface ERunnable {
-        void run() throws Exception;
     }
 
 }

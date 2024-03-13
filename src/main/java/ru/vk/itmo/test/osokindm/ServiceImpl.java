@@ -102,13 +102,13 @@ public class ServiceImpl implements Service {
             return makeProxyRequest(request, node.address);
         } catch (TimeoutException e) {
             node.captureError();
-            LOGGER.error(node +" not responding", e);
+            LOGGER.error(node + " not responding", e);
             return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         } catch (ExecutionException e) {
-            LOGGER.error(node +" not responding", e);
+            LOGGER.error(node + " not responding", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }

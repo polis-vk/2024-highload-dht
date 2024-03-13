@@ -38,12 +38,12 @@ public class DaoWrapper {
         storage.close();
     }
 
-    private static MemorySegment getMemorySegment(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
-    }
-
     private static MemorySegment getMemorySegment(byte[] data) {
         return MemorySegment.ofArray(data);
+    }
+
+    private static MemorySegment getMemorySegment(String data) {
+        return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
 }

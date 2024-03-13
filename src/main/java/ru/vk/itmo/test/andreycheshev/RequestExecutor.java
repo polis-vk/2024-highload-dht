@@ -59,7 +59,7 @@ public class RequestExecutor {
                         response = requestHandler.handle(request);
                     } catch (Exception e) {
                         if (e instanceof SocketTimeoutException) {
-                            LOGGER.error("Request processing error on another node in the cluster", e);
+                            LOGGER.error("Processing time exceeded on another node in the cluster", e);
                         } else {
                             LOGGER.error("Internal error of the DAO operation", e);
                         }

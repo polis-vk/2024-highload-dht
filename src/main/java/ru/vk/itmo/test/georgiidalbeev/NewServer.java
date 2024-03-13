@@ -32,10 +32,10 @@ import java.util.concurrent.TimeUnit;
 
 public class NewServer extends HttpServer {
 
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private final ExecutorService executorService;
     private static final String PATH = "/v0/entity";
     private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toNanos(1);
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ExecutorService executorService;
     private final Logger log = LoggerFactory.getLogger(NewServer.class);
     private final List<HttpClient> httpClients;
     private final ConsistentHashing<String> consistentHashing;
@@ -61,7 +61,7 @@ public class NewServer extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
-        serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
     }
@@ -218,8 +218,7 @@ public class NewServer extends HttpServer {
         try {
             HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
             return new Response(String.valueOf(response.statusCode()), response.body());
-        }
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             log.error("Exception while sending request", e);
             Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);

@@ -36,12 +36,14 @@ public class DaoServer extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1MB
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int Q_SIZE = 512;
+    private static final int KEEP_ALIVE_TIME = 50;
+    private static final int TIMEOUT = 60;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ServiceConfig config;
     private final ExecutorService executorService = new ThreadPoolExecutor(
             THREADS,
             THREADS,
-            50,
+            KEEP_ALIVE_TIME,
             TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(Q_SIZE),
             new ThreadPoolExecutor.AbortPolicy());
@@ -131,9 +133,9 @@ public class DaoServer extends HttpServer {
     private void shutdownAndAwaitTermination(ExecutorService pool) {
         pool.shutdown();
         try {
-            if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!pool.awaitTermination(TIMEOUT, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                if (!pool.awaitTermination(TIMEOUT, TimeUnit.SECONDS)) {
                     log.error("Pool did not terminate");
                 }
             }

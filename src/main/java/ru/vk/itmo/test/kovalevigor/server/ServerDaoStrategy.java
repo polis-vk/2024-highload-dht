@@ -20,11 +20,8 @@ import java.util.logging.Logger;
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
-import static ru.vk.itmo.test.kovalevigor.server.ServerUtil.sendResponseWithoutIo;
 
-public class ServerDaoStrategy implements ServerStrategy {
-
-    private static final String ENTITY = "/v0/entity";
+public class ServerDaoStrategy extends ServerRejectStrategy {
     private static final Charset CHARSET = StandardCharsets.UTF_8;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     public static final Logger log = Logger.getLogger(ServerDaoStrategy.class.getName());
@@ -35,7 +32,7 @@ public class ServerDaoStrategy implements ServerStrategy {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (request.getPath().equals(ENTITY)) {
+        if (request.getPath().equals(Paths.V0_ENTITY.path)) {
             switch (request.getMethod()) {
                 case METHOD_GET:
                 case METHOD_PUT:
@@ -63,18 +60,8 @@ public class ServerDaoStrategy implements ServerStrategy {
     }
 
     @Override
-    public void rejectRequest(Request request, HttpSession session) {
-        sendResponseWithoutIo(session, Responses.SERVICE_UNAVAILABLE);
-    }
-
-    @Override
     public void close() throws IOException {
         dao.close();
-    }
-
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        session.sendResponse(Responses.BAD_REQUEST.toResponse());
     }
 
     private Response getEntity(MemorySegment key) {

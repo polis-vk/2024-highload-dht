@@ -23,7 +23,11 @@ public class ServiceImpl implements Service {
         server = new ServerBasedOnStrategy(
                 config,
                 new ServerOneExecutorStrategyDecorator(
-                        new ServerDaoStrategy(config),
+                        new ServerShardingStrategyDecorator(
+                                new ServerDaoStrategy(config),
+                                config.clusterUrls,
+                                config.selfUrl
+                        ),
                         config.corePoolSize, config.maximumPoolSize,
                         config.keepAliveTime, config.queueCapacity
                 )
@@ -53,6 +57,8 @@ public class ServiceImpl implements Service {
         serverConfig.flushThresholdBytes = FLUSH_THRESHOLD_BYTES;
         serverConfig.acceptors = mapAcceptors(config);
         serverConfig.closeSessions = true;
+        serverConfig.clusterUrls = config.clusterUrls();
+        serverConfig.selfUrl = config.selfUrl();
 
         return serverConfig;
     }

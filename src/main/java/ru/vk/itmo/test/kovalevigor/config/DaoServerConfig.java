@@ -4,6 +4,7 @@ import one.nio.config.Config;
 import one.nio.http.HttpServerConfig;
 
 import java.nio.file.Path;
+import java.util.List;
 
 @Config
 public class DaoServerConfig extends HttpServerConfig {
@@ -13,4 +14,6 @@ public class DaoServerConfig extends HttpServerConfig {
     public int maximumPoolSize = 20;
     public long keepAliveTime = 100;
     public int queueCapacity = 1000;
+    public List<String> clusterUrls;
+    public String selfUrl;
 }

@@ -4,6 +4,7 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 
 import java.io.IOException;
+import java.util.logging.Level;
 
 import static ru.vk.itmo.test.kovalevigor.server.ServerDaoStrategy.log;
 import static ru.vk.itmo.test.kovalevigor.server.ServerUtil.closeSession;
@@ -32,7 +33,7 @@ public class ServerTask implements Runnable {
         } catch (IOException ioException) {
             closeSession(session, ioException);
         } catch (Exception exception) {
-            log.severe(exception.getMessage());
+            log.log(Level.SEVERE, "Exception while executing", exception);
             sendResponseWithoutIo(session, Responses.INTERNAL_ERROR);
         }
     }

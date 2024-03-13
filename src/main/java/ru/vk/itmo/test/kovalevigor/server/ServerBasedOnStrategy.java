@@ -11,10 +11,12 @@ import java.io.IOException;
 public class ServerBasedOnStrategy extends HttpServer implements ServerFull {
 
     private final ServerStrategy serverStrategy;
+    private boolean stopped;
 
     public ServerBasedOnStrategy(HttpServerConfig config, ServerStrategy serverStrategy) throws IOException {
         super(config);
         this.serverStrategy = serverStrategy;
+        this.stopped = false;
     }
 
     @Override
@@ -41,5 +43,13 @@ public class ServerBasedOnStrategy extends HttpServer implements ServerFull {
     @Override
     public SelectorThread[] getSelectors() {
         return selectors;
+    }
+
+    @Override
+    public synchronized void stop() {
+        if (!stopped) {
+            stopped = true;
+            super.stop();
+        }
     }
 }

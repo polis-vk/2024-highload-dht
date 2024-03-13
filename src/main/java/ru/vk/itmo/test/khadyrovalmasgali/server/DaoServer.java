@@ -111,7 +111,7 @@ public class DaoServer extends HttpServer {
         Node node = nodes.get(determineResponsibleNode(id));
         String nodeUrl = node.getUrl();
         if (!config.selfUrl().equals(nodeUrl)) {
-            return handleRedirect(request, node, id);
+            return handleRedirect(request, node);
         }
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
@@ -152,23 +152,9 @@ public class DaoServer extends HttpServer {
         }
     }
 
-    private Response handleRedirect(Request request, Node node, String id) {
+    private Response handleRedirect(Request request, Node node) {
         try {
-            String url = ENTITY_PATH + "?id=" + id;
-            switch (request.getMethod()) {
-                case Request.METHOD_GET -> {
-                    return node.getClient().get(url);
-                }
-                case Request.METHOD_PUT -> {
-                    return node.getClient().put(url, request.getBody());
-                }
-                case Request.METHOD_DELETE -> {
-                    return node.getClient().delete(url);
-                }
-                default -> {
-                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                }
-            }
+            return node.getClient().invoke(request);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error(e.getMessage());

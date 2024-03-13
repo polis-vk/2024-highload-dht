@@ -22,8 +22,9 @@ public final class ServerInitializer {
         );
         ExecutorService executorService = ExecutorServiceFactory.getExecutorService(
                 ExecutorServiceConfig.defaultConfig());
+        ShardSelector shardSelector = new ShardSelector(config.clusterUrls());
         ReferenceDao dao = new ReferenceDao(new Config(config.workingDir(), 1024 * 1024 * 1024));
-        ServerImpl server = new ServerImpl(config, dao, executorService);
+        ServerImpl server = new ServerImpl(config, dao, executorService, shardSelector);
         server.start();
     }
 

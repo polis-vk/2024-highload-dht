@@ -26,7 +26,7 @@ public class ConsistentHashing {
     public VNode findVNode(String key) {
         Integer hashKey = Hash.murmur3(key);
         SortedMap<Integer, VNode> tailMap = ring.tailMap(hashKey);
-        Integer nodeHashVal = tailMap.isEmpty() ? ring.firstKey() : tailMap.firstKey();
+        Integer nodeHashVal = !tailMap.isEmpty() ? tailMap.firstKey() : ring.firstKey();
         return ring.get(nodeHashVal);
     }
 

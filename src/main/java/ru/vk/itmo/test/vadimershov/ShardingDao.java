@@ -33,7 +33,6 @@ public class ShardingDao {
         this.consistentHashing = new ConsistentHashing(serviceConfig.clusterUrls());
     }
 
-
     public byte[] get(String key) {
         VNode vNode = consistentHashing.findVNode(key);
         if (vNode.url().equals(selfUrl)) {
@@ -64,6 +63,7 @@ public class ShardingDao {
         if (vNode.url().equals(selfUrl)) {
             try {
                 localDao.upsert(toEntity(key, value));
+                return;
             } catch (Exception e) {
                 throw new DaoException(e);
             }
@@ -84,6 +84,7 @@ public class ShardingDao {
         if (vNode.url().equals(selfUrl)) {
             try {
                 localDao.upsert(toDeletedEntity(key));
+                return;
             } catch (Exception e) {
                 throw new DaoException(e);
             }

@@ -23,6 +23,6 @@ public class VNode {
     }
 
     public String key() {
-        return this.url + "-" + this.replicaIndex;
+        return "Virtual node: " + this.url + "-" + this.replicaIndex;
     }
 }

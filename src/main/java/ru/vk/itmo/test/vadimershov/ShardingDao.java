@@ -52,9 +52,9 @@ public class ShardingDao {
             return response.getBody();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         } catch (PoolException | IOException | HttpException e) {
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         }
     }
 
@@ -73,9 +73,9 @@ public class ShardingDao {
             checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         } catch (PoolException | IOException | HttpException e) {
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         }
     }
 
@@ -94,9 +94,9 @@ public class ShardingDao {
             checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         } catch (PoolException | IOException | HttpException e) {
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         }
     }
 
@@ -108,7 +108,7 @@ public class ShardingDao {
             case 429 -> throw new RemoteServiceException(DaoResponse.TOO_MANY_REQUESTS, url);
             case 500 -> throw new RemoteServiceException(DaoResponse.INTERNAL_ERROR, url);
             case 503 -> throw new RemoteServiceException(DaoResponse.SERVICE_UNAVAILABLE, url);
-            default -> { }
+            default -> { /* correct program work */ }
         }
     }
 

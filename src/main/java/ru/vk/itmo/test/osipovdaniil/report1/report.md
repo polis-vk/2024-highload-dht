@@ -12,19 +12,19 @@
 и [put](src/main/java/ru/vk/itmo/test/osipovdaniil/scripts/put.lua) .
 с разным количеством запросов в секунду. <br>
 Так я пришёл начиная с
-[10000](ru/vk/itmo/test/osipovdaniil/report1/wrk/put:1)
+[10000](src/main/java/ru/vk/itmo/test/osipovdaniil/report1/wrk/put:1)
 к константе
-[18500](ru/vk/itmo/test/osipovdaniil/report1/wrk/put:577)
+[18500](src/main/java/ru/vk/itmo/test/osipovdaniil/report1/wrk/put:577)
 запросов в секунду (между ними соответсвенно сам поиск и изменения задержек). `mean latency` было меньше секунды.
 На тот момент было 80 SSTabl'ов.
 
 Однако решив перетестировать, заметил увеличение таймингов. <br>
 Так обнаружил несколько зависимостей:
 1) Скорость работы как `put` так и `get` падает с увеличением количевства SSTable'ов.
-[Последовательный put](ru/vk/itmo/test/osipovdaniil/report1/wrk/put:674)
+[Последовательный put](src/main/java/ru/vk/itmo/test/osipovdaniil/report1/wrk/put:674)
 2) `get` `delete` `get`. В такой последовательности второй `get` работает быстрее первого. <br>
-Так же как 2-ой [delete](ru/vk/itmo/test/[delete](ru/vk/itmo/test/osipovdaniil/report1/wrk/delete:208)osipovdaniil/report1/wrk/delete:208) после
-[первого](ru/vk/itmo/test/osipovdaniil/report1/wrk/delete:122). <br>
+Так же как 2-ой [delete](src/main/java/ru/vk/itmo/test/[delete](ru/vk/itmo/test/osipovdaniil/report1/wrk/delete:208)osipovdaniil/report1/wrk/delete:208) после
+[первого](src/main/java/ru/vk/itmo/test/osipovdaniil/report1/wrk/delete:122). <br>
 Логично ведь обновлённые данные лежат выше. Однако стоит отметить, что внутри все скрипты линейные.
 
 Это было подтверждено, после сброса данных, вызовом скриптов в соотетсвующих последовательностях. <br>

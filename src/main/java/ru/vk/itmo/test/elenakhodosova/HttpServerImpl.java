@@ -22,6 +22,12 @@ import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -33,10 +39,21 @@ public class HttpServerImpl extends HttpServer {
     private final ExecutorService executorService;
     private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
 
+    private final HttpClient client;
+    private final String selfUrl;
+    private final List<String> nodes;
+
+    private enum AllowedMethods {
+        GET, PUT, DELETE
+    }
+
     public HttpServerImpl(ServiceConfig config, ReferenceDao dao, ExecutorService executorService) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
         this.executorService = executorService;
+        this.selfUrl = config.selfUrl();
+        this.nodes = config.clusterUrls();
+        client = HttpClient.newHttpClient();
     }
 
     @Override
@@ -83,6 +100,10 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        String targetNode = hash(id);
+        if (!Objects.equals(targetNode, selfUrl)) {
+            return proxyRequest(AllowedMethods.GET, id, targetNode, new byte[0]);
+        }
         try {
             Entry<MemorySegment> value = dao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
             return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY)
@@ -99,6 +120,10 @@ public class HttpServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         byte[] value = request.getBody();
+        String targetNode = hash(id);
+        if (!Objects.equals(targetNode, selfUrl)) {
+            return proxyRequest(AllowedMethods.PUT, id, targetNode, value);
+        }
         try {
             dao.upsert(new BaseEntry<>(
                     MemorySegment.ofArray(Utf8.toBytes(id)),
@@ -113,6 +138,10 @@ public class HttpServerImpl extends HttpServer {
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id", required = true) String id) {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        String targetNode = hash(id);
+        if (!Objects.equals(targetNode, selfUrl)) {
+            return proxyRequest(AllowedMethods.DELETE, id, targetNode, new byte[0]);
+        }
         try {
             dao.upsert(new BaseEntry<>(MemorySegment.ofArray(Utf8.toBytes(id)), null));
             return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -132,7 +161,48 @@ public class HttpServerImpl extends HttpServer {
         session.sendResponse(badRequest);
     }
 
+    private Response proxyRequest(AllowedMethods method, String id, String targetNode, byte[] body) {
+        String targetPath = targetNode + PATH_NAME + "?id=" + id;
+        try {
+            HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder()
+                    .uri(URI.create(targetPath))
+                    .method(method.name(), HttpRequest.BodyPublishers.ofByteArray(body)
+                    ).build(), HttpResponse.BodyHandlers.ofByteArray());
+            return new Response(getResponseByCode(response.statusCode()), response.body());
+        } catch (InterruptedException | IOException e) {
+            logger.error("Error during sending request", e);
+            Thread.currentThread().interrupt();
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
     private boolean isParamIncorrect(String param) {
         return param == null || param.isEmpty();
+    }
+
+    private String hash(String id) {
+        int maxValue = Integer.MIN_VALUE;
+        String maxHashNode = null;
+        for (String node : nodes) {
+            int hash = (id + node).hashCode();
+            if (hash > maxValue) {
+                maxValue = hash;
+                maxHashNode = node;
+            }
+        }
+        return maxHashNode;
+    }
+
+    private String getResponseByCode(int code) {
+        return switch (code) {
+            case 200 -> Response.OK;
+            case 201 -> Response.CREATED;
+            case 202 -> Response.ACCEPTED;
+            case 400 -> Response.BAD_REQUEST;
+            case 404 -> Response.NOT_FOUND;
+            case 405 -> Response.METHOD_NOT_ALLOWED;
+            case 429 -> TOO_MANY_REQUESTS;
+            default -> Response.INTERNAL_ERROR;
+        };
     }
 }

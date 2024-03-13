@@ -93,7 +93,7 @@ public class TrofikServer extends HttpServer {
         }
 
         HttpRequest.Builder requestToCluster = HttpRequest.newBuilder(
-                URI.create(STR."\{clusterUrl}/v0/entity?id=\{key}")
+                URI.create(clusterUrl + "/v0/entity?id=" + key)
         );
         switch (request.getMethod()) {
             case Request.METHOD_PUT:

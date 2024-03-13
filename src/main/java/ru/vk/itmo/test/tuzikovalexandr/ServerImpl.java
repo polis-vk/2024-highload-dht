@@ -20,26 +20,40 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class ServerImpl extends HttpServer {
 
     private final Dao dao;
     private final ExecutorService executorService;
+    private final HttpClient httpClient;
+    private final ConsistentHashing consistentHashing;
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
+
+    private final String selfUrl;
     private static final Set<Integer> METHODS = Set.of(
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
 
-    public ServerImpl(ServiceConfig config, Dao dao, Worker worker) throws IOException {
+    public ServerImpl(ServiceConfig config, Dao dao, Worker worker,
+                      ConsistentHashing consistentHashing) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
         this.executorService = worker.getExecutorService();
+        this.consistentHashing = consistentHashing;
+        this.selfUrl = config.selfUrl();
+        this.httpClient = HttpClient.newBuilder()
+                .executor(Executors.newFixedThreadPool(2)).build();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -140,8 +154,14 @@ public class ServerImpl extends HttpServer {
             return;
         }
 
+        String param = request.getParameter("id=");
         try {
-            super.handleRequest(request, session);
+            String nodeUrl = consistentHashing.getNode(param);
+            if (Objects.equals(selfUrl, nodeUrl)) {
+                super.handleRequest(request, session);
+            } else {
+                handleProxyRequest(request, session, nodeUrl, param);
+            }
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -149,6 +169,71 @@ public class ServerImpl extends HttpServer {
                 log.error("Exception during handleRequest: ", e);
                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
+        }
+    }
+
+    private static final Map<Integer, String> httpCodeMapping = Map.of(
+            HttpURLConnection.HTTP_OK, Response.OK,
+            HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
+            HttpURLConnection.HTTP_CREATED, Response.CREATED,
+            HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
+            HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR,
+            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND
+    );
+
+    private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String params) {
+        HttpRequest httpRequest;
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params));
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                httpRequest = builder.GET().build();
+            }
+            case Request.METHOD_PUT -> {
+                byte[] body = request.getBody();
+                if (body == null) {
+                    try {
+                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    } catch (IOException e) {
+                        log.error("Error sending response", e);
+                    }
+                    return;
+                }
+                httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
+            }
+            case Request.METHOD_DELETE -> {
+                httpRequest = builder.DELETE().build();
+            }
+            default -> {
+                try {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                } catch (IOException e) {
+                    log.error("Error sending response", e);
+                }
+                return;
+            }
+        }
+
+        try {
+            HttpResponse<byte[]> httpResponse = httpClient
+                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .get();
+
+            String statusCode = httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
+            if (statusCode != null) {
+                try {
+                    session.sendResponse(new Response(statusCode, httpResponse.body()));
+                } catch (IOException e) {
+                    log.error("Error sending response", e);
+                }
+            } else {
+                try {
+                    session.sendResponse(new Response(Response.INTERNAL_ERROR, httpResponse.body()));
+                } catch (IOException e) {
+                    log.error("Error sending response", e);
+                }
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

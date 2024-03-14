@@ -16,6 +16,10 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
@@ -27,6 +31,8 @@ import java.util.logging.Logger;
 public class MyServer extends HttpServer {
 
     private static final String ROOT = "/v0/entity";
+
+    private static final String ID = "id=";
     private static long DURATION = 1000L;
 
     private final ReferenceDao dao;
@@ -34,6 +40,12 @@ public class MyServer extends HttpServer {
     private final MyExecutor executor;
 
     private final Logger logger;
+
+    private final HttpClient httpClient;
+
+    private final RendezvousClusterManager rendezvousClustersManager;
+
+    private final String selfUrl;
 
     private static final Set<Integer> METHOD_SET = new HashSet<>(List.of(
             Request.METHOD_GET,
@@ -43,6 +55,69 @@ public class MyServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        String key = request.getParameter(ID);
+        String clusterUrl = rendezvousClustersManager.getCluster(key);
+
+        if (Objects.isNull(clusterUrl)) {
+            logger.info("Cluster url is null");
+            sendEmpty(session, Response.BAD_REQUEST);
+            return;
+        }
+
+        if (Objects.equals(selfUrl, clusterUrl)) {
+            handleLocalRequest(request, session);
+            return;
+        }
+
+        var clusterRequest = HttpRequest.newBuilder(
+                URI.create(
+                        String.join("",
+                                clusterUrl,
+                                ROOT,
+                                "?",
+                                ID,
+                                key
+                        ))
+        );
+
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> clusterRequest.GET();
+            case Request.METHOD_DELETE -> clusterRequest.DELETE();
+            case Request.METHOD_PUT -> clusterRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
+            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
+
+        try {
+            var response = httpClient.send(
+                    clusterRequest.build(),
+                    HttpResponse.BodyHandlers.ofByteArray()
+            );
+
+            session.sendResponse(
+                    new Response(
+                            responseFromStatusCode(response.statusCode()),
+                            response.body()
+                    )
+            );
+        } catch (IOException | InterruptedException e) {
+            logger.info(e.getMessage());
+            sendEmpty(session, Response.INTERNAL_ERROR);
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private String responseFromStatusCode(int statusCode) {
+        return switch (statusCode) {
+            case 400 -> Response.BAD_REQUEST;
+            case 404 -> Response.NOT_FOUND;
+            case 200 -> Response.OK;
+            case 202 -> Response.ACCEPTED;
+            case 201 -> Response.CREATED;
+            default -> Response.INTERNAL_ERROR;
+        };
+    }
+
+    private void handleLocalRequest(Request request, HttpSession session) {
         try {
             long exp = System.currentTimeMillis() + DURATION;
             executor.execute(() -> {
@@ -97,9 +172,12 @@ public class MyServer extends HttpServer {
             int availableProcessors
     ) throws IOException {
         super(generateServerConfig(config));
+        this.rendezvousClustersManager = new RendezvousClusterManager(config);
+        this.selfUrl = config.selfUrl();
         this.dao = dao;
         this.executor = new MyExecutor(corePoolSize, availableProcessors);
         this.logger = Logger.getLogger(MyServer.class.getName());
+        this.httpClient = HttpClient.newHttpClient();
     }
 
     private boolean isStringInvalid(String param) {
@@ -177,5 +255,6 @@ public class MyServer extends HttpServer {
     public synchronized void stop() {
         this.executor.shutdown();
         super.stop();
+        httpClient.close();
     }
 }

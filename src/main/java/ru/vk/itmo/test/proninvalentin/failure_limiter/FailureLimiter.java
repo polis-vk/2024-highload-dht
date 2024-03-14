@@ -28,12 +28,11 @@ public class FailureLimiter {
     public FailureLimiter(FailureLimiterConfig config) {
 
         List<String> clusterUrls = config.clusterUrls();
-        int maxFailureNumber = config.MaxFailureNumber();
         int nodesNumber = clusterUrls.size();
 
         this.failuresPerNode = new AtomicIntegerArray(nodesNumber);
         this.resettingNodes = new AtomicBoolean[nodesNumber];
-        this.maxFailureNumber = maxFailureNumber;
+        this.maxFailureNumber = config.MaxFailureNumber();
         this.nodeToIndex = new HashMap<>();
 
         for (int i = 0; i < nodesNumber; ++i) {
@@ -44,14 +43,14 @@ public class FailureLimiter {
         this.failuresResetor = new ScheduledThreadPoolExecutor(1);
     }
 
-    public void HandleFailure(String nodeUrl) {
+    public void handleFailure(String nodeUrl) {
         Integer nodeIndex = nodeToIndex.get(nodeUrl);
         if (failuresPerNode.incrementAndGet(nodeIndex) > maxFailureNumber && !resettingNodes[nodeIndex].get()) {
             resetNodeFailures(nodeUrl);
         }
     }
 
-    public boolean ReadyForRequests(String nodeUrl) {
+    public boolean readyForRequests(String nodeUrl) {
         return failuresPerNode.get(nodeToIndex.get(nodeUrl)) < maxFailureNumber;
     }
 

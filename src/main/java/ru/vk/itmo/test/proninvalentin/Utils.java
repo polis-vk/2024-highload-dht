@@ -3,7 +3,7 @@ package ru.vk.itmo.test.proninvalentin;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class Utils {
+public final class Utils {
     private static final int SOFT_SHUT_DOWN_TIME = 20;
     private static final int HARD_SHUT_DOWN_TIME = 10;
 

@@ -172,9 +172,9 @@ public class Server extends HttpServer {
             } else {
                 logger.debug("[" + selfUrl + "] Send request to node [" + nodeUrl + "]: " + request.getMethodName()
                         + request.getURI());
-                if (failureLimiter.ReadyForRequests(nodeUrl))
+                if (failureLimiter.readyForRequests(nodeUrl)) {
                     handleProxyRequest(request, session, nodeUrl, parameter);
-                else {
+                } else {
                     logger.warn("[" + selfUrl + "] Can't send request to closed node [" + nodeUrl + "]: "
                             + request.getMethodName() + request.getURI());
                     sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -230,7 +230,7 @@ public class Server extends HttpServer {
             String statusCode = httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
             if (statusCode != null) {
                 if (httpResponse.statusCode() >= SERVER_ERRORS) {
-                    failureLimiter.HandleFailure(nodeUrl);
+                    failureLimiter.handleFailure(nodeUrl);
                 }
 
                 sendResponse(session, new Response(statusCode, httpResponse.body()));
@@ -243,15 +243,15 @@ public class Server extends HttpServer {
             Thread.currentThread().interrupt();
             logger.error(e.getMessage());
             sendExceptionInfo(session, e);
-            failureLimiter.HandleFailure(nodeUrl);
+            failureLimiter.handleFailure(nodeUrl);
         } catch (ExecutionException e) {
             logger.error("Execution exception while processing the httpRequest", e);
             sendExceptionInfo(session, e);
-            failureLimiter.HandleFailure(nodeUrl);
+            failureLimiter.handleFailure(nodeUrl);
         } catch (TimeoutException e) {
             logger.error("Request timed out. Maximum processing time exceeded", e);
             sendExceptionInfo(session, e);
-            failureLimiter.HandleFailure(nodeUrl);
+            failureLimiter.handleFailure(nodeUrl);
         }
     }
 

@@ -3,17 +3,17 @@ package ru.vk.itmo.test.proninvalentin;
 public class ServerConfig {
     private final int maxWorkersNumber;
 
+    private final int requestMaxTimeToTakeInWork;
+
+    private final int httpRequestTimeoutInMillis;
+
     public int getMaxWorkersNumber() {
         return maxWorkersNumber;
     }
 
-    private final int requestMaxTimeToTakeInWork;
-
     public int getRequestTimeoutInMilliseconds() {
         return requestMaxTimeToTakeInWork;
     }
-
-    private final int httpRequestTimeoutInMillis;
 
     public int getHttpRequestTimeoutInMillis() {
         return httpRequestTimeoutInMillis;

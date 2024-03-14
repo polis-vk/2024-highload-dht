@@ -1,17 +1,17 @@
 package ru.vk.itmo.test.bandurinvladislav;
 
-import one.nio.http.HttpServerConfig;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.bandurinvladislav.config.DhtServerConfig;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    private final HttpServerConfig serverConfig;
+    private final DhtServerConfig serverConfig;
     private final ServiceConfig config;
     private Server server;
 
@@ -37,18 +37,20 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    public static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
-        HttpServerConfig serverConfig = new HttpServerConfig();
+    public static DhtServerConfig createServerConfig(ServiceConfig serviceConfig) {
+        DhtServerConfig serverConfig = new DhtServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
+        serverConfig.clusterUrls = serviceConfig.clusterUrls();
+        serverConfig.selfUrl = serviceConfig.selfUrl();
         return serverConfig;
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

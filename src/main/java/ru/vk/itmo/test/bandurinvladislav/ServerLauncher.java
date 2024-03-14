@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.bandurinvladislav;
 
-import one.nio.http.HttpServerConfig;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.test.bandurinvladislav.config.DhtServerConfig;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -16,7 +16,7 @@ public final class ServerLauncher {
         ServiceConfig serviceConfig = new ServiceConfig(
                 8080, "http://localhost", List.of("http://localhost"),
                 Path.of("/home/vbandurin/github/tmp/db"));
-        HttpServerConfig serverConfig = ServiceImpl.createServerConfig(serviceConfig);
+        DhtServerConfig serverConfig = ServiceImpl.createServerConfig(serviceConfig);
         Server server = new Server(serverConfig, serviceConfig.workingDir());
         server.start();
 

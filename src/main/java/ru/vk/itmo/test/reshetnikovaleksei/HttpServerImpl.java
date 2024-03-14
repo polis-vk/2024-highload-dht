@@ -56,14 +56,11 @@ public class HttpServerImpl extends HttpServer {
                     internalHandleRequest(request, session);
                 } catch (IOException e) {
                     processIOException(request, session, e);
-                } catch (Exception e) {
+                } catch (InterruptedException e) {
                     LOGGER.error("Failed to handle request: {} with error: {}", request, e.getMessage());
                     try {
-                        if (e.getClass() == HttpException.class) {
-                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        } else {
-                            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                        }
+                        Thread.currentThread().interrupt();
+                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                     } catch (IOException ex) {
                         processIOException(request, session, ex);
                     }
@@ -156,7 +153,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private void internalHandleRequest(Request request, HttpSession session)
-            throws IOException, InterruptedException, HttpException {
+            throws IOException, InterruptedException {
         String id = request.getParameter(ID_PARAMETER_NAME);
         if (id == null || id.isBlank()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));

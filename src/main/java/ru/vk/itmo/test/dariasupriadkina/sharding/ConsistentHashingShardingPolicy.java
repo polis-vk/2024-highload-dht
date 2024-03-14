@@ -28,6 +28,10 @@ public class ConsistentHashingShardingPolicy implements ShardingPolicy {
         }
     }
 
+    public final int hash(String str) {
+        return str.hashCode();
+    }
+
     @Override
     public String getNodeById(String key) {
         if (circle.isEmpty()) {
@@ -39,11 +43,6 @@ public class ConsistentHashingShardingPolicy implements ShardingPolicy {
             hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
         }
         return circle.get(hash);
-    }
-
-    @Override
-    public int hash(String str) {
-        return str.hashCode();
     }
 
 }

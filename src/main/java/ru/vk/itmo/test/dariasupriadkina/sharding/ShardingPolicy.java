@@ -4,5 +4,4 @@ public interface ShardingPolicy {
 
     String getNodeById(String id);
 
-    int hash(String str);
 }

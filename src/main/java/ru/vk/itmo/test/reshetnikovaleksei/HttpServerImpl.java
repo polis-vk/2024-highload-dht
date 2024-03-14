@@ -60,11 +60,11 @@ public class HttpServerImpl extends HttpServer {
             executorService.execute(() -> {
                 try {
                     String targetNode = requestRouter.getNode(id);
-                    if (!Objects.equals(targetNode, selfUrl)) {
+                    if (Objects.equals(targetNode, selfUrl)) {
+                        super.handleRequest(request, session);
+                    } else {
                         Response response = requestRouter.redirect(targetNode, request);
                         session.sendResponse(response);
-                    } else {
-                        super.handleRequest(request, session);
                     }
                 } catch (IOException e) {
                     processIOException(request, session, e);

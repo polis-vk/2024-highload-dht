@@ -1,5 +1,10 @@
 package ru.vk.itmo.test.reshetnikovaleksei;
 
+import one.nio.http.Request;
+import one.nio.http.Response;
+import one.nio.util.Hash;
+import ru.vk.itmo.ServiceConfig;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
@@ -7,11 +12,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
-
-import one.nio.http.Request;
-import one.nio.http.Response;
-import one.nio.util.Hash;
-import ru.vk.itmo.ServiceConfig;
 
 public class RequestRouter implements Closeable {
     private final List<String> nodes;

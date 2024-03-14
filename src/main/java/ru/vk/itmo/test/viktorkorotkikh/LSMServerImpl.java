@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.viktorkorotkikh;
 
-import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -33,9 +32,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -66,26 +63,15 @@ public class LSMServerImpl extends HttpServer {
             ServiceConfig serviceConfig,
             Dao<MemorySegment, Entry<MemorySegment>> dao,
             ExecutorService executorService,
-            ConsistentHashingManager consistentHashingManager
+            ConsistentHashingManager consistentHashingManager,
+            HttpClient clusterClient
     ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
         this.executorService = executorService;
         this.consistentHashingManager = consistentHashingManager;
         this.selfUrl = serviceConfig.selfUrl();
-        ThreadPoolExecutor clusterExecutor = new ThreadPoolExecutor(
-                16,
-                16,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(),
-                new CustomThreadFactory("cluster-worker", true),
-                new ThreadPoolExecutor.AbortPolicy()
-        );
-        clusterExecutor.prestartAllCoreThreads();
-        this.clusterClient = HttpClient.newBuilder()
-                .executor(clusterExecutor)
-                .build();
+        this.clusterClient = clusterClient;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -212,14 +198,17 @@ public class LSMServerImpl extends HttpServer {
                 sendResponseAndCloseSessionOnError(session, Response.ok(clusterResponse.body()));
             }
         } catch (InterruptedException e) {
+            final String clusterUrl = request.uri().toString();
             Thread.currentThread().interrupt();
-            log.warn("Current thread was interrupted during processing request to cluster");
+            log.warn("Current thread was interrupted during processing request to cluster {}", clusterUrl);
             sendResponseAndCloseSessionOnError(session, LSMConstantResponse.SERVICE_UNAVAILABLE_CLOSE);
         } catch (ExecutionException e) {
-            log.error("Unexpected exception occurred", e);
+            final String clusterUrl = request.uri().toString();
+            log.error("Unexpected exception occurred while sending request to cluster {}", clusterUrl, e);
             sendResponseAndCloseSessionOnError(session, LSMConstantResponse.SERVICE_UNAVAILABLE_CLOSE);
         } catch (TimeoutException e) {
-            log.warn("Request timeout to cluster server {}", request.uri().getPath());
+            final String clusterUrl = request.uri().toString();
+            log.warn("Request timeout to cluster server {}", clusterUrl);
             sendResponseAndCloseSessionOnError(session, LSMConstantResponse.gatewayTimeout(originalRequest));
         }
     }

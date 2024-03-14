@@ -15,10 +15,11 @@ public class ConsistentHashingManager {
 
     public ConsistentHashingManager(int numberOfVNodes, List<String> clusterUrls) {
         hashRing = new TreeMap<>();
+        MessageDigest messageDigestInstance = getMessageDigestInstance();
         for (String clusterUrl : clusterUrls) {
             for (int j = 0; j < numberOfVNodes; j++) {
                 final byte[] input = (clusterUrl + j).getBytes(StandardCharsets.UTF_8);
-                final byte[] hash = getMessageDigestInstance().digest(input);
+                final byte[] hash = messageDigestInstance.digest(input);
                 hashRing.put(hashToInt(hash), clusterUrl);
             }
         }

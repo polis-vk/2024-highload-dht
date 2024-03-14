@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.viktorkorotkikh;
 
+import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -11,17 +12,18 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class LSMServiceImpl implements Service {
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
@@ -32,6 +34,8 @@ public class LSMServiceImpl implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ExecutorService executorService;
     private final ConsistentHashingManager consistentHashingManager;
+    private HttpClient clusterClient;
+    private ExecutorService clusterClientExecutorService;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         Path tmpDir = Files.createTempDirectory("dao");
@@ -40,7 +44,7 @@ public class LSMServiceImpl implements Service {
         ServiceConfig serviceConfig = new ServiceConfig(
                 8080,
                 "http://localhost:8080",
-                List.of("http://localhost:8080"),
+                List.of("http://localhost:8080", "http://localhost:8081", "http://localhost:8082"),
                 tmpDir
         );
         LSMServiceImpl lsmService = new LSMServiceImpl(serviceConfig);
@@ -57,9 +61,10 @@ public class LSMServiceImpl implements Service {
             ServiceConfig serviceConfig,
             Dao<MemorySegment, Entry<MemorySegment>> dao,
             ExecutorService executorService,
-            ConsistentHashingManager consistentHashingManager
+            ConsistentHashingManager consistentHashingManager,
+            HttpClient clusterClient
     ) throws IOException {
-        return new LSMServerImpl(serviceConfig, dao, executorService, consistentHashingManager);
+        return new LSMServerImpl(serviceConfig, dao, executorService, consistentHashingManager, clusterClient);
     }
 
     private static Dao<MemorySegment, Entry<MemorySegment>> createLSMDao(Path workingDir) {
@@ -70,23 +75,18 @@ public class LSMServiceImpl implements Service {
         return new LSMDaoImpl(daoConfig);
     }
 
-    private static ExecutorService createExecutorService(final int workers, final int queueSize) {
+    private static ExecutorService createExecutorService(
+            final int workers,
+            final int queueSize,
+            final String threadsName
+    ) {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 workers,
                 workers,
                 0L,
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(queueSize),
-                new ThreadFactory() {
-                    private final AtomicInteger threadNumber = new AtomicInteger(1);
-
-                    @Override
-                    public Thread newThread(Runnable r) {
-                        Thread thread = new Thread(r);
-                        thread.setName("worker #" + threadNumber.getAndIncrement());
-                        return thread;
-                    }
-                },
+                new CustomThreadFactory(threadsName, true),
                 new ThreadPoolExecutor.AbortPolicy()
         );
         executor.prestartAllCoreThreads();
@@ -107,9 +107,14 @@ public class LSMServiceImpl implements Service {
         if (isRunning) return CompletableFuture.completedFuture(null);
         dao = createLSMDao(serviceConfig.workingDir());
 
-        executorService = createExecutorService(16, 1024);
+        executorService = createExecutorService(16, 1024, "worker");
+        clusterClientExecutorService = createExecutorService(16, 1024, "cluster-worker");
 
-        httpServer = createServer(serviceConfig, dao, executorService, consistentHashingManager);
+        clusterClient = HttpClient.newBuilder()
+                .executor(clusterClientExecutorService)
+                .build();
+
+        httpServer = createServer(serviceConfig, dao, executorService, consistentHashingManager, clusterClient);
         httpServer.start();
 
         isRunning = true;
@@ -121,8 +126,11 @@ public class LSMServiceImpl implements Service {
         if (!isRunning) return CompletableFuture.completedFuture(null);
         httpServer.stop();
 
+        shutdownHttpClient(clusterClient);
+        shutdownExecutorService(clusterClientExecutorService);
         shutdownExecutorService(executorService);
         executorService = null;
+        clusterClient = null;
         httpServer = null;
 
         closeLSMDao(dao);
@@ -143,6 +151,22 @@ public class LSMServiceImpl implements Service {
         executorService.shutdownNow();
         try {
             executorService.awaitTermination(TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void shutdownHttpClient(HttpClient httpClient) {
+        httpClient.shutdown();
+        try {
+            httpClient.awaitTermination(Duration.of(TERMINATION_TIMEOUT_SECONDS, ChronoUnit.SECONDS));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        httpClient.shutdownNow();
+        try {
+            httpClient.awaitTermination(Duration.of(TERMINATION_TIMEOUT_SECONDS, ChronoUnit.SECONDS));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

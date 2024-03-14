@@ -1,13 +1,8 @@
 package ru.vk.itmo.test.kachmareugene;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
+import one.nio.net.ConnectionString;
+import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
@@ -42,14 +37,24 @@ public class HttpServerImpl extends HttpServer {
     private final ServiceConfig serviceConfig;
     private static final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
 
+    private final PartitionMetaInfo partitionTable;
     public HttpServerImpl(ServiceConfig conf) throws IOException {
-        super(convertToHttpConfig(conf));
+        super(convertToHttpConfig(conf, 0));
         this.serviceConfig = conf;
+        this.partitionTable = new PartitionMetaInfo(conf.clusterUrls(), 1);
     }
 
-    private static HttpServerConfig convertToHttpConfig(ServiceConfig conf) {
+    public HttpServerImpl(ServiceConfig config, PartitionMetaInfo info, int ind) throws IOException {
+        super(convertToHttpConfig(config, ind));
+        this.serviceConfig = config;
+        this.partitionTable = info;
+
+    }
+
+    private static HttpServerConfig convertToHttpConfig(ServiceConfig conf, int ind) throws UncheckedIOException {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = conf.selfPort();
+        acceptorConfig.port = Integer.parseInt(conf.clusterUrls().get(ind).split(":")[2]);
+
         acceptorConfig.reusePort = true;
 
         HttpServerConfig httpServerConfig = new HttpServerConfig();
@@ -93,6 +98,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             closeExecutorService(executorService);
             daoImpl.close();
+
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -112,6 +118,7 @@ public class HttpServerImpl extends HttpServer {
         if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
+        System.err.println("in");
         return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
@@ -139,6 +146,7 @@ public class HttpServerImpl extends HttpServer {
         }
         daoImpl.upsert(new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
                         null));
+        System.err.println("deleted");
         return ACCEPTED;
     }
 
@@ -148,16 +156,56 @@ public class HttpServerImpl extends HttpServer {
 
             executorService.execute(() -> {
                 try {
-                    super.handleRequest(request, session);
+                    int portFromReq = partitionTable.getRealPortWithDataByRequest(request);
+                    if (portFromReq == port) {
+                        System.err.println("make " + request.getMethodName() + request.getURI() + "port"+portFromReq);
+
+                        super.handleRequest(request, session);
+                    } else {
+                        String oldHostName = request.getHeader("Host:").split(":")[0];
+                        String newHost =
+                                STR."Host: \{String.join(":", oldHostName, String.valueOf(portFromReq))}";
+
+                        Request request_ver2 = getRequest_ver2(request, newHost);
+
+                        String clientURL = STR."http://\{request_ver2.getHeader("Host:")}\{request_ver2.getURI()}";
+
+                        try (HttpClient client =
+                                     new HttpClient(new ConnectionString(clientURL))){
+                            System.err.println("redirect " + request_ver2.getMethodName() + request_ver2.getURI()
+                                    + "port"+portFromReq);
+                            session.sendResponse(client.invoke(request_ver2));
+                        }
+                    }
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
                 } catch (IOException e) {
                     errorAccept(session, e, Response.CONFLICT);
+                } catch (HttpException e) {
+                    errorAccept(session, e, Response.NOT_ACCEPTABLE);
+                } catch (PoolException | InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
             });
         } catch (RejectedExecutionException e) {
             session.sendError(Response.CONFLICT, e.toString());
         }
+    }
+
+    private static Request getRequest_ver2(Request request, String newHost) {
+        Request request_ver2 = new Request(request.getMethod(), request.getURI(), request.isHttp11());
+        request_ver2.setBody(request.getBody());
+
+        for (var h : request.getHeaders()) {
+            if (h != null) {
+                if (h.startsWith("Host")) {
+                    request_ver2.addHeader(newHost);
+                } else {
+                    request_ver2.addHeader(h);
+                }
+            }
+        }
+        return request_ver2;
     }
 
     private void errorAccept(HttpSession session, Exception e, String message) {

@@ -2,6 +2,7 @@ package ru.vk.itmo.test.dariasupriadkina;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
@@ -14,11 +15,11 @@ public class NodeThreadPoolExecutor extends ThreadPoolExecutor {
     private static final Logger logger = LoggerFactory.getLogger(NodeThreadPoolExecutor.class.getName());
     private final int shutdownTimeoutSec;
 
-    public NodeThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
-                                  TimeUnit unit, BlockingQueue<Runnable> workQueue, ThreadFactory threadFactory,
-                                  RejectedExecutionHandler rejectedExecutionHandler, int shutdownTimeoutSec) {
-        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue,
-                threadFactory, rejectedExecutionHandler);
+    public NodeThreadPoolExecutor(int corePoolSize, int maximumPoolSize, BlockingQueue<Runnable> workQueue,
+                                  ThreadFactory threadFactory, RejectedExecutionHandler rejectedExecutionHandler,
+                                  int shutdownTimeoutSec) {
+        super(corePoolSize, maximumPoolSize, WorkerConfig.KEEP_ALIVE_TIME,
+                WorkerConfig.KEEP_ALIVE_TIME_SECONDS, workQueue, threadFactory, rejectedExecutionHandler);
         this.shutdownTimeoutSec = shutdownTimeoutSec;
     }
 

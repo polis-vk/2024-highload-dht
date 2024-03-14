@@ -21,11 +21,13 @@ import java.util.concurrent.CompletableFuture;
 public class ServiceImpl implements ru.vk.itmo.Service {
 
     private final ServiceConfig serviceConfig;
+    private final ProxyRequestHandler proxyRequestHandler;
     private PersistentDao dao;
     private ServerImpl server;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
+        this.proxyRequestHandler = new ProxyRequestHandler(serviceConfig);
     }
 
     @Override
@@ -40,15 +42,20 @@ public class ServiceImpl implements ru.vk.itmo.Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        proxyRequestHandler.close();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
+    public Response get(@Param(value = "id", required = true) String id, Request request) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (proxyRequestHandler.isNeedProxy(id)) {
+            return proxyRequestHandler.proxyRequest(request);
         }
 
         Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)));
@@ -66,6 +73,10 @@ public class ServiceImpl implements ru.vk.itmo.Service {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        if (proxyRequestHandler.isNeedProxy(id)) {
+            return proxyRequestHandler.proxyRequest(request);
+        }
+
         dao.upsert(
             new BaseEntry<>(
                 MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
@@ -78,9 +89,13 @@ public class ServiceImpl implements ru.vk.itmo.Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
+    public Response delete(@Param(value = "id", required = true) String id, Request request) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (proxyRequestHandler.isNeedProxy(id)) {
+            return proxyRequestHandler.proxyRequest(request);
         }
 
         dao.upsert(
@@ -93,7 +108,7 @@ public class ServiceImpl implements ru.vk.itmo.Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

@@ -8,6 +8,8 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
@@ -16,17 +18,17 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServerImpl extends HttpServer {
-    private final Logger logger = Logger.getLogger(this.getClass().getName());
+    private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
     private static final String HTTP_SERVICE_NOT_AVAILABLE = "503";
     private static final String EMPTY_RESPONSE = "";
     private static final int QUEUE_CAPACITY = 3000;
 
     private final ThreadPoolExecutor executor;
+    private final AtomicBoolean isServerStopped = new AtomicBoolean(false);
 
     public ServerImpl(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config));
@@ -60,6 +62,10 @@ public class ServerImpl extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        if (isServerStopped.getAndSet(true)) {
+            return;
+        }
+
         executor.close();
         super.stop();
     }
@@ -69,19 +75,19 @@ public class ServerImpl extends HttpServer {
             super.handleRequest(request, session);
         } catch (RejectedExecutionException executionException) {
             try {
-                logger.log(Level.SEVERE, "Rejected execution new request.", executionException);
+                log.error("Rejected execution new request.", executionException);
                 session.sendError(HTTP_SERVICE_NOT_AVAILABLE, "Server is overload.");
-            } catch (IOException ioException) {
-                logger.log(Level.SEVERE, "Failed send error response to client.", ioException);
+            } catch (IOException ex) {
+                log.error("Failed send error response to client.", ex);
                 session.close();
                 Thread.currentThread().interrupt();
             }
-        } catch (Exception e) {
+        } catch (Exception ex) {
             try {
-                String response = e.getClass() == HttpException.class ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
+                String response = ex.getClass() == HttpException.class ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
                 session.sendError(response, EMPTY_RESPONSE);
-            } catch (IOException ex) {
-                logger.log(Level.SEVERE, "Failed send error response to client.", e);
+            } catch (IOException ioEx) {
+                log.error("Failed send error response to client.", ioEx);
                 session.close();
                 Thread.currentThread().interrupt();
             }

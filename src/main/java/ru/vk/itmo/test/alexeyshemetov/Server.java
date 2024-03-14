@@ -134,9 +134,9 @@ public class Server extends HttpServer {
     }
 
     private PathMapper createPathMapper() {
-        PathMapper pathMapper = new PathMapper();
-        pathMapper.add(ENTITY_PATH, null, this::handleRequest);
-        return pathMapper;
+        PathMapper mapper = new PathMapper();
+        mapper.add(ENTITY_PATH, null, this::handleRequest);
+        return mapper;
     }
 
     private void handleRequestWrapper(Request request, HttpSession session) {

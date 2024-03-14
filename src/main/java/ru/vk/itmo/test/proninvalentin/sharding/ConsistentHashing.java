@@ -13,16 +13,16 @@ public class ConsistentHashing implements ShardingAlgorithm {
     private final Map<Integer, String> virtualNodeMapping = new HashMap<>();
 
     public ConsistentHashing(ShardingConfig config) {
-        List<String> nodesUrls = config.nodesUrls();
+        List<String> clusterUrls = config.clusterUrls();
         int virtualNodesNumber = config.virtualNodesNumber();
-        int hashesNumber = nodesUrls.size() * virtualNodesNumber;
+        int hashesNumber = clusterUrls.size() * virtualNodesNumber;
         this.hashes = new int[hashesNumber];
-        initVirtualNodes(nodesUrls, virtualNodesNumber);
+        initVirtualNodes(clusterUrls, virtualNodesNumber);
     }
 
-    private void initVirtualNodes(List<String> nodesUrls, int virtualNodesNumber) {
-        for (int i = 0; i < nodesUrls.size(); i++) {
-            String nodeUrl = nodesUrls.get(i);
+    private void initVirtualNodes(List<String> clusterUrls, int virtualNodesNumber) {
+        for (int i = 0; i < clusterUrls.size(); i++) {
+            String nodeUrl = clusterUrls.get(i);
             for (int j = 0; j < virtualNodesNumber; j++) {
                 String virtualNode = "[VN: " + (virtualNodesNumber * i + i) + "]" + nodeUrl;
                 int hash = hash(virtualNode);

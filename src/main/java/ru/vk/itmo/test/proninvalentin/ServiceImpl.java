@@ -6,6 +6,8 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
+import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiterConfig;
 import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
@@ -45,7 +47,10 @@ public class ServiceImpl implements Service {
         ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
         ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 
-        server = new Server(config, dao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig());
+        FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
+        FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);
+
+        server = new Server(config, dao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig(), failureLimiter);
         server.start();
         serverAlreadyClosed = false;
         return CompletableFuture.completedFuture(null);
@@ -61,7 +66,7 @@ public class ServiceImpl implements Service {
             return CompletableFuture.completedFuture(null);
         }
         server.stop();
-        workerPool.gracefulShutdown();
+        Utils.shutdownGracefully(workerPool.pool);
         dao.close();
         serverAlreadyClosed = true;
         logger.debug("["

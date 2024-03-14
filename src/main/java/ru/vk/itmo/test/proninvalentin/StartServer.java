@@ -2,6 +2,8 @@ package ru.vk.itmo.test.proninvalentin;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
+import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiterConfig;
 import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
@@ -34,17 +36,20 @@ public final class StartServer {
         WorkerPoolConfig workerPoolConfig = WorkerPoolConfig.defaultConfig();
         WorkerPool workerPool = new WorkerPool(workerPoolConfig);
 
-        List<String> nodesUrls = List.of(
+        List<String> clusterUrls = List.of(
                 url + ":" + port,
                 url + ":" + "44444",
                 url + ":" + "55555"
         );
-        ShardingConfig shardingConfig = ShardingConfig.defaultConfig(nodesUrls);
+        ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
         ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 
-        ServiceConfig serviceConfig = new ServiceConfig(port, url, nodesUrls, profilingDataPath);
+        FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
+        FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);
+
+        ServiceConfig serviceConfig = new ServiceConfig(port, url, clusterUrls, profilingDataPath);
         Server server = new Server(serviceConfig, referenceDao, workerPool, shardingAlgorithm,
-                ServerConfig.defaultConfig());
+                ServerConfig.defaultConfig(), failureLimiter);
         server.start();
     }
 }

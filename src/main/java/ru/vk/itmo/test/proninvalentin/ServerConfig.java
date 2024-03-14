@@ -3,24 +3,32 @@ package ru.vk.itmo.test.proninvalentin;
 public class ServerConfig {
     private final int maxWorkersNumber;
 
-    private final int requestMaxProcessingTimeInMilliseconds;
-
     public int getMaxWorkersNumber() {
         return maxWorkersNumber;
     }
 
+    private final int requestMaxTimeToTakeInWork;
+
     public int getRequestTimeoutInMilliseconds() {
-        return requestMaxProcessingTimeInMilliseconds;
+        return requestMaxTimeToTakeInWork;
     }
 
-    public ServerConfig(int maxWorkersNumber, int requestMaxProcessingTimeInMilliseconds) {
+    private final int httpRequestTimeoutInMillis;
+
+    public int getHttpRequestTimeoutInMillis() {
+        return httpRequestTimeoutInMillis;
+    }
+
+    public ServerConfig(int maxWorkersNumber, int requestMaxTimeToTakeInWork, int httpRequestTimeoutInMillis) {
         this.maxWorkersNumber = maxWorkersNumber;
-        this.requestMaxProcessingTimeInMilliseconds = requestMaxProcessingTimeInMilliseconds;
+        this.requestMaxTimeToTakeInWork = requestMaxTimeToTakeInWork;
+        this.httpRequestTimeoutInMillis = httpRequestTimeoutInMillis;
     }
 
     public static ServerConfig defaultConfig() {
         int workersNumber = Runtime.getRuntime().availableProcessors() * 2;
-        int requestMaxProcessingTimeInMilliseconds = 200;
-        return new ServerConfig(workersNumber, requestMaxProcessingTimeInMilliseconds);
+        int requestMaxProcessingTimeInMillis = 200;
+        int httpRequestTimeoutInMillis = 100;
+        return new ServerConfig(workersNumber, requestMaxProcessingTimeInMillis, httpRequestTimeoutInMillis);
     }
 }

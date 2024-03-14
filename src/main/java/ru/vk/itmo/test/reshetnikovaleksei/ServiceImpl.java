@@ -23,6 +23,7 @@ public class ServiceImpl implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private HttpServerImpl server;
     private ExecutorService executorService;
+    private RequestRouter requestRouter;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -33,7 +34,8 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
         executorService = ExecutorServiceFactory.createExecutorService();
-        server = new HttpServerImpl(serviceConfig, dao, executorService);
+        requestRouter = new RequestRouter(serviceConfig);
+        server = new HttpServerImpl(serviceConfig, dao, executorService, requestRouter);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -44,7 +46,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -59,6 +61,7 @@ public class ServiceImpl implements Service {
 
     private void internalStop() throws IOException {
         server.stop();
+        requestRouter.close();
         dao.close();
         executorService.shutdown();
 

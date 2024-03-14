@@ -21,7 +21,9 @@ public final class ServerRunnerApp {
 
         ServiceConfig serviceConfig = new ServiceConfig(8080, "http:localhost", List.of("http:localhost"), path);
         Dao<MemorySegment, Entry<MemorySegment>> dao = new ReferenceDao(new Config(path, 1024 * 1024));
-        HttpServerImpl server = new HttpServerImpl(serviceConfig, dao, ExecutorServiceFactory.createExecutorService());
+        RequestRouter requestRouter = new RequestRouter(serviceConfig);
+        HttpServerImpl server = new HttpServerImpl(
+                serviceConfig, dao, ExecutorServiceFactory.createExecutorService(), requestRouter);
 
         server.start();
     }

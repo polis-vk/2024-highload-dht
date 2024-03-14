@@ -21,29 +21,51 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class HttpServerImpl extends HttpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
+    private static final String ID_PARAMETER_NAME = "id=";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
+    private final RequestRouter requestRouter;
+    private final String selfUrl;
+    private final AtomicBoolean isStopped;
 
     public HttpServerImpl(ServiceConfig config,
                           Dao<MemorySegment, Entry<MemorySegment>> dao,
-                          ExecutorService executorService) throws IOException {
+                          ExecutorService executorService,
+                          RequestRouter requestRouter) throws IOException {
         super(createConfig(config));
         this.dao = dao;
         this.executorService = executorService;
+        this.requestRouter = requestRouter;
+        this.selfUrl = config.selfUrl();
+        this.isStopped = new AtomicBoolean(false);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        String id = request.getParameter(ID_PARAMETER_NAME);
+        if (id == null || id.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
         try {
             executorService.execute(() -> {
                 try {
-                    super.handleRequest(request, session);
+                    String targetNode = requestRouter.getNode(id);
+                    if (!Objects.equals(targetNode, selfUrl)) {
+                        Response response = requestRouter.redirect(targetNode, request);
+                        session.sendResponse(response);
+                    } else {
+                        super.handleRequest(request, session);
+                    }
                 } catch (IOException e) {
                     processIOException(request, session, e);
                 } catch (Exception e) {
@@ -125,6 +147,15 @@ public class HttpServerImpl extends HttpServer {
         } else {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
+    }
+
+    @Override
+    public synchronized void stop() {
+        if (isStopped.getAndSet(true)) {
+            return;
+        }
+
+        super.stop();
     }
 
     private MemorySegment parseToMemorySegment(String input) {

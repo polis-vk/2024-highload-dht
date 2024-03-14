@@ -52,8 +52,7 @@ public class Server extends HttpServer {
                 .forEach(u -> clients.put(u, new HttpClient(new ConnectionString(u))));
         logger.info("Server started");
     }
-
-
+    
     public Response getEntity(@Param(value = "id", required = true) String id, HttpClient client) {
         if (client != null) {
             try {

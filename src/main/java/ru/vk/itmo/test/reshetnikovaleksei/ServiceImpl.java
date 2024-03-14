@@ -12,9 +12,11 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
     private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1mb
+    private static final long TERMINATION_TIMEOUT_SECONDS = 60;
 
     private final ServiceConfig serviceConfig;
     private final Config daoConfig;
@@ -38,9 +40,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        server.stop();
-        dao.close();
-        executorService.close();
+        internalStop();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -55,5 +55,20 @@ public class ServiceImpl implements Service {
 
     private static Config createDaoConfig(ServiceConfig serviceConfig) {
         return new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES);
+    }
+
+    private void internalStop() throws IOException {
+        server.stop();
+        dao.close();
+        executorService.shutdown();
+
+        try {
+            if (!executorService.awaitTermination(TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new InterruptedException("timeout");
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }

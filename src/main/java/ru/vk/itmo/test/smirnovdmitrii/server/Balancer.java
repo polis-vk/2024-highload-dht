@@ -14,7 +14,6 @@ public class Balancer {
     private final List<String> clusterUrls;
     private final Logger logger = LoggerFactory.getLogger(Balancer.class);
     private int[] partitionMapping;
-    private int nodeBlockSize;
     @DhtValue("balancer.vnode.per.node")
     private static int vNodePerNode;
     @DhtValue("balancer.vnode.random.seed")
@@ -29,7 +28,6 @@ public class Balancer {
     private void generatePartitionMap() {
         logger.info("starting creating key map for nodes.");
         partitionMapping = new int[vNodePerNode * clusterUrls.size()];
-        nodeBlockSize = Integer.MAX_VALUE / partitionMapping.length;
         final int clusterUrlsSize = clusterUrls.size();
         final Random random = new Random(vNodeRandomSeed);
         final int[] mappedCount = new int[clusterUrlsSize];
@@ -54,6 +52,6 @@ public class Balancer {
 
     public String getNodeUrl(final byte[] bytes) {
         final int hash = Math.abs(Arrays.hashCode(bytes));
-        return clusterUrls.get(partitionMapping[hash / nodeBlockSize]);
+        return clusterUrls.get(partitionMapping[hash % partitionMapping.length]);
     }
 }

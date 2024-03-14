@@ -141,7 +141,10 @@ public class DaoHttpServer extends HttpServer {
         }
     }
 
-    private Response shardResponse(final Request request, final byte[] keyBytes) {
+    private Response shardResponse(
+            final Request request,
+            final byte[] keyBytes
+    ) {
         final String nodeUrl = balancer.getNodeUrl(keyBytes);
         if (selfUrl.equals(nodeUrl)) {
             return null;

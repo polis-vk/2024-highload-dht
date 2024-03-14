@@ -34,8 +34,6 @@ public class RedirectService {
             final Request request
     ) throws HttpException, IOException, InterruptedException {
         final HttpClient client = clients.get(url);
-        final Request newRequest = client.createRequest(request.getMethod(), url, request.getHeaders());
-        newRequest.setBody(request.getBody());
         try {
             return client.invoke(request, REDIRECT_TIMEOUT);
         } catch (PoolException e) {

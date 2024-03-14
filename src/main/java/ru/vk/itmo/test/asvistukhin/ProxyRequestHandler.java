@@ -55,8 +55,8 @@ public class ProxyRequestHandler {
         String id = request.getParameter("id=");
         int nodeId = getNodeByKey(id);
 
-        HttpRequest.BodyPublisher bodyPublisher = request.getBody() == null ?
-            HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
+        HttpRequest.BodyPublisher bodyPublisher = request.getBody() == null
+            ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
 
         URI uri = URI.create(serviceConfig.clusterUrls().get(nodeId) + request.getPath() + "?id=" + id);
         log.debug("Proxy request to {}", uri);

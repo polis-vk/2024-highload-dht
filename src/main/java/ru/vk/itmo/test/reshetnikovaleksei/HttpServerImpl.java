@@ -59,13 +59,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             executorService.execute(() -> {
                 try {
-                    String targetNode = requestRouter.getNode(id);
-                    if (Objects.equals(targetNode, selfUrl)) {
-                        super.handleRequest(request, session);
-                    } else {
-                        Response response = requestRouter.redirect(targetNode, request);
-                        session.sendResponse(response);
-                    }
+                    internalHandleRequest(request, session, id);
                 } catch (IOException e) {
                     processIOException(request, session, e);
                 } catch (Exception e) {
@@ -165,6 +159,17 @@ public class HttpServerImpl extends HttpServer {
     private void processIOException(Request request, HttpSession session, IOException e) {
         LOGGER.error("Failed to send response for request: {} with error: {}", request, e.getMessage());
         session.close();
+    }
+
+    private void internalHandleRequest(Request request, HttpSession session, String id)
+            throws IOException, InterruptedException {
+        String targetNode = requestRouter.getNode(id);
+        if (Objects.equals(targetNode, selfUrl)) {
+            super.handleRequest(request, session);
+        } else {
+            Response response = requestRouter.redirect(targetNode, request);
+            session.sendResponse(response);
+        }
     }
 
     private static HttpServerConfig createConfig(ServiceConfig config) {

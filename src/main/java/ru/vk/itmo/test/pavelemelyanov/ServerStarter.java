@@ -22,7 +22,8 @@ public final class ServerStarter {
             "http://localhost:8082"
     );
 
-    public static void main(String[] args) throws IOException, URISyntaxException, ExecutionException, InterruptedException {
+    public static void main(String[] args)
+            throws IOException, URISyntaxException, ExecutionException, InterruptedException {
         List<MyService> services = new ArrayList<>();
         for (String url : URLS) {
             int port = new URI(url).getPort();

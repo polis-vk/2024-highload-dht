@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
-import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -28,7 +27,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -49,22 +47,13 @@ public class Server extends HttpServer {
     private static final int REQUEST_TIMEOUT_SEC = 10;
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
-                  ThreadPoolExecutor workerExecutor, ShardingPolicy shardingPolicy)
+                  ThreadPoolExecutor workerExecutor, ThreadPoolExecutor nodeExecutor, ShardingPolicy shardingPolicy)
             throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;
         this.workerExecutor = workerExecutor;
         this.shardingPolicy = shardingPolicy;
         this.selfUrl = config.selfUrl();
-        // TODO выделить параметры ThreadPoolExecutor в отдельную конфигурацию для большей гибкости
-        ThreadPoolExecutor nodeExecutor = new ThreadPoolExecutor(8,
-                8,
-                1000L,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(1024),
-                new CustomThreadFactory("node-executor", true),
-                new ThreadPoolExecutor.AbortPolicy());
-        nodeExecutor.prestartAllCoreThreads();
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
     }
 

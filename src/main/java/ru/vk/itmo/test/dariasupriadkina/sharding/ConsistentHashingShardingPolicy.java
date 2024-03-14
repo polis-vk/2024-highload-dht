@@ -4,10 +4,9 @@ import java.util.List;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-
 public class ConsistentHashingShardingPolicy implements ShardingPolicy {
-    private final SortedMap<Integer, String> circle = new TreeMap<>();
 
+    private final SortedMap<Integer, String> circle = new TreeMap<>();
     private final int numberOfReplicas;
 
     public ConsistentHashingShardingPolicy(List<String> nodes, int numberOfReplicas) {
@@ -17,15 +16,12 @@ public class ConsistentHashingShardingPolicy implements ShardingPolicy {
         }
     }
 
-
-    @Override
     public void add(String node) {
         for (int i = 0; i < numberOfReplicas; i++) {
             circle.put(hash(node + i), node);
         }
     }
 
-    @Override
     public void remove(String node) {
         for (int i = 0; i < numberOfReplicas; i++) {
             circle.remove(hash(node + i));
@@ -33,16 +29,14 @@ public class ConsistentHashingShardingPolicy implements ShardingPolicy {
     }
 
     @Override
-    public String getUrlById(String key) {
+    public String getNodeById(String key) {
         if (circle.isEmpty()) {
             return null;
         }
-        int hash = key.hashCode();
+        int hash = hash(key);
         if (!circle.containsKey(hash)) {
-            SortedMap<Integer, String> tailMap =
-                    circle.tailMap(hash);
-            hash = tailMap.isEmpty() ?
-                    circle.firstKey() : tailMap.firstKey();
+            SortedMap<Integer, String> tailMap = circle.tailMap(hash);
+            hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
         }
         return circle.get(hash);
     }

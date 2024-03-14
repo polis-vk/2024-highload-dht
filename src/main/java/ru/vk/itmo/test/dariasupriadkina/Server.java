@@ -44,10 +44,8 @@ public class Server extends HttpServer {
     private final String selfUrl;
     private final ShardingPolicy shardingPolicy;
     public static final String ENTRY_PREFIX = "/v0/entity";
-    public static final String ENTRY_PREFIX_WITH_ID_PARAM = ENTRY_PREFIX + "?id=" ;
+    public static final String ENTRY_PREFIX_WITH_ID_PARAM = ENTRY_PREFIX + "?id=";
     private final HttpClient httpClient;
-
-//    private final long HTTP_REQUEST_TIMEOUT_SEC = 10;
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
                   ThreadPoolExecutor executorService, ShardingPolicy shardingPolicy)
@@ -85,14 +83,14 @@ public class Server extends HttpServer {
         return Response.ok(Response.OK);
     }
 
-    @Path("/v0/entity")
+    @Path(ENTRY_PREFIX)
     @RequestMethod(Request.METHOD_GET)
     public Response getHandler(@Param(value = "id", required = true) String id, Request request) {
         try {
             if (id.isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
-            if (!shardingPolicy.getUrlById(id).equals(selfUrl)) {
+            if (!shardingPolicy.getNodeById(id).equals(selfUrl)) {
                 return handleProxy(getRedirectedUrl(id), request);
             }
             Entry<MemorySegment> entry = getEntryById(id);
@@ -105,14 +103,14 @@ public class Server extends HttpServer {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(ENTRY_PREFIX)
     @RequestMethod(Request.METHOD_PUT)
     public Response putHandler(Request request, @Param(value = "id", required = true) String id) {
         try {
             if (id.isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
-            if (!shardingPolicy.getUrlById(id).equals(selfUrl)) {
+            if (!shardingPolicy.getNodeById(id).equals(selfUrl)) {
                 return handleProxy(getRedirectedUrl(id), request);
             }
             dao.upsert(convertToEntry(id, request.getBody()));
@@ -122,14 +120,14 @@ public class Server extends HttpServer {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(ENTRY_PREFIX)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteHandler(@Param(value = "id", required = true) String id, Request request) {
         try {
             if (id.isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
-            if (!shardingPolicy.getUrlById(id).equals(selfUrl)) {
+            if (!shardingPolicy.getNodeById(id).equals(selfUrl)) {
                 return handleProxy(getRedirectedUrl(id), request);
             }
             dao.upsert(convertToEntry(id, null));
@@ -194,7 +192,7 @@ public class Server extends HttpServer {
     }
 
     private String getRedirectedUrl(String id) {
-        return shardingPolicy.getUrlById(id) + ENTRY_PREFIX_WITH_ID_PARAM + id;
+        return shardingPolicy.getNodeById(id) + ENTRY_PREFIX_WITH_ID_PARAM + id;
     }
 
     private Entry<MemorySegment> convertToEntry(String id, byte[] body) {

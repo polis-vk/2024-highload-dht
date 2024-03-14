@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.osipovdaniil;
 
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;

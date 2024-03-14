@@ -16,13 +16,13 @@ public class ConsistentHashingShardingPolicy implements ShardingPolicy {
         }
     }
 
-    public void add(String node) {
+    public final void add(String node) {
         for (int i = 0; i < numberOfReplicas; i++) {
             circle.put(hash(node + i), node);
         }
     }
 
-    public void remove(String node) {
+    public final void remove(String node) {
         for (int i = 0; i < numberOfReplicas; i++) {
             circle.remove(hash(node + i));
         }

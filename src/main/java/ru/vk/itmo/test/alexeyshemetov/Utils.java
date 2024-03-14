@@ -8,8 +8,6 @@ public final class Utils {
 
     public static String statusCodeToResponseCode(int statusCode) {
         return switch (statusCode) {
-            case 100 -> Response.CONTINUE;
-            case 101 -> Response.SWITCHING_PROTOCOLS;
             case 200 -> Response.OK;
             case 201 -> Response.CREATED;
             case 202 -> Response.ACCEPTED;
@@ -17,13 +15,6 @@ public final class Utils {
             case 204 -> Response.NO_CONTENT;
             case 205 -> Response.RESET_CONTENT;
             case 206 -> Response.PARTIAL_CONTENT;
-            case 300 -> Response.MULTIPLE_CHOICES;
-            case 301 -> Response.MOVED_PERMANENTLY;
-            case 302 -> Response.FOUND;
-            case 303 -> Response.SEE_OTHER;
-            case 304 -> Response.NOT_MODIFIED;
-            case 305 -> Response.USE_PROXY;
-            case 307 -> Response.TEMPORARY_REDIRECT;
             case 400 -> Response.BAD_REQUEST;
             case 401 -> Response.UNAUTHORIZED;
             case 402 -> Response.PAYMENT_REQUIRED;
@@ -43,12 +34,8 @@ public final class Utils {
             case 416 -> Response.REQUESTED_RANGE_NOT_SATISFIABLE;
             case 417 -> Response.EXPECTATION_FAILED;
             case 500 -> Response.INTERNAL_ERROR;
-            case 501 -> Response.NOT_IMPLEMENTED;
-            case 502 -> Response.BAD_GATEWAY;
             case 503 -> Response.SERVICE_UNAVAILABLE;
-            case 504 -> Response.GATEWAY_TIMEOUT;
-            case 505 -> Response.HTTP_VERSION_NOT_SUPPORTED;
-            default -> throw new RuntimeException("unknown status code: " + statusCode);
+            default -> throw new IllegalArgumentException("unknown status code: " + statusCode);
         };
     }
 }

@@ -10,8 +10,11 @@ public class ConsistentHashing implements ShardingManager {
     private final int[] vnodeHashes;
     private final String[] vnodeUrls;
 
-    public ConsistentHashing(List<String> clusterUrls, int vnodesPerCluster,
-                                    Function<String, Integer> hashFunction) {
+    public ConsistentHashing(
+        List<String> clusterUrls,
+        int vnodesPerCluster,
+        Function<String, Integer> hashFunction
+    ) {
         this.hashFunction = hashFunction;
 
         Map<Integer, String> vnodesMap = makeVnodesMap(clusterUrls, vnodesPerCluster, hashFunction);
@@ -27,14 +30,17 @@ public class ConsistentHashing implements ShardingManager {
         }
     }
 
-    private static Map<Integer, String> makeVnodesMap(List<String> clusterUrls, int vnodesPerCluster,
-                                                      Function<String, Integer> hashFunction) {
+    private static Map<Integer, String> makeVnodesMap(
+        List<String> clusterUrls,
+        int vnodesPerCluster,
+        Function<String, Integer> hashFunction
+    ) {
         Map<Integer, String> vnodesMap = new TreeMap<>();
         for (String url : clusterUrls) {
             for (int index = 0; index < vnodesPerCluster; ++index) {
                 int hash = hashFunction.apply(url + index);
                 if (vnodesMap.containsKey(hash)) {
-                    throw new RuntimeException("hash collision: choose another hash function");
+                    throw new IllegalStateException("hash collision: choose another hash function");
                 }
                 vnodesMap.put(hash, url);
             }

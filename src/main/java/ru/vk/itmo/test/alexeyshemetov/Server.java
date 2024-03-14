@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -50,7 +49,7 @@ public class Server extends HttpServer {
     private static final int AWAIT_TERMINATION_TIME_MINUTES = 5;
     public static final int QUEUE_CAPACITY = 1024;
     private final ExecutorService executorService;
-    private final PathMapper defaultMapper;
+    private final PathMapper pathMapper;
     private final HttpClient client;
     private final ShardingManager shardingManager;
     private final String selfUrl;
@@ -63,7 +62,7 @@ public class Server extends HttpServer {
             throw new UncheckedIOException("Can't start server", e);
         }
         executorService = createExecutorService();
-        defaultMapper = extractDefaultMapper();
+        pathMapper = createPathMapper();
         client = HttpClient.newHttpClient();
         shardingManager = createShardingManager(config);
         selfUrl = config.selfUrl();
@@ -134,18 +133,14 @@ public class Server extends HttpServer {
         }
     }
 
-    private PathMapper extractDefaultMapper() {
-        try {
-            Field field = HttpServer.class.getDeclaredField("defaultMapper");
-            field.setAccessible(true);
-            return (PathMapper) field.get(this);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new RuntimeException("error occurred while extracting default mapper", e);
-        }
+    private PathMapper createPathMapper() {
+        PathMapper pathMapper = new PathMapper();
+        pathMapper.add(ENTITY_PATH, null, this::handleRequest);
+        return pathMapper;
     }
 
     private void handleRequestWrapper(Request request, HttpSession session) {
-        RequestHandler handler = defaultMapper.find(request.getPath(), request.getMethod());
+        RequestHandler handler = pathMapper.find(request.getPath(), request.getMethod());
         if (handler == null) {
             handleDefault(request, session);
             return;
@@ -182,6 +177,7 @@ public class Server extends HttpServer {
             sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         } catch (InterruptedException e) {
             log.error("error occurred while handling http response", e);
+            Thread.currentThread().interrupt();
         }
     }
 

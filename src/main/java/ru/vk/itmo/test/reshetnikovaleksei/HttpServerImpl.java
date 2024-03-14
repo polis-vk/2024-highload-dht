@@ -50,16 +50,10 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        String id = request.getParameter(ID_PARAMETER_NAME);
-        if (id == null || id.isBlank()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-
         try {
             executorService.execute(() -> {
                 try {
-                    internalHandleRequest(request, session, id);
+                    internalHandleRequest(request, session);
                 } catch (IOException e) {
                     processIOException(request, session, e);
                 } catch (Exception e) {
@@ -161,8 +155,13 @@ public class HttpServerImpl extends HttpServer {
         session.close();
     }
 
-    private void internalHandleRequest(Request request, HttpSession session, String id)
-            throws IOException, InterruptedException {
+    private void internalHandleRequest(Request request, HttpSession session) throws Exception {
+        String id = request.getParameter(ID_PARAMETER_NAME);
+        if (id == null || id.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
         String targetNode = requestRouter.getNode(id);
         if (Objects.equals(targetNode, selfUrl)) {
             super.handleRequest(request, session);

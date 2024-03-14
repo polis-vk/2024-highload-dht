@@ -49,6 +49,15 @@ public class ServerImpl extends HttpServer {
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    public static final int REQUEST_TIMEOUT = 1000;
+    private static final Map<Integer, String> HTTP_CODE = Map.of(
+            HttpURLConnection.HTTP_OK, Response.OK,
+            HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
+            HttpURLConnection.HTTP_CREATED, Response.CREATED,
+            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND,
+            HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
+            HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR
+    );
 
     public ServerImpl(ServiceConfig config, Dao dao, Worker worker,
                       ConsistentHashing consistentHashing) throws IOException {
@@ -177,16 +186,7 @@ public class ServerImpl extends HttpServer {
         }
     }
 
-    private static final Map<Integer, String> httpCodeMapping = Map.of(
-            HttpURLConnection.HTTP_OK, Response.OK,
-            HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
-            HttpURLConnection.HTTP_CREATED, Response.CREATED,
-            HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
-            HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR,
-            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND
-    );
-
-    private static void sendExceptionInfo(HttpSession session, Exception exception) {
+    private void sendException(HttpSession session, Exception exception) {
         try {
             String responseCode;
             if (exception.getClass().equals(TimeoutException.class)) {
@@ -196,66 +196,68 @@ public class ServerImpl extends HttpServer {
             }
             session.sendResponse(new Response(responseCode, exception.getMessage().getBytes(StandardCharsets.UTF_8)));
         } catch (IOException e) {
-            log.error("Error while sending exception info", e);
+            log.error("Error sending exception", e);
         }
     }
 
-    private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String params) {
-        HttpRequest httpRequest;
+    private void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            log.error("Error sending response", e);
+            session.scheduleClose();
+        }
+    }
+
+    private HttpRequest createProxyRequest(Request request, String nodeUrl, String params) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params));
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                httpRequest = builder.GET().build();
+                return builder.GET().build();
             }
             case Request.METHOD_PUT -> {
                 byte[] body = request.getBody();
                 if (body == null) {
-                    try {
-                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    } catch (IOException e) {
-                        log.error("Error sending response", e);
-                    }
-                    return;
+                    return null;
                 }
-                httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
+                return builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
             }
             case Request.METHOD_DELETE -> {
-                httpRequest = builder.DELETE().build();
+                return builder.DELETE().build();
             }
             default -> {
-                try {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                } catch (IOException e) {
-                    log.error("Error sending response", e);
-                }
-                return;
+                return null;
             }
         }
+    }
 
+    private void sendProxyRequest(HttpSession session, HttpRequest httpRequest) {
         try {
             HttpResponse<byte[]> httpResponse = httpClient
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get();
+                    .get(REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
 
-            String statusCode = httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
+            String statusCode = HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
             if (statusCode != null) {
-                try {
-                    session.sendResponse(new Response(statusCode, httpResponse.body()));
-                } catch (IOException e) {
-                    log.error("Error sending response", e);
-                }
+                sendResponse(session, new Response(statusCode, httpResponse.body()));
             } else {
-                try {
-                    session.sendResponse(new Response(Response.INTERNAL_ERROR, httpResponse.body()));
-                } catch (IOException e) {
-                    log.error("Error sending response", e);
-                }
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            sendExceptionInfo(session, e);
-        } catch (ExecutionException e) {
-            sendExceptionInfo(session, e);
+            sendException(session, e);
+        } catch (ExecutionException | TimeoutException e) {
+            sendException(session, e);
+        }
+    }
+
+    private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String params) {
+        final HttpRequest httpRequest = createProxyRequest(request, nodeUrl, params);
+
+        if (httpRequest != null) {
+            sendProxyRequest(session, httpRequest);
+        } else {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
     }
 }

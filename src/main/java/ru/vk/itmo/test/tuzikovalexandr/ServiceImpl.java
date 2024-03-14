@@ -19,7 +19,6 @@ public class ServiceImpl implements Service {
     private ServerImpl server;
     private Dao dao;
     private Worker worker;
-    private ConsistentHashing consistentHashing;
     private Boolean isClosed = false;
 
     public ServiceImpl(ServiceConfig config) {
@@ -30,7 +29,7 @@ public class ServiceImpl implements Service {
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
         worker = new Worker(new WorkerConfig());
-        consistentHashing = new ConsistentHashing(config.clusterUrls(), NUMBER_OF_VIRTUAL_NODES);
+        ConsistentHashing consistentHashing = new ConsistentHashing(config.clusterUrls(), NUMBER_OF_VIRTUAL_NODES);
         server = new ServerImpl(config, dao, worker, consistentHashing);
         server.start();
         isClosed = false;

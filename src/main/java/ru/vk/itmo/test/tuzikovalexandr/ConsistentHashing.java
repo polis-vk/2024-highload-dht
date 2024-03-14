@@ -22,11 +22,6 @@ public class ConsistentHashing {
         circle.put(hash, node);
     }
 
-//    public void removeNode(String node) {
-//        int hash = getHash(node);
-//        circle.remove(hash);
-//    }
-
     public String getNode(String key) {
         if (circle.isEmpty()) {
             return null;

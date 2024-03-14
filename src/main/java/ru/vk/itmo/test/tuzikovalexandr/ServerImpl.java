@@ -168,13 +168,19 @@ public class ServerImpl extends HttpServer {
             return;
         }
 
-        String param = request.getParameter("id=");
+        String paramId = request.getParameter("id=");
+
+        if (paramId == null || paramId.isEmpty()) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
         try {
-            String nodeUrl = consistentHashing.getNode(param);
+            String nodeUrl = consistentHashing.getNode(paramId);
             if (Objects.equals(selfUrl, nodeUrl)) {
                 super.handleRequest(request, session);
             } else {
-                handleProxyRequest(request, session, nodeUrl, param);
+                handleProxyRequest(request, session, nodeUrl, paramId);
             }
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {

@@ -38,29 +38,33 @@ public class Server extends HttpServer {
 
     private static final Logger logger = LoggerFactory.getLogger(Server.class.getName());
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private final ExecutorService executorService;
+    private final ExecutorService workerExecutor;
     private final Set<Integer> permittedMethods =
             Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
     private final String selfUrl;
     private final ShardingPolicy shardingPolicy;
+    private final HttpClient httpClient;
     public static final String ENTRY_PREFIX = "/v0/entity";
     public static final String ENTRY_PREFIX_WITH_ID_PARAM = ENTRY_PREFIX + "?id=";
-    private final HttpClient httpClient;
+    private static final int REQUEST_TIMEOUT_SEC = 10;
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
-                  ThreadPoolExecutor executorService, ShardingPolicy shardingPolicy)
+                  ThreadPoolExecutor workerExecutor, ShardingPolicy shardingPolicy)
             throws IOException {
         super(createHttpServerConfig(config));
         this.dao = dao;
-        this.executorService = executorService;
+        this.workerExecutor = workerExecutor;
         this.shardingPolicy = shardingPolicy;
         this.selfUrl = config.selfUrl();
+        // TODO выделить параметры ThreadPoolExecutor в отдельную конфигурацию для большей гибкости
         ThreadPoolExecutor nodeExecutor = new ThreadPoolExecutor(8,
                 8,
-                0L,
+                1000L,
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(1024),
-                new CustomThreadFactory("node-executor", true));
+                new CustomThreadFactory("node-executor", true),
+                new ThreadPoolExecutor.AbortPolicy());
+        nodeExecutor.prestartAllCoreThreads();
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
     }
 
@@ -152,7 +156,7 @@ public class Server extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            executorService.execute(() -> {
+            workerExecutor.execute(() -> {
                 try {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
@@ -178,14 +182,16 @@ public class Server extends HttpServer {
 
     public Response handleProxy(String redirectedUrl, Request request) {
         try {
-            HttpResponse<byte[]> response = httpClient.send(HttpRequest.newBuilder()
+            HttpResponse<byte[]> response = httpClient.sendAsync(HttpRequest.newBuilder()
                     .uri(URI.create(redirectedUrl))
                     .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
                             request.getBody() == null ? new byte[]{} : request.getBody())
-                    )
-                    .build(), HttpResponse.BodyHandlers.ofByteArray());
+                    ).build(),
+                            HttpResponse.BodyHandlers.ofByteArray())
+                    .get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS);
             return new Response(String.valueOf(response.statusCode()), response.body());
         } catch (Exception e) {
+            logger.error("Unexpected error", e);
             Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }

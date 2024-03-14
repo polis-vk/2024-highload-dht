@@ -1,6 +1,14 @@
 package ru.vk.itmo.test.osipovdaniil;
 
-import one.nio.http.*;
+
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
@@ -69,7 +77,8 @@ public class ServerImpl extends HttpServer {
         return request.apply(key);
     }
 
-    private Response handleProxyRequest(final Request request, final String url) throws IOException, InterruptedException {
+    private Response handleProxyRequest(final Request request, final String url) throws IOException,
+            InterruptedException {
         final HttpResponse<byte[]> response = processProxyRequest(request, url);
         final String statusCode = switch (response.statusCode()) {
             case HttpURLConnection.HTTP_OK -> Response.OK;

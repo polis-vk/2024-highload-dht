@@ -155,7 +155,8 @@ public class HttpServerImpl extends HttpServer {
         session.close();
     }
 
-    private void internalHandleRequest(Request request, HttpSession session) throws IOException, InterruptedException {
+    private void internalHandleRequest(Request request, HttpSession session)
+            throws IOException, InterruptedException, HttpException {
         String id = request.getParameter(ID_PARAMETER_NAME);
         if (id == null || id.isBlank()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));

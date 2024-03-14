@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.timofeevkirill;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -9,26 +10,35 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 
+import static ru.vk.itmo.test.timofeevkirill.Settings.MAX_PROCESSING_TIME_FOR_REQUEST;
 import static ru.vk.itmo.test.timofeevkirill.Settings.VERSION_PREFIX;
 
 public class TimofeevServer extends HttpServer {
-
+    private static final Logger logger = LoggerFactory.getLogger(TimofeevServer.class);
     private static final String PATH = VERSION_PREFIX + "/entity";
-    private final ReferenceDao dao;
+    private final Dao dao;
+    private final ThreadPoolExecutor threadPoolExecutor;
+    private static final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
 
-    public TimofeevServer(ServiceConfig serviceConfig, ReferenceDao dao) throws IOException {
+    public TimofeevServer(ServiceConfig serviceConfig, Dao dao,
+                          ThreadPoolExecutor threadPoolExecutor) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
+        this.threadPoolExecutor = threadPoolExecutor;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -91,8 +101,39 @@ public class TimofeevServer extends HttpServer {
     }
 
     @Override
-    public synchronized void stop() {
-        super.stop();
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            long start = System.nanoTime();
+            threadPoolExecutor.execute(() -> {
+                try {
+                    processRequest(request, session, start);
+                } catch (IOException e) {
+                    logger.error("Exception while sending close connection", e);
+                    session.scheduleClose();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(new Response(TOO_MANY_REQUESTS_RESPONSE, Response.EMPTY));
+        }
+    }
+
+    private void processRequest(Request request, HttpSession session, long startTime) throws IOException {
+        boolean isTimeout = System.nanoTime() - startTime > MAX_PROCESSING_TIME_FOR_REQUEST;
+        if (isTimeout) {
+            session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            return;
+        }
+
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            if (e.getClass() == HttpException.class) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            } else {
+                // for like unexpected NPE
+                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            }
+        }
     }
 
     private boolean isEmptyParam(String param) {

@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.pavelemelyanov;
 
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import ru.vk.itmo.test.smirnovandrew.MyService;
 
 import java.io.IOException;

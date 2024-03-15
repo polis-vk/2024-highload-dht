@@ -1,8 +1,8 @@
 package ru.vk.itmo.test.elenakhodosova;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,9 +11,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.stream.Collectors;
 
 public final class Server {
 
@@ -21,13 +21,13 @@ public final class Server {
     public static final String LOCALHOST = "http://localhost:";
     public static final String DIRECTORY_PREFIX = "tmp/";
     public static final int NODES_COUNT = 3;
-    private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
 
     private Server() {
 
     }
 
     public static void main(String[] args) throws IOException {
+        ExecutorService executorService = ExecutorServiceConfig.getExecutorService();
         List<ServiceConfig> nodesConfigs = new ArrayList<>(NODES_COUNT);
 
         Map<Integer, String> nodes = new HashMap<>();
@@ -43,19 +43,15 @@ public final class Server {
             ServiceConfig config = new ServiceConfig(
                     port,
                     url,
-                    nodes.values().stream().toList(),
-                    Files.createDirectories(Paths.get(DIRECTORY_PREFIX + port))
+                    nodes.values().stream().filter(value -> !Objects.equals(value, url)).collect(Collectors.toList()),
+                    Files.createDirectories(Paths.get(DIRECTORY_PREFIX + url))
             );
             nodesConfigs.add(config);
         }
         for (ServiceConfig config : nodesConfigs) {
-            ServiceImpl server = new ServiceImpl(config);
-            try {
-                server.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                logger.error("Unable to start service instance: ", e);
-                Thread.currentThread().interrupt();
-            }
+            ReferenceDao dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+            HttpServerImpl server = new HttpServerImpl(config, dao, executorService);
+            server.start();
         }
     }
 }

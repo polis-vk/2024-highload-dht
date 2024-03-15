@@ -14,7 +14,7 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 256px}
+	#canvas {width: 100%; height: 352px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(16);
+	const levels = Array(22);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -251,80 +251,226 @@
 
 const cpool = [
 'all',
-' RequestHandler0_getEntity.handleRequest',
-' java.util.concurrent.locks.ReentrantLock$NonfairSync',
-'$/lang/Thread.run',
+' RequestHandler1_getEntity.handleRequest',
+' byte[]',
+' java.lang.String',
+'0[]',
+'%util.HashMap$Node',
+'*concurrent.locks.AbstractQueuedSynchronizer$ConditionNode',
+'VExclusiveNode',
+'$/lang/String.substring',
+'0Latin1.newString',
+'*Thread.run',
 '4With',
-'%util/concurrent/ArrayBlockingQueue.offer',
+'*foreign/MemorySegment.ofArray',
+'*invoke/DirectMethodHandle$Holder.newInvokeSpecial',
+'C.allocateInstance',
+'1Invokers$Holder.linkToTargetMethod',
+'1LambdaForm$DMH.0x000000e0010cf000.newInvokeSpecial',
+'<MH.0x000000e0010cd800.invokeExact_MT',
+'%util/Arrays.copyOfRange',
+'<Byte',
+'*HashMap.newNode',
+'2put',
+'5Val',
+'.Set.add',
+'*concurrent/ArrayBlockingQueue.offer',
 'Htake',
 '5ThreadPoolExecutor$Worker.run',
 'G.execute',
 'HgetTask',
 'HrunWorker',
 '5locks/AbstractQueuedSynchronizer$ConditionObject.await',
+'fnewConditionNode',
 'U.acquire',
 ']Interruptibly',
-';LockSupport.park',
 ';ReentrantLock$Sync.lock',
 'RInterruptibly',
 'H.lock',
 'MInterruptibly',
-'!dk/internal/misc/Unsafe.park',
-' one.nio.http.HttpSession',
+'!dk.internal.foreign.GlobalSession',
+'5HeapMemorySegmentImpl$OfByte',
+'5MappedMemorySegmentImpl',
+'#/internal/foreign/AbstractMemorySegmentImpl$$Lambda.0x000000e00104c828.apply',
+'N.asSlice',
+'VNoCheck',
+'Olambda$toArray$1',
+'OtoArray',
+'5HeapMemorySegmentImpl$OfByte.fromArray',
+'5MappedMemorySegmentImpl.asSlice',
+'Mdup',
+'6emorySessionImpl.heapSession',
+' one.nio.http.Request',
+'/sponse',
+'(net.JavaSelector$1',
+',Session$ArrayQueueItem',
+'3[]',
 '#/nio/http/HttpServer.handleRequest',
 '3ssion.handleParsedRequest',
-'9processHttpBuffer',
+'9parseRequest',
+':rocessHttpBuffer',
 '@Read',
 '9sendResponse',
-'(net/Session.process',
+'9writeResponse',
+'-Request.<init>',
+'5getParameter',
+':th',
+'8RequiredParameter',
+'/sponse.<init>',
+'6ok',
+'6toBytes',
+'(net/JavaSelector.iteratorFor',
+'9select',
+',Session.process',
+'4write',
 '(server/SelectorThread.run',
-' ru/vk/itmo/test/elenakhodosova/HttpServerImpl$$Lambda.0x00000080010ca3f0.run',
-'M.handleRequest',
-'Nlambda$handleRequest$0'
+'(util/ByteArrayBuilder.<init>',
+'-Utf8.read',
+'2toAsciiString',
+'4Bytes',
+' ru.vk.itmo.dao.BaseEntry',
+'+test.elenakhodosova.HttpServerImpl$$Lambda.0x000000e0010ca640',
+'"/vk/itmo/test/elenakhodosova/HttpServerImpl$$Lambda.0x000000e0010ca640.run',
+'M.getEntity',
+'NhandleRequest',
+'Nlambda$handleRequest$0',
+'NprocessRequest',
+'?dao/ReferenceDao.get',
+'CSSTable.get',
+'CTableSet.get',
+' sun/nio/ch/KQueueSelectorImpl.doSelect',
+'>processEvents',
+'+SelectorImpl.lockAndDoSelect',
+'8processReadyEvents',
+'8select'
 ];
 unpack(cpool);
 
-n(3,104333)
-u(25,54468)
-u(33)
-u(57)
-u(81)
-u(73,46184)
-u(49)
-u(89,31691)
-u(97)
-u(113)
-u(153)
-u(18)
-f(145,7,31691,14493)
-u(129)
-u(105)
-u(97)
-u(113)
-u(153)
-u(18)
-f(225,5,14493,8284)
-u(241)
-u(169)
-u(9)
-u(201)
-u(162)
-f(217,1,8284,49865)
+n(3,10270)
+u(81,6818)
+u(89)
 u(209)
-u(162,600)
-n(193,49265)
-u(185)
-u(177)
 u(233)
+u(225,157)
+u(201)
+u(241,155)
+u(249)
+u(50)
+f(297,7,155,2)
+u(281)
+u(265)
+u(257)
+u(58)
+f(641,5,2,6661)
+u(665)
+u(673)
+u(441)
+u(9,6033)
+u(481,1755)
+u(489)
+u(545,1363)
+u(593)
+u(18)
+f(577,12,1363,392)
+u(426)
+f(521,10,392,570)
+u(505)
 u(65)
-u(41)
-u(137)
-u(121)
-u(97)
-u(97)
-u(113)
+u(65)
+u(73)
+u(26,265)
+n(145,305)
 u(153)
 u(18)
+f(649,10,305,3708)
+u(97,725)
+u(369)
+u(314,401)
+n(393,324)
+u(306)
+f(361,11,324,735)
+u(361)
+u(329)
+u(353)
+u(18)
+f(537,11,735,1325)
+u(410,261)
+n(529,1064)
+u(18,475)
+n(26,276)
+n(34,313)
+f(617,11,313,266)
+u(18)
+f(681,11,266,657)
+u(681)
+u(697)
+u(689)
+u(377,407)
+u(377)
+u(337)
+u(345)
+u(385)
+u(385)
+u(322)
+f(626,15,407,250)
+f(513,9,250,628)
+u(65)
+u(73)
+u(26,288)
+n(145,340)
+u(153)
+u(18)
+f(585,1,340,3452)
+u(561,571)
+u(553,227)
+u(418,101)
+n(434,126)
+f(737,3,126,344)
+u(721)
+u(705)
+u(713)
+u(729)
+u(185)
+u(169)
+u(177)
+u(161)
+u(42)
+f(569,2,344,2881)
+u(473)
+u(465)
+u(449,238)
+u(657)
+u(121,234)
+u(105)
+u(113)
+u(634)
+f(217,7,234,4)
+u(193)
+u(289)
+u(273)
+u(257)
+u(257)
+u(58)
+f(457,5,4,1979)
+u(402,417)
+n(497,893)
+u(34)
+f(601,6,893,669)
+u(601)
+u(609)
+u(18,406)
+n(137,263)
+u(129)
+u(113)
+u(26)
+f(601,5,263,664)
+u(601)
+u(609)
+u(18,410)
+n(137,254)
+u(129)
+u(113)
+u(26)
 
 search();
 </script></body></html>

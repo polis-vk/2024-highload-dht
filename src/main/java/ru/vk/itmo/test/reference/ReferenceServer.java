@@ -1,6 +1,12 @@
 package ru.vk.itmo.test.reference;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.Response;
+import one.nio.http.Param;
+import one.nio.http.Path;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
@@ -13,15 +19,21 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 public class ReferenceServer extends HttpServer {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
 
+    private final Executor executor;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public ReferenceServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    public ReferenceServer(ServiceConfig config,
+                           Executor executor,
+                           Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createServerConfig(config));
+        this.executor = executor;
         this.dao = dao;
     }
 
@@ -38,18 +50,33 @@ public class ReferenceServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        handleAsync(session, () -> super.handleRequest(request, session));
+    }
+
+    private void handleAsync(HttpSession session, ERunnable runnable) throws IOException {
         try {
-            super.handleRequest(request, session);
-        } catch (Exception e) {
-            log.error("Exception during handleRequest: ", e);
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            executor.execute(() -> {
+                try {
+                    runnable.run();
+                } catch (Exception e) {
+                    log.error("Exception during handleRequest", e);
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, null);
+                    } catch (IOException ex) {
+                        log.error("Exception while sending close connection", e);
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("Workers pool queue overflow", e);
+            session.sendError(Response.SERVICE_UNAVAILABLE, null);
         }
     }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
+        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
     @Path("/v0/status")
@@ -88,6 +115,10 @@ public class ReferenceServer extends HttpServer {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         }
+    }
+
+    private interface ERunnable {
+        void run() throws Exception;
     }
 
 }

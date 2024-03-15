@@ -26,6 +26,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -53,7 +55,7 @@ public class HttpServerImpl extends HttpServer {
         this.executorService = executorService;
         this.selfUrl = config.selfUrl();
         this.nodes = config.clusterUrls();
-        client = HttpClient.newHttpClient();
+        this.client = HttpClient.newHttpClient();
     }
 
     @Override
@@ -102,7 +104,7 @@ public class HttpServerImpl extends HttpServer {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
         String targetNode = hash(id);
         if (!Objects.equals(targetNode, selfUrl)) {
-            return proxyRequest(AllowedMethods.GET, id, targetNode, new byte[0]);
+            return redirectRequest(AllowedMethods.GET, id, targetNode, new byte[0]);
         }
         try {
             Entry<MemorySegment> value = dao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
@@ -122,7 +124,7 @@ public class HttpServerImpl extends HttpServer {
         byte[] value = request.getBody();
         String targetNode = hash(id);
         if (!Objects.equals(targetNode, selfUrl)) {
-            return proxyRequest(AllowedMethods.PUT, id, targetNode, value);
+            return redirectRequest(AllowedMethods.PUT, id, targetNode, value);
         }
         try {
             dao.upsert(new BaseEntry<>(
@@ -140,7 +142,7 @@ public class HttpServerImpl extends HttpServer {
         if (isParamIncorrect(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
         String targetNode = hash(id);
         if (!Objects.equals(targetNode, selfUrl)) {
-            return proxyRequest(AllowedMethods.DELETE, id, targetNode, new byte[0]);
+            return redirectRequest(AllowedMethods.DELETE, id, targetNode, new byte[0]);
         }
         try {
             dao.upsert(new BaseEntry<>(MemorySegment.ofArray(Utf8.toBytes(id)), null));
@@ -161,12 +163,12 @@ public class HttpServerImpl extends HttpServer {
         session.sendResponse(badRequest);
     }
 
-    private Response proxyRequest(AllowedMethods method, String id, String targetNode, byte[] body) {
-        String targetPath = targetNode + PATH_NAME + "?id=" + id;
+    private Response redirectRequest(AllowedMethods method, String id, String targetNode, byte[] body) {
         try {
             HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder()
-                    .uri(URI.create(targetPath))
-                    .method(method.name(), HttpRequest.BodyPublishers.ofByteArray(body)
+                    .uri(URI.create(targetNode + PATH_NAME + "?id=" + id))
+                    .method(method.name(), HttpRequest.BodyPublishers.ofByteArray(body))
+                    .timeout(Duration.of(500, ChronoUnit.MILLIS)
                     ).build(), HttpResponse.BodyHandlers.ofByteArray());
             return new Response(getResponseByCode(response.statusCode()), response.body());
         } catch (InterruptedException | IOException e) {

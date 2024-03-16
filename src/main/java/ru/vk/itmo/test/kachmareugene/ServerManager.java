@@ -36,7 +36,7 @@ public class ServerManager implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 0)
+    @ServiceFactory(stage = 1)
     public static class ServerFactory implements ServiceFactory.Factory {
 
         @Override

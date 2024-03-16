@@ -10,7 +10,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class WorkerPoolConfig {
-    private static final int MAX_QUEUE_SIZE = 256;
+    private static final int MAX_QUEUE_SIZE = 128000;
     public final int corePoolSize;
     public final int maxPoolSize;
     public final long keepAliveTime;
@@ -40,6 +40,6 @@ public class WorkerPoolConfig {
                 TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(MAX_QUEUE_SIZE),
                 new CustomThreadFactory("Custom worker", true),
-                new ThreadPoolExecutor.CallerRunsPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
     }
 }

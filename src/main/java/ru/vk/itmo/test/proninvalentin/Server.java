@@ -28,7 +28,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -49,7 +48,7 @@ public class Server extends HttpServer {
     private final FailureLimiter failureLimiter;
 
     private final String selfUrl;
-    private final long requestMaxTimeToTakeInWorkInNano;
+    private final long requestMaxTimeToTakeInWorkInMillis;
     private final long httpRequestTimeoutInMillis;
     private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     private static final String METHOD_ADDRESS = "/v0/entity";
@@ -66,7 +65,8 @@ public class Server extends HttpServer {
             HttpURLConnection.HTTP_CREATED, Response.CREATED,
             HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
             HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR,
-            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND
+            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND,
+            HttpURLConnection.HTTP_CLIENT_TIMEOUT, Response.REQUEST_TIMEOUT
     );
 
     public Server(ServiceConfig config, ReferenceDao dao, WorkerPool workerPool,
@@ -82,9 +82,8 @@ public class Server extends HttpServer {
                 .executor(Executors.newFixedThreadPool(serverConfig.getMaxWorkersNumber()))
                 .build();
         this.selfUrl = config.selfUrl();
-        this.requestMaxTimeToTakeInWorkInNano =
-                TimeUnit.MILLISECONDS.toNanos(serverConfig.getRequestTimeoutInMilliseconds());
-        this.httpRequestTimeoutInMillis = TimeUnit.MILLISECONDS.toNanos(serverConfig.getHttpRequestTimeoutInMillis());
+        this.requestMaxTimeToTakeInWorkInMillis = serverConfig.getRequestMaxTimeToTakeInWorkInMillis();
+        this.httpRequestTimeoutInMillis = serverConfig.getHttpRequestTimeoutInMillis();
         this.failureLimiter = failureLimiter;
     }
 
@@ -115,7 +114,7 @@ public class Server extends HttpServer {
             } else {
                 responseCode = Response.INTERNAL_ERROR;
             }
-            session.sendResponse(new Response(responseCode, exception.getMessage().getBytes(StandardCharsets.UTF_8)));
+            session.sendResponse(new Response(responseCode, Response.EMPTY));
         } catch (IOException e) {
             logger.error("Error while sending exception info", e);
         }
@@ -137,7 +136,7 @@ public class Server extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         try {
-            long createdAt = System.nanoTime();
+            long createdAt = System.currentTimeMillis();
             workerPool.execute(() -> processRequest(request, session, createdAt));
         } catch (RejectedExecutionException e) {
             logger.error("New request processing task cannot be scheduled for execution", e);
@@ -146,7 +145,7 @@ public class Server extends HttpServer {
     }
 
     private void processRequest(Request request, HttpSession session, long createdAt) {
-        boolean timeoutExpired = System.nanoTime() - createdAt > requestMaxTimeToTakeInWorkInNano;
+        boolean timeoutExpired = System.currentTimeMillis() - createdAt > requestMaxTimeToTakeInWorkInMillis;
         if (timeoutExpired) {
             sendResponse(session, new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
@@ -167,16 +166,17 @@ public class Server extends HttpServer {
         try {
             String nodeUrl = shardingAlgorithm.getNodeByKey(parameter);
             if (Objects.equals(selfUrl, nodeUrl)) {
-                logger.debug("[" + selfUrl + "] Process request: " + request.getMethodName() + request.getURI());
+                logger.debug("[%s] Process request: %s%s".formatted(selfUrl, request.getMethodName(),
+                        request.getURI()));
                 super.handleRequest(request, session);
             } else {
-                logger.debug("[" + selfUrl + "] Send request to node [" + nodeUrl + "]: " + request.getMethodName()
-                        + request.getURI());
+                logger.debug("[%s] Send request to node [%s]: %s%s".formatted(selfUrl, nodeUrl, request.getMethodName(),
+                        request.getURI()));
                 if (failureLimiter.readyForRequests(nodeUrl)) {
                     handleProxyRequest(request, session, nodeUrl, parameter);
                 } else {
-                    logger.warn("[" + selfUrl + "] Can't send request to closed node [" + nodeUrl + "]: "
-                            + request.getMethodName() + request.getURI());
+                    logger.warn("[%s] Can't send request to closed node [%s]: %s%s".formatted(selfUrl, nodeUrl,
+                            request.getMethodName(), request.getURI()));
                     sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                 }
             }
@@ -195,29 +195,12 @@ public class Server extends HttpServer {
     }
 
     private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String parameter) {
-        HttpRequest httpRequest;
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + parameter));
-        switch (request.getMethod()) {
-            case Request.METHOD_PUT -> {
-                byte[] body = request.getBody();
-                if (body == null) {
-                    sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
-                httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
-            }
-            case Request.METHOD_GET -> {
-                httpRequest = builder.GET().build();
-            }
-            case Request.METHOD_DELETE -> {
-                httpRequest = builder.DELETE().build();
-            }
-            default -> {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-        }
-
+        byte[] body = request.getBody();
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + parameter))
+                .method(request.getMethodName(), body == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(body))
+                .build();
         sendProxyRequest(session, httpRequest, nodeUrl);
     }
 

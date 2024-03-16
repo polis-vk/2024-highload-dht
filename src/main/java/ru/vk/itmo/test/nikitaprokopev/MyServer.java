@@ -10,6 +10,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -24,7 +25,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -74,7 +77,7 @@ public class MyServer extends HttpServer {
 
         int targetNode = hash(id);
         if (targetNode != nodeId) {
-            return proxyRequest(Methods.PUT, id, targetNode, request.getBody());
+            return proxyRequest(Request.METHOD_PUT, id, targetNode, request.getBody());
         }
 
         MemorySegment msKey = toMemorySegment(id);
@@ -99,7 +102,7 @@ public class MyServer extends HttpServer {
 
         int targetNode = hash(id);
         if (targetNode != nodeId) {
-            return proxyRequest(Methods.GET, id, targetNode, Response.EMPTY);
+            return proxyRequest(Request.METHOD_GET, id, targetNode, Response.EMPTY);
         }
 
         MemorySegment msKey = toMemorySegment(id);
@@ -122,7 +125,7 @@ public class MyServer extends HttpServer {
 
         int targetNode = hash(id);
         if (targetNode != nodeId) {
-            return proxyRequest(Methods.DELETE, id, targetNode, Response.EMPTY);
+            return proxyRequest(Request.METHOD_DELETE, id, targetNode, Response.EMPTY);
         }
 
         MemorySegment msKey = toMemorySegment(id);
@@ -214,29 +217,32 @@ public class MyServer extends HttpServer {
         return new Response(responseCode, body);
     }
 
-    private Response proxyRequest(Methods method, String id, int targetNode, byte[] body) throws IOException {
+    private Response proxyRequest(int method, String id, int targetNode, byte[] body) throws IOException {
         int idHttpClient = targetNode > nodeId ? targetNode - 1 : targetNode;
         String targetPath = serviceConfig.clusterUrls().get(targetNode) + BASE_PATH + "?id=" + id;
         try {
             switch (method) {
-                case PUT -> {
+                case Request.METHOD_PUT -> {
                     HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
                             .uri(URI.create(targetPath))
                             .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                            .timeout(Duration.ofMillis(500))
                             .build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, Response.EMPTY);
                 }
-                case GET -> {
+                case Request.METHOD_GET -> {
                     HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
                             .uri(URI.create(targetPath))
                             .GET()
+                            .timeout(Duration.ofMillis(500))
                             .build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, response.body());
                 }
-                case DELETE -> {
+                case Request.METHOD_DELETE -> {
                     HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
                             .uri(URI.create(targetPath))
                             .DELETE()
+                            .timeout(Duration.ofMillis(500))
                             .build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, Response.EMPTY);
                 }
@@ -249,6 +255,9 @@ public class MyServer extends HttpServer {
             log.error("Exception while sending request", e);
             Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (HttpTimeoutException e) {
+            log.error("Exception while sending request", e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
@@ -256,16 +265,12 @@ public class MyServer extends HttpServer {
         int maxValue = Integer.MIN_VALUE;
         int maxHashNode = 0;
         for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
-            int hash = (id + i).hashCode();
+            int hash = Hash.murmur3(serviceConfig.clusterUrls().get(i) + id);
             if (hash > maxValue) {
                 maxValue = hash;
                 maxHashNode = i;
             }
         }
         return maxHashNode;
-    }
-
-    private enum Methods {
-        PUT, GET, DELETE
     }
 }

@@ -14,12 +14,11 @@ import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class DistributedDao implements Dao<MemorySegment, Entry<MemorySegment>> {
-    private static int MULTIPLICATION_FACTOR = 128;
+    private static final int MULTIPLICATION_FACTOR = 128;
     private final SortedMap<Integer, Dao<MemorySegment, Entry<MemorySegment>>> nodeRing = new ConcurrentSkipListMap<>();
 
     public void addNode(Dao<MemorySegment, Entry<MemorySegment>> daoNode, String token) {
         for (int i = 0; i < MULTIPLICATION_FACTOR; i++) {
-
             nodeRing.put(Hash.murmur3((token + i)), daoNode);
         }
     }
@@ -41,13 +40,17 @@ public class DistributedDao implements Dao<MemorySegment, Entry<MemorySegment>> 
 
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
-        Dao<MemorySegment, Entry<MemorySegment>> dao = selectNode(new String(key.toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
+        Dao<MemorySegment, Entry<MemorySegment>> dao = selectNode(
+                new String(key.toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
+        );
         return dao.get(key);
     }
 
     @Override
     public void upsert(Entry<MemorySegment> entry) {
-        Dao<MemorySegment, Entry<MemorySegment>> dao = selectNode(new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
+        Dao<MemorySegment, Entry<MemorySegment>> dao = selectNode(
+                new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
+        );
         dao.upsert(entry);
     }
 

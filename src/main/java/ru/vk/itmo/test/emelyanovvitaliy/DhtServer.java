@@ -20,9 +20,10 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
@@ -31,29 +32,46 @@ import static one.nio.http.Request.METHOD_PUT;
 public class DhtServer extends HttpServer {
     public static final byte[] EMPTY_BODY = new byte[0];
     public static final int THREADS_PER_PROCESSOR = 2;
-    public static final long KEEP_ALIVE_TIME_MS = 1000;
-    public static final int REQUEST_TIMEOUT_MS = 1024;
+    public static final long KEEP_ALIVE_TIME_MILLIS = 1000;
+    public static final int REQUEST_TIMEOUT_MILLIS = 1024;
+    public static final int FLUSH_THRESHOLD_BYTES = 1 << 24;
+    public static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
+    public static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
+    public final AtomicInteger threadsInPool = new AtomicInteger(0);
     private final ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
             Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
             Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
-            KEEP_ALIVE_TIME_MS,
+            KEEP_ALIVE_TIME_MILLIS,
             TimeUnit.MILLISECONDS,
-            new SynchronousQueue<>()
+            new ArrayBlockingQueue<>(TASK_QUEUE_SIZE),
+            r -> {
+                Thread t = new Thread(r);
+                t.setDaemon(true);
+                t.setName("DhtServerThreadPool-Thread-" + threadsInPool.incrementAndGet());
+                return t;
+            }
     );
     private final ReferenceDao dao;
 
     public DhtServer(ServiceConfig config) throws IOException {
         super(createConfig(config));
-        dao = new ReferenceDao(new Config(config.workingDir(), 1 << 24));
+        dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
     }
 
     @Override
     public synchronized void stop() {
         super.stop();
         try {
+            threadPoolExecutor.shutdown();
+            if (!threadPoolExecutor.awaitTermination(THREAD_POOL_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new UncheckedTimeoutException("Waited too lot to stop the thread pool");
+            }
             dao.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new UncheckedInterruptedException(e);
         }
     }
 
@@ -61,13 +79,13 @@ public class DhtServer extends HttpServer {
     @Path("/v0/entity")
     public void entity(@Param(value = "id") String id, HttpSession session) throws IOException {
         if (isKeyIncorrect(id)) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+            sendBadRequestResponse(session);
         } else {
-            long start = System.currentTimeMillis();
+            long startTimeInMillis = System.currentTimeMillis();
             threadPoolExecutor.execute(
                     () -> {
                         try {
-                            if (System.currentTimeMillis() - start >= REQUEST_TIMEOUT_MS) {
+                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
                                 session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
                                 return;
                             }
@@ -88,14 +106,14 @@ public class DhtServer extends HttpServer {
     @RequestMethod(METHOD_PUT)
     @Path("/v0/entity")
     public void putEntity(@Param(value = "id") String id, HttpSession httpSession, Request request) throws IOException {
-        if (isKeyIncorrect(id)) {
-            httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+        if (isKeyIncorrect(id) || request.getBody() == null) {
+            sendBadRequestResponse(httpSession);
         } else {
-            long start = System.currentTimeMillis();
+            long startTimeInMillis = System.currentTimeMillis();
             threadPoolExecutor.execute(
                     () -> {
                         try {
-                            if (System.currentTimeMillis() - start > KEEP_ALIVE_TIME_MS) {
+                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
                                 httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
                                 return;
                             }
@@ -113,13 +131,13 @@ public class DhtServer extends HttpServer {
     @Path("/v0/entity")
     public void deleteEntity(@Param("id") String id, HttpSession httpSession) throws IOException {
         if (isKeyIncorrect(id)) {
-            httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+            sendBadRequestResponse(httpSession);
         } else {
-            long start = System.currentTimeMillis();
+            long startTimeInMillis = System.currentTimeMillis();
             threadPoolExecutor.execute(
                     () -> {
                         try {
-                            if (System.currentTimeMillis() - start > KEEP_ALIVE_TIME_MS) {
+                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
                                 httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
                                 return;
                             }
@@ -137,10 +155,14 @@ public class DhtServer extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         int requestMethod = request.getMethod();
         if (requestMethod == METHOD_GET || requestMethod == METHOD_PUT || requestMethod == METHOD_DELETE) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+            sendBadRequestResponse(session);
         } else {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, EMPTY_BODY));
         }
+    }
+
+    private static void sendBadRequestResponse(HttpSession httpSession) throws IOException {
+        httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
     }
 
     private static boolean isKeyIncorrect(String key) {

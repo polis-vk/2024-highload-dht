@@ -45,6 +45,7 @@ public final class StartServer {
 
         ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
         ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
+//        ShardingAlgorithm shardingAlgorithm = new RendezvousHashing(clusterUrls);
 
         FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
         FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);

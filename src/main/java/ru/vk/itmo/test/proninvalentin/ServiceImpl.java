@@ -15,9 +15,10 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private ReferenceDao dao;
     private Server server;
+    private WorkerPool workerPool;
 
     public ServiceImpl(ServiceConfig config) throws IOException {
-        int flushThresholdBytes = 1 << 27; // 128 MB
+        int flushThresholdBytes = 1 << 20; // 1 MB
         this.config = config;
         this.daoConfig = new Config(config.workingDir(), flushThresholdBytes);
     }
@@ -25,19 +26,21 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        server = new Server(config, dao);
+        workerPool = new WorkerPool(WorkerPoolConfig.defaultConfig());
+        server = new Server(config, dao, workerPool);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        server.stop();
         dao.close();
+        workerPool.gracefulShutdown();
+        server.stop();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

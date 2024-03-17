@@ -26,6 +26,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
@@ -108,19 +109,23 @@ public class ReferenceServer extends HttpServer {
 
         if (executorNode.equals(config.selfUrl())) {
             return invokeLocal(request, id);
-        } else {
-            try {
-                return invokeRemote(executorNode, request);
-            } catch (IOException e) {
-                log.info("I/O exception while calling remote node");
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.info("Thread interrupted");
-                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-            }
+        }
+
+        try {
+            return invokeRemote(executorNode, request);
+        } catch (HttpTimeoutException e) {
+            log.info("timeout while invoking remote node");
+            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
+        } catch (IOException e) {
+            log.info("I/O exception while calling remote node");
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.info("Thread interrupted");
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
+
 
     private Response invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
@@ -130,7 +135,7 @@ public class ReferenceServer extends HttpServer {
                     ? HttpRequest.BodyPublishers.noBody()
                     : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
             )
-            .timeout(Duration.of(500, ChronoUnit.MILLIS))
+            .timeout(Duration.ofMillis(500))
             .build();
         HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         return new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
@@ -166,12 +171,12 @@ public class ReferenceServer extends HttpServer {
 
 
     private String getNodeByEntityId(String id) {
-        Integer maxHash = null;
         int nodeId = 0;
-        for (int i = 0; i < config.clusterUrls().size(); i++) {
+        int maxHash = Hash.murmur3(config.clusterUrls().getFirst() + id);
+        for (int i = 1; i < config.clusterUrls().size(); i++) {
             String url = config.clusterUrls().get(i);
             int result = Hash.murmur3(url + id);
-            if (maxHash == null || maxHash < result) {
+            if (maxHash < result) {
                 maxHash = result;
                 nodeId = i;
             }
@@ -182,5 +187,4 @@ public class ReferenceServer extends HttpServer {
     private interface ERunnable {
         void run() throws Exception;
     }
-
 }

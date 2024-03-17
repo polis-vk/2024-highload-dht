@@ -6,7 +6,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
@@ -21,7 +20,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 

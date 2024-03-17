@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
@@ -34,10 +36,16 @@ import static one.nio.http.Request.METHOD_PUT;
 public class LSMServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(LSMServerImpl.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ExecutorService executorService;
 
-    public LSMServerImpl(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    public LSMServerImpl(
+            ServiceConfig serviceConfig, Dao<MemorySegment,
+            Entry<MemorySegment>> dao,
+            ExecutorService executorService
+    ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
+        this.executorService = executorService;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -57,10 +65,22 @@ public class LSMServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            super.handleRequest(request, session);
-        } catch (Exception e) {
-            log.error("Unexpected error occurred: ", e);
-            session.sendResponse(LSMConstantResponse.serviceUnavailable(request));
+            executorService.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    log.error("Unexpected error occurred: ", e);
+                    try {
+                        session.sendResponse(LSMConstantResponse.SERVICE_UNAVAILABLE_CLOSE);
+                    } catch (IOException ex) {
+                        log.error("I/O error occurred when sending response");
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.error("Request was rejected");
+            session.sendResponse(LSMConstantResponse.tooManyRequests(request));
         }
     }
 
@@ -69,6 +89,7 @@ public class LSMServerImpl extends HttpServer {
         // validate id parameter
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
+            log.info("Bad request: empty id parameter");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
@@ -88,9 +109,11 @@ public class LSMServerImpl extends HttpServer {
             entry = dao.get(fromString(id));
         } catch (UncheckedIOException e) {
             // sstable get method throws UncheckedIOException
+            log.error("Unexpected UncheckedIOException occurred", e);
             return LSMConstantResponse.serviceUnavailable(request);
         }
         if (entry == null || entry.value() == null) {
+            log.info("Entity(id={}) was not found", id);
             return LSMConstantResponse.notFound(request);
         }
 
@@ -99,6 +122,7 @@ public class LSMServerImpl extends HttpServer {
 
     private Response handlePutEntity(final Request request, final String id) {
         if (request.getBody() == null) {
+            log.info("PUT bad request: empty body");
             return LSMConstantResponse.badRequest(request);
         }
 
@@ -110,9 +134,11 @@ public class LSMServerImpl extends HttpServer {
             dao.upsert(newEntry);
         } catch (LSMDaoOutOfMemoryException e) {
             // when entry is too big to be putted into memtable
+            log.info("Entity(id={}) is too big to be putted into memtable", id);
             return LSMConstantResponse.entityTooLarge(request);
         } catch (TooManyFlushesException e) {
             // when one memory table is in the process of being flushed, and the second is already full
+            log.warn("Too many flushes");
             return LSMConstantResponse.tooManyRequests(request);
         }
 
@@ -128,9 +154,11 @@ public class LSMServerImpl extends HttpServer {
             dao.upsert(newEntry);
         } catch (LSMDaoOutOfMemoryException e) {
             // when entry is too big to be putted into memtable
+            log.info("Entity(id={}) is too big to be putted into memtable", id);
             return LSMConstantResponse.entityTooLarge(request);
         } catch (TooManyFlushesException e) {
             // when one memory table is in the process of being flushed, and the second is already full
+            log.warn("Too many flushes");
             return LSMConstantResponse.tooManyRequests(request);
         }
 

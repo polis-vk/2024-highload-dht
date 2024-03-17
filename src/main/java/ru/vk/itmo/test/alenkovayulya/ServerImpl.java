@@ -9,6 +9,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -18,16 +20,22 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
 public class ServerImpl extends HttpServer {
 
+    private static final Logger logger = LoggerFactory.getLogger(ServerImpl.class);
+
     private final Dao<MemorySegment, Entry<MemorySegment>> referenceDao;
+    private final ExecutorService executorService;
 
     public ServerImpl(ServiceConfig serviceConfig,
-                      Dao<MemorySegment, Entry<MemorySegment>> referenceDao) throws IOException {
+                      Dao<MemorySegment, Entry<MemorySegment>> referenceDao,
+                      ExecutorService executorService) throws IOException {
         super(createServerConfig(serviceConfig));
         this.referenceDao = referenceDao;
+        this.executorService = executorService;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -39,6 +47,22 @@ public class ServerImpl extends HttpServer {
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) {
+        executorService.execute(() -> {
+            try {
+                super.handleRequest(request, session);
+            } catch (Exception e) {
+                try {
+                    session.sendError(Response.BAD_REQUEST, e.getMessage());
+                } catch (IOException ex) {
+                    logger.info("Exception during sending the response: ", ex);
+                    session.close();
+                }
+            }
+        });
     }
 
     @Path("/v0/entity")

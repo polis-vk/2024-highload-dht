@@ -8,15 +8,13 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class DistributedDao implements Dao<MemorySegment, Entry<MemorySegment>> {
-    private static int MULTIPLICATION_FACTOR = 12;
+    private static int MULTIPLICATION_FACTOR = 128;
     private final SortedMap<Integer, Dao<MemorySegment, Entry<MemorySegment>>> nodeRing = new ConcurrentSkipListMap<>();
 
     public void addNode(Dao<MemorySegment, Entry<MemorySegment>> daoNode, String token) {
@@ -30,7 +28,7 @@ public class DistributedDao implements Dao<MemorySegment, Entry<MemorySegment>> 
         Map.Entry<Integer, Dao<MemorySegment, Entry<MemorySegment>>> nodeEntry =
                 this.nodeRing.tailMap(Hash.murmur3(key)).firstEntry();
         if (nodeEntry == null) {
-            return this.nodeRing.firstEntry().getValue();
+            return this.nodeRing.lastEntry().getValue();
         }
 
         return nodeEntry.getValue();

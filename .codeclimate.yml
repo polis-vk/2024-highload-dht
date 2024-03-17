@@ -46,6 +46,8 @@ plugins:
         enabled: false
       PrematureDeclaration:
         enabled: false
+      MissingBreakInSwitch:
+        enabled: false
   sonar-java:
     enabled: true
     config:
@@ -76,3 +78,4 @@ exclude_patterns:
   - "**/*.svg"
   - "src/test/"
   - "src/main/java/ru/vk/itmo/test/reference/"
+  - "src/main/java/ru/vk/itmo/test/smirnovdmitrii/application/properties"

@@ -14,20 +14,32 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.osipovdaniil.dao.ReferenceDao;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.logging.Logger;
 
 public class ServerImpl extends HttpServer {
 
     private static final String ENTITY_PATH = "/v0/entity";
+    private static final Integer MAX_THREADS = 64;
+    private static final String ID = "id=";
+    private final ExecutorService requestExecutor;
+    private final Logger logger;
 
     private final ReferenceDao dao;
 
     public ServerImpl(final ServiceConfig serviceConfig, ReferenceDao dao) throws IOException {
         super(createHttpServerConfig(serviceConfig));
         this.dao = dao;
+        this.requestExecutor = Executors.newFixedThreadPool(MAX_THREADS);
+        this.logger = Logger.getLogger(ServerImpl.class.getName());
     }
 
     private static HttpServerConfig createHttpServerConfig(final ServiceConfig serviceConfig) {
@@ -35,7 +47,7 @@ public class ServerImpl extends HttpServer {
         final AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
-        httpServerConfig.acceptors = new AcceptorConfig[] { acceptorConfig };
+        httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
     }
@@ -84,24 +96,58 @@ public class ServerImpl extends HttpServer {
                 });
     }
 
+    private void handleRequestTask(final Request request, final HttpSession session) {
+        try {
+            Response response;
+            if (!request.getPath().startsWith(ENTITY_PATH)) {
+                response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+                session.sendResponse(response);
+                return;
+            }
+            final int method = request.getMethod();
+            if (method == Request.METHOD_GET) {
+                response = get(request.getParameter(ID));
+            } else if (method == Request.METHOD_DELETE) {
+                response = delete(request.getParameter(ID));
+            } else if (method == Request.METHOD_PUT) {
+                response = put(request.getParameter(ID), request);
+            } else {
+                response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.info("IO exception in execution request: " + request + "\n");
+            throw new UncheckedIOException(e);
+        }
+    }
+
     @Override
     public void handleRequest(final Request request, final HttpSession session) throws IOException {
-        Response response;
-        if (!request.getPath().startsWith(ENTITY_PATH)) {
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-            session.sendResponse(response);
-            return;
+        try {
+            requestExecutor.execute(() -> handleRequestTask(request, session));
+        } catch (RejectedExecutionException e) {
+            logger.info("Execution has been rejected in request: " + request + "\n");
+            session.sendError(Response.SERVICE_UNAVAILABLE, "");
         }
-        final int method = request.getMethod();
-        if (method == Request.METHOD_GET) {
-            response = get(request.getParameter("id="));
-        } else if (method == Request.METHOD_DELETE) {
-            response = delete(request.getParameter("id="));
-        } else if (method == Request.METHOD_PUT) {
-            response = put(request.getParameter("id="), request);
-        } else {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
+
+    void shutdownAndAwaitTermination(ExecutorService pool) {
+        try {
+            if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+                pool.shutdownNow();
+                if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+                    logger.info("Pool did not terminate");
+                }
+            }
+        } catch (InterruptedException ie) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
         }
-        session.sendResponse(response);
+    }
+
+    @Override
+    public synchronized void stop() {
+        shutdownAndAwaitTermination(requestExecutor);
+        super.stop();
     }
 }

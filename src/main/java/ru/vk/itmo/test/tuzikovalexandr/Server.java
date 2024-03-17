@@ -17,12 +17,14 @@ public final class Server {
 
     public static void main(String[] args) throws IOException {
         long flushThresholdBytes = 1024 * 1024;
-        Dao dao = new ReferenceDao(new Config(Files.createTempDirectory("data"), flushThresholdBytes));
-        ServerImpl server = new ServerImpl(new ServiceConfig(
-                8080, "http://localhost",
+        ServiceConfig serviceConfig = new ServiceConfig(8080, "http://localhost",
                 List.of("http://localhost"),
-                Files.createTempDirectory("data")
-        ), dao);
+                Files.createTempDirectory("data"));
+        Dao dao = new ReferenceDao(new Config(Files.createTempDirectory("data"), flushThresholdBytes));
+        Worker worker = new Worker(new WorkerConfig());
+
+        ServerImpl server = new ServerImpl(serviceConfig, dao, worker);
+
         server.start();
     }
 }

@@ -15,6 +15,7 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private ServerImpl server;
     private Dao dao;
+    private Worker worker;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -23,7 +24,8 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), 1024 * 1024));
-        server = new ServerImpl(config, dao);
+        worker = new Worker(new WorkerConfig());
+        server = new ServerImpl(config, dao, worker);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -31,11 +33,12 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        worker.shutdownAndAwaitTermination();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

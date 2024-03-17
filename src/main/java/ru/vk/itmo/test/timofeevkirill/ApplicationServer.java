@@ -6,22 +6,29 @@ import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static ru.vk.itmo.test.timofeevkirill.Settings.FLUSH_THRESHOLD_BYTES;
+import static ru.vk.itmo.test.timofeevkirill.Settings.getDefaultThreadPoolExecutor;
 
 public final class ApplicationServer {
 
     public static void main(String[] args) throws IOException {
-        Config daoConfig = new Config(Files.createTempDirectory("dao"), FLUSH_THRESHOLD_BYTES);
+        Path workingDir = Path.of("/home/aphirri/IdeaProjects/2024-highload-dht"
+                + "/src/main/java/ru/vk/itmo/test/timofeevkirill/tmp");
+        Files.createDirectories(workingDir);
+
+        Config daoConfig = new Config(workingDir, FLUSH_THRESHOLD_BYTES);
         TimofeevServer server = new TimofeevServer(
                 new ServiceConfig(
                         8080,
                         "http://localhost",
                         List.of("http://localhost"),
-                        Files.createTempDirectory(".")
+                        workingDir
                 ),
-                new ReferenceDao(daoConfig)
+                new ReferenceDao(daoConfig),
+                getDefaultThreadPoolExecutor()
         );
         server.start();
     }

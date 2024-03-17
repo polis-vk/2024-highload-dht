@@ -78,3 +78,4 @@ exclude_patterns:
   - "**/*.svg"
   - "src/test/"
   - "src/main/java/ru/vk/itmo/test/reference/"
+  - "src/main/java/ru/vk/itmo/test/smirnovdmitrii/application/properties"

@@ -6,6 +6,8 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 
 import java.io.IOException;
@@ -17,8 +19,8 @@ public class RedirectService {
 
     @DhtValue("cluster.redirect.timeout:100")
     private static int REDIRECT_TIMEOUT;
-
     private final Map<String, HttpClient> clients = new HashMap<>();
+    private static final Logger logger = LoggerFactory.getLogger(RedirectService.class);
 
     public RedirectService(final String selfUrl, List<String> clusterUrls) {
         for (final String clusterUrl: clusterUrls) {
@@ -35,6 +37,7 @@ public class RedirectService {
     ) throws HttpException, IOException, InterruptedException {
         final HttpClient client = clients.get(url);
         try {
+            logger.trace("sending redirect to node {}", url);
             return client.invoke(request, REDIRECT_TIMEOUT);
         } catch (PoolException e) {
             return new Response(Response.BAD_GATEWAY, Response.EMPTY);

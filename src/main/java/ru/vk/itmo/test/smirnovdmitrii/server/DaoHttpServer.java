@@ -126,13 +126,13 @@ public class DaoHttpServer extends HttpServer {
                 session.sendResponse(validationFailedResponse);
                 return;
             }
-            final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
-            final Response shardResponse = shardResponse(request, keyBytes);
+            final Response shardResponse = shardResponse(request, id);
             if (shardResponse != null) {
                 session.sendResponse(shardResponse);
                 return;
             }
             final int method = request.getMethod();
+            final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
             final MemorySegment key = MemorySegment.ofArray(keyBytes);
             Response response = processRequest(request, method, key);
             session.sendResponse(response);
@@ -143,17 +143,14 @@ public class DaoHttpServer extends HttpServer {
 
     private Response shardResponse(
             final Request request,
-            final byte[] keyBytes
+            final String id
     ) {
-        final String nodeUrl = balancer.getNodeUrl(keyBytes);
+        final String nodeUrl = balancer.getNodeUrl(id);
         if (selfUrl.equals(nodeUrl)) {
             return null;
         }
-        logger.info("sending redirect to node {}", nodeUrl);
         try {
-            final Response response = redirectService.redirect(nodeUrl, request);
-            logger.info("got response from node {}", nodeUrl);
-            return response;
+            return redirectService.redirect(nodeUrl, request);
         } catch (final IOException e) {
             logger.error("IOException in get response from node {}", nodeUrl, e);
         } catch (final HttpException e) {

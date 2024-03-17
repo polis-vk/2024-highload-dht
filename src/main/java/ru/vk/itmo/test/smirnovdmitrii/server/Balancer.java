@@ -1,11 +1,11 @@
 package ru.vk.itmo.test.smirnovdmitrii.server;
 
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
@@ -50,8 +50,8 @@ public class Balancer {
         logger.info("creating key map for nodes is done.");
     }
 
-    public String getNodeUrl(final byte[] bytes) {
-        final int hash = Math.abs(Arrays.hashCode(bytes));
+    public String getNodeUrl(final String key) {
+        final int hash = Math.abs(Hash.murmur3(key));
         return clusterUrls.get(partitionMapping[hash % partitionMapping.length]);
     }
 }

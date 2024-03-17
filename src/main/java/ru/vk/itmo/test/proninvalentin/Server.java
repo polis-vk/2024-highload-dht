@@ -23,14 +23,11 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,20 +51,6 @@ public class Server extends HttpServer {
     private static final String METHOD_ADDRESS = "/v0/entity";
     private static final String ID_PARAMETER_NAME = "id=";
     private static final String REQUEST_PATH = METHOD_ADDRESS + "?" + ID_PARAMETER_NAME;
-    private static final Set<Integer> SUPPORTED_HTTP_METHODS = Set.of(
-            Request.METHOD_GET,
-            Request.METHOD_PUT,
-            Request.METHOD_DELETE
-    );
-    private static final Map<Integer, String> httpCodeMapping = Map.of(
-            HttpURLConnection.HTTP_OK, Response.OK,
-            HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
-            HttpURLConnection.HTTP_CREATED, Response.CREATED,
-            HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
-            HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR,
-            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND,
-            HttpURLConnection.HTTP_CLIENT_TIMEOUT, Response.REQUEST_TIMEOUT
-    );
 
     public Server(ServiceConfig config, ReferenceDao dao, WorkerPool workerPool,
                   ShardingAlgorithm shardingAlgorithm, ServerConfig serverConfig,
@@ -123,14 +106,10 @@ public class Server extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) {
         int httpMethod = request.getMethod();
-        Response response = isSupportedMethod(httpMethod)
+        Response response = Utils.isSupportedMethod(httpMethod)
                 ? new Response(Response.BAD_REQUEST, Response.EMPTY)
                 : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         sendResponse(session, response);
-    }
-
-    private boolean isSupportedMethod(int httpMethod) {
-        return SUPPORTED_HTTP_METHODS.contains(httpMethod);
     }
 
     @Override
@@ -158,7 +137,7 @@ public class Server extends HttpServer {
         }
 
         String parameter = request.getParameter(ID_PARAMETER_NAME);
-        if (isNullOrBlank(parameter)) {
+        if (Utils.isNullOrBlank(parameter)) {
             sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
@@ -210,17 +189,17 @@ public class Server extends HttpServer {
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                     .get(httpRequestTimeoutInMillis, TimeUnit.MILLISECONDS);
 
-            String statusCode = httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
-            if (statusCode != null) {
+            String statusCode = Utils.httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
+            if (statusCode == null) {
+                logger.error("The proxied node returned a response with an unexpected status: "
+                        + httpResponse.statusCode());
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
+            } else {
                 if (httpResponse.statusCode() >= SERVER_ERRORS) {
                     failureLimiter.handleFailure(nodeUrl);
                 }
 
                 sendResponse(session, new Response(statusCode, httpResponse.body()));
-            } else {
-                logger.error("The proxied node returned a response with an unexpected status: "
-                        + httpResponse.statusCode());
-                sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -243,7 +222,7 @@ public class Server extends HttpServer {
     @Path(METHOD_ADDRESS)
     @RequestMethod(Request.METHOD_PUT)
     public Response upsert(@Param(value = "id", required = true) String id, Request request) {
-        if (isNullOrBlank(id) || request.getBody() == null) {
+        if (Utils.isNullOrBlank(id) || request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -256,7 +235,7 @@ public class Server extends HttpServer {
     @Path(METHOD_ADDRESS)
     @RequestMethod(Request.METHOD_GET)
     public Response get(@Param(required = true, value = "id") String id) {
-        if (isNullOrBlank(id)) {
+        if (Utils.isNullOrBlank(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -274,17 +253,13 @@ public class Server extends HttpServer {
     @Path(METHOD_ADDRESS)
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(required = true, value = "id") String id) {
-        if (isNullOrBlank(id)) {
+        if (Utils.isNullOrBlank(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> deletedMemorySegment = MemorySegmentFactory.toDeletedMemorySegment(id);
         dao.upsert(deletedMemorySegment);
         return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private boolean isNullOrBlank(String str) {
-        return str == null || str.isBlank();
     }
 
     // endregion

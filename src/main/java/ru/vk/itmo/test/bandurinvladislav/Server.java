@@ -6,6 +6,9 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
@@ -19,13 +22,26 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+
 public class Server extends HttpServer {
+    private static final Logger logger = LoggerFactory.getLogger(Server.class);
+    private final DaoWorkerPool workerPool;
     private final ReferenceDao dao;
 
     public Server(HttpServerConfig serverConfig, java.nio.file.Path workingDir) throws IOException {
         super(serverConfig);
+        workerPool = new DaoWorkerPool(
+                Constants.THREADS,
+                Constants.THREADS,
+                60,
+                TimeUnit.SECONDS
+        );
+        workerPool.prestartAllCoreThreads();
         Config daoConfig = new Config(workingDir, Constants.FLUSH_THRESHOLD_BYTES);
         dao = new ReferenceDao(daoConfig);
+        logger.info("Server started");
     }
 
     public Response getEntity(@Param(value = "id", required = true) String id) {
@@ -58,8 +74,31 @@ public class Server extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        // пока не очень понятно, насколько масштабируемое решение относительно эндпоинтов и параметров
-        // мы хотим, поэтому захардкожу для одного существующего, чтобы не создавать лишних объектов
+        try {
+            workerPool.execute(() -> {
+                try {
+                    handleDaoCall(request, session);
+                } catch (IOException e) {
+                    logger.error("IO exception during request handling: " + e.getMessage());
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, null);
+                    } catch (IOException ex) {
+                        logger.error("Exception while sending close connection:", e);
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            logger.info("queue is full");
+            if (workerPool.isShutdown()) {
+                session.sendError(Response.SERVICE_UNAVAILABLE, null);
+                return;
+            }
+            session.sendError(Constants.TOO_MANY_REQUESTS, null);
+        }
+    }
+
+    private void handleDaoCall(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
         if (!path.equals(Constants.ENDPOINT)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -72,12 +111,18 @@ public class Server extends HttpServer {
             return;
         }
 
-        Response response = switch (request.getMethod()) {
-            case Request.METHOD_GET -> getEntity(key);
-            case Request.METHOD_PUT -> putEntity(key, request);
-            case Request.METHOD_DELETE -> deleteEntity(key);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        };
+        Response response;
+        try {
+            response = switch (request.getMethod()) {
+                case Request.METHOD_GET -> getEntity(key);
+                case Request.METHOD_PUT -> putEntity(key, request);
+                case Request.METHOD_DELETE -> deleteEntity(key);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+        } catch (Exception e) {
+            logger.error("Internal error during request handling: " + e.getMessage());
+            response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
 
         session.sendResponse(response);
     }
@@ -85,6 +130,8 @@ public class Server extends HttpServer {
     @Override
     public synchronized void stop() {
         super.stop();
+
+        workerPool.gracefulShutdown();
         try {
             dao.close();
         } catch (IOException e) {

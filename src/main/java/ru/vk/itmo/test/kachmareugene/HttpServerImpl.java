@@ -45,8 +45,8 @@ public class HttpServerImpl extends HttpServer {
                                     queue);
     private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
     Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
-    private final ServiceConfig serviceConfig;
     private final String selfNodeURL;
+    private final ServiceConfig serviceConfig;
     private static final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private final PartitionMetaInfo partitionTable;
     private final Map<String, HttpClient> clientMap = new HashMap<>();

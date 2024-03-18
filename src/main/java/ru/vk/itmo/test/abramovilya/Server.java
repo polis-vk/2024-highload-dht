@@ -61,7 +61,9 @@ public class Server extends HttpServer {
 
         for (String url : config.clusterUrls()) {
             if (!url.equals(config.selfUrl())) {
-                httpClients.put(url, new HttpClient(new ConnectionString(url)));
+                HttpClient client = new HttpClient(new ConnectionString(url));
+                client.setConnectTimeout(100);
+                httpClients.put(url, client);
             }
         }
     }

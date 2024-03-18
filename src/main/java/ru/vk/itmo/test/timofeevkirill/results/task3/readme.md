@@ -1,4 +1,4 @@
-# Этап 2. Executor pool
+# Этап 3. Sharding
 ## Setup
 - WRK
   ```wrk -d 2m -t 1 -c 1 -R {value} -s {put/get}.lua -L http://localhost:8080/v0/entry```
@@ -99,6 +99,7 @@ LOCK
 ```
 Значение процентилей уменьшилось, особенно приятно для 100го процентиля - меньше на 11ms.
 
+В целом по флэйм графу также как на put запросах
 CPU
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task3/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task3/asprof/get/cpu/png/24_000rps.png)
 

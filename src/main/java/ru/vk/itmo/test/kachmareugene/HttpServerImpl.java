@@ -102,6 +102,7 @@ public class HttpServerImpl extends HttpServer {
                 if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
                     exec.shutdownNow();
                 }
+
             } catch (InterruptedException e) {
                 exec.shutdownNow();
                 Thread.currentThread().interrupt();
@@ -168,6 +169,7 @@ public class HttpServerImpl extends HttpServer {
                     }
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
+
                 } catch (IOException e) {
                     errorAccept(session, e, Response.CONFLICT);
                 } catch (InterruptedException e) {

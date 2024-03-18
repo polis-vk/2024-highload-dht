@@ -8,9 +8,12 @@ import one.nio.http.Response;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import one.nio.util.Utf8;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
@@ -19,8 +22,17 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalUnit;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class ReferenceServer extends HttpServer {
 
@@ -28,22 +40,25 @@ public class ReferenceServer extends HttpServer {
 
     private final Executor executor;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ServiceConfig config;
+    private final HttpClient httpClient;
 
     public ReferenceServer(ServiceConfig config,
                            Executor executor,
                            Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
-        super(createServerConfig(config));
+        super(createServerConfigWithPort(config.selfPort()));
         this.executor = executor;
         this.dao = dao;
+        this.config = config;
+        this.httpClient = HttpClient.newHttpClient();
     }
 
-    private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
+    private static HttpServerConfig createServerConfigWithPort(int port) {
         HttpServerConfig serverConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = serviceConfig.selfPort();
+        acceptorConfig.port = port;
         acceptorConfig.reusePort = true;
-
-        serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
     }
@@ -90,6 +105,43 @@ public class ReferenceServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        String executorNode = getNodeByEntityId(id);
+
+        if (executorNode.equals(config.selfUrl())) {
+            return invokeLocal(request, id);
+        }
+
+        try {
+            return invokeRemote(executorNode, request);
+        } catch (HttpTimeoutException e) {
+            log.info("timeout while invoking remote node");
+            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
+        } catch (IOException e) {
+            log.info("I/O exception while calling remote node");
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.info("Thread interrupted");
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        }
+    }
+
+
+    private Response invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
+            .method(
+                request.getMethodName(),
+                request.getBody() == null
+                    ? HttpRequest.BodyPublishers.noBody()
+                    : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+            )
+            .timeout(Duration.ofMillis(500))
+            .build();
+        HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        return new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
+    }
+
+    private Response invokeLocal(Request request, String id) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
@@ -117,8 +169,22 @@ public class ReferenceServer extends HttpServer {
         }
     }
 
+
+    private String getNodeByEntityId(String id) {
+        int nodeId = 0;
+        int maxHash = Hash.murmur3(config.clusterUrls().getFirst() + id);
+        for (int i = 1; i < config.clusterUrls().size(); i++) {
+            String url = config.clusterUrls().get(i);
+            int result = Hash.murmur3(url + id);
+            if (maxHash < result) {
+                maxHash = result;
+                nodeId = i;
+            }
+        }
+        return config.clusterUrls().get(nodeId);
+    }
+
     private interface ERunnable {
         void run() throws Exception;
     }
-
 }

@@ -23,7 +23,7 @@ public class DatabaseService implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new PersistentDao(daoConfig);
         httpServer = new DatabaseHttpServer(serverConfig, dao);
         httpServer.start();
@@ -31,7 +31,7 @@ public class DatabaseService implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         dao.close();
         httpServer.stop();
         return CompletableFuture.completedFuture(null);

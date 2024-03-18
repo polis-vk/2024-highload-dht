@@ -19,7 +19,8 @@ public final class MainServer {
             throws URISyntaxException, IOException, ExecutionException, InterruptedException {
         List<String> serviceUrls = List.of(
                 "http://localhost:8080",
-                "http://localhost:8081"
+                "http://localhost:8081",
+                "http://localhost:8082"
         );
 
         List<Service> serviceList = new ArrayList<>();

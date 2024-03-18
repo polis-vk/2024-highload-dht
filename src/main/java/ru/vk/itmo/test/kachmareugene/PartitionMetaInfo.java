@@ -11,6 +11,7 @@ public class PartitionMetaInfo {
     private final List<Integer> mappedVnodes;
     private final List<String> urls;
     public final int maxKeyHashValue;
+
     public PartitionMetaInfo(List<String> urls, int nodesFactor) {
         int nodesCount = urls.size();
 
@@ -26,8 +27,8 @@ public class PartitionMetaInfo {
 
     public String getCorrectURL(Request request) {
         int requestHash = Math.abs(request.getParameter("id").hashCode());
-        int vNode = requestHash % mappedVnodes.size();
+        int vnode = requestHash % mappedVnodes.size();
 
-        return urls.get(mappedVnodes.get(vNode));
+        return urls.get(mappedVnodes.get(vnode));
     }
 }

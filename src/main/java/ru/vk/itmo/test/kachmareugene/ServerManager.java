@@ -17,6 +17,7 @@ public class ServerManager implements Service {
             info = new PartitionMetaInfo(conf.clusterUrls(), 3);
             this.config = conf;
     }
+
     @Override
     public CompletableFuture<Void> start() throws IOException {
 
@@ -25,12 +26,14 @@ public class ServerManager implements Service {
 
         return CompletableFuture.completedFuture(null);
     }
+
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
 
         return CompletableFuture.completedFuture(null);
     }
+
     @ServiceFactory(stage = 3)
     public static class ServerFactory implements ServiceFactory.Factory {
         @Override

@@ -52,8 +52,7 @@ public class HttpServerImpl extends HttpServer {
     private static final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private final PartitionMetaInfo partitionTable;
     private final Map<String, HttpClient> clientMap = new HashMap<>();
-    private boolean closed = false;
-
+    private boolean closed;
 
     public HttpServerImpl(ServiceConfig conf) throws IOException {
         super(convertToHttpConfig(conf));
@@ -74,11 +73,7 @@ public class HttpServerImpl extends HttpServer {
 
     private static HttpServerConfig convertToHttpConfig(ServiceConfig conf) throws UncheckedIOException {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
-        try {
-            acceptorConfig.port = new URI(conf.selfUrl()).getPort();
-        } catch (URISyntaxException ignore) {
-
-        }
+        acceptorConfig.port = conf.selfPort();
 
         acceptorConfig.reusePort = true;
 
@@ -177,11 +172,12 @@ public class HttpServerImpl extends HttpServer {
                     errorAccept(session, e, Response.BAD_REQUEST);
                 } catch (IOException e) {
                     errorAccept(session, e, Response.CONFLICT);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    errorAccept(session, e, Response.CONFLICT);
                 } catch (HttpException e) {
                     errorAccept(session, e, Response.NOT_ACCEPTABLE);
                 } catch (PoolException e) {
-                    errorAccept(session, e, Response.INTERNAL_ERROR);
-                } catch (InterruptedException e) {
                     errorAccept(session, e, Response.INTERNAL_ERROR);
                 }
             });

@@ -45,7 +45,7 @@ public final class DhtMain {
         final List<String> selfUrls = getSelfUrls(ports);
         for (int i = 0; i < ports.length; i++) {
             final int port = ports[i];
-            final Path currentServiceWorkingDirectory = workingDirectory.resolve(port + "");
+            final Path currentServiceWorkingDirectory = workingDirectory.resolve(Integer.toString(port));
             Files.createDirectories(currentServiceWorkingDirectory);
             startService(
                 currentServiceWorkingDirectory,
@@ -57,7 +57,7 @@ public final class DhtMain {
     }
 
     private static List<String> getSelfUrls(
-            final int[] ports
+            final int... ports
     ) {
         final String[] splitHosts = splitAt(hosts);
         final List<String> urls = new ArrayList<>(splitHosts.length);

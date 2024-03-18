@@ -1,6 +1,15 @@
 package ru.vk.itmo.test.kachmareugene;
 
-import one.nio.http.*;
+import one.nio.http.HttpClient;
+import one.nio.http.HttpException;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
@@ -15,10 +24,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -27,7 +40,7 @@ public class HttpServerImpl extends HttpServer {
 
     private static final int CORE_POOL = 4;
     private static final int MAX_POOL = 8;
-    private final BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(50);
+    private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(256);
     private final ExecutorService executorService =
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
                         10L, TimeUnit.MILLISECONDS,
@@ -35,25 +48,34 @@ public class HttpServerImpl extends HttpServer {
     private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
     Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
     private final ServiceConfig serviceConfig;
+    private final String selfNodeURL;
     private static final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
-
     private final PartitionMetaInfo partitionTable;
+    private final Map<String, HttpClient> clientMap = new HashMap<>();
     public HttpServerImpl(ServiceConfig conf) throws IOException {
-        super(convertToHttpConfig(conf, 0));
+        super(convertToHttpConfig(conf));
         this.serviceConfig = conf;
         this.partitionTable = new PartitionMetaInfo(conf.clusterUrls(), 1);
+        this.selfNodeURL = conf.selfUrl();
     }
 
-    public HttpServerImpl(ServiceConfig config, PartitionMetaInfo info, int ind) throws IOException {
-        super(convertToHttpConfig(config, ind));
+    public HttpServerImpl(ServiceConfig config, PartitionMetaInfo info) throws IOException {
+        super(convertToHttpConfig(config));
         this.serviceConfig = config;
         this.partitionTable = info;
-
+        this.selfNodeURL = config.selfUrl();
+        for (final String url: config.clusterUrls()) {
+            clientMap.put(url, new HttpClient(new ConnectionString(url)));
+        }
     }
 
-    private static HttpServerConfig convertToHttpConfig(ServiceConfig conf, int ind) throws UncheckedIOException {
+    private static HttpServerConfig convertToHttpConfig(ServiceConfig conf) throws UncheckedIOException {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = Integer.parseInt(conf.clusterUrls().get(ind).split(":")[2]);
+        try {
+            acceptorConfig.port = new URI(conf.selfUrl()).getPort();
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
 
         acceptorConfig.reusePort = true;
 
@@ -84,23 +106,10 @@ public class HttpServerImpl extends HttpServer {
                 if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
                     exec.shutdownNow();
                 }
-
             } catch (InterruptedException e) {
                 exec.shutdownNow();
                 Thread.currentThread().interrupt();
             }
-        }
-    }
-
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        try {
-            closeExecutorService(executorService);
-            daoImpl.close();
-
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
         }
     }
 
@@ -114,11 +123,9 @@ public class HttpServerImpl extends HttpServer {
         }
 
         Entry<MemorySegment> result = daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
-
         if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        System.err.println("in");
         return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
@@ -144,38 +151,24 @@ public class HttpServerImpl extends HttpServer {
         if (key.isEmpty()) {
             return BAD;
         }
-        daoImpl.upsert(new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
-                        null));
-        System.err.println("deleted");
+        daoImpl.upsert(
+                new BaseEntry<>(
+                    MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
+                    null));
         return ACCEPTED;
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-
             executorService.execute(() -> {
                 try {
-                    int portFromReq = partitionTable.getRealPortWithDataByRequest(request);
-                    if (portFromReq == port) {
-                        System.err.println("make " + request.getMethodName() + request.getURI() + "port"+portFromReq);
+                    String urlToSend = partitionTable.getCorrectURL(request);
 
+                    if (urlToSend.equals(selfNodeURL)) {
                         super.handleRequest(request, session);
                     } else {
-                        String oldHostName = request.getHeader("Host:").split(":")[0];
-                        String newHost =
-                                STR."Host: \{String.join(":", oldHostName, String.valueOf(portFromReq))}";
-
-                        Request request_ver2 = getRequest_ver2(request, newHost);
-
-                        String clientURL = STR."http://\{request_ver2.getHeader("Host:")}\{request_ver2.getURI()}";
-
-                        try (HttpClient client =
-                                     new HttpClient(new ConnectionString(clientURL))){
-                            System.err.println("redirect " + request_ver2.getMethodName() + request_ver2.getURI()
-                                    + "port"+portFromReq);
-                            session.sendResponse(client.invoke(request_ver2));
-                        }
+                        session.sendResponse(clientMap.get(urlToSend).invoke(request, 100));
                     }
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
@@ -184,28 +177,12 @@ public class HttpServerImpl extends HttpServer {
                 } catch (HttpException e) {
                     errorAccept(session, e, Response.NOT_ACCEPTABLE);
                 } catch (PoolException | InterruptedException e) {
-                    throw new RuntimeException(e);
+                    errorAccept(session, e, Response.INTERNAL_ERROR);
                 }
             });
         } catch (RejectedExecutionException e) {
             session.sendError(Response.CONFLICT, e.toString());
         }
-    }
-
-    private static Request getRequest_ver2(Request request, String newHost) {
-        Request request_ver2 = new Request(request.getMethod(), request.getURI(), request.isHttp11());
-        request_ver2.setBody(request.getBody());
-
-        for (var h : request.getHeaders()) {
-            if (h != null) {
-                if (h.startsWith("Host")) {
-                    request_ver2.addHeader(newHost);
-                } else {
-                    request_ver2.addHeader(h);
-                }
-            }
-        }
-        return request_ver2;
     }
 
     private void errorAccept(HttpSession session, Exception e, String message) {
@@ -220,7 +197,6 @@ public class HttpServerImpl extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         int method = request.getMethod();
         Response response;
-
         if (method == Request.METHOD_PUT
                 || method == Request.METHOD_DELETE
                 || method == Request.METHOD_GET) {
@@ -230,5 +206,24 @@ public class HttpServerImpl extends HttpServer {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
         session.sendResponse(response);
+    }
+
+    boolean closed = false;
+    @Override
+    public synchronized void stop() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        super.stop();
+        try {
+            closeExecutorService(executorService);
+            daoImpl.close();
+            for (final HttpClient client: clientMap.values()) {
+                client.close();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }

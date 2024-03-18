@@ -18,7 +18,6 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -30,9 +29,8 @@ public class DatabaseHttpServer extends HttpServer {
     private static final int CORE_POOL_SIZE = 4;
     private static final int MAX_POOL_SIZE = 12;
     private static final int KEEP_ALIVE_TIME_SECONDS = 10;
-    private static final int QUEUE_CAPACITY = 100000;
     private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE,
-            KEEP_ALIVE_TIME_SECONDS, TimeUnit.SECONDS, new ArrayBlockingQueue<>(QUEUE_CAPACITY));
+            KEEP_ALIVE_TIME_SECONDS, TimeUnit.SECONDS, new LinkedBlockingStack<>());
     private final String selfUrl;
 
     public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment,

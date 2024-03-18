@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.trofimovmaxim;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -19,16 +20,21 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.RejectedExecutionException;
 
 public class TrofikServer extends HttpServer {
     private static final long FLUSH_THRESHOLD_BYTES = 42 * 1024 * 1024;
     private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private static final Response INTERNAL_ERROR = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    private static final Response TIMEOUT = new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
     private ReferenceDao dao;
     private final ServiceConfig config;
+    private final DaoOperationsExecutor executor;
 
     public TrofikServer(ServiceConfig config) throws IOException {
         super(convertConfig(config));
         this.config = config;
+        executor = new DaoOperationsExecutor();
     }
 
     private static HttpServerConfig convertConfig(ServiceConfig config) {
@@ -48,18 +54,43 @@ public class TrofikServer extends HttpServer {
     }
 
     @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            executor.run(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    try {
+                        if (e instanceof HttpException) {
+                            session.sendResponse(BAD_RESPONSE);
+                        } else {
+                            session.sendResponse(INTERNAL_ERROR);
+                        }
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(TIMEOUT);
+        }
+    }
+
+    @Override
     public synchronized void start() {
         try {
             dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        executor.start();
         super.start();
     }
 
     @Override
     public synchronized void stop() {
         super.stop();
+        executor.stop();
         try {
             dao.close();
         } catch (IOException e) {

@@ -2,6 +2,7 @@ package ru.vk.itmo.test.timofeevkirill;
 
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -19,6 +20,7 @@ public class TimofeevProxyService {
     private static final Logger logger = LoggerFactory.getLogger(TimofeevProxyService.class);
     private static final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
     private final ArrayList<HttpClient> httpClients;
+    private final ArrayList<Integer> urlHashes;
     private final ServiceConfig serviceConfig;
     private final int selfId;
 
@@ -30,6 +32,10 @@ public class TimofeevProxyService {
             if (i != selfId) {
                 httpClients.add(HttpClient.newHttpClient());
             }
+        }
+        this.urlHashes = new ArrayList<>(serviceConfig.clusterUrls().size());
+        for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
+            urlHashes.add(Hash.murmur3(serviceConfig.clusterUrls().get(i)));
         }
     }
 
@@ -92,18 +98,15 @@ public class TimofeevProxyService {
     }
 
     private int getNodeIdByHash(String id) {
-        int maxValue = Integer.MIN_VALUE;
+        int maxHash = Integer.MIN_VALUE;
         int nodeId = 0;
         for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
-            String clusterUrl = serviceConfig.clusterUrls().get(i);
-            int hash = (id + clusterUrl).hashCode();
-
-            if (hash > maxValue) {
-                maxValue = hash;
+            int currentHash = Hash.murmur3(urlHashes.get(i) + id);
+            if (maxHash < currentHash) {
+                maxHash = currentHash;
                 nodeId = i;
             }
         }
-
         return nodeId;
     }
 }

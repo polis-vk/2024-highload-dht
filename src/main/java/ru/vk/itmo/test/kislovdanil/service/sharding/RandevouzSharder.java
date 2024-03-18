@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.kislovdanil.service.sharding;
 
+import ru.vk.itmo.test.kislovdanil.service.InvalidTopologyError;
+
 import java.net.http.HttpClient;
 import java.util.List;
 
@@ -15,12 +17,15 @@ public class RandevouzSharder extends BaseSharder {
     public String defineRequestProxyUrl(String entityKey) {
         int maxHash = Integer.MIN_VALUE;
         String maxHashUrl = null;
-        for (String url: urls) {
+        for (String url : urls) {
             int hash = (url + entityKey).hashCode();
             if (hash >= maxHash) {
                 maxHash = hash;
                 maxHashUrl = url;
             }
+        }
+        if (maxHashUrl == null) {
+            throw new InvalidTopologyError();
         }
         return maxHashUrl;
     }

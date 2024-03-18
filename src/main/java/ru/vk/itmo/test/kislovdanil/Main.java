@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.kislovdanil;
 
-import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.kislovdanil.service.DatabaseServiceFactory;
 
@@ -16,10 +15,20 @@ public final class Main {
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         DatabaseServiceFactory factory = new DatabaseServiceFactory();
-        ServiceConfig config = new ServiceConfig(8080, "localhost", List.of(),
-                Path.of("/home/burprop/Study/2024-highload-dht"));
-        Service service = factory.create(config);
-        service.start().get();
-
+        List<String> nodes = List.of("http://localhost:8080");
+        int port;
+        try {
+            port = Integer.parseInt(args[0]);
+            if (port < 0 || port > 65535) {
+                throw new IllegalArgumentException();
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            throw new InputValidationError("Please, set port for your service");
+        } catch (IllegalArgumentException e) {
+            throw new InputValidationError("Port have to be an integer from 0 to 65535");
+        }
+        ServiceConfig config = new ServiceConfig(port, "http://localhost:" + port, nodes,
+                Path.of("/home/burprop/Study/2024-highload-dht").resolve(String.valueOf(port)));
+        factory.create(config).start().get();
     }
 }

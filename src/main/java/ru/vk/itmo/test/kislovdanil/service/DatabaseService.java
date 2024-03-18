@@ -12,6 +12,7 @@ import ru.vk.itmo.test.kislovdanil.service.sharding.Sharder;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 public class DatabaseService implements Service {
@@ -29,7 +30,7 @@ public class DatabaseService implements Service {
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new PersistentDao(daoConfig);
-        httpClient = HttpClient.newHttpClient();
+        httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(200)).build();
         Sharder sharder = new RandevouzSharder(httpClient, serverConfig.clusterUrls());
         httpServer = new DatabaseHttpServer(serverConfig, dao, sharder);
         httpServer.start();

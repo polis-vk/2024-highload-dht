@@ -4,7 +4,6 @@ import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 
 import java.util.List;
-import java.util.Objects;
 
 public class RendezvousClusterManager {
 
@@ -15,10 +14,6 @@ public class RendezvousClusterManager {
     }
 
     public String getCluster(String key) {
-        if (Objects.isNull(key) || key.isEmpty()) {
-            return null;
-        }
-
         int resIdx = -1;
         int maxHash = Integer.MIN_VALUE;
         for (int i = 0; i < availableClusters.size(); ++i) {

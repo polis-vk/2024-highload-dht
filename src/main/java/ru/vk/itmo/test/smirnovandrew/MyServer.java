@@ -25,7 +25,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Logger;
 
 public class MyServer extends HttpServer {
@@ -33,7 +36,9 @@ public class MyServer extends HttpServer {
     private static final String ROOT = "/v0/entity";
 
     private static final String ID = "id=";
-    private static long DURATION = 1000L;
+    private static final long DURATION = 1000L;
+
+    private static final long RESPONSE_WAIT = 10;
 
     private final ReferenceDao dao;
 
@@ -56,10 +61,16 @@ public class MyServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         String key = request.getParameter(ID);
+        if (Objects.isNull(key) || key.isEmpty()) {
+            logger.info(String.format("There is no id in query: %s", request.getQueryString()));
+            sendEmpty(session, Response.BAD_REQUEST);
+            return;
+        }
+
         String clusterUrl = rendezvousClustersManager.getCluster(key);
 
         if (Objects.isNull(clusterUrl)) {
-            logger.info("Cluster url is null");
+            logger.info(String.format("Cluster url is null, request = %s", request.getQueryString()));
             sendEmpty(session, Response.BAD_REQUEST);
             return;
         }
@@ -88,10 +99,10 @@ public class MyServer extends HttpServer {
         }
 
         try {
-            var response = httpClient.send(
+            var response = httpClient.sendAsync(
                     clusterRequest.build(),
                     HttpResponse.BodyHandlers.ofByteArray()
-            );
+            ).get(RESPONSE_WAIT, TimeUnit.SECONDS);
 
             session.sendResponse(
                     new Response(
@@ -99,20 +110,21 @@ public class MyServer extends HttpServer {
                             response.body()
                     )
             );
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | ExecutionException | TimeoutException e) {
             logger.info(e.getMessage());
             sendEmpty(session, Response.INTERNAL_ERROR);
             Thread.currentThread().interrupt();
         }
     }
 
-    private String responseFromStatusCode(int statusCode) {
+    private static String responseFromStatusCode(int statusCode) {
         return switch (statusCode) {
             case 400 -> Response.BAD_REQUEST;
             case 404 -> Response.NOT_FOUND;
             case 200 -> Response.OK;
             case 202 -> Response.ACCEPTED;
             case 201 -> Response.CREATED;
+            case 503 -> Response.SERVICE_UNAVAILABLE;
             default -> Response.INTERNAL_ERROR;
         };
     }

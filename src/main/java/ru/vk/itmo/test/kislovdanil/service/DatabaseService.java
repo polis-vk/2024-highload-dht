@@ -14,6 +14,8 @@ import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class DatabaseService implements Service {
     private DatabaseHttpServer httpServer;
@@ -30,7 +32,11 @@ public class DatabaseService implements Service {
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new PersistentDao(daoConfig);
-        httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(200)).build();
+        httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(300))
+                .executor(new ThreadPoolExecutor(3, 12, 100,
+                        TimeUnit.MILLISECONDS, new LinkedBlockingStack<>()))
+                .build();
         Sharder sharder = new RandevouzSharder(httpClient, serverConfig.clusterUrls());
         httpServer = new DatabaseHttpServer(serverConfig, dao, sharder);
         httpServer.start();

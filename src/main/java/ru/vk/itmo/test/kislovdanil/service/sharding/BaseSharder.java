@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 
 public abstract class BaseSharder implements Sharder {
     private final HttpClient client;
@@ -64,7 +65,8 @@ public abstract class BaseSharder implements Sharder {
                                 .uri(uri)
                                 .method(requestMethodNumberToString(method),
                                         body == null ? HttpRequest.BodyPublishers.noBody()
-                                                : HttpRequest.BodyPublishers.ofByteArray(body)).build(),
+                                                : HttpRequest.BodyPublishers.ofByteArray(body))
+                                .timeout(Duration.ofMillis(50)).build(),
                         HttpResponse.BodyHandlers.ofByteArray())
                 .handle((response, exception) -> handleSendingException(response, exception, session))
                 .thenAccept(response -> handleProxiedResponse(response, session));

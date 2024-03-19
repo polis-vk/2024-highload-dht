@@ -26,11 +26,11 @@ public class DatabaseHttpServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final Sharder sharder;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
-    private static final int CORE_POOL_SIZE = 4;
+    private static final int CORE_POOL_SIZE = 1;
     private static final int MAX_POOL_SIZE = 12;
-    private static final int KEEP_ALIVE_TIME_SECONDS = 10;
+    private static final int KEEP_ALIVE_TIME_MS = 50;
     private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE,
-            KEEP_ALIVE_TIME_SECONDS, TimeUnit.SECONDS, new LinkedBlockingStack<>());
+            KEEP_ALIVE_TIME_MS, TimeUnit.MILLISECONDS, new LinkedBlockingStack<>());
     private final String selfUrl;
 
     public DatabaseHttpServer(ServiceConfig config, Dao<MemorySegment,
@@ -115,6 +115,7 @@ public class DatabaseHttpServer extends HttpServer {
         acceptorConfig.reusePort = true;
 
         HttpServerConfig httpServerConfig = new HttpServerConfig();
+        httpServerConfig.selectors = 5;
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
         return httpServerConfig;

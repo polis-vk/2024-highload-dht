@@ -7,6 +7,7 @@ import ru.vk.itmo.test.alenkovayulya.dao.ReferenceDao;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 
 public final class ServerInitializer {
     public static final int PORT = 8080;
@@ -19,9 +20,10 @@ public final class ServerInitializer {
         ServiceConfig config = new ServiceConfig(PORT, URL, List.of(URL),
                 Files.createTempDirectory("reports")
         );
-
+        ExecutorService executorService = ExecutorServiceFactory.getExecutorService(
+                ExecutorServiceConfig.defaultConfig());
         ReferenceDao dao = new ReferenceDao(new Config(config.workingDir(), 1024 * 1024 * 1024));
-        ServerImpl server = new ServerImpl(config, dao);
+        ServerImpl server = new ServerImpl(config, dao, executorService);
         server.start();
     }
 

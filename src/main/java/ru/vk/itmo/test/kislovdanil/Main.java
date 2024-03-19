@@ -31,9 +31,9 @@ public final class Main {
                 throw new IllegalArgumentException();
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            throw new InputValidationError("Please, set port for your service");
+            throw new InputValidationError("Please, set port for your service", e);
         } catch (IllegalArgumentException e) {
-            throw new InputValidationError("Port have to be an integer from 0 to 65535");
+            throw new InputValidationError("Port have to be an integer from 0 to 65535", e);
         }
         return new ServiceConfig(port, "http://localhost:" + port, nodes,
                 Path.of("/home/burprop/Study/2024-highload-dht").resolve(String.valueOf(port)));

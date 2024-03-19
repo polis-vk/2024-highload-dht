@@ -4,35 +4,38 @@ import ru.vk.itmo.test.kislovdanil.service.InvalidTopologyError;
 
 import java.net.http.HttpClient;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 public class RandevouzSharder extends BaseSharder {
     private final List<String> urls;
-    private final List<Integer> urlsHash = new ArrayList<>();
+    private final Map<String, Integer> urlsHash = new HashMap<>();
 
     public RandevouzSharder(HttpClient client, List<String> urls) {
         super(client);
         this.urls = urls;
         final Random random = new Random(urls.getFirst().hashCode());
-        for (int i = 0; i < urls.size(); i++) {
-            urlsHash.add(random.nextInt(100000));
+        for (String url: urls) {
+            urlsHash.put(url, random.nextInt(100000));
         }
     }
+
     // Attempt to make hashing more uniform distributed rather than built-in Object.hash
-    private int getHash(int urlIndex, String key) {
-        return (urlsHash.get(urlIndex) ^ key.hashCode()) % (urls.size() * 5);
+    private int getHash(String url, String key) {
+        return (urlsHash.get(url) ^ key.hashCode()) % (urls.size() * 5);
     }
 
     @Override
     public String defineRequestProxyUrl(String entityKey) {
         int maxHash = Integer.MIN_VALUE;
         String maxHashUrl = null;
-        for (int i = 0; i < urls.size(); i++) {
-            int hash = getHash(i, entityKey);
+        for (String url: urls) {
+            int hash = getHash(url, entityKey);
             if (hash >= maxHash) {
                 maxHash = hash;
-                maxHashUrl = urls.get(i);
+                maxHashUrl = url;
             }
         }
         if (maxHashUrl == null) {

@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -20,8 +21,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class Server {
-    private static final Random RANDOM = new Random();
-    private static final int ENTRIES_IN_DB = 500_000;
+    //private static final Random RANDOM = new Random();
+    //private static final int ENTRIES_IN_DB = 500_000;
     private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
 
     private Server() {
@@ -41,7 +42,7 @@ public final class Server {
                     port,
                     "http://localhost:" + port,
                     clusterUrls,
-                    Files.createTempDirectory("tmp")
+                    Files.createTempDirectory(Paths.get("/Users/axothy"), "tmp." + port)
             );
 
             Dao<MemorySegment, Entry<MemorySegment>> dao =
@@ -56,12 +57,13 @@ public final class Server {
             StorageServer server = new StorageServer(config, dao, executor);
             server.start();
 
-            fillFlush(dao);
-            fillManyFlushes(dao);
+            //fillFlush(dao);
+            //fillManyFlushes(dao);
         }
 
     }
 
+    /*
     private static int[] getRandomArray() {
         int[] entries = new int[ENTRIES_IN_DB];
         for (int i = 0; i < ENTRIES_IN_DB; i++) {
@@ -81,27 +83,34 @@ public final class Server {
         return entries;
     }
 
+     */
+
     /**
      * Just fills memtable without flushing.
      */
+    /*
     private static void fillMemtable(Dao<MemorySegment, Entry<MemorySegment>> dao) {
         int[] entries = getRandomArray();
         for (int entry : entries) {
             dao.upsert(entry(keyAt(entry), valueAt(entry)));
         }
-    }
+    } */
 
     /**
      * Fills memtable with one flush.
      */
+    /*
     private static void fillFlush(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         fillMemtable(dao);
         dao.flush();
     }
 
+     */
+
     /**
      * Fills dao with multiple sstables.
      */
+    /*
     private static void fillManyFlushes(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         final int sstables = 100; //how many sstables dao must create
         final int flushEntries = ENTRIES_IN_DB / sstables; //how many entries in one sstable
@@ -116,6 +125,9 @@ public final class Server {
         }
     }
 
+     */
+
+    /*
     private static MemorySegment keyAt(int index) {
         return MemorySegment.ofArray(("k" + index).getBytes(StandardCharsets.UTF_8));
     }
@@ -127,5 +139,7 @@ public final class Server {
     private static Entry<MemorySegment> entry(MemorySegment key, MemorySegment value) {
         return new BaseEntry<>(key, value);
     }
+
+     */
 
 }

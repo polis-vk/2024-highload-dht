@@ -19,6 +19,7 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Supplier;
 
 import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toByteArray;
@@ -28,19 +29,34 @@ import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toMemorySegmen
 
 public class DaoHttpServer extends HttpServer {
 
+    private static final long DURATION = 1000;
     private static final Set<Integer> SUPPORTED_METHODS = Set.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
     );
 
-    private final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
-
+    private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final RequestThreadExecutor executor;
 
-    public DaoHttpServer(ServiceConfig config, ReferenceDao dao) throws IOException {
+    public DaoHttpServer(
+            ServiceConfig config,
+            ReferenceDao dao
+    ) throws IOException {
         super(getHttpServerConfig(config));
         this.dao = dao;
+        this.executor = new RequestThreadExecutor(new RequestThreadExecutor.Config());
+    }
+
+    public DaoHttpServer(
+            ServiceConfig config,
+            ReferenceDao dao,
+            RequestThreadExecutor.Config executorConfig
+    ) throws IOException {
+        super(getHttpServerConfig(config));
+        this.dao = dao;
+        this.executor = new RequestThreadExecutor(executorConfig);
     }
 
     private static HttpServerConfig getHttpServerConfig(ServiceConfig config) {
@@ -55,27 +71,49 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = isSupportedMethod(request.getMethod())
-                ? new Response(Response.BAD_REQUEST, Response.EMPTY)
-                : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        session.sendResponse(response);
-    }
-
-    private boolean isSupportedMethod(int httpMethod) {
-        return SUPPORTED_METHODS.contains(httpMethod);
+        DaoResponse daoResponse = SUPPORTED_METHODS.contains(request.getMethod())
+                ? new DaoResponse(DaoResponse.BAD_REQUEST, DaoResponse.EMPTY)
+                : new DaoResponse(DaoResponse.METHOD_NOT_ALLOWED, DaoResponse.EMPTY);
+        session.sendResponse(daoResponse);
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public void handleRequest(Request request, HttpSession session) {
         try {
-            super.handleRequest(request, session);
-        } catch (DaoException e) {
+            long expiration = System.currentTimeMillis() + DURATION;
+            executor.execute(() -> {
+                try {
+                    if (System.currentTimeMillis() > expiration) {
+                        sessionSendResponse(session, DaoResponse.SERVICE_UNAVAILABLE);
+                    } else {
+                        super.handleRequest(request, session);
+                    }
+                } catch (DaoException e) {
+                    logger.error(e.getMessage());
+                    sessionSendResponse(session, DaoResponse.INTERNAL_ERROR);
+                } catch (Exception e) {
+                    logger.error(e.getMessage());
+                    sessionSendResponse(session, DaoResponse.BAD_REQUEST);
+                }
+            });
+        } catch (RejectedExecutionException e) {
             logger.error(e.getMessage());
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            sessionSendResponse(session, DaoResponse.TOO_MANY_REQUESTS);
         }
+    }
+
+    private void sessionSendResponse(HttpSession session, String serviceUnavailable) {
+        try {
+            session.sendResponse(DaoResponse.empty(serviceUnavailable));
+        } catch (IOException ex) {
+            logger.error(ex.getMessage());
+        }
+    }
+
+    @Override
+    public synchronized void stop() {
+        this.executor.shutdown();
+        super.stop();
     }
 
     @Path("/v0/entity")
@@ -85,16 +123,16 @@ public class DaoHttpServer extends HttpServer {
     ) {
         return handleDaoException(() -> {
             if (id.isBlank()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                return DaoResponse.empty(DaoResponse.BAD_REQUEST);
             }
 
             Entry<MemorySegment> entry = dao.get(toMemorySegment(id));
             if (entry == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
+                return DaoResponse.empty(DaoResponse.NOT_FOUND);
             }
 
             byte[] value = toByteArray(entry.value());
-            return Response.ok(value);
+            return DaoResponse.ok(value);
         });
     }
 
@@ -106,11 +144,11 @@ public class DaoHttpServer extends HttpServer {
     ) {
         return handleDaoException(() -> {
             if (id.isBlank() || request.getBody() == null) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                return DaoResponse.empty(DaoResponse.BAD_REQUEST);
             }
 
             dao.upsert(toEntity(id, request.getBody()));
-            return new Response(Response.CREATED, Response.EMPTY);
+            return DaoResponse.empty(DaoResponse.CREATED);
         });
     }
 
@@ -121,14 +159,14 @@ public class DaoHttpServer extends HttpServer {
     ) {
         return handleDaoException(() -> {
             if (id.isBlank()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                return DaoResponse.empty(DaoResponse.BAD_REQUEST);
             }
             dao.upsert(toDeletedEntity(id));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
+            return DaoResponse.empty(DaoResponse.ACCEPTED);
         });
     }
 
-    private Response handleDaoException(Supplier<Response> supplier) {
+    private DaoResponse handleDaoException(Supplier<DaoResponse> supplier) {
         try {
             return supplier.get();
         } catch (Exception e) {

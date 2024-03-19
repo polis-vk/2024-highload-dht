@@ -13,10 +13,9 @@ import ru.vk.itmo.test.andreycheshev.dao.PersistentReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
@@ -25,37 +24,39 @@ public class ServiceImpl implements Service {
 
     private final HttpServerConfig serverConfig;
     private final Config daoConfig;
-    private final Map<Integer, HttpClient> clusterConnections;
-    private final DataDistributor dataDistributor;
+    private final String selfUrl;
+    private final List<String> sortedClusterUrls;
+    private final RendezvousDistributor rendezvousDistributor;
 
+    private HttpClient[] clusterConnections;
     private Server server;
 
     public ServiceImpl(ServiceConfig config) {
+        this.sortedClusterUrls = new ArrayList<>(config.clusterUrls());
+        Collections.sort(sortedClusterUrls);
 
-        List<String> clusterUrls = config.clusterUrls();
-        this.clusterConnections = new HashMap<>(clusterUrls.size());
+        this.selfUrl = config.selfUrl();
+        this.serverConfig = createServerConfig(config);
+        this.daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);
 
-        // Init connections to other nodes.
-        Collections.sort(clusterUrls);
+        int thisNodeNumber = sortedClusterUrls.indexOf(selfUrl) + 1;
+        this.rendezvousDistributor = new RendezvousDistributor(sortedClusterUrls.size(), thisNodeNumber);
+    }
+
+    private void initCluster(String selfUrl) {
+        this.clusterConnections = new HttpClient[sortedClusterUrls.size()];
+
         int nodeNumber = 1;
-        int thisNodeNumber = -1;
-        for (String serverUrl : clusterUrls) {
-            if (serverUrl.equals(config.selfUrl())) {
-                thisNodeNumber = nodeNumber++;
+        for (String serverUrl : sortedClusterUrls) {
+            if (serverUrl.equals(selfUrl)) {
                 continue;
             }
 
-            HttpClient client = new HttpClient(
-                    new ConnectionString(serverUrl)
-            );
+            HttpClient client = new HttpClient(new ConnectionString(serverUrl));
             client.setTimeout(CLUSTER_NODE_RESPONSE_TIMEOUT_MILLIS);
 
-            clusterConnections.put(nodeNumber++, client);
+            clusterConnections[nodeNumber++] = client;
         }
-
-        this.serverConfig = createServerConfig(config);
-        this.daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);
-        this.dataDistributor = new DataDistributor(clusterUrls.size(), thisNodeNumber);
     }
 
     private HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -73,9 +74,12 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         try {
+            initCluster(selfUrl);
+
             PersistentReferenceDao dao = new PersistentReferenceDao(daoConfig);
-            RequestHandler handler = new RequestHandler(dao, clusterConnections, dataDistributor);
+            RequestHandler handler = new RequestHandler(dao, clusterConnections, rendezvousDistributor);
             RequestExecutor executor = new RequestExecutor(handler);
+
             server = new ServerImpl(serverConfig, dao, executor);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -87,6 +91,13 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+
+        for (HttpClient clusterConnection : clusterConnections) {
+            if (clusterConnection != null) { // If true - this node array position.
+                clusterConnection.close();
+            }
+        }
+
         return CompletableFuture.completedFuture(null);
     }
 

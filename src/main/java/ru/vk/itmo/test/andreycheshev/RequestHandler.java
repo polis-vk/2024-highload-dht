@@ -13,20 +13,28 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 public class RequestHandler {
+    private static final Set<Integer> availableMethods = new HashSet<>(3);
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID_PARAMETER = "id=";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private final Map<Integer, HttpClient> clusterConnections;
+    private final HttpClient[] clusterConnections;
 
-    private final DataDistributor distributor;
+    private final RendezvousDistributor distributor;
+
+    static {
+        availableMethods.add(Request.METHOD_GET);
+        availableMethods.add(Request.METHOD_PUT);
+        availableMethods.add(Request.METHOD_DELETE);
+    }
 
     public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao,
-                          Map<Integer, HttpClient> clusterConnections,
-                          DataDistributor distributor) {
+                          HttpClient[] clusterConnections,
+                          RendezvousDistributor distributor) {
         this.dao = dao;
         this.clusterConnections = clusterConnections;
         this.distributor = distributor;
@@ -46,28 +54,22 @@ public class RequestHandler {
         }
 
         int method = request.getMethod();
-        byte[] body = request.getBody();
+        if (!availableMethods.contains(method)) {
+            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        }
+
 
         int currNodeNumber = distributor.getNode(id);
-        if (currNodeNumber > 0) { // Redirect request, processing on another node.
-            HttpClient client = clusterConnections.get(currNodeNumber);
-
-            String uri = request.getURI();
-
-            return switch (method) {
-                case Request.METHOD_GET -> client.get(uri);
-                case Request.METHOD_PUT -> client.put(uri, body);
-                case Request.METHOD_DELETE -> client.delete(uri);
-                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            };
+        if (currNodeNumber > 0) {
+            // Redirect request, processing on another node.
+            clusterConnections[currNodeNumber].invoke(request);
         }
 
         // Processing locally.
         return switch (method) {
             case Request.METHOD_GET -> get(id);
-            case Request.METHOD_PUT -> put(id, body);
-            case Request.METHOD_DELETE -> delete(id);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            case Request.METHOD_PUT -> put(id, request.getBody());
+            default -> delete(id); // The check was earlier, so here the delete method.
         };
     }
 

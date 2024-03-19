@@ -67,6 +67,7 @@ public class DatabaseHttpServer extends HttpServer {
                 sharder.proxyRequest(method, entityKey, body, proxiedUrl, session);
                 return;
             }
+
             response = switch (method) {
                 case Request.METHOD_GET -> getEntity(key);
                 case Request.METHOD_PUT -> putEntity(key, body);
@@ -75,6 +76,7 @@ public class DatabaseHttpServer extends HttpServer {
             };
         }
         sendResponse(response, session);
+
     }
 
     @Path(ENTITY_ACCESS_URL)

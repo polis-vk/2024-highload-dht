@@ -154,7 +154,7 @@ public class DaoServer extends HttpServer {
 
     private Response handleRedirect(Request request, Node node) {
         try {
-            return node.getClient().invoke(request);
+            return node.getClient().invoke(request, 1000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error(e.getMessage());

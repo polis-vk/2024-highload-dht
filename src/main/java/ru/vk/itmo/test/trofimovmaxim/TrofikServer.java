@@ -25,6 +25,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -69,31 +70,36 @@ public class TrofikServer extends HttpServer {
             session.sendResponse(BAD_REQUEST);
             return;
         }
-        if (config.selfUrl().equals(clusterUrl)) {
-            handleLocal(request, session);
-            return;
-        }
 
-        HttpRequest.Builder requestToCluster = HttpRequest.newBuilder(
-                URI.create(clusterUrl + "/v0/entity?id=" + key)
-        );
-        switch (request.getMethod()) {
-            case Request.METHOD_PUT:
-                requestToCluster.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
-                break;
-            case Request.METHOD_GET:
-                requestToCluster.GET();
-                break;
-            case Request.METHOD_DELETE:
-                requestToCluster.DELETE();
-                break;
-            default:
-                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                return;
+        try {
+            executor.run(() -> {
+                try {
+                    if (config.selfUrl().equals(clusterUrl)) {
+                        handleLocal(request, session);
+                        return;
+                    }
+                    handleRemote(request, session, clusterUrl, key);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(TIMEOUT);
         }
+    }
+
+    private void handleRemote(Request request, HttpSession session, String clusterUrl, String key) throws IOException {
+        HttpRequest requestToCluster = HttpRequest.newBuilder(
+                URI.create(clusterUrl + "/v0/entity?id=" + key)
+        ).method(
+                request.getMethodName(),
+                request.getMethod() == Request.METHOD_PUT
+                        ? HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                        : HttpRequest.BodyPublishers.noBody()
+        ).timeout(Duration.ofMillis(500)).build();
         try {
             HttpResponse<byte[]> response = httpClient.send(
-                    requestToCluster.build(),
+                    requestToCluster,
                     HttpResponse.BodyHandlers.ofByteArray()
             );
 
@@ -110,23 +116,13 @@ public class TrofikServer extends HttpServer {
 
     private void handleLocal(Request request, HttpSession session) throws IOException {
         try {
-            executor.run(() -> {
-                try {
-                    super.handleRequest(request, session);
-                } catch (Exception e) {
-                    try {
-                        if (e instanceof HttpException) {
-                            session.sendResponse(BAD_REQUEST);
-                        } else {
-                            session.sendResponse(INTERNAL_ERROR);
-                        }
-                    } catch (IOException ex) {
-                        throw new UncheckedIOException(ex);
-                    }
-                }
-            });
-        } catch (RejectedExecutionException e) {
-            session.sendResponse(TIMEOUT);
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            if (e instanceof HttpException) {
+                session.sendResponse(BAD_REQUEST);
+            } else {
+                session.sendResponse(INTERNAL_ERROR);
+            }
         }
     }
 

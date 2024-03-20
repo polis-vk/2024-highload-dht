@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ExecutorServiceFactory {
-    private static final int CORE_POOL_SIZE = 20;
+    private static final int CORE_POOL_SIZE = 6;
 
     private static final long KEEP_ALIVE_TIME_SEC = 2;
     private static final TimeUnit UNIT = TimeUnit.SECONDS;

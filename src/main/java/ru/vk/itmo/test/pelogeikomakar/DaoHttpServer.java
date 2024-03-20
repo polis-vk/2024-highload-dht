@@ -12,6 +12,7 @@ import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -30,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class DaoHttpServer extends one.nio.http.HttpServer {
 
@@ -49,7 +51,9 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         this.selfUrl = config.selfUrl();
         this.clients = new ConcurrentHashMap<>();
         for (String url : this.clusterUrls) {
-            this.clients.put(url, new HttpClient(new ConnectionString(url), "INTERNAL_RQ " + selfUrl));
+            if (!url.equals(selfUrl)) {
+                this.clients.put(url, new HttpClient(new ConnectionString(url), "INTERNAL_RQ " + selfUrl));
+            }
         }
         this.dao = dao;
         this.executorService = executorService;
@@ -178,6 +182,12 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     }
 
     @Override
+    public synchronized void start() {
+        log.info("start server on url: {}", selfUrl);
+        super.start();
+    }
+
+    @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
 
         Response response;
@@ -197,7 +207,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         int highestScore = Integer.MIN_VALUE;
         String preferredUrl = selfUrl;
         for (String url : clusterUrls) {
-            int currentHash = Objects.hash(url, key);
+            int currentHash = Hash.murmur3(url + key);
             if (highestScore < currentHash) {
                 highestScore = currentHash;
                 preferredUrl = url;
@@ -208,12 +218,9 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
     private Response getDataFromServer(String serverUrl, String key) {
         Response result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
-        HttpClient client = clients.get(serverUrl);
 
         try {
-            synchronized (client) {
-                result = clients.get(serverUrl).get(requestForKey(key));
-            }
+            result = clients.get(serverUrl).get(requestForKey(key));
         } catch (PoolException | IOException | HttpException e) {
             log.error("Error in GET internal request", e);
         } catch (InterruptedException e) {
@@ -226,13 +233,10 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     }
 
     private String putDataToServer(String serverUrl, String key, byte[] value) {
-        HttpClient client = clients.get(serverUrl);
         String responseStatus = Response.BAD_GATEWAY;
         try {
             Response result;
-            synchronized (client) {
-                result = clients.get(serverUrl).put(requestForKey(key), value);
-            }
+            result = clients.get(serverUrl).put(requestForKey(key), value);
             responseStatus = result.getHeaders()[0];
 
         } catch (PoolException | IOException | HttpException e) {
@@ -246,13 +250,10 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     }
 
     private Response deleteDataFromServer(String serverUrl, String key) {
-        HttpClient client = clients.get(serverUrl);
         Response result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
 
         try {
-            synchronized (client) {
-                result = clients.get(serverUrl).delete(requestForKey(key));
-            }
+            result = clients.get(serverUrl).delete(requestForKey(key));
         } catch (PoolException | IOException | HttpException e) {
             log.error("Error in DELETE internal request", e);
         } catch (InterruptedException e) {

@@ -3,7 +3,6 @@ package ru.vk.itmo.test.andreycheshev;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
-import java.nio.file.FileSystemAlreadyExistsException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,10 +13,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
+import static java.lang.StringTemplate.STR;
+
 public final class ServerStarter {
     private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/lab3/");
     private static final String LOCALHOST = "http://localhost";
-    private static final int PORT = 8080;
+    private static final int BASE_PORT = 8080;
     private static final int CLUSTER_NODE_COUNT = 4;
 
     private ServerStarter() {
@@ -29,33 +30,20 @@ public final class ServerStarter {
         startCluster();
     }
 
-    private static void startSingle() throws IOException, ExecutionException, InterruptedException {
-        ServiceImpl service = new ServiceImpl(
-                new ServiceConfig(
-                        PORT,
-                        LOCALHOST,
-                        List.of(LOCALHOST),
-                        STORAGE_DIR_PATH
-                )
-        );
-        service.start().get();
-    }
-
     private static void startCluster() throws IOException, ExecutionException, InterruptedException {
         List<Integer> ports = new ArrayList<>(CLUSTER_NODE_COUNT);
         List<Path> dirs = new ArrayList<>(CLUSTER_NODE_COUNT);
         for (int i = 0; i < CLUSTER_NODE_COUNT; i++) {
-            int port = 8080 + i;
+            int port = BASE_PORT + i;
             Path dir = STORAGE_DIR_PATH.resolve(Paths.get(String.valueOf(port)));
 
             ports.add(port);
             dirs.add(dir);
 
-            try {
-                Files.createDirectory(dir);
-            } catch (FileSystemAlreadyExistsException ignored) {
+            if (Files.exists(dir)) {
                 clearDir(dir);
             }
+            Files.createDirectory(dir);
         }
 
         List<String> urls = new ArrayList<>(CLUSTER_NODE_COUNT);
@@ -95,4 +83,16 @@ public final class ServerStarter {
             }
         });
     }
+
+//    private static void startSingle() throws IOException, ExecutionException, InterruptedException {
+//        ServiceImpl service = new ServiceImpl(
+//                new ServiceConfig(
+//                        PORT,
+//                        LOCALHOST,
+//                        List.of(LOCALHOST),
+//                        STORAGE_DIR_PATH
+//                )
+//        );
+//        service.start().get();
+//    }
 }

@@ -11,14 +11,21 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReferenceService implements Service {
 
@@ -26,18 +33,20 @@ public class ReferenceService implements Service {
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_SIZE = 1024;
 
+    private static final String LOCALHOST_PREFIX = "http://localhost:";
+
     private final ServiceConfig config;
     private ExecutorService executor;
 
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ReferenceServer server;
-
+    private boolean stopped;
     public ReferenceService(ServiceConfig config) {
         this.config = config;
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
         ArrayBlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_SIZE);
         ThreadPoolExecutor executor = new ThreadPoolExecutor(THREADS, THREADS,
@@ -49,33 +58,41 @@ public class ReferenceService implements Service {
         this.executor = executor;
         server = new ReferenceServer(config, executor, dao);
         server.start();
+        stopped = false;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
-        server.stop();
-        shutdownAndAwaitTermination(executor);
-        dao.close();
+    public synchronized CompletableFuture<Void> stop() throws IOException {
+        if (stopped) {
+            return CompletableFuture.completedFuture(null);
+        }
+        try {
+            server.stop();
+            shutdownAndAwaitTermination(executor);
+        } finally {
+            dao.close();
+        }
+        stopped = true;
         return CompletableFuture.completedFuture(null);
     }
 
     private static void shutdownAndAwaitTermination(ExecutorService pool) {
         pool.shutdown();
         try {
-           if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-               pool.shutdownNow();
-               if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                   System.err.println("Pool did not terminate");
-               }
-           }
+            if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                    System.err.println("Pool did not terminate");
+                }
+            }
         } catch (InterruptedException ex) {
             pool.shutdownNow();
             Thread.currentThread().interrupt();
         }
     }
-    
-    @ServiceFactory(stage = 2)
+
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -85,15 +102,35 @@ public class ReferenceService implements Service {
     }
 
     public static void main(String[] args) throws IOException {
-        ReferenceService service = new ReferenceService(
-            new ServiceConfig(8080, "http://localhost",
-            List.of("http://localhost"),
-            Paths.get("tmp/db"))
-        );
-        try {
-            service.start().get();
-        } catch (InterruptedException | ExecutionException e) {
-            throw new RuntimeException(e);
+        //port -> url
+        Map<Integer, String> nodes = new HashMap<>();
+        int nodePort = 8080;
+        for (int i = 0; i < 3; i++) {
+            nodes.put(nodePort, LOCALHOST_PREFIX + nodePort);
+            nodePort += 10;
+        }
+
+        List<String> clusterUrls = new ArrayList<>(nodes.values());
+        List<ServiceConfig> clusterConfs = new ArrayList<>();
+        for (Map.Entry<Integer, String> entry : nodes.entrySet()) {
+            int port = entry.getKey();
+            String url = entry.getValue();
+            Path path = Paths.get("tmp/db/" + port);
+            Files.createDirectories(path);
+            ServiceConfig serviceConfig = new ServiceConfig(port,
+                url,
+                clusterUrls,
+                path);
+            clusterConfs.add(serviceConfig);
+        }
+
+        for (ServiceConfig serviceConfig : clusterConfs) {
+            ReferenceService instance = new ReferenceService(serviceConfig);
+            try {
+                instance.start().get(1, TimeUnit.SECONDS);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 }

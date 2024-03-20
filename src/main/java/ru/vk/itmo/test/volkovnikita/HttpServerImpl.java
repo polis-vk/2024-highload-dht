@@ -83,7 +83,7 @@ public class HttpServerImpl extends HttpServer {
 
         String clusterUrl = hash(id);
         if (!Objects.equals(clusterUrl, selfUrl)) {
-            return forwardRequest(request, clusterUrl, id, new byte[0]);
+            return forwardRequest(request, clusterUrl, id);
         }
 
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
@@ -101,7 +101,7 @@ public class HttpServerImpl extends HttpServer {
 
         String clusterUrl = hash(id);
         if (!Objects.equals(clusterUrl, selfUrl)) {
-            return forwardRequest(request, clusterUrl, id, request.getBody());
+            return forwardRequest(request, clusterUrl, id);
         }
 
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
@@ -119,7 +119,7 @@ public class HttpServerImpl extends HttpServer {
 
         String clusterUrl = hash(id);
         if (!Objects.equals(clusterUrl, selfUrl)) {
-            return forwardRequest(request, clusterUrl, id, new byte[0]);
+            return forwardRequest(request, clusterUrl, id);
         }
 
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
@@ -172,14 +172,14 @@ public class HttpServerImpl extends HttpServer {
 
     }
 
-    private Response forwardRequest(Request request, String clusterUrl, String id, byte[] body) {
+    private Response forwardRequest(Request request, String clusterUrl, String id) {
         URI uri = URI.create(clusterUrl + PATH_NAME + "?id=" + id);
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(uri);
 
         switch (request.getMethod()) {
             case Request.METHOD_GET -> requestBuilder.GET();
-            case Request.METHOD_PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(body));
+            case Request.METHOD_PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
             case Request.METHOD_DELETE -> requestBuilder.DELETE();
             default -> {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);

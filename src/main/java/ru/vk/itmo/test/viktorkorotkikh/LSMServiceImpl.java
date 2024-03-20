@@ -81,9 +81,17 @@ public class LSMServiceImpl implements Service {
         LSMServiceImpl lsmService = new LSMServiceImpl(serviceConfig);
 
         lsmService.start().get();
+        Thread stopServiceHook = new Thread(() -> {
+            try {
+                lsmService.stop().join();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
+        Runtime.getRuntime().addShutdownHook(stopServiceHook);
     }
 
-    public LSMServiceImpl(ServiceConfig serviceConfig) throws IOException {
+    public LSMServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
         this.consistentHashingManager = new ConsistentHashingManager(10, serviceConfig.clusterUrls());
     }
@@ -207,11 +215,7 @@ public class LSMServiceImpl implements Service {
     public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
-            try {
-                return new LSMServiceImpl(config);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+            return new LSMServiceImpl(config);
         }
     }
 

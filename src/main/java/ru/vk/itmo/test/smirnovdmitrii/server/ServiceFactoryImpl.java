@@ -12,7 +12,7 @@ public class ServiceFactoryImpl implements ServiceFactory.Factory {
     @Override
     public Service create(ServiceConfig config) {
         try {
-            return new ServiceImpl(config);
+            return new DaoServiceImpl(config);
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }

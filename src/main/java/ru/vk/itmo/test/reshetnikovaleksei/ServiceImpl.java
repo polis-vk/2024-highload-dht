@@ -31,7 +31,7 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
         executorService = ExecutorServiceFactory.createExecutorService();
         requestRouter = new RequestRouter(serviceConfig);
@@ -41,7 +41,7 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         internalStop();
         return CompletableFuture.completedFuture(null);
     }

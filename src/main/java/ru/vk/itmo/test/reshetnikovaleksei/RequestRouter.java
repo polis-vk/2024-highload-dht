@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 
 public class RequestRouter implements Closeable {
@@ -23,16 +24,16 @@ public class RequestRouter implements Closeable {
     }
 
     public Response redirect(String node, Request request) throws IOException, InterruptedException {
-        String url = node + request.getURI();
-        HttpRequest redirectRequest = HttpRequest.newBuilder()
-                .uri(URI.create(url))
+        HttpRequest redirectRequest = HttpRequest.newBuilder(URI.create(node + request.getURI()))
                 .method(request.getMethodName(),
-                        HttpRequest.BodyPublishers.ofByteArray(
-                                request.getBody() == null ? new byte[0] : request.getBody()))
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .timeout(Duration.ofMillis(500))
                 .build();
 
         HttpResponse<byte[]> httpResponse = httpClient.send(redirectRequest, HttpResponse.BodyHandlers.ofByteArray());
-        return convertResponse(httpResponse);
+        return new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
     }
 
     public String getNodeByEntityId(String id) {
@@ -52,19 +53,5 @@ public class RequestRouter implements Closeable {
     @Override
     public void close() {
         httpClient.close();
-    }
-
-    private Response convertResponse(HttpResponse<byte[]> response) {
-        String resultCode = switch (response.statusCode()) {
-            case 200 -> Response.OK;
-            case 201 -> Response.CREATED;
-            case 202 -> Response.ACCEPTED;
-            case 400 -> Response.BAD_REQUEST;
-            case 404 -> Response.NOT_FOUND;
-            case 405 -> Response.METHOD_NOT_ALLOWED;
-            default -> Response.INTERNAL_ERROR;
-        };
-
-        return new Response(resultCode, response.body());
     }
 }

@@ -1,20 +1,18 @@
-wrk -d 35 -t 1 -c 1 -R 6500 -L -s ./src/main/java/ru/vk/itmo/test/abramovilya/wrk/scripts/get.lua http://localhost:808
-
-Running 30s test @ http://localhost:8080
+Running 35s test @ http://localhost:8080
   1 threads and 1 connections
-  Thread calibration: mean lat.: 4.719ms, rate sampling interval: 28ms
+  Thread calibration: mean lat.: 0.681ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   748.01us  381.69us   2.09ms   60.83%
-    Req/Sec     6.62k   160.01     7.11k    69.14%
+    Latency   682.68us  341.78us   4.60ms   59.58%
+    Req/Sec     6.86k   491.30     8.80k    68.06%
   Latency Distribution (HdrHistogram - Recorded Latency)
- 50.000%  745.00us
- 75.000%    1.06ms
- 90.000%    1.23ms
- 99.000%    1.59ms
- 99.900%    1.84ms
- 99.990%    2.02ms
- 99.999%    2.08ms
-100.000%    2.09ms
+ 50.000%  681.00us
+ 75.000%    0.97ms
+ 90.000%    1.14ms
+ 99.000%    1.25ms
+ 99.900%    1.99ms
+ 99.990%    3.85ms
+ 99.999%    4.55ms
+100.000%    4.61ms
 
   Detailed Percentile spectrum:
        Value   Percentile   TotalCount 1/(1-Percentile)
@@ -110,6 +108,6 @@ Running 30s test @ http://localhost:8080
 #[Max     =        2.088, Total count    =       129970]
 #[Buckets =           27, SubBuckets     =         2048]
 ----------------------------------------------------------
-  194995 requests in 30.00s, 12.73MB read
-Requests/sec:   6499.73
-Transfer/sec:    434.35KB
+  227494 requests in 35.00s, 14.86MB read
+Requests/sec:   6499.83
+Transfer/sec:    434.88KB

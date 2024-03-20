@@ -231,10 +231,10 @@ public class ServerImpl extends HttpServer {
                     .get(REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
 
             String statusCode = HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
-            if (statusCode != null) {
-                sendResponse(session, new Response(statusCode, httpResponse.body()));
-            } else {
+            if (statusCode == null) {
                 sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
+            } else {
+                sendResponse(session, new Response(statusCode, httpResponse.body()));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -247,10 +247,10 @@ public class ServerImpl extends HttpServer {
     private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String params) {
         HttpRequest httpRequest = createProxyRequest(request, nodeUrl, params);
 
-        if (httpRequest != null) {
-            sendProxyRequest(session, httpRequest);
-        } else {
+        if (httpRequest == null) {
             sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+        } else {
+            sendProxyRequest(session, httpRequest);
         }
     }
 }

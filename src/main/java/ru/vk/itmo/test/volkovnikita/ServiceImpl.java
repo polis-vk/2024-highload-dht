@@ -16,7 +16,7 @@ public class ServiceImpl implements Service {
 
     public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
     private ExecutorService executorService;
-    private final AtomicBoolean isStopped = new AtomicBoolean(false);
+    private volatile boolean isStopped = false;
     private HttpServerImpl server;
     private final ServiceConfig config;
     private ReferenceDao dao;
@@ -31,12 +31,13 @@ public class ServiceImpl implements Service {
         executorService = ExecutorServiceConfig.newExecutorService();
         server = new HttpServerImpl(config, dao, executorService);
         server.start();
+        isStopped = false;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public synchronized CompletableFuture<Void> stop() throws IOException {
-        if (isStopped.getAndSet(true)) {
+        if (isStopped) {
             return CompletableFuture.completedFuture(null);
         }
         server.stop();
@@ -48,6 +49,7 @@ public class ServiceImpl implements Service {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        isStopped = true;
         dao.close();
         return CompletableFuture.completedFuture(null);
     }

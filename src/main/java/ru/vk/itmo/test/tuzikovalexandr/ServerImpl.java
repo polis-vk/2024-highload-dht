@@ -49,7 +49,7 @@ public class ServerImpl extends HttpServer {
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
-    public static final int REQUEST_TIMEOUT = 10_000;
+    public static final int REQUEST_TIMEOUT = 300;
     private static final Map<Integer, String> HTTP_CODE = Map.of(
             HttpURLConnection.HTTP_OK, Response.OK,
             HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
@@ -177,7 +177,6 @@ public class ServerImpl extends HttpServer {
 
         try {
             String nodeUrl = consistentHashing.getNode(paramId);
-            log.error(nodeUrl);
             if (Objects.equals(selfUrl, nodeUrl)) {
                 super.handleRequest(request, session);
             } else {

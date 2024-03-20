@@ -42,7 +42,6 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        // Check resources release (this way may not be correct)
         if (!isStopped.getAndSet(true)) {
             server.stop();
             shutdownAndAwaitTermination(server.getExecutorService());

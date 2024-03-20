@@ -58,11 +58,19 @@ public class RequestHandler {
             return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
 
-
         int currNodeNumber = distributor.getNode(id);
         if (currNodeNumber >= 0) {
             // Redirect request, processing on another node.
-            clusterConnections[currNodeNumber].invoke(request);
+            HttpClient client = clusterConnections[currNodeNumber];
+            Request remoteRequest = client.createRequest(method, request.getURI());
+
+            byte[] body = request.getBody();
+            if (body != null) {
+                remoteRequest.addHeader("Content-Length: " + body.length);
+                remoteRequest.setBody(body);
+            }
+
+            return client.invoke(remoteRequest);
         }
 
         // Processing locally.

@@ -16,7 +16,7 @@ public class RendezvousDistributor {
         int maxHash = Integer.MIN_VALUE;
         int node = 0;
         for (int i = 0; i < nodeCount; i++) {
-            int currHash = customHashCode(key + i);
+            int currHash = hashCode(key + i);
             if (currHash > maxHash) {
                 maxHash = currHash;
                 node = thisNodeNumber == i ? -1 : i;
@@ -25,7 +25,7 @@ public class RendezvousDistributor {
         return node; // Return -1 if this node was selected.
     }
 
-    private static int customHashCode(int key) {
+    private static int hashCode(int key) {
         int x = key;
         x = ((x >> 16) ^ x) * 0x45d9f3b;
         x = ((x >> 16) ^ x) * 0x45d9f3b;

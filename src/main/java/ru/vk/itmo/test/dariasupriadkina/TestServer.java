@@ -26,11 +26,11 @@ public final class TestServer {
     private static final String LOCALHOST_PREFIX = "http://localhost:";
     private static final int NODE_AMOUNT = 5;
 
-
     private TestServer() {
     }
 
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    public static void main(String[] args) throws IOException, ExecutionException,
+            InterruptedException, TimeoutException {
         Map<Integer, String> nodes = new HashMap<>();
         int nodePort = 8080;
         for (int i = 0; i < NODE_AMOUNT; i++) {

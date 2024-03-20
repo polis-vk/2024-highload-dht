@@ -25,7 +25,7 @@ public class ConsistentHashingShardingPolicy extends ShardingPolicy {
 
     public final void remove(String node) {
         for (int i = 0; i < numberOfReplicas; i++) {
-            circle.remove(hash(node + i) );
+            circle.remove(hash(node + i));
         }
     }
 

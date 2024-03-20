@@ -1,16 +1,19 @@
 package ru.vk.itmo.test.bandurinvladislav;
 
+import one.nio.http.HttpClient;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.ConnectionString;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.bandurinvladislav.config.DhtServerConfig;
 import ru.vk.itmo.test.bandurinvladislav.dao.ReferenceDao;
 import ru.vk.itmo.test.bandurinvladislav.util.Constants;
 import ru.vk.itmo.test.bandurinvladislav.util.MemSegUtil;
@@ -20,25 +23,39 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class Server extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
+    private final Map<String, HttpClient> clients;
     private final DaoWorkerPool workerPool;
+    private final DhtServerConfig serverConfig;
     private final ReferenceDao dao;
 
-    public Server(HttpServerConfig serverConfig, java.nio.file.Path workingDir) throws IOException {
-        super(serverConfig);
+    public Server(DhtServerConfig config, java.nio.file.Path workingDir) throws IOException {
+        super(config);
         workerPool = new DaoWorkerPool(
                 Constants.THREADS,
                 Constants.THREADS,
                 60,
                 TimeUnit.SECONDS
         );
+
+        serverConfig = config;
         workerPool.prestartAllCoreThreads();
         Config daoConfig = new Config(workingDir, Constants.FLUSH_THRESHOLD_BYTES);
         dao = new ReferenceDao(daoConfig);
+        clients = new HashMap<>();
+        config.clusterUrls.stream()
+                .filter(url -> !url.equals(config.selfUrl))
+                .forEach(u -> {
+                    HttpClient client = new HttpClient(new ConnectionString(u));
+                    client.setTimeout(100);
+                    clients.put(u, client);
+                });
         logger.info("Server started");
     }
 
@@ -109,6 +126,15 @@ public class Server extends HttpServer {
             return;
         }
 
+        HttpClient client = getClientByKey(key);
+        if (client == null) {
+            invokeLocal(request, session, key);
+        } else {
+            invokeRemote(request, session, client);
+        }
+    }
+
+    private void invokeLocal(Request request, HttpSession session, String key) throws IOException {
         Response response;
         try {
             response = switch (request.getMethod()) {
@@ -123,6 +149,37 @@ public class Server extends HttpServer {
         }
 
         session.sendResponse(response);
+    }
+
+    private void invokeRemote(Request request, HttpSession session, HttpClient client) throws IOException {
+        Response response;
+        try {
+            response = switch (request.getMethod()) {
+                case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE -> client.invoke(request);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+        } catch (Exception e) {
+            logger.error("Internal error during request handling: " + e.getMessage());
+            response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+        session.sendResponse(response);
+    }
+
+    private HttpClient getClientByKey(String key) {
+        String selectedNode = serverConfig.clusterUrls.getFirst();
+        int maxHash = Hash.murmur3(selectedNode + key);
+
+        for (int i = 1; i < serverConfig.clusterUrls.size(); i++) {
+            String currentNodeUrl = serverConfig.clusterUrls.get(i);
+            int currentHash = Hash.murmur3(currentNodeUrl + key);
+
+            if (currentHash > maxHash) {
+                maxHash = currentHash;
+                selectedNode = currentNodeUrl;
+            }
+        }
+
+        return clients.get(selectedNode);
     }
 
     @Override

@@ -20,7 +20,7 @@ public final class Main {
     public static void main(String[] args) throws IOException {
         Logger log = LoggerFactory.getLogger(Main.class);
         String selfUrl = "http://localhost";
-        int[] ports = {8080, 8085, 8090, 8095};
+        int[] ports = {8080, 8090};
         List<String> cluserUrls = new ArrayList<>();
         for (int port : ports) {
             cluserUrls.add(selfUrl + port);

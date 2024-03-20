@@ -8,13 +8,17 @@ import ru.vk.itmo.test.elenakhodosova.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
     private HttpServerImpl server;
     private ReferenceDao dao;
     private final ServiceConfig config;
+    private ExecutorService executorService;
     public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
+    public static final int TERMINATION_TIMEOUT_MS = 500;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -24,7 +28,8 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        this.server = new HttpServerImpl(config, dao);
+        executorService = ExecutorServiceConfig.newExecutorService();
+        server = new HttpServerImpl(config, dao, executorService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -32,11 +37,19 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(TERMINATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

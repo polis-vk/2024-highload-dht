@@ -17,7 +17,7 @@ public final class StartServer {
     public static void main(String[] args) throws IOException {
         String url = "http://localhost";
         int port = 8080;
-        int flushThresholdBytes = 1 << 27; // 128 MB
+        int flushThresholdBytes = 1 << 20; // 1 MB
         Path profilingDataPath = Path.of(
                 "/Users/valentinpronin/IdeaProjects/2024-highload-dht/"
                         + "src/main/java/ru/vk/itmo/test/"
@@ -27,8 +27,9 @@ public final class StartServer {
         Config daoConfig = new Config(profilingDataPath, flushThresholdBytes);
         ServiceConfig serviceConfig = new ServiceConfig(port, url, List.of(url), profilingDataPath);
         ReferenceDao referenceDao = new ReferenceDao(daoConfig);
+        WorkerPool workerPool = new WorkerPool(WorkerPoolConfig.defaultConfig());
 
-        Server server = new Server(serviceConfig, referenceDao);
+        Server server = new Server(serviceConfig, referenceDao, workerPool);
         server.start();
     }
 }

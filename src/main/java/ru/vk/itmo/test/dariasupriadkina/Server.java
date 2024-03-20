@@ -27,10 +27,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class Server extends HttpServer {
 
@@ -179,10 +181,16 @@ public class Server extends HttpServer {
                             HttpResponse.BodyHandlers.ofByteArray())
                     .get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS);
             return new Response(String.valueOf(response.statusCode()), response.body());
-        } catch (Exception e) {
+        } catch (ExecutionException e) {
             logger.error("Unexpected error", e);
-            Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (TimeoutException e) {
+            logger.error("Timeout reached", e);
+            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
+        } catch (InterruptedException e) {
+            logger.error("Service is unavailable", e);
+            Thread.currentThread().interrupt();
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 

@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-public class ConsistentHashingShardingPolicy implements ShardingPolicy {
+public class ConsistentHashingShardingPolicy extends ShardingPolicy {
 
     private final SortedMap<Integer, String> circle = new TreeMap<>();
     private final int numberOfReplicas;
@@ -18,18 +18,14 @@ public class ConsistentHashingShardingPolicy implements ShardingPolicy {
 
     public final void add(String node) {
         for (int i = 0; i < numberOfReplicas; i++) {
-            circle.put(hash(node + i), node);
+            circle.put(hash(node + i) * 11, node);
         }
     }
 
     public final void remove(String node) {
         for (int i = 0; i < numberOfReplicas; i++) {
-            circle.remove(hash(node + i));
+            circle.remove(hash(node + i) * 11);
         }
-    }
-
-    public final int hash(String str) {
-        return str.hashCode();
     }
 
     @Override
@@ -37,7 +33,8 @@ public class ConsistentHashingShardingPolicy implements ShardingPolicy {
         if (circle.isEmpty()) {
             return null;
         }
-        int hash = hash(key);
+
+        int hash = hash(key) * 11;
         if (!circle.containsKey(hash)) {
             SortedMap<Integer, String> tailMap = circle.tailMap(hash);
             hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();

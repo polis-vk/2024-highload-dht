@@ -7,32 +7,63 @@ import ru.vk.itmo.test.dariasupriadkina.sharding.ShardingPolicy;
 import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class TestServer {
 
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_SIZE = 1024;
-    private static final int NUMBER_OF_REPLICAS = 100;
+    private static final int NUMBER_OF_REPLICAS = 1000;
+    private static final String LOCALHOST_PREFIX = "http://localhost:";
+    private static final int NODE_AMOUNT = 3;
+
 
     private TestServer() {
     }
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-        String url = "http://localhost";
-        ServiceConfig serviceConfig = new ServiceConfig(
-                8080,
-                url,
-                List.of(url),
-                Paths.get("./"));
+        Map<Integer, String> nodes = new HashMap<>();
+        int nodePort = 8080;
+        for (int i = 0; i < NODE_AMOUNT; i++) {
+            nodes.put(nodePort, LOCALHOST_PREFIX + nodePort);
+            nodePort += 10;
+        }
+
+        List<String> clusterUrls = new ArrayList<>(nodes.values());
+        List<ServiceConfig> clusterConfs = new ArrayList<>();
+        for (Map.Entry<Integer, String> entry : nodes.entrySet()) {
+            int port = entry.getKey();
+            String url = entry.getValue();
+            Path path = Paths.get("tmp/db/" + port);
+            Files.createDirectories(path);
+            ServiceConfig serviceConfig = new ServiceConfig(port,
+                    url,
+                    clusterUrls,
+                    path);
+            clusterConfs.add(serviceConfig);
+        }
         ShardingPolicy shardingPolicy = new ConsistentHashingShardingPolicy(
-                serviceConfig.clusterUrls(), NUMBER_OF_REPLICAS
+                clusterUrls, NUMBER_OF_REPLICAS
         );
-      ServiceIml serviceIml = new ServiceIml(serviceConfig, new Config(serviceConfig.workingDir(),
-              1024 * 1024), new WorkerConfig(THREADS, THREADS, QUEUE_SIZE, 30),
-              shardingPolicy);
-        serviceIml.start().get();
+
+        for (ServiceConfig serviceConfig : clusterConfs) {
+            ServiceIml serviceIml = new ServiceIml(serviceConfig, new Config(serviceConfig.workingDir(),
+                    1024 * 1024), new WorkerConfig(THREADS, THREADS, QUEUE_SIZE, 30),
+                    shardingPolicy);
+            try {
+                serviceIml.start().get(1, TimeUnit.SECONDS);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }

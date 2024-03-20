@@ -1,7 +1,16 @@
 package ru.vk.itmo.test.dariasupriadkina.sharding;
 
-public interface ShardingPolicy {
+import one.nio.util.Hash;
 
-    String getNodeById(String id);
+public abstract class ShardingPolicy {
+
+    public ShardingPolicy() {
+    }
+
+    public abstract String getNodeById(String id);
+
+    protected final int hash(String str) {
+        return Hash.murmur3(str);
+    }
 
 }

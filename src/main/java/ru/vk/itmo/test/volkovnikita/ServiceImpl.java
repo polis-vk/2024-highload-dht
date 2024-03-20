@@ -14,7 +14,6 @@ public class ServiceImpl implements Service {
 
     public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
     private final AtomicBoolean isStopped = new AtomicBoolean(false);
-
     private HttpServerImpl server;
     private final ServiceConfig config;
     private ReferenceDao dao;

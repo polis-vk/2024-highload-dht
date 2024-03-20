@@ -13,11 +13,13 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -38,14 +40,43 @@ public class LSMServiceImpl implements Service {
     private ExecutorService clusterClientExecutorService;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-        Path tmpDir = Files.createTempDirectory("dao");
-        tmpDir.toFile().deleteOnExit();
+        Path baseWorkingDir = Path.of("daoWorkingDir");
+        List<String> argList = Arrays.asList(args);
+        int port = 8080;
+        List<String> clusterUrls = new ArrayList<>();
+
+        // just for local development
+        int portArgIndex = argList.indexOf("--port");
+        if (portArgIndex >= 0) {
+            port = Integer.parseInt(argList.get(portArgIndex + 1));
+        }
+
+        int clusterUrlsIndex = argList.indexOf("--clusterUrls");
+        if (clusterUrlsIndex >= 0) {
+            clusterUrlsIndex++;
+            while (clusterUrlsIndex < argList.size()) {
+                String clusterUrl = argList.get(clusterUrlsIndex);
+                if (Objects.equals(clusterUrl, "--workingDir")) {
+                    break;
+                }
+                clusterUrls.add(clusterUrl);
+                clusterUrlsIndex++;
+            }
+        }
+
+        int workingDirIndex = argList.indexOf("--workingDir");
+        Path workingDir;
+        if (workingDirIndex >= 0) {
+            workingDir = baseWorkingDir.resolve(argList.get(workingDirIndex + 1));
+        } else {
+            workingDir = baseWorkingDir.resolve(String.valueOf(port));
+        }
 
         ServiceConfig serviceConfig = new ServiceConfig(
-                8080,
-                "http://localhost:8080",
-                List.of("http://localhost:8080", "http://localhost:8081", "http://localhost:8082"),
-                tmpDir
+                port,
+                "http://localhost:" + port,
+                clusterUrls,
+                workingDir
         );
         LSMServiceImpl lsmService = new LSMServiceImpl(serviceConfig);
 

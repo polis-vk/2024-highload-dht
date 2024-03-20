@@ -1,9 +1,10 @@
-counter = 0
+counter = 100000000
 
 function request()
     headers = {}
     headers["Host"] = "localhost:8080"
-    current = counter
+    key = counter
     counter = counter + 1
-    return wrk.format("PUT", "/v0/entity?id=key" .. current, headers, "value" .. current)
+    value = "value" .. tostring(key) .. tostring(key) .. tostring(key)
+    return wrk.format("PUT", "/v0/entity?id=key" .. tostring(key), headers, value)
 end

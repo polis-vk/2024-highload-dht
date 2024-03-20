@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
+import java.net.IDN;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -89,9 +90,7 @@ public class StorageServer extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    MemorySegment key = fromString(id);
-                    long hash = MurmurHash.hash(key, key.byteSize());
-                    int partition = selectPartition(hash);
+                    int partition = selectPartition(id);
 
                     if (isCurrentPartition(partition)) {
                         super.handleRequest(request, session);
@@ -151,8 +150,20 @@ public class StorageServer extends HttpServer {
         return clusterUrls.get(partitionNumber).equals(selfUrl);
     }
 
-    private int selectPartition(long hash) {
-        return (int) (hash % clusterUrls.size());
+    private int selectPartition(String id) {
+        Long maxHash = Long.MIN_VALUE;
+        int partition = -1;
+
+        for (int i = 0; i < clusterUrls.size(); i++) {
+            String url = clusterUrls.get(i);
+            long nodeHash = Hash.murmur3(url + id);
+            if (nodeHash > maxHash) {
+                maxHash = nodeHash;
+                partition = i;
+            }
+        }
+
+        return partition;
     }
 
     private String getPartitionUrl(int partition) {

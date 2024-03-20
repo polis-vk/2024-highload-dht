@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -21,32 +22,38 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class Server {
-    //private static final Random RANDOM = new Random();
-    //private static final int ENTRIES_IN_DB = 500_000;
+    private static final Random RANDOM = new Random();
+    private static final int ENTRIES_IN_DB = 500_000;
     private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
+    private static final int BASE_PORT = 8080;
+    private static final int NODES = 3;
 
     private Server() {
 
     }
 
     public static void main(String[] args) throws IOException {
-        int[] ports = new int[]{8080, 8081, 8082};
         List<String> clusterUrls = new ArrayList<>();
+        Dao<MemorySegment, Entry<MemorySegment>>[] daoCluster = new Dao[NODES];
 
-        for (int port : ports) {
+        for (int i = 0; i < NODES; i++) {
+            int port = BASE_PORT + i;
             clusterUrls.add("http://localhost:" + port);
         }
 
-        for (int port : ports) {
+        for (int i = 0; i < NODES; i++) {
+            int port = BASE_PORT + i;
+
             ServiceConfig config = new ServiceConfig(
                     port,
                     "http://localhost:" + port,
                     clusterUrls,
-                    Files.createTempDirectory(Paths.get("/Users/axothy"), "tmp." + port)
+                    Files.createDirectory(Paths.get("/Users/axothy/dao/tmp." + port))
             );
 
             Dao<MemorySegment, Entry<MemorySegment>> dao =
                     new NotOnlyInMemoryDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+            daoCluster[i] = dao;
             ExecutorService executor = new ThreadPoolExecutor(
                     20,
                     20,
@@ -57,13 +64,11 @@ public final class Server {
             StorageServer server = new StorageServer(config, dao, executor);
             server.start();
 
-            //fillFlush(dao);
-            //fillManyFlushes(dao);
         }
 
+        fillClusterNodesWithMultipleFlush(daoCluster, clusterUrls);
     }
 
-    /*
     private static int[] getRandomArray() {
         int[] entries = new int[ENTRIES_IN_DB];
         for (int i = 0; i < ENTRIES_IN_DB; i++) {
@@ -83,51 +88,48 @@ public final class Server {
         return entries;
     }
 
-     */
-
     /**
-     * Just fills memtable without flushing.
+     * Fills all nodes in cluster with multiple sstables.
      */
-    /*
-    private static void fillMemtable(Dao<MemorySegment, Entry<MemorySegment>> dao) {
-        int[] entries = getRandomArray();
-        for (int entry : entries) {
-            dao.upsert(entry(keyAt(entry), valueAt(entry)));
-        }
-    } */
-
-    /**
-     * Fills memtable with one flush.
-     */
-    /*
-    private static void fillFlush(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
-        fillMemtable(dao);
-        dao.flush();
-    }
-
-     */
-
-    /**
-     * Fills dao with multiple sstables.
-     */
-    /*
-    private static void fillManyFlushes(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    private static void fillClusterNodesWithMultipleFlush(Dao[] daoCluster, List<String> clusterUrls) throws IOException {
         final int sstables = 100; //how many sstables dao must create
         final int flushEntries = ENTRIES_IN_DB / sstables; //how many entries in one sstable
-        int[] entries = getRandomArray();
+        final int entriesCountInEachNode[] = new int[NODES];
+        final int[] entries = getRandomArray();
 
-        //many flushes
-        for (int entry : entries) {
-            dao.upsert(entry(keyAt(entry), valueAt(entry)));
-            if (entry % flushEntries == 0) {
-                dao.flush();
+        for (int i = 0; i < entries.length; i++) {
+            //select node
+            int partition = selectNode(("k" + entries[i]), clusterUrls);
+
+            //upsert entry in selected node and increment entry counter
+            daoCluster[partition].upsert(entry(keyAt(entries[i]), valueAt(entries[i])));
+            entriesCountInEachNode[partition]++;
+
+            //check entry counters for ability to flush
+            for (int j = 0; j < entriesCountInEachNode.length; j++) {
+                if (entriesCountInEachNode[j] % flushEntries == 0) {
+                    daoCluster[j].flush();
+                }
             }
         }
     }
 
-     */
+    private static int selectNode(String id, List<String> clusterUrls) {
+        Long maxHash = Long.MIN_VALUE;
+        int partition = -1;
 
-    /*
+        for (int i = 0; i < clusterUrls.size(); i++) {
+            String url = clusterUrls.get(i);
+            long nodeHash = Hash.murmur3(url + id);
+            if (nodeHash > maxHash) {
+                maxHash = nodeHash;
+                partition = i;
+            }
+        }
+
+        return partition;
+    }
+
     private static MemorySegment keyAt(int index) {
         return MemorySegment.ofArray(("k" + index).getBytes(StandardCharsets.UTF_8));
     }
@@ -139,7 +141,5 @@ public final class Server {
     private static Entry<MemorySegment> entry(MemorySegment key, MemorySegment value) {
         return new BaseEntry<>(key, value);
     }
-
-     */
 
 }

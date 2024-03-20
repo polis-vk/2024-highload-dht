@@ -24,8 +24,8 @@ public final class MurmurHash {
         return hash64(key, offset, length, DEFAULT_SEED);
     }
 
-    public static long hash(MemorySegment key, long length) {
-        long[] hash = hash64(key, 0, (int) length);
+    public static long hash(MemorySegment key) {
+        long[] hash = hash64(key, 0, (int) key.byteSize());
         return Math.abs(hash[0] + hash[1]);
     }
 

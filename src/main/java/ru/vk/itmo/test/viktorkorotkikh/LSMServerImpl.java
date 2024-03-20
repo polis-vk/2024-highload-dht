@@ -51,7 +51,7 @@ import static one.nio.http.Request.METHOD_PUT;
 public class LSMServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(LSMServerImpl.class);
     private static final String ENTITY_V0_PATH_WITH_ID_PARAM = "/v0/entity?id=";
-    private static final int CLUSTER_REQUEST_TIMEOUT_MILLISECONDS = 10_000;
+    private static final int CLUSTER_REQUEST_TIMEOUT_MILLISECONDS = 1_000;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
     private final ConsistentHashingManager consistentHashingManager;
@@ -159,8 +159,8 @@ public class LSMServerImpl extends HttpServer {
 
         Response response = switch (request.getMethod()) {
             case METHOD_GET -> handleGetEntity(request, key, id);
-            case METHOD_PUT -> handlePutEntity(request, key);
-            case METHOD_DELETE -> handleDeleteEntity(request, key);
+            case METHOD_PUT -> handlePutEntity(request, key, id);
+            case METHOD_DELETE -> handleDeleteEntity(request, key, id);
             default -> LSMConstantResponse.methodNotAllowed(request);
         };
         session.sendResponse(response);
@@ -230,7 +230,7 @@ public class LSMServerImpl extends HttpServer {
         return new LSMServerResponseWithMemorySegment(Response.OK, entry.value());
     }
 
-    private Response handlePutEntity(final Request request, final byte[] id) {
+    private Response handlePutEntity(final Request request, final byte[] id, final String idString) {
         if (request.getBody() == null) {
             log.info("PUT bad request: empty body");
             return LSMConstantResponse.badRequest(request);
@@ -244,7 +244,7 @@ public class LSMServerImpl extends HttpServer {
             dao.upsert(newEntry);
         } catch (LSMDaoOutOfMemoryException e) {
             // when entry is too big to be putted into memtable
-            log.info("Entity(id={}) is too big to be putted into memtable", id);
+            log.info("Entity(id={}) is too big to be putted into memtable", idString);
             return LSMConstantResponse.entityTooLarge(request);
         } catch (TooManyFlushesException e) {
             // when one memory table is in the process of being flushed, and the second is already full
@@ -255,7 +255,7 @@ public class LSMServerImpl extends HttpServer {
         return LSMConstantResponse.created(request);
     }
 
-    private Response handleDeleteEntity(final Request request, final byte[] id) {
+    private Response handleDeleteEntity(final Request request, final byte[] id, final String idString) {
         final Entry<MemorySegment> newEntry = new BaseEntry<>(
                 fromByteArray(id),
                 null
@@ -264,7 +264,7 @@ public class LSMServerImpl extends HttpServer {
             dao.upsert(newEntry);
         } catch (LSMDaoOutOfMemoryException e) {
             // when entry is too big to be putted into memtable
-            log.info("Entity(id={}) is too big to be putted into memtable", id);
+            log.info("Entity(id={}) is too big to be putted into memtable", idString);
             return LSMConstantResponse.entityTooLarge(request);
         } catch (TooManyFlushesException e) {
             // when one memory table is in the process of being flushed, and the second is already full

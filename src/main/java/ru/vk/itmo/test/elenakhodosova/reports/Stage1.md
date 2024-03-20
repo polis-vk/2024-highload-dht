@@ -4,7 +4,7 @@
 
 ### PUT
 Опытным путем найдем точку разладки для PUT запроса, чтобы положить сервер   
-<img src="data/mk-finish-him.jpg" width="200" height="60">
+<img src="data/stage1/mk-finish-him.jpg" width="200" height="60">
 ```
 wrk2 -d 30 -t 1 -c 1 -R 38000 -L -s /Users/lena/2024-highload-dht/src/main/java/ru/vk/itmo/test/elenakhodosova/lua_scripts/put.lua http://127.0.0.1:8080
 Running 30s test @ http://127.0.0.1:8080
@@ -171,15 +171,15 @@ Running 1m test @ http://127.0.0.1:8080
 Requests/sec:  31999.45
 Transfer/sec:      2.04MB
 ```
-![image](data/Histogram-32000-put.png)
+![image](data/stage1/Histogram-32000-put.png)
 
-[CPU flame graph](data/profile-put-32000.html)
+[CPU flame graph](data/stage1/profile-put-32000.html)
 
 По графу видно, что чуть больше 30% времени тратится на poll(), и примерно по 20%
 занимают операции чтения и записи в сокет. Из операций, отосящихся к "бизнес-логике" самым затратным оказался 
 put в коллекцию (метод upsert), что выглядит вполне логично.
 
-[Alloc flame graph](data/profile-put-32000-alloc.html)
+[Alloc flame graph](data/stage1/profile-put-32000-alloc.html)
 
 Ожидаемо, основная часть аллокаций приходится на putEntity. Около 30% суммарно занимают
 аллокации при чтении и отправке запроса, так как необходимо конвертировать строки в массивы байт
@@ -349,15 +349,15 @@ Running 1m test @ http://127.0.0.1:8080
 Requests/sec:  29999.71
 Transfer/sec:      3.32MB
 ```
-![image](data/Histogram-30000rps-get.png)
+![image](data/stage1/Histogram-30000rps-get.png)
 
-[CPU flame graph](data/profile-get-30000.html)
+[CPU flame graph](data/stage1/profile-get-30000.html)
 
 По сравнению с PUT в процентном соотношении операции one-nio занимаютменьше времени -
 poll() меньше 20%, чтение и запись в сокет по 9% и 5% соответственно.
 Основная часть времени уходит на бинарный поиск.
 
-[Alloc flame graph](data/profile-get-30000-alloc.html)
+[Alloc flame graph](data/stage1/profile-get-30000-alloc.html)
 
 Наибольшее количество аллокаций приходится на метод getEntity - выделение места под массив байт и конвертация в строку, чуть меньше на парсинг и отправку запроса
 методами библиотеки one-nio.

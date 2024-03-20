@@ -11,9 +11,9 @@ public class DaoServerConfig extends HttpServerConfig {
     public Path basePath;
     public long flushThresholdBytes;
     public int corePoolSize = 2;
-    public int maximumPoolSize = 20;
+    public int maximumPoolSize = 8;
     public long keepAliveTime = 100;
-    public int queueCapacity = 1000;
+    public int queueCapacity = 500;
     public List<String> clusterUrls;
     public String selfUrl;
 }

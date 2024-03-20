@@ -6,8 +6,8 @@ import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
 import ru.vk.itmo.test.kovalevigor.server.util.ServerTask;
 
 import java.io.IOException;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +25,7 @@ public class ServerOneExecutorStrategyDecorator extends ServerStrategyDecorator 
             long keepAliveTime, int queueCapacity
     ) {
         super(serverStrategy);
-        blockingQueue = new LinkedBlockingQueue<>(queueCapacity);
+        blockingQueue = new ArrayBlockingQueue<>(queueCapacity);
         executorService = new ThreadPoolExecutor(
                 corePoolSize,
                 maximumPoolSize,

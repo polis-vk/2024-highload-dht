@@ -16,12 +16,17 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
-    private static final long FLUSH_THRESHOLD_BYTES = 128 * 1024 * 1024 / 3 * 8;
+    public static final long FLUSH_THRESHOLD_BYTES = 128 * 1024 * 1024 / 3 * 8;
     private ServerFull server;
     public final DaoServerConfig config;
 
-    public ServiceImpl(ServiceConfig config) {
+    public ServiceImpl(ServiceConfig config, long flushThresholdBytes) {
         this.config = mapConfig(config);
+        this.config.flushThresholdBytes = flushThresholdBytes;
+    }
+
+    public ServiceImpl(ServiceConfig config) {
+        this(config, FLUSH_THRESHOLD_BYTES);
     }
 
     @Override
@@ -62,7 +67,6 @@ public class ServiceImpl implements Service {
     private static DaoServerConfig mapConfig(ServiceConfig config) {
         DaoServerConfig serverConfig = new DaoServerConfig();
         serverConfig.basePath = config.workingDir();
-        serverConfig.flushThresholdBytes = FLUSH_THRESHOLD_BYTES;
         serverConfig.acceptors = mapAcceptors(config);
         serverConfig.closeSessions = true;
         serverConfig.clusterUrls = config.clusterUrls();

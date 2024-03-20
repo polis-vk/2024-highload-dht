@@ -94,7 +94,7 @@ public class ServiceImpl implements Service {
         server.stop();
 
         for (HttpClient clusterConnection : clusterConnections) {
-            if (clusterConnection != null && !clusterConnection.isClosed()) { // If true - this node array position.
+            if (clusterConnection != null && !clusterConnection.isClosed()) {
                 clusterConnection.close();
             }
         }

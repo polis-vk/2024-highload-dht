@@ -7,9 +7,9 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -20,15 +20,13 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.Objects;
+import java.net.http.HttpTimeoutException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class HttpServerImpl extends HttpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
-    private static final String ID_PARAMETER_NAME = "id=";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
@@ -49,18 +47,30 @@ public class HttpServerImpl extends HttpServer {
     }
 
     @Override
+    public void handleDefault(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() == Request.METHOD_GET) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        } else {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
+    }
+
+    @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
             executorService.execute(() -> {
                 try {
-                    internalHandleRequest(request, session);
+                    super.handleRequest(request, session);
                 } catch (IOException e) {
                     processIOException(request, session, e);
-                } catch (InterruptedException e) {
+                } catch (Exception e) {
                     LOGGER.error("Failed to handle request: {} with error: {}", request, e.getMessage());
                     try {
-                        Thread.currentThread().interrupt();
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                        if (e.getClass() == HttpException.class) {
+                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        } else {
+                            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                        }
                     } catch (IOException ex) {
                         processIOException(request, session, ex);
                     }
@@ -77,60 +87,28 @@ public class HttpServerImpl extends HttpServer {
     }
 
     @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
-        try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-
-            Entry<MemorySegment> result = dao.get(parseToMemorySegment(id));
-            if (result == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-
-            return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    public Response entity(Request request, @Param(value = "id") String id) {
+        if (id == null || id.isBlank()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-    }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) {
-        try {
-            if (id.isEmpty() || request.getBody() == null) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-
-            dao.upsert(new BaseEntry<>(parseToMemorySegment(id), MemorySegment.ofArray(request.getBody())));
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        String executorNode = requestRouter.getNodeByEntityId(id);
+        if (executorNode.equals(selfUrl)) {
+            return invokeLocal(request, id);
         }
-    }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
         try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-
-            dao.upsert(new BaseEntry<>(parseToMemorySegment(id), null));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (Exception e) {
+            return requestRouter.redirect(executorNode, request);
+        } catch (HttpTimeoutException e) {
+            LOGGER.error("timeout while invoking remote node");
+            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
+        } catch (IOException e) {
+            LOGGER.error("I/O exception while calling remote node");
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
-
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        if (request.getMethod() == Request.METHOD_GET) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-        } else {
-            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.error("Thread interrupted");
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 
@@ -143,30 +121,37 @@ public class HttpServerImpl extends HttpServer {
         super.stop();
     }
 
-    private MemorySegment parseToMemorySegment(String input) {
-        return MemorySegment.ofArray(input.getBytes(StandardCharsets.UTF_8));
+    private Response invokeLocal(Request request, String id) {
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+                Entry<MemorySegment> entry = dao.get(key);
+                if (entry == null) {
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                }
+
+                return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+            }
+            case Request.METHOD_PUT -> {
+                MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+                MemorySegment value = MemorySegment.ofArray(request.getBody());
+                dao.upsert(new BaseEntry<>(key, value));
+                return new Response(Response.CREATED, Response.EMPTY);
+            }
+            case Request.METHOD_DELETE -> {
+                MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+                dao.upsert(new BaseEntry<>(key, null));
+                return new Response(Response.ACCEPTED, Response.EMPTY);
+            }
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
+        }
     }
 
     private void processIOException(Request request, HttpSession session, IOException e) {
         LOGGER.error("Failed to send response for request: {} with error: {}", request, e.getMessage());
         session.close();
-    }
-
-    private void internalHandleRequest(Request request, HttpSession session)
-            throws IOException, InterruptedException {
-        String id = request.getParameter(ID_PARAMETER_NAME);
-        if (id == null || id.isBlank()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-
-        String targetNode = requestRouter.getNode(id);
-        if (Objects.equals(targetNode, selfUrl)) {
-            super.handleRequest(request, session);
-        } else {
-            Response response = requestRouter.redirect(targetNode, request);
-            session.sendResponse(response);
-        }
     }
 
     private static HttpServerConfig createConfig(ServiceConfig config) {

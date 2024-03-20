@@ -35,19 +35,18 @@ public class RequestRouter implements Closeable {
         return convertResponse(httpResponse);
     }
 
-    public String getNode(String id) {
-        int maxHash = Integer.MIN_VALUE;
-        String maxHashNode = null;
-
-        for (String node : nodes) {
-            int hash = Hash.murmur3(id + node);
-            if (hash > maxHash) {
-                maxHash = hash;
-                maxHashNode = node;
+    public String getNodeByEntityId(String id) {
+        int nodeId = 0;
+        int maxHash = Hash.murmur3(nodes.getFirst() + id);
+        for (int i = 1; i < nodes.size(); i++) {
+            String url = nodes.get(i);
+            int result = Hash.murmur3(url + id);
+            if (maxHash < result) {
+                maxHash = result;
+                nodeId = i;
             }
         }
-
-        return maxHashNode;
+        return nodes.get(nodeId);
     }
 
     @Override

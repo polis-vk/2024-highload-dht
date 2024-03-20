@@ -33,6 +33,9 @@
 
 *Т.к. rps снизился, то у нас меньше данных, следовательно в GET запросах больше 404, но мне не кажется это критичным из-за отсутсвия оптимизаций для отсутствующих записей.*
 
+
+Нащупали RPS для 4 нод и от этого исходили на остальных:
+
 ### 2 ноды
 
 #### PUT
@@ -45,6 +48,11 @@
 
 
 #### GET
+Остановились на 36000, 5min: 
+ [alloc](html/stage3/cluster_2_get_stable_40000_alloc.html)
+ [cpu](html/stage3/cluster_2_get_stable_40000_cpu.html)
+ [lock](html/stage3/cluster_2_get_stable_40000_lock.html)
+ [rps](html/stage3/cluster_2_get_stable_40000_wrk.txt)
  
 ### 4 ноды
 
@@ -63,7 +71,7 @@
 [rps](html/stage3/cluster_4_stable_put_36000_wrk.txt)
 
 #### GET
-Нащупали RPS:
+Нащупали RPS: 
  [35000](html/stage3/cluster_4_get_35000_wrk.txt)
  [36000](html/stage3/cluster_4_get_36000_wrk.txt)
  [38000](html/stage3/cluster_4_get_38000_wrk.txt)

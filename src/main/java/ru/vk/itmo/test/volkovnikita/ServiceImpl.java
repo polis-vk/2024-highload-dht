@@ -8,11 +8,14 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServiceImpl implements Service {
 
     public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
+    private ExecutorService executorService;
     private final AtomicBoolean isStopped = new AtomicBoolean(false);
     private HttpServerImpl server;
     private final ServiceConfig config;
@@ -25,7 +28,8 @@ public class ServiceImpl implements Service {
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        server = new HttpServerImpl(config, dao);
+        executorService = ExecutorServiceConfig.newExecutorService();
+        server = new HttpServerImpl(config, dao, executorService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -36,6 +40,14 @@ public class ServiceImpl implements Service {
             return CompletableFuture.completedFuture(null);
         }
         server.stop();
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(1, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         dao.close();
         return CompletableFuture.completedFuture(null);
     }

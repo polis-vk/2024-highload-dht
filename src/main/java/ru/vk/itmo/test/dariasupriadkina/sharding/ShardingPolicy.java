@@ -4,9 +4,6 @@ import one.nio.util.Hash;
 
 public abstract class ShardingPolicy {
 
-    public ShardingPolicy() {
-    }
-
     public abstract String getNodeById(String id);
 
     protected final int hash(String str) {

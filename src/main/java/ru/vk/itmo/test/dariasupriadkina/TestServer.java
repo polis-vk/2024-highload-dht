@@ -22,15 +22,15 @@ public final class TestServer {
 
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_SIZE = 1024;
-    private static final int NUMBER_OF_REPLICAS = 1000;
+    private static final int NUMBER_OF_REPLICAS = 100;
     private static final String LOCALHOST_PREFIX = "http://localhost:";
-    private static final int NODE_AMOUNT = 3;
+    private static final int NODE_AMOUNT = 5;
 
 
     private TestServer() {
     }
 
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
         Map<Integer, String> nodes = new HashMap<>();
         int nodePort = 8080;
         for (int i = 0; i < NODE_AMOUNT; i++) {
@@ -59,11 +59,7 @@ public final class TestServer {
             ServiceIml serviceIml = new ServiceIml(serviceConfig, new Config(serviceConfig.workingDir(),
                     1024 * 1024), new WorkerConfig(THREADS, THREADS, QUEUE_SIZE, 30),
                     shardingPolicy);
-            try {
-                serviceIml.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException(e);
-            }
+            serviceIml.start().get(1, TimeUnit.SECONDS);
         }
     }
 }

@@ -10,7 +10,8 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024L;
+  
+    public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
 
     private HttpServerImpl server;
     private final ServiceConfig config;

@@ -60,7 +60,7 @@ public class RequestHandler {
 
 
         int currNodeNumber = distributor.getNode(id);
-        if (currNodeNumber > 0) {
+        if (currNodeNumber >= 0) {
             // Redirect request, processing on another node.
             clusterConnections[currNodeNumber].invoke(request);
         }

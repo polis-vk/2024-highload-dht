@@ -39,16 +39,17 @@ public class ServiceImpl implements Service {
         this.serverConfig = createServerConfig(config);
         this.daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);
 
-        int thisNodeNumber = sortedClusterUrls.indexOf(selfUrl) + 1;
+        int thisNodeNumber = sortedClusterUrls.indexOf(selfUrl);
         this.rendezvousDistributor = new RendezvousDistributor(sortedClusterUrls.size(), thisNodeNumber);
     }
 
     private void initCluster(String selfUrl) {
         this.clusterConnections = new HttpClient[sortedClusterUrls.size()];
 
-        int nodeNumber = 1;
+        int nodeNumber = 0;
         for (String serverUrl : sortedClusterUrls) {
             if (serverUrl.equals(selfUrl)) {
+                nodeNumber++;
                 continue;
             }
 
@@ -93,7 +94,7 @@ public class ServiceImpl implements Service {
         server.stop();
 
         for (HttpClient clusterConnection : clusterConnections) {
-            if (clusterConnection != null) { // If true - this node array position.
+            if (clusterConnection != null && !clusterConnection.isClosed()) { // If true - this node array position.
                 clusterConnection.close();
             }
         }

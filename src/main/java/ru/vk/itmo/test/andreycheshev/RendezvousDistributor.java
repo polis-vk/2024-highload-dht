@@ -15,7 +15,7 @@ public class RendezvousDistributor {
         int key = Hash.murmur3(stringKey);
         int maxHash = Integer.MIN_VALUE;
         int node = 0;
-        for (int i = 1; i <= nodeCount; i++) {
+        for (int i = 0; i < nodeCount; i++) {
             int currHash = customHashCode(key + i);
             if (currHash > maxHash) {
                 maxHash = currHash;

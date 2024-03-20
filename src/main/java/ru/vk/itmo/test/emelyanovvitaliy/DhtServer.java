@@ -25,9 +25,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -40,10 +38,10 @@ import static one.nio.http.Request.METHOD_PUT;
 public class DhtServer extends HttpServer {
     public static final byte[] EMPTY_BODY = new byte[0];
     public static final int THREADS_PER_PROCESSOR = 2;
-    protected final Map<Integer, HttpClient> hashToClientMapping;
+    protected final HttpClient[] httpClients;
     public static final long KEEP_ALIVE_TIME_MILLIS = 1000;
     public static final int REQUEST_TIMEOUT_MILLIS = 1024;
-    public static final int FLUSH_THRESHOLD_BYTES = 1 << 24;
+    public static final int FLUSH_THRESHOLD_BYTES = 1 << 24; // 16 MiB
     public static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
     public static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
     public final AtomicInteger threadsInPool = new AtomicInteger(0);
@@ -64,7 +62,7 @@ public class DhtServer extends HttpServer {
 
     public DhtServer(ServiceConfig config) throws IOException {
         super(createConfig(config));
-        hashToClientMapping = getHashToUrlMap(config.clusterUrls(), config.selfUrl());
+        httpClients = getHttpClients(config.clusterUrls(), config.selfUrl());
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
     }
 
@@ -76,7 +74,7 @@ public class DhtServer extends HttpServer {
             if (!threadPoolExecutor.awaitTermination(THREAD_POOL_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 throw new UncheckedTimeoutException("Waited too lot to stop the thread pool");
             }
-            for (HttpClient httpClient : hashToClientMapping.values()) {
+            for (HttpClient httpClient : httpClients) {
                 if (httpClient != null && !httpClient.isClosed()) {
                     httpClient.close();
                 }
@@ -119,7 +117,7 @@ public class DhtServer extends HttpServer {
     }
 
     private HttpClient getHttpClientByKey(String key) {
-        return hashToClientMapping.get(Math.abs(key.hashCode()) % hashToClientMapping.size());
+        return httpClients[Math.abs(key.hashCode()) % httpClients.length];
     }
 
     private boolean tryForward(HttpSession session, Request request, String key) throws IOException {
@@ -218,16 +216,16 @@ public class DhtServer extends HttpServer {
         return config;
     }
 
-    private static Map<Integer, HttpClient> getHashToUrlMap(List<String> urls, String thisUrl) {
+    private static HttpClient[] getHttpClients(List<String> urls, String thisUrl) {
 
-        Map<Integer, HttpClient> hashToUrlMapping = new HashMap<>();
+        HttpClient[] clients = new HttpClient[urls.size()];
         int cnt = 0;
         List<String> tmpList = new ArrayList<>(urls);
         tmpList.sort(String::compareTo);
         for (String url : tmpList) {
-            hashToUrlMapping.put(cnt++, url.equals(thisUrl) ? null : new HttpClient(new ConnectionString(url)));
+            clients[cnt++] = url.equals(thisUrl) ? null : new HttpClient(new ConnectionString(url));
         }
-        return hashToUrlMapping;
+        return clients;
     }
 
     private static MemorySegment keyFor(String id) {

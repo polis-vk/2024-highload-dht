@@ -24,7 +24,6 @@ public final class ServerRunnerApp {
         RequestRouter requestRouter = new RequestRouter(serviceConfig);
         HttpServerImpl server = new HttpServerImpl(
                 serviceConfig, dao, ExecutorServiceFactory.createExecutorService(), requestRouter);
-
         server.start();
     }
 }

@@ -10,8 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-import static java.lang.StringTemplate.STR;
-
 public final class ServerStarter {
     private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/lab3/");
     private static final String LOCALHOST = "http://localhost";
@@ -41,7 +39,7 @@ public final class ServerStarter {
 
         List<String> urls = new ArrayList<>(CLUSTER_NODE_COUNT);
         for (Integer port: ports) {
-            urls.add(STR."\{LOCALHOST}:\{port}");
+            urls.add(LOCALHOST + port);
         }
 
         for (int i = 0; i < CLUSTER_NODE_COUNT; i++) {

@@ -3,12 +3,9 @@ package ru.vk.itmo.test.andreycheshev;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -26,7 +23,6 @@ public final class ServerStarter {
     }
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-//        startSingle();
         startCluster();
     }
 
@@ -40,10 +36,7 @@ public final class ServerStarter {
             ports.add(port);
             dirs.add(dir);
 
-            if (Files.exists(dir)) {
-                clearDir(dir);
-            }
-            Files.createDirectory(dir);
+            Files.createDirectories(dir);
         }
 
         List<String> urls = new ArrayList<>(CLUSTER_NODE_COUNT);
@@ -63,36 +56,4 @@ public final class ServerStarter {
             service.start().get();
         }
     }
-
-    private static void clearDir(Path dir) throws IOException {
-        Files.walkFileTree(dir, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.delete(file);
-                return FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                if (exc == null) {
-                    Files.delete(dir);
-                    return FileVisitResult.CONTINUE;
-                } else {
-                    throw exc;
-                }
-            }
-        });
-    }
-
-//    private static void startSingle() throws IOException, ExecutionException, InterruptedException {
-//        ServiceImpl service = new ServiceImpl(
-//                new ServiceConfig(
-//                        PORT,
-//                        LOCALHOST,
-//                        List.of(LOCALHOST),
-//                        STORAGE_DIR_PATH
-//                )
-//        );
-//        service.start().get();
-//    }
 }

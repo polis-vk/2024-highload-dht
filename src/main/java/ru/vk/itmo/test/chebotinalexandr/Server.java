@@ -91,18 +91,21 @@ public final class Server {
     /**
      * Fills all nodes in cluster with multiple sstables.
      */
-    private static void fillClusterNodesWithMultipleFlush(Dao[] daoCluster, List<String> clusterUrls) throws IOException {
+    private static void fillClusterNodesWithMultipleFlush(
+            Dao[] daoCluster,
+            List<String> clusterUrls
+    ) throws IOException {
         final int sstables = 100; //how many sstables dao must create
         final int flushEntries = ENTRIES_IN_DB / sstables; //how many entries in one sstable
-        final int entriesCountInEachNode[] = new int[NODES];
+        final int[] entriesCountInEachNode = new int[NODES];
         final int[] entries = getRandomArray();
 
-        for (int i = 0; i < entries.length; i++) {
+        for (int entry : entries) {
             //select node
-            int partition = selectNode(("k" + entries[i]), clusterUrls);
+            int partition = selectNode(("k" + entry), clusterUrls);
 
             //upsert entry in selected node and increment entry counter
-            daoCluster[partition].upsert(entry(keyAt(entries[i]), valueAt(entries[i])));
+            daoCluster[partition].upsert(entry(keyAt(entry), valueAt(entry)));
             entriesCountInEachNode[partition]++;
 
             //check entry counters for ability to flush

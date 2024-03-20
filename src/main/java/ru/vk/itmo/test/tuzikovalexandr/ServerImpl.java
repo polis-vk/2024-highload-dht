@@ -22,18 +22,24 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class ServerImpl extends HttpServer {
 
     private final Dao dao;
+    private final ExecutorService executorService;
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
     private static final Set<Integer> METHODS = Set.of(
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
+    public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
 
-    public ServerImpl(ServiceConfig config, Dao dao) throws IOException {
+    public ServerImpl(ServiceConfig config, Dao dao, Worker worker) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
+        this.executorService = worker.getExecutorService();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -61,14 +67,17 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            super.handleRequest(request, session);
-        } catch (Exception e) {
-            if (e.getClass() == HttpException.class) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            } else {
-                log.error("Exception during handleRequest: ", e);
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            }
+            long processingStartTime = System.nanoTime();
+            executorService.execute(() -> {
+                try {
+                    processingRequest(request, session, processingStartTime);
+                } catch (IOException e) {
+                    log.error("Exception while sending close connection", e);
+                    session.scheduleClose();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY));
         }
     }
 
@@ -123,5 +132,23 @@ public class ServerImpl extends HttpServer {
 
     private MemorySegment fromString(String data) {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void processingRequest(Request request, HttpSession session, long processingStartTime) throws IOException {
+        if (System.nanoTime() - processingStartTime > TimeUnit.SECONDS.toNanos(2)) {
+            session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            return;
+        }
+
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            if (e.getClass() == HttpException.class) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            } else {
+                log.error("Exception during handleRequest: ", e);
+                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            }
+        }
     }
 }

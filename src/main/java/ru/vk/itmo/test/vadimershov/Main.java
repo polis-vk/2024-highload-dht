@@ -23,7 +23,7 @@ public final class Main {
         String url = "localhost";
         ServiceConfig serviceConfig = new ServiceConfig(8080, url, List.of(url), daoDataPath);
 
-        DaoHttpServer server = new DaoHttpServer(serviceConfig, referenceDao);
+        DaoHttpServer server = new DaoHttpServer(serviceConfig, referenceDao, new RequestThreadExecutor.Config());
         server.start();
     }
 }

@@ -56,6 +56,7 @@ public class HttpServerImpl extends HttpServer {
             "DELETE"
     );
     private static final ZoneId SERVER_ZONE = ZoneId.of("UTC");
+
     private final HttpClient client;
     private final List<String> nodes;
     private final String selfUrl;
@@ -80,6 +81,20 @@ public class HttpServerImpl extends HttpServer {
         this.selfUrl = config.selfUrl();
         this.nodes = config.clusterUrls();
         this.client = HttpClient.newHttpClient();
+
+        AtomicInteger threadCounter = new AtomicInteger(0);
+        ThreadFactory threadFactory = r ->
+                new Thread(r, "HttpServerImplThread: " + threadCounter.getAndIncrement());
+
+        this.executor = new ThreadPoolExecutor(
+                POOL_SIZE,
+                POOL_SIZE,
+                KEEP_ALIVE,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(QUEUE_SIZE),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy()
+        );
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -220,6 +235,26 @@ public class HttpServerImpl extends HttpServer {
             log.error("Exception in forward request at sending request", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
+    }
+
+    private void process(Request request, HttpSession session, LocalDateTime deadlineRequest) {
+        LocalDateTime now = LocalDateTime.now(SERVER_ZONE);
+        if (now.isAfter(deadlineRequest)) {
+            sendResponse(session, new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            return;
+        }
+
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            boolean isHttp = e.getClass() == HttpException.class;
+
+            sendResponse(session, isHttp ? new Response(Response.BAD_REQUEST, Response.EMPTY) :
+                    new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+
+            log.error(e.toString());
+        }
+
     }
 
     private boolean isIdIncorrect(String id) {

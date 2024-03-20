@@ -19,6 +19,7 @@ public final class Server {
     public static final String DIRECTORY_PREFIX = "tmp/";
     public static final int NODES = 5;
     private static final Logger log = LoggerFactory.getLogger(Server.class);
+    public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
 
     private Server() {
 

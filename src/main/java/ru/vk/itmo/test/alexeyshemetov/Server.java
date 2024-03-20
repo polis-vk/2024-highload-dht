@@ -32,22 +32,26 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @SuppressWarnings("unused")
 public class Server extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(Server.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final String ENTITY_PATH = "/v0/entity";
-    private static final long MEM_DAO_SIZE = 1L << 22;
+    private static final long MEM_DAO_SIZE = 1L << 21;
     private static final int KEEP_ALIVE_THREAD_SECONDS = 30;
     private static final int AWAIT_TERMINATION_TIME_MINUTES = 5;
-    public static final int QUEUE_CAPACITY = 1024;
+    private static final int QUEUE_CAPACITY = 1024;
+    private static final int WAIT_RESPONSE_SECONDS = 60;
     private final ExecutorService executorService;
     private final PathMapper pathMapper;
     private final HttpClient client;
@@ -169,15 +173,22 @@ public class Server extends HttpServer {
         builder.method(request.getMethodName(), bodyPublishers);
 
         try {
-            HttpResponse<byte[]> httpResponse = client.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            CompletableFuture<HttpResponse<byte[]>> future = client.sendAsync(
+                builder.build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+            );
+            HttpResponse<byte[]> httpResponse;
+            httpResponse = future.get(WAIT_RESPONSE_SECONDS, TimeUnit.SECONDS);
             var response = new Response(Utils.statusCodeToResponseCode(httpResponse.statusCode()), httpResponse.body());
             sendResponse(session, response);
-        } catch (IOException e) {
+        } catch (ExecutionException e) {
             log.error("can not reach {}", clusterUrl, e);
             sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         } catch (InterruptedException e) {
             log.error("error occurred while handling http response", e);
             Thread.currentThread().interrupt();
+        } catch (TimeoutException e) {
+            log.error("time out\nurl: {}\nrequest: {}\nsession: {}", clusterUrl, request, session);
         }
     }
 

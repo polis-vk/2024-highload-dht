@@ -18,7 +18,7 @@ public final class ServerLauncher {
     private ServerLauncher() {
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
         Map<Integer, String> nodes = new HashMap<>();
         int nodePort = 8080;
         for (int i = 0; i < 3; i++) {
@@ -42,12 +42,7 @@ public final class ServerLauncher {
 
         for (ServiceConfig serviceConfig : clusterConfs) {
             ServiceImpl instance = new ServiceImpl(serviceConfig);
-            try {
-                instance.start().get(1, TimeUnit.SECONDS);
-                Runtime.getRuntime().addShutdownHook(new Thread(instance::stop));
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException(e);
-            }
+            instance.start().get(1, TimeUnit.SECONDS);
         }
     }
 }

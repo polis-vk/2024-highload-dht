@@ -25,7 +25,7 @@ public class ProxyRequestHandler {
 
     public ProxyRequestHandler(ServiceConfig serviceConfig) {
         this.nodes = new HashMap<>(serviceConfig.clusterUrls().size());
-        this.selfUrl = serviceConfig.selfUrl() + ":" + serviceConfig.selfPort();
+        this.selfUrl = serviceConfig.selfUrl();
 
         for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
             String url = serviceConfig.clusterUrls().get(i);

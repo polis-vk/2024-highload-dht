@@ -1,9 +1,9 @@
 id = 0
-
- function request()
-     body = string.rep("value", 100)
-     method = "PUT"
+function request()
+     headers = { }
+     headers["Host"] = "localhost:8080"
      id = id + 1
-     path = "/v0/entity?id=" .. id
-     return wrk.format(method, path, headers, body)
+     key = "k" .. math.random(1, 500000)
+     local valueAsBody = "v" .. math.random(1, 500000)
+     return wrk.format("PUT", "/v0/entity?id=" .. key, headers, valueAsBody)
 end

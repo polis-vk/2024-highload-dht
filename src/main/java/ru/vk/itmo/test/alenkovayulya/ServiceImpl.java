@@ -34,6 +34,7 @@ public class ServiceImpl implements Service {
         var shardSelector = new ShardSelector(config.clusterUrls());
         server = new ServerImpl(config, referenceDao, executorService, shardSelector);
         server.start();
+        stopFlag.set(false);
         return CompletableFuture.completedFuture(null);
     }
 

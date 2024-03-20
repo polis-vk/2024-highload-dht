@@ -49,7 +49,7 @@ public class ServerImpl extends HttpServer {
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
-    public static final int REQUEST_TIMEOUT = 1000;
+    public static final int REQUEST_TIMEOUT = 10_000;
     private static final Map<Integer, String> HTTP_CODE = Map.of(
             HttpURLConnection.HTTP_OK, Response.OK,
             HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
@@ -95,7 +95,7 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            long processingStartTime = System.nanoTime();
+            long processingStartTime = System.currentTimeMillis();
             executorService.execute(() -> {
                 try {
                     processingRequest(request, session, processingStartTime);
@@ -163,7 +163,7 @@ public class ServerImpl extends HttpServer {
     }
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime) throws IOException {
-        if (System.nanoTime() - processingStartTime > TimeUnit.SECONDS.toNanos(2)) {
+        if (System.currentTimeMillis() - processingStartTime > 300) {
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
@@ -177,6 +177,7 @@ public class ServerImpl extends HttpServer {
 
         try {
             String nodeUrl = consistentHashing.getNode(paramId);
+            log.error(nodeUrl);
             if (Objects.equals(selfUrl, nodeUrl)) {
                 super.handleRequest(request, session);
             } else {
@@ -200,7 +201,7 @@ public class ServerImpl extends HttpServer {
             } else {
                 responseCode = Response.INTERNAL_ERROR;
             }
-            session.sendResponse(new Response(responseCode, exception.getMessage().getBytes(StandardCharsets.UTF_8)));
+            session.sendResponse(new Response(responseCode, Response.EMPTY));
         } catch (IOException e) {
             log.error("Error sending exception", e);
         }
@@ -216,25 +217,11 @@ public class ServerImpl extends HttpServer {
     }
 
     private HttpRequest createProxyRequest(Request request, String nodeUrl, String params) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params));
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                return builder.GET().build();
-            }
-            case Request.METHOD_PUT -> {
-                byte[] body = request.getBody();
-                if (body == null) {
-                    return null;
-                }
-                return builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
-            }
-            case Request.METHOD_DELETE -> {
-                return builder.DELETE().build();
-            }
-            default -> {
-                return null;
-            }
-        }
+        return HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params))
+                .method(request.getMethodName(), request.getBody() == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .build();
     }
 
     private void sendProxyRequest(HttpSession session, HttpRequest httpRequest) {
@@ -258,7 +245,7 @@ public class ServerImpl extends HttpServer {
     }
 
     private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String params) {
-        final HttpRequest httpRequest = createProxyRequest(request, nodeUrl, params);
+        HttpRequest httpRequest = createProxyRequest(request, nodeUrl, params);
 
         if (httpRequest != null) {
             sendProxyRequest(session, httpRequest);

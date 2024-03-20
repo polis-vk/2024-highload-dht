@@ -8,6 +8,7 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class Server {
@@ -19,24 +20,31 @@ public final class Server {
     }
 
     public static void main(String[] args) throws IOException {
+        int clusterSize = 3;
         long flushThresholdBytes = 1024 * 1024;
 
-        Path dataPath = Files.createTempDirectory("data");
+        List<String> clusterUrls = new ArrayList<>();
+        int tempPortValue;
+        for (int i = 0; i < clusterSize; i++) {
+            tempPortValue = BASE_PORT + i * 1000;
+            clusterUrls.add(BASE_URL + ":" + tempPortValue);
+        }
 
-        Dao dao = new ReferenceDao(new Config(dataPath, flushThresholdBytes));
-        ServiceConfig serviceConfig = new ServiceConfig(BASE_PORT, BASE_URL, List.of(BASE_URL), dataPath);
         Worker worker = new Worker(new WorkerConfig());
 
-        List<String> clusterUrls = List.of(
-                BASE_URL + ":" + BASE_PORT,
-                BASE_URL + ":" + "11111",
-                BASE_URL + ":" + "22222"
-        );
+        for (int i = 0; i < clusterSize; i++) {
+            Path dataPath = Files.createTempDirectory("data");
 
-        ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, 5);
+            Dao dao = new ReferenceDao(new Config(dataPath, flushThresholdBytes));
 
-        ServerImpl server = new ServerImpl(serviceConfig, dao, worker, consistentHashing);
+            ServiceConfig serviceConfig = new ServiceConfig(BASE_PORT + i * 1000,
+                    clusterUrls.get(i), clusterUrls, dataPath);
 
-        server.start();
+            ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, 15);
+
+            ServerImpl server = new ServerImpl(serviceConfig, dao, worker, consistentHashing);
+
+            server.start();
+        }
     }
 }

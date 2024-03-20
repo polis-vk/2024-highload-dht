@@ -22,11 +22,7 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class ServerImpl extends HttpServer {
 
@@ -67,9 +63,9 @@ public class ServerImpl extends HttpServer {
                 }
             });
         } catch (RejectedExecutionException rex) {
-            logger.error("caught exception in executor service - ", rex);
+            logger.error("caught exception in executor service", rex);
             try {
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
             } catch (IOException ex) {
                 throw new UncheckedIOException(ex);
             }
@@ -102,6 +98,7 @@ public class ServerImpl extends HttpServer {
         try {
             dao.upsert(new BaseEntry<>(key, null));
         } catch (IllegalStateException ex) {
+            logger.error("Exception with delete entity with id " + id + " \n" + ex.getMessage());
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -124,20 +121,13 @@ public class ServerImpl extends HttpServer {
         try {
             dao.upsert(new BaseEntry<>(key, value));
         } catch (IllegalStateException ex) {
+            logger.error("Exception with put entity with id " + id + " \n" + ex.getMessage());
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
 
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
-            super.handleRequest(request, session);
-        } catch (IOException ex) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        }
-    }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
@@ -148,8 +138,8 @@ public class ServerImpl extends HttpServer {
     @Override
     public synchronized void stop() {
         super.stop();
+        shutdownExecutor();
         try {
-            shutdownExecutor();
             dao.close();
         } catch (IOException e) {
             throw new IllegalArgumentException(e);
@@ -172,7 +162,13 @@ public class ServerImpl extends HttpServer {
                 MAX_POOL_SIZE,
                 KEEP_ALIVE_TIME,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(BLOCKING_QUEUE_SIZE));
+                new ArrayBlockingQueue<>(BLOCKING_QUEUE_SIZE),
+                r -> {
+                    Thread t = Executors.defaultThreadFactory().newThread(r);
+                    t.setDaemon(true);
+                    return t;
+                }
+        );
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {

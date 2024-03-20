@@ -7,7 +7,8 @@ public final class Constants {
 
     public static final int THREADS = Runtime.getRuntime().availableProcessors();
     public static final long TASK_DEADLINE_MILLIS = 500;
-    public static final int FLUSH_THRESHOLD_BYTES = 10 * 1024 * 1024;
+//    public static final int FLUSH_THRESHOLD_BYTES = 3 * 1024 * 1024;
+    public static final int FLUSH_THRESHOLD_BYTES = 16 * 1024 * 1024;
     public static final int QUEUE_SIZE = 128;
 
     private Constants() {

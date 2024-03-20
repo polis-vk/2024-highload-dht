@@ -7,6 +7,7 @@ import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.BaseEntry;
@@ -51,19 +52,15 @@ public class Server extends HttpServer {
         clients = new HashMap<>();
         config.clusterUrls.stream()
                 .filter(url -> !url.equals(config.selfUrl))
-                .forEach(u -> clients.put(u, new HttpClient(new ConnectionString(u))));
+                .forEach(u -> {
+                    HttpClient client = new HttpClient(new ConnectionString(u));
+                    client.setTimeout(100);
+                    clients.put(u, client);
+                });
         logger.info("Server started");
     }
-    
-    public Response getEntity(@Param(value = "id", required = true) String id, HttpClient client) {
-        if (client != null) {
-            try {
-                return client.get(Constants.ENDPOINT + "?id=" + id);
-            } catch (Exception e) {
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
-        }
 
+    public Response getEntity(@Param(value = "id", required = true) String id) {
         Entry<MemorySegment> result = dao.get(MemSegUtil.fromString(id));
         if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -71,15 +68,7 @@ public class Server extends HttpServer {
         return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    public Response putEntity(@Param(value = "id", required = true) String id, Request request, HttpClient client) {
-        if (client != null) {
-            try {
-                return client.put(Constants.ENDPOINT + "?id=" + id, request.getBody());
-            } catch (Exception e) {
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
-        }
-
+    public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
         dao.upsert(
                 new BaseEntry<>(
                         MemSegUtil.fromString(id),
@@ -89,14 +78,7 @@ public class Server extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    public Response deleteEntity(@Param(value = "id", required = true) String id, HttpClient client) {
-        if (client != null) {
-            try {
-                return client.delete(Constants.ENDPOINT + "?id=" + id);
-            } catch (Exception e) {
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
-        }
+    public Response deleteEntity(@Param(value = "id", required = true) String id) {
         dao.upsert(
                 new BaseEntry<>(
                         MemSegUtil.fromString(id),
@@ -145,13 +127,21 @@ public class Server extends HttpServer {
             return;
         }
 
-        HttpClient client = getClient(key);
+        HttpClient client = getClientByKey(key);
+        if (client == null) {
+            invokeLocal(request, session, key);
+        } else {
+            invokeRemote(request, session, client);
+        }
+    }
+
+    private void invokeLocal(Request request, HttpSession session, String key) throws IOException {
         Response response;
         try {
             response = switch (request.getMethod()) {
-                case Request.METHOD_GET -> getEntity(key, client);
-                case Request.METHOD_PUT -> putEntity(key, request, client);
-                case Request.METHOD_DELETE -> deleteEntity(key, client);
+                case Request.METHOD_GET -> getEntity(key);
+                case Request.METHOD_PUT -> putEntity(key, request);
+                case Request.METHOD_DELETE -> deleteEntity(key);
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         } catch (Exception e) {
@@ -162,11 +152,35 @@ public class Server extends HttpServer {
         session.sendResponse(response);
     }
 
-    private HttpClient getClient(String key) {
-        int size = serverConfig.clusterUrls.size();
-        int nodeNumber = key.hashCode() % size;
-        nodeNumber = nodeNumber < 0 ? nodeNumber + size : nodeNumber;
-        return clients.get(serverConfig.clusterUrls.get(nodeNumber));
+    private void invokeRemote(Request request, HttpSession session, HttpClient client) throws IOException {
+        Response response;
+        try {
+            response = switch (request.getMethod()) {
+                case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE -> client.invoke(request);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+        } catch (Exception e) {
+            logger.error("Internal error during request handling: " + e.getMessage());
+            response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+        session.sendResponse(response);
+    }
+
+    private HttpClient getClientByKey(String key) {
+        String selectedNode = serverConfig.clusterUrls.getFirst();
+        int maxHash = Hash.murmur3(selectedNode + key);
+
+        for (int i = 1; i < serverConfig.clusterUrls.size(); i++) {
+            String currentNodeUrl = serverConfig.clusterUrls.get(i);
+            int currentHash = Hash.murmur3(currentNodeUrl + key);
+
+            if (currentHash > maxHash) {
+                maxHash = currentHash;
+                selectedNode = currentNodeUrl;
+            }
+        }
+
+        return clients.get(selectedNode);
     }
 
     @Override

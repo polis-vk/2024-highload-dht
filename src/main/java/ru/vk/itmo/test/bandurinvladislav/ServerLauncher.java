@@ -1,11 +1,17 @@
 package ru.vk.itmo.test.bandurinvladislav;
 
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.bandurinvladislav.config.DhtServerConfig;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class ServerLauncher {
 
@@ -13,13 +19,35 @@ public final class ServerLauncher {
     }
 
     public static void main(String[] args) throws IOException {
-        ServiceConfig serviceConfig = new ServiceConfig(
-                8080, "http://localhost", List.of("http://localhost"),
-                Path.of("/home/vbandurin/github/tmp/db"));
-        DhtServerConfig serverConfig = ServiceImpl.createServerConfig(serviceConfig);
-        Server server = new Server(serverConfig, serviceConfig.workingDir());
-        server.start();
+        Map<Integer, String> nodes = new HashMap<>();
+        int nodePort = 8080;
+        for (int i = 0; i < 3; i++) {
+            nodes.put(nodePort, "http://localhost:" + nodePort);
+            nodePort += 10;
+        }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(server::stop));
+        List<String> clusterUrls = new ArrayList<>(nodes.values());
+        List<ServiceConfig> clusterConfs = new ArrayList<>();
+        for (Map.Entry<Integer, String> entry : nodes.entrySet()) {
+            int port = entry.getKey();
+            String url = entry.getValue();
+            Path path = Path.of("/home/vbandurin/github/tmp/db/" + port);
+            Files.createDirectories(path);
+            ServiceConfig serviceConfig = new ServiceConfig(port,
+                    url,
+                    clusterUrls,
+                    path);
+            clusterConfs.add(serviceConfig);
+        }
+
+        for (ServiceConfig serviceConfig : clusterConfs) {
+            ServiceImpl instance = new ServiceImpl(serviceConfig);
+            try {
+                instance.start().get(1, TimeUnit.SECONDS);
+                Runtime.getRuntime().addShutdownHook(new Thread(instance::stop));
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }

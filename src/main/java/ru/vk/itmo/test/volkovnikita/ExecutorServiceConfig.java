@@ -7,15 +7,15 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class ExecutorServiceConfig {
-
-    private ExecutorServiceConfig() {
-
-    }
+public final class ExecutorServiceConfig {
 
     private static final Integer POOL_SIZE = 8;
     private static final Integer KEEP_ALIVE = 30;
     private static final Integer QUEUE_SIZE = 1500;
+
+    private ExecutorServiceConfig() {
+
+    }
 
     public static ExecutorService newExecutorService() {
         AtomicInteger threadCounter = new AtomicInteger(0);

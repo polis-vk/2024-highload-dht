@@ -10,13 +10,12 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServiceImpl implements Service {
 
     public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
     private ExecutorService executorService;
-    private volatile boolean isStopped = false;
+    private volatile boolean isStopped;
     private HttpServerImpl server;
     private final ServiceConfig config;
     private ReferenceDao dao;

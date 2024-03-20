@@ -104,7 +104,6 @@ public class HttpServerImpl extends HttpServer {
             return forwardRequest(request, clusterUrl, id, request.getBody());
         }
 
-
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         MemorySegment value = MemorySegment.ofArray(request.getBody());
         dao.upsert(new BaseEntry<>(key, value));

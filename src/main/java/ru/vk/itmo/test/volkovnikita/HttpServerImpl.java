@@ -10,6 +10,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -31,6 +32,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
@@ -54,11 +56,11 @@ public class HttpServerImpl extends HttpServer {
             "DELETE"
     );
     private static final ZoneId SERVER_ZONE = ZoneId.of("UTC");
-    private final List<HttpClient> httpClients;
-    private final DistributedHash<String> distributedHash;
+    private final HttpClient client;
+    private final List<String> nodes;
     private final String selfUrl;
 
-    public HttpServerImpl(ServiceConfig config, ReferenceDao dao, List<HttpClient> httpClients) throws IOException {
+    public HttpServerImpl(ServiceConfig config, ReferenceDao dao) throws IOException {
         super(createServerConfig(config));
         AtomicInteger threadCounter = new AtomicInteger(0);
         ThreadFactory threadFactory = r ->
@@ -75,9 +77,9 @@ public class HttpServerImpl extends HttpServer {
         );
 
         this.dao = dao;
-        this.distributedHash = new DistributedHash<>(String::hashCode, config.clusterUrls());
-        this.httpClients = httpClients;
         this.selfUrl = config.selfUrl();
+        this.nodes = config.clusterUrls();
+        this.client = HttpClient.newHttpClient();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -102,9 +104,10 @@ public class HttpServerImpl extends HttpServer {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        String node = distributedHash.getNode(id);
-        if (!node.equals(this.selfUrl)) {
-            return forwardRequest(request, node, id, null);
+
+        String clusterUrl = hash(id);
+        if (!Objects.equals(clusterUrl, selfUrl)) {
+            return forwardRequest(request, clusterUrl, id);
         }
 
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
@@ -120,10 +123,11 @@ public class HttpServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        String node = distributedHash.getNode(id);
-        if (!node.equals(this.selfUrl)) {
-            return forwardRequest(request, node, id, request.getBody());
+        String clusterUrl = hash(id);
+        if (!Objects.equals(clusterUrl, selfUrl)) {
+            return forwardRequest(request, clusterUrl, id);
         }
+
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         MemorySegment value = MemorySegment.ofArray(request.getBody());
         dao.upsert(new BaseEntry<>(key, value));
@@ -137,9 +141,9 @@ public class HttpServerImpl extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        String node = distributedHash.getNode(id);
-        if (!node.equals(this.selfUrl)) {
-            return forwardRequest(request, node, id, null);
+        String clusterUrl = hash(id);
+        if (!Objects.equals(clusterUrl, selfUrl)) {
+            return forwardRequest(request, clusterUrl, id);
         }
 
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
@@ -192,20 +196,13 @@ public class HttpServerImpl extends HttpServer {
 
     }
 
-    private Response forwardRequest(Request request, String node, String id, byte[] body) {
-        int nodeIndex = distributedHash.getClusterNodeIndex(node);
-        if (nodeIndex == -1) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-
-        HttpClient httpClient = httpClients.get(nodeIndex);
-
-        URI uri = URI.create(String.format("%s/v0/entity?id=%s", node, id));
+    private Response forwardRequest(Request request, String clusterUrl, String id) {
+        URI uri = URI.create(String.format("%s/v0/entity?id=%s", clusterUrl, id));
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().uri(uri);
 
         switch (request.getMethod()) {
             case Request.METHOD_GET -> requestBuilder.GET();
-            case Request.METHOD_PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(body));
+            case Request.METHOD_PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
             case Request.METHOD_DELETE -> requestBuilder.DELETE();
             default -> {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
@@ -214,8 +211,8 @@ public class HttpServerImpl extends HttpServer {
 
         try {
             HttpResponse<byte[]> httpResponse =
-                    httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
+                    client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            return new Response(getResponseByCode(httpResponse.statusCode()), httpResponse.body());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -235,5 +232,31 @@ public class HttpServerImpl extends HttpServer {
         } catch (IOException e) {
             session.handleException(e);
         }
+    }
+
+    private String hash(String id) {
+        int maxHash = Integer.MIN_VALUE;
+        String nodeUrl = null;
+        for (String node : nodes) {
+            int hash = Hash.murmur3(id + node);
+            if (hash > maxHash) {
+                maxHash = hash;
+                nodeUrl = node;
+            }
+        }
+        return nodeUrl;
+    }
+
+    private String getResponseByCode(int code) {
+        return switch (code) {
+            case 200 -> Response.OK;
+            case 201 -> Response.CREATED;
+            case 202 -> Response.ACCEPTED;
+            case 400 -> Response.BAD_REQUEST;
+            case 404 -> Response.NOT_FOUND;
+            case 405 -> Response.METHOD_NOT_ALLOWED;
+            case 429 -> CustomHttpStatus.TOO_MANY_REQUESTS.toString();
+            default -> Response.INTERNAL_ERROR;
+        };
     }
 }

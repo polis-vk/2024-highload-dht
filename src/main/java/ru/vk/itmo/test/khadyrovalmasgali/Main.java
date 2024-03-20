@@ -1,9 +1,10 @@
 
 package ru.vk.itmo.test.khadyrovalmasgali;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.khadyrovalmasgali.server.DaoServer;
 import ru.vk.itmo.test.khadyrovalmasgali.service.DaoService;
 
 import java.io.IOException;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeoutException;
 
 public final class Main {
     public static void main(String[] args) throws IOException {
+        Logger log = LoggerFactory.getLogger(Main.class);
         String selfUrl = "http://localhost";
         int[] ports = {8080, 8085, 8090, 8095};
         List<String> cluserUrls = new ArrayList<>();
@@ -37,7 +39,8 @@ public final class Main {
             try {
                 instance.start().get(5, TimeUnit.SECONDS);
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt();
+                log.error(e.getMessage());
             }
         }
     }

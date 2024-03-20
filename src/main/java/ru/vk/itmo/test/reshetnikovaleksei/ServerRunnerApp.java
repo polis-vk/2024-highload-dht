@@ -22,7 +22,8 @@ public final class ServerRunnerApp {
 
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args)
+            throws IOException, ExecutionException, InterruptedException, TimeoutException {
         Map<Integer, String> nodes = generateNodes();
 
         List<ServiceConfig> configs = new ArrayList<>();
@@ -37,12 +38,8 @@ public final class ServerRunnerApp {
         }
 
         for (ServiceConfig config : configs) {
-            try {
-                ServiceImpl service = new ServiceImpl(config);
-                service.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException();
-            }
+            ServiceImpl service = new ServiceImpl(config);
+            service.start().get(1, TimeUnit.SECONDS);
         }
     }
 

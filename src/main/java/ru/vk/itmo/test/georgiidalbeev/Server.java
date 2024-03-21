@@ -10,7 +10,7 @@ import java.util.List;
 
 public final class Server {
 
-    private static final String DIRECTORY = "tmp/dao";
+    private static final String DIRECTORY = "tmp/dao1";
 
     private Server() {
 
@@ -26,8 +26,8 @@ public final class Server {
         NewService service = new NewService(
                 new ServiceConfig(
                         8080,
-                        "http://localhost",
-                        List.of("http://localhost"),
+                        "http://localhost:8080",
+                        List.of("http://localhost:8080", "http://localhost:8081", "http://localhost:8082"),
                         directoryPath
                 )
         );

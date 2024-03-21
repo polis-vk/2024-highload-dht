@@ -10,6 +10,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -40,6 +41,7 @@ public class NewServer extends HttpServer {
     private final List<HttpClient> httpClients;
     private final ConsistentHashing<String> consistentHashing;
     private final String selfUrl;
+    private final List<String> clusterUrls;
 
     public NewServer(ServiceConfig config,
                      Dao<MemorySegment, Entry<MemorySegment>> dao,
@@ -50,9 +52,10 @@ public class NewServer extends HttpServer {
         super(configureServer(config));
         this.dao = dao;
         this.executorService = executorService;
-        this.consistentHashing = new ConsistentHashing<>(String::hashCode, clusterUrls);
+        this.consistentHashing = new ConsistentHashing<>(Hash::murmur3, clusterUrls);
         this.selfUrl = config.selfUrl();
         this.httpClients = httpClients;
+        this.clusterUrls = clusterUrls;
     }
 
     private static HttpServerConfig configureServer(ServiceConfig serviceConfig) {
@@ -195,7 +198,7 @@ public class NewServer extends HttpServer {
     }
 
     private Response proxyRequest(Request request, String node, String id, byte[] body) throws IOException {
-        HttpClient httpClient = httpClients.get(consistentHashing.getNodeIndex(node));
+        HttpClient httpClient = httpClients.get(clusterUrls.indexOf(node));
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(node + PATH + "?id=" + id));
 

@@ -81,18 +81,18 @@ public class DaoHttpServer extends HttpServer {
                     }
                     super.handleRequest(request, session);
                 } catch (DaoException e) {
-                    logger.error("DaoExp {}", e.getMessage());
+                    logger.error(e.getMessage());
                     sessionSendResponse(session, DaoResponse.INTERNAL_ERROR);
                 } catch (RemoteServiceException e) {
                     logger.error("Exception in remote service: {}", e.getUrl());
                     sessionSendResponse(session, e.getHttpCode());
                 } catch (Exception e) {
-                    logger.error("Exp {}", e.getMessage());
+                    logger.error(e.getMessage());
                     sessionSendResponse(session, DaoResponse.BAD_REQUEST);
                 }
             });
         } catch (RejectedExecutionException e) {
-            logger.error("Exp {}", e.getMessage());
+            logger.error(e.getMessage());
             sessionSendResponse(session, DaoResponse.TOO_MANY_REQUESTS);
         }
     }
@@ -101,7 +101,7 @@ public class DaoHttpServer extends HttpServer {
         try {
             session.sendResponse(DaoResponse.empty(serviceUnavailable));
         } catch (IOException ex) {
-            logger.error("Exp {}", ex.getMessage());
+            logger.error(ex.getMessage());
         }
     }
 

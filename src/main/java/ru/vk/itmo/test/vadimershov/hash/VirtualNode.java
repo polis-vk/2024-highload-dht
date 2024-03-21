@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.vadimershov.hash;
 
 import one.nio.http.HttpClient;
-import one.nio.net.ConnectionString;
 
 import javax.annotation.Nonnull;
 

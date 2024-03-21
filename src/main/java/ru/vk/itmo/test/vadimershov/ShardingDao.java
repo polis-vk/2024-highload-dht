@@ -3,6 +3,8 @@ package ru.vk.itmo.test.vadimershov;
 import one.nio.http.HttpException;
 import one.nio.http.Response;
 import one.nio.pool.PoolException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
@@ -22,6 +24,7 @@ import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toMemorySegmen
 
 public class ShardingDao {
 
+    private final Logger logger = LoggerFactory.getLogger(this.getClass());
     public static final String ENTITY_URI = "/v0/entity?id=";
 
     private final String selfUrl;
@@ -41,6 +44,7 @@ public class ShardingDao {
             try {
                 entry = localDao.get(toMemorySegment(key));
             } catch (Exception e) {
+                logger.error(e.getMessage());
                 throw new DaoException(e);
             }
             if (entry == null) {
@@ -54,8 +58,10 @@ public class ShardingDao {
             return response.getBody();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            logger.error(e.getMessage());
             throw new DaoException(e);
         } catch (PoolException | IOException | HttpException e) {
+            logger.error(e.getMessage());
             throw new DaoException(e);
         }
     }
@@ -67,6 +73,7 @@ public class ShardingDao {
                 localDao.upsert(toEntity(key, value));
                 return;
             } catch (Exception e) {
+                logger.error(e.getMessage());
                 throw new DaoException(e);
             }
         }
@@ -74,9 +81,11 @@ public class ShardingDao {
             Response response = virtualNode.httpClient().put(ENTITY_URI + key, value);
             checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
+            logger.error(e.getMessage());
             Thread.currentThread().interrupt();
             throw new DaoException(e);
         } catch (PoolException | IOException | HttpException e) {
+            logger.error(e.getMessage());
             throw new DaoException(e);
         }
     }
@@ -88,6 +97,7 @@ public class ShardingDao {
                 localDao.upsert(toDeletedEntity(key));
                 return;
             } catch (Exception e) {
+                logger.error(e.getMessage());
                 throw new DaoException(e);
             }
         }
@@ -95,11 +105,17 @@ public class ShardingDao {
             Response response = virtualNode.httpClient().delete(ENTITY_URI + key);
             checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
+            logger.error(e.getMessage());
             Thread.currentThread().interrupt();
             throw new DaoException(e);
         } catch (PoolException | IOException | HttpException e) {
+            logger.error(e.getMessage());
             throw new DaoException(e);
         }
+    }
+
+    public void close() {
+        consistentHashing.close();
     }
 
     private void checkCodeInRemoteResp(String url, Response response) {

@@ -10,19 +10,19 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class Main {
+public final class Start {
 
-    private Main() {
+    private Start() {
     }
 
     public static void main(String[] args) throws IOException {
-        List<Integer> ports = List.of(9080, 9081);
+        List<Integer> ports = List.of(9080, 9081, 9082);
         List<String> clusterUrls = new ArrayList<>(ports.size());
         for (int port : ports) {
             clusterUrls.add("http://localhost:" + port);
         }
         for (int port : ports) {
-            Path path = Path.of("/Users/ruarsv5/Developer/ITMO/sem-2/highload/src/test/dao_data/" + port);
+            Path path = Path.of("/Users/ruarsv5/Developer/ITMO/temp/" + port);
             Files.createDirectories(path);
             ReferenceDao referenceDao = new ReferenceDao(new Config(path, 1 << 15));
             ServiceConfig serviceConfig = new ServiceConfig(port, "http://localhost:" + port, clusterUrls, path);

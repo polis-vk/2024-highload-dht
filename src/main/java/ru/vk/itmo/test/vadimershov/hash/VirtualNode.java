@@ -3,13 +3,15 @@ package ru.vk.itmo.test.vadimershov.hash;
 import one.nio.http.HttpClient;
 import one.nio.net.ConnectionString;
 
+import javax.annotation.Nonnull;
+
 public class VirtualNode {
     private final HttpClient httpClient;
     private final String url;
     private final int replicaIndex;
 
-    public VirtualNode(String url, int replicaIndex) {
-        this.httpClient = new HttpClient(new ConnectionString(url));
+    public VirtualNode(String url, @Nonnull HttpClient httpClient, int replicaIndex) {
+        this.httpClient = httpClient;
         this.url = url;
         this.replicaIndex = replicaIndex;
     }
@@ -24,5 +26,9 @@ public class VirtualNode {
 
     public String key() {
         return "Virtual node: " + this.url + "-" + this.replicaIndex;
+    }
+
+    public void close() {
+        this.httpClient.close();
     }
 }

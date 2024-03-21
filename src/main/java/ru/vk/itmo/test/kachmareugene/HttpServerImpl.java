@@ -1,15 +1,6 @@
 package ru.vk.itmo.test.kachmareugene;
 
-import one.nio.http.HttpClient;
-import one.nio.http.HttpException;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
@@ -27,12 +18,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class HttpServerImpl extends HttpServer {
 
@@ -49,7 +35,6 @@ public class HttpServerImpl extends HttpServer {
     private final PartitionMetaInfo partitionTable;
     private final Map<String, HttpClient> clientMap = new HashMap<>();
     private boolean closed;
-
     public HttpServerImpl(ServiceConfig conf) throws IOException {
         super(convertToHttpConfig(conf));
         this.serviceConfig = conf;
@@ -62,6 +47,7 @@ public class HttpServerImpl extends HttpServer {
         this.serviceConfig = config;
         this.partitionTable = info;
         this.selfNodeURL = config.selfUrl();
+
         for (final String url: config.clusterUrls()) {
             clientMap.put(url, new HttpClient(new ConnectionString(url)));
         }
@@ -83,6 +69,7 @@ public class HttpServerImpl extends HttpServer {
     public synchronized void start() {
         try {
             daoImpl = new ReferenceDao(new Config(serviceConfig.workingDir(), 16384));
+            this.closed = false;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

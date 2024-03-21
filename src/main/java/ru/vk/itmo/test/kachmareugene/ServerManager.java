@@ -20,7 +20,6 @@ public class ServerManager implements Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-
         server = new HttpServerImpl(config, info);
         server.start();
 

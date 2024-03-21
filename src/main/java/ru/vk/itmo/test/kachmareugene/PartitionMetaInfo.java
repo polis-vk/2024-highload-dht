@@ -18,8 +18,8 @@ public class PartitionMetaInfo {
         mappedVnodes = new ArrayList<>();
         this.maxKeyHashValue = nodesCount * nodesFactor;
 
-        for (int i = 0; i < nodesCount; i++) {
-            mappedVnodes.add(i % nodesFactor);
+        for (int i = 0; i < maxKeyHashValue; i++) {
+            mappedVnodes.add(i % urls.size());
         }
         Collections.shuffle(mappedVnodes, new Random(120));
         this.urls = urls;

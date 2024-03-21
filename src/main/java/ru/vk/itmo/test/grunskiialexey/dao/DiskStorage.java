@@ -39,11 +39,7 @@ public final class DiskStorage {
         long dataSize = 0;
         long count = 0;
         for (Entry<MemorySegment> entry : iterable) {
-            dataSize += entry.key().byteSize();
-            MemorySegment value = entry.value();
-            if (value != null) {
-                dataSize += value.byteSize();
-            }
+            dataSize += sizeOf(entry);
             count++;
         }
         long indexSize = count * 2 * Long.BYTES;
@@ -65,7 +61,7 @@ public final class DiskStorage {
             int indexOffset = 0;
             for (Entry<MemorySegment> entry : iterable) {
                 fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
-                dataOffset += entry.key().byteSize();
+                dataOffset += sizeOf(entry.key());
                 indexOffset += Long.BYTES;
 
                 MemorySegment value = entry.value();
@@ -73,7 +69,7 @@ public final class DiskStorage {
                     fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, tombstone(dataOffset));
                 } else {
                     fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
-                    dataOffset += value.byteSize();
+                    dataOffset += sizeOf(value);
                 }
                 indexOffset += Long.BYTES;
             }
@@ -83,13 +79,13 @@ public final class DiskStorage {
             dataOffset = indexSize;
             for (Entry<MemorySegment> entry : iterable) {
                 MemorySegment key = entry.key();
-                MemorySegment.copy(key, 0, fileSegment, dataOffset, key.byteSize());
-                dataOffset += key.byteSize();
+                MemorySegment.copy(key, 0, fileSegment, dataOffset, sizeOf(key));
+                dataOffset += sizeOf(key);
 
                 MemorySegment value = entry.value();
                 if (value != null) {
                     MemorySegment.copy(value, 0, fileSegment, dataOffset, value.byteSize());
-                    dataOffset += value.byteSize();
+                    dataOffset += sizeOf(value);
                 }
             }
         }
@@ -228,5 +224,14 @@ public final class DiskStorage {
 
     static long normalize(long value) {
         return value & ~(1L << 63);
+    }
+
+
+    public static long sizeOf(final Entry<MemorySegment> entry) {
+        return entry == null ? 0 : sizeOf(entry.key()) + sizeOf(entry.value());
+    }
+
+    public static long sizeOf(final MemorySegment segment) {
+        return segment == null ? 0 : segment.byteSize();
     }
 }

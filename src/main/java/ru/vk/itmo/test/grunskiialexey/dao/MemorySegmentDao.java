@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -33,11 +34,14 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private static final Comparator<MemorySegment> comparator = MemorySegmentDao::compare;
     private final Arena arena;
     private final Path path;
+    private final long flushThresholdBytes;
     private final AtomicReference<StorageState> state;
+    private final AtomicLong memTableSize = new AtomicLong(0);
     private final AtomicBoolean closed = new AtomicBoolean();
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
 
     public MemorySegmentDao(Config config) throws IOException {
+        this.flushThresholdBytes = config.flushThresholdBytes();
         this.path = config.basePath().resolve("data");
         Files.createDirectories(path);
 
@@ -94,11 +98,23 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void upsert(Entry<MemorySegment> entry) {
+        final boolean autoFlush;
         upsertLock.readLock().lock();
         try {
-            state.get().writeStorage.put(entry.key(), entry);
+
+            // Upsert
+            final Entry<MemorySegment> prev =
+                    state.get().writeStorage.put(entry.key(), entry);
+
+            // Update size estimate
+            final long size = memTableSize.addAndGet(DiskStorage.sizeOf(entry) - DiskStorage.sizeOf(prev));
+            autoFlush = size > flushThresholdBytes;
         } finally {
             upsertLock.readLock().unlock();
+        }
+
+        if (autoFlush) {
+            initializeFlush(true);
         }
     }
 
@@ -134,24 +150,36 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void flush() {
+        initializeFlush(false);
+    }
+
+    private void initializeFlush(boolean auto) {
         bgExecutor.execute(() -> {
+            Collection<Entry<MemorySegment>> entries;
             StorageState prevState = state.get();
             ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment>> writeStorage = prevState.writeStorage;
-            if (writeStorage.isEmpty()) {
-                return;
-            }
-
-            StorageState nextState = prevState.beforeFlush();
-
+            StorageState nextState;
             upsertLock.writeLock().lock();
             try {
+                if (writeStorage.isEmpty()) {
+                    // Nothing to flush
+                    return;
+                }
+
+                if (auto && memTableSize.get() < flushThresholdBytes) {
+                    // Not enough data to flush
+                    return;
+                }
+
+                nextState = prevState.beforeFlush();
+
                 state.set(nextState);
             } finally {
                 upsertLock.writeLock().unlock();
             }
 
             MemorySegment newPage;
-            Collection<Entry<MemorySegment>> entries = writeStorage.values();
+            entries = writeStorage.values();
             try {
                 newPage = DiskStorage.save(arena, path, entries);
             } catch (IOException e) {

@@ -11,6 +11,7 @@ import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
 import ru.vk.itmo.test.nikitaprokopev.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
@@ -42,20 +43,17 @@ public class MyService implements Service {
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES));
         workerPool = createPool();
-        httpClient = HttpClient.newBuilder().executor(
+        httpClient = HttpClient.newBuilder()
+                .executor(
                         Executors.newFixedThreadPool(
                                 MAX_THREADS,
                                 new CustomThreadFactory("CustomHttpClient")
                         )
                 )
+                .connectTimeout(Duration.ofMillis(500))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
-        int nodeId = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
-        if (nodeId == -1) {
-            log.error("Node id not found in cluster urls");
-            return CompletableFuture.completedFuture(null);
-        }
-        server = new MyServer(serviceConfig, dao, workerPool, httpClient, nodeId);
+        server = new MyServer(serviceConfig, dao, workerPool, httpClient);
         server.start();
         return CompletableFuture.completedFuture(null);
     }

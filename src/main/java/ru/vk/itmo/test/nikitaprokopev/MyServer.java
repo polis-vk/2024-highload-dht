@@ -145,7 +145,7 @@ public class MyServer extends HttpServer {
 
             mergeGetResponses(session, responses);
         } catch (IOException e) {
-            logIOExceptionAndCloseSession(session);
+            logIOExceptionAndCloseSession(session, e);
         }
     }
 
@@ -242,7 +242,7 @@ public class MyServer extends HttpServer {
         try {
             session.sendResponse(new Response(status, Response.EMPTY));
         } catch (IOException e) {
-            logIOExceptionAndCloseSession(session);
+            logIOExceptionAndCloseSession(session, e);
         }
     }
 
@@ -255,11 +255,11 @@ public class MyServer extends HttpServer {
             }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (IOException ex) {
-            logIOExceptionAndCloseSession(session);
+            logIOExceptionAndCloseSession(session, ex);
         }
     }
 
-    private void logIOExceptionAndCloseSession(HttpSession session) {
+    private void logIOExceptionAndCloseSession(HttpSession session, IOException e) {
         log.error("Exception while sending close connection", e);
         session.scheduleClose();
     }

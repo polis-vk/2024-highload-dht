@@ -25,8 +25,8 @@ import java.util.stream.Stream;
 
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.deleteOldSSTables;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.entryByteSize;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.restoreCompaction;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.sizeOf;
 
 public class SSTablesStorage {
     private static final long TOMBSTONE = -1;
@@ -35,7 +35,7 @@ public class SSTablesStorage {
     private static final long OLDEST_SS_TABLE_INDEX = 0;
     private static final long COMPACTION_NOT_FINISHED_TAG = -1;
     private final Path basePath;
-    public static final int HASH_FUNCTIONS_NUM = 2;
+    public static final int HASH_FUNCTIONS_NUM = 2; //for bloom filter
     private static final SSTableOffsets offsetsConfig =
             new SSTableOffsets(Long.BYTES, 0, 2L * Long.BYTES);
     private static int sstablesCount;
@@ -178,7 +178,7 @@ public class SSTablesStorage {
         long size = 0;
 
         for (Entry<MemorySegment> entry : dataToFlush) {
-            size += entryByteSize(entry);
+            size += sizeOf(entry);
         }
 
         long bloomFilterLength = BloomFilter.bloomFilterLength(dataToFlush.size(), bloomFilterFPP);
@@ -225,19 +225,21 @@ public class SSTablesStorage {
     }
 
     private static long writeEntry(Entry<MemorySegment> entry, MemorySegment dst, long offset) {
-        long newOffset = writeSegment(entry.key(), dst, offset);
+        long newOffset = writeKey(entry.key(), dst, offset);
 
         if (entry.value() == null) {
             dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, TOMBSTONE);
             newOffset += Long.BYTES;
+            dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, entry.timestamp());
+            newOffset += Long.BYTES;
         } else {
-            newOffset = writeSegment(entry.value(), dst, newOffset);
+            newOffset = writeValue(entry.value(), dst, newOffset, entry.timestamp());
         }
 
         return newOffset;
     }
 
-    private static long writeSegment(MemorySegment src, MemorySegment dst, long offset) {
+    private static long writeKey(MemorySegment src, MemorySegment dst, long offset) {
         long size = src.byteSize();
         long newOffset = offset;
 
@@ -245,6 +247,21 @@ public class SSTablesStorage {
         newOffset += Long.BYTES;
         MemorySegment.copy(src, 0, dst, newOffset, size);
         newOffset += size;
+
+        return newOffset;
+    }
+
+    //writes value with timestamp
+    private static long writeValue(MemorySegment src, MemorySegment dst, long offset, long timestamp) {
+        long size = src.byteSize();
+        long newOffset = offset;
+
+        dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, size);
+        newOffset += Long.BYTES;
+        MemorySegment.copy(src, 0, dst, newOffset, size);
+        newOffset += size;
+        dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, timestamp);
+        newOffset += Long.BYTES;
 
         return newOffset;
     }
@@ -281,14 +298,14 @@ public class SSTablesStorage {
             final long keyOffset = bloomFilterOffset + bfLength * Long.BYTES;
             long offset = keyOffset + Long.BYTES * entryCount;
 
-            long index = 0;
+            long i = 0;
             while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
 
                 BloomFilter.addToSstable(entry.key(), memorySegment, HASH_FUNCTIONS_NUM, bfLength * Long.SIZE);
-                memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset + index * Long.BYTES, offset);
+                memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset + i * Long.BYTES, offset);
                 offset = writeEntry(entry, memorySegment, offset);
-                index++;
+                i++;
             }
 
             memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), entryCount);

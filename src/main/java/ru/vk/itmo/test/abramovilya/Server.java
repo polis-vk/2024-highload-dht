@@ -13,6 +13,7 @@ import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -26,9 +27,7 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -150,7 +149,7 @@ public class Server extends HttpServer {
     }
 
     private Optional<Response> getResponseFromAnotherNode(String id, ResponseProducer responseProducer) {
-        int nodeNumber = mod(id.hashCode(), config.clusterUrls().size());
+        int nodeNumber = getNodeNumber(id, config.clusterUrls().size());
         String nodeUrl = config.clusterUrls().get(nodeNumber);
         if (nodeUrl.equals(config.selfUrl())) {
             return Optional.empty();
@@ -208,9 +207,17 @@ public class Server extends HttpServer {
         return new Response(Response.OK, memorySegment.toArray(ValueLayout.JAVA_BYTE));
     }
 
-    private static int mod(int i1, int i2) {
-        int res = i1 % i2;
-        return res >= 0 ? res : res + i2;
+    private int getNodeNumber(String key, int clusterSize) {
+        int maxHash = Integer.MIN_VALUE;
+        int argMax = 0;
+        for (int i = 0; i < clusterSize; i++) {
+            int hash = Hash.murmur3(key + clusterSize);
+            if (hash > maxHash) {
+                maxHash = hash;
+                argMax = i;
+            }
+        }
+        return argMax;
     }
 
     @FunctionalInterface

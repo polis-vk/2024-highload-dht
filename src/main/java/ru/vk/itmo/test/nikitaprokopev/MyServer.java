@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
-import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
-import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
 
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
@@ -14,6 +12,8 @@ import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
+import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

@@ -3,6 +3,7 @@ package ru.vk.itmo.test.emelyanovvitaliy.dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
+import java.sql.Time;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -94,14 +95,14 @@ final class TableSet {
                 newSsTables);
     }
 
-    Iterator<Entry<MemorySegment>> get(
+    Iterator<TimestampedEntry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
         final List<WeightedPeekingEntryIterator> iterators =
                 new ArrayList<>(2 + ssTables.size());
 
         // MemTable goes first
-        final Iterator<Entry<MemorySegment>> memTableIterator =
+        final Iterator<TimestampedEntry<MemorySegment>> memTableIterator =
                 memTable.get(from, to);
         if (memTableIterator.hasNext()) {
             iterators.add(
@@ -112,7 +113,7 @@ final class TableSet {
 
         // Then goes flushing
         if (flushingTable != null) {
-            final Iterator<Entry<MemorySegment>> flushingIterator =
+            final Iterator<TimestampedEntry<MemorySegment>> flushingIterator =
                     flushingTable.get(from, to);
             if (flushingIterator.hasNext()) {
                 iterators.add(
@@ -125,7 +126,7 @@ final class TableSet {
         // Then go all the SSTables
         for (int i = 0; i < ssTables.size(); i++) {
             final SSTable ssTable = ssTables.get(i);
-            final Iterator<Entry<MemorySegment>> ssTableIterator =
+            final Iterator<TimestampedEntry<MemorySegment>> ssTableIterator =
                     ssTable.get(from, to);
             if (ssTableIterator.hasNext()) {
                 iterators.add(
@@ -137,27 +138,25 @@ final class TableSet {
 
         return switch (iterators.size()) {
             case 0 -> Collections.emptyIterator();
-            case 1 -> iterators.get(0);
+            case 1 -> iterators.getFirst();
             default -> new MergingEntryIterator(iterators);
         };
     }
 
-    Entry<MemorySegment> get(final MemorySegment key) {
+    TimestampedEntry<MemorySegment> get(final MemorySegment key) {
         // Slightly optimized version not to pollute the heap
 
         // First check MemTable
-        Entry<MemorySegment> result = memTable.get(key);
+        TimestampedEntry<MemorySegment> result = memTable.get(key);
         if (result != null) {
-            // Transform tombstone
-            return swallowTombstone(result);
+            return result;
         }
 
         // Then check flushing
         if (flushingTable != null) {
             result = flushingTable.get(key);
             if (result != null) {
-                // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
@@ -166,7 +165,7 @@ final class TableSet {
             result = ssTable.get(key);
             if (result != null) {
                 // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
@@ -174,21 +173,17 @@ final class TableSet {
         return null;
     }
 
-    private static Entry<MemorySegment> swallowTombstone(final Entry<MemorySegment> entry) {
-        return entry.value() == null ? null : entry;
-    }
-
-    Entry<MemorySegment> upsert(final Entry<MemorySegment> entry) {
+    TimestampedEntry<MemorySegment> upsert(final TimestampedEntry<MemorySegment> entry) {
         return memTable.upsert(entry);
     }
 
-    Iterator<Entry<MemorySegment>> allSSTableEntries() {
+    Iterator<TimestampedEntry<MemorySegment>> allSSTableEntries() {
         final List<WeightedPeekingEntryIterator> iterators =
                 new ArrayList<>(ssTables.size());
 
         for (int i = 0; i < ssTables.size(); i++) {
             final SSTable ssTable = ssTables.get(i);
-            final Iterator<Entry<MemorySegment>> ssTableIterator =
+            final Iterator<TimestampedEntry<MemorySegment>> ssTableIterator =
                     ssTable.get(null, null);
             iterators.add(
                     new WeightedPeekingEntryIterator(

@@ -22,6 +22,7 @@ import java.util.stream.Stream;
 final class SSTables {
     public static final String INDEX_SUFFIX = ".index";
     public static final String DATA_SUFFIX = ".data";
+    public static final String TIME_SUFFIX = ".time";
     public static final long TOMBSTONE_VALUE_LENGTH = -1L;
 
     private static final String TEMP_SUFFIX = ".tmp";
@@ -45,6 +46,12 @@ final class SSTables {
         return baseDir.resolve(sequence + DATA_SUFFIX);
     }
 
+    static Path timeName(
+            final Path baseDir,
+            final int sequence) {
+        return baseDir.resolve(sequence + TIME_SUFFIX);
+    }
+
     static Path tempIndexName(
             final Path baseDir,
             final int sequence) {
@@ -55,6 +62,12 @@ final class SSTables {
             final Path baseDir,
             final int sequence) {
         return baseDir.resolve(sequence + DATA_SUFFIX + TEMP_SUFFIX);
+    }
+
+    public static Path tempTimeName(
+            final Path baseDir,
+            final int sequence) {
+        return baseDir.resolve(sequence + TIME_SUFFIX + TEMP_SUFFIX);
     }
 
     /**
@@ -105,6 +118,10 @@ final class SSTables {
                 mapReadOnly(
                         arena,
                         indexName(baseDir, sequence));
+        final MemorySegment time =
+                mapReadOnly(
+                        arena,
+                        timeName(baseDir, sequence));
         final MemorySegment data =
                 mapReadOnly(
                         arena,
@@ -113,6 +130,7 @@ final class SSTables {
         return new SSTable(
                 sequence,
                 index,
+                time,
                 data);
     }
 

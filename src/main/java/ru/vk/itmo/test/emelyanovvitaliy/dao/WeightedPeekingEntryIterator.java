@@ -12,15 +12,15 @@ import java.util.NoSuchElementException;
  * @author incubos
  */
 final class WeightedPeekingEntryIterator
-        implements Iterator<Entry<MemorySegment>>,
+        implements Iterator<TimestampedEntry<MemorySegment>>,
         Comparable<WeightedPeekingEntryIterator> {
     private final int weight;
-    private final Iterator<Entry<MemorySegment>> delegate;
-    private Entry<MemorySegment> next;
+    private final Iterator<TimestampedEntry<MemorySegment>> delegate;
+    private TimestampedEntry<MemorySegment> next;
 
     WeightedPeekingEntryIterator(
             final int weight,
-            final Iterator<Entry<MemorySegment>> delegate) {
+            final Iterator<TimestampedEntry<MemorySegment>> delegate) {
         this.weight = weight;
         this.delegate = delegate;
         this.next = delegate.hasNext() ? delegate.next() : null;
@@ -32,17 +32,17 @@ final class WeightedPeekingEntryIterator
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public TimestampedEntry<MemorySegment> next() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
 
-        final Entry<MemorySegment> result = next;
+        final TimestampedEntry<MemorySegment> result = next;
         next = delegate.hasNext() ? delegate.next() : null;
         return result;
     }
 
-    Entry<MemorySegment> peek() {
+    TimestampedEntry<MemorySegment> peek() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }

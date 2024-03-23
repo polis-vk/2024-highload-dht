@@ -40,10 +40,11 @@ final class SSTableWriter {
     void write(
             final Path baseDir,
             final int sequence,
-            final Iterator<Entry<MemorySegment>> entries) throws IOException {
+            final Iterator<TimestampedEntry<MemorySegment>> entries) throws IOException {
         // Write to temporary files
         final Path tempIndexName = SSTables.tempIndexName(baseDir, sequence);
         final Path tempDataName = SSTables.tempDataName(baseDir, sequence);
+        final Path tempTimeName = SSTables.tempTimeName(baseDir, sequence);
 
         // Delete temporary files to eliminate tails
         Files.deleteIfExists(tempIndexName);
@@ -62,7 +63,13 @@ final class SSTableWriter {
                      new BufferedOutputStream(
                              new FileOutputStream(
                                      tempDataName.toFile()),
-                             BUFFER_SIZE)) {
+                             BUFFER_SIZE);
+             OutputStream time =
+                    new BufferedOutputStream(
+                            new FileOutputStream(
+                                    tempTimeName.toFile()),
+                            BUFFER_SIZE)
+        ){
             long entryOffset = 0L;
 
             // Iterate and serialize
@@ -71,7 +78,8 @@ final class SSTableWriter {
                 writeLong(entryOffset, index);
 
                 // Then write the entry
-                final Entry<MemorySegment> entry = entries.next();
+                final TimestampedEntry<MemorySegment> entry = entries.next();
+                writeLong(entry.timestamp(), time);
                 entryOffset += writeEntry(entry, data);
             }
         }
@@ -87,6 +95,17 @@ final class SSTableWriter {
                 indexName,
                 StandardCopyOption.ATOMIC_MOVE,
                 StandardCopyOption.REPLACE_EXISTING);
+
+        final Path timeName =
+                SSTables.timeName(
+                        baseDir,
+                        sequence);
+        Files.move(
+                tempTimeName,
+                timeName,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING);
+
         final Path dataName =
                 SSTables.dataName(
                         baseDir,

@@ -15,6 +15,7 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.dao.TimestampEntry;
 import ru.vk.itmo.test.chebotinalexandr.dao.MurmurHash;
 
 import java.io.IOException;
@@ -27,6 +28,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.sql.Time;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -183,18 +185,20 @@ public class StorageServer extends HttpServer {
                 }
             }
             case Request.METHOD_PUT -> {
-                Entry<MemorySegment> entry = new BaseEntry<>(
+                Entry<MemorySegment> entry = new TimestampEntry<>(
                         fromString(id),
-                        fromBytes(request.getBody())
+                        fromBytes(request.getBody()),
+                        System.currentTimeMillis()
                 );
                 dao.upsert(entry);
 
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
-                Entry<MemorySegment> entry = new BaseEntry<>(
+                Entry<MemorySegment> entry = new TimestampEntry<>(
                         fromString(id),
-                        null
+                        null,
+                        System.currentTimeMillis()
                 );
                 dao.upsert(entry);
 

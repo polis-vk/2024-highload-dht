@@ -11,23 +11,23 @@ import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
 import ru.vk.itmo.test.nikitaprokopev.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.time.Duration;
-import java.util.concurrent.Executors;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyService implements Service {
-    private final Logger log = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1 MB
     private static final int MAX_QUEUE_LENGTH = 1000;
     private static final int MAX_THREADS = 8;
     private static final int KEEP_ALIVE_TIME = 10;
     private static final int AWAIT_TERMINATION_TIMEOUT = 30;
+    private final Logger log = LoggerFactory.getLogger(MyService.class);
     private final ServiceConfig serviceConfig;
     private MyServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;

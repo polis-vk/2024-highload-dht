@@ -25,11 +25,7 @@ public class RequestHandler {
     }
 
     public List<HttpRequest> createInternalRequests(
-            Request request,
-            String key,
-            List<String> targetNodes,
-            ServiceConfig serviceConfig
-    ) {
+            Request request, String key, List<String> targetNodes, ServiceConfig serviceConfig) {
         List<HttpRequest> httpRequests = new ArrayList<>();
         for (String node : targetNodes) {
             if (node.equals(serviceConfig.selfUrl())) {
@@ -67,11 +63,7 @@ public class RequestHandler {
     public Response handlePut(String id, byte[] body) {
         MemorySegment msKey = toMemorySegment(id);
 
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                msKey,
-                MemorySegment.ofArray(body),
-                System.currentTimeMillis()
-        );
+        Entry<MemorySegment> entry = new BaseEntry<>(msKey, MemorySegment.ofArray(body), System.currentTimeMillis());
 
         dao.upsert(entry);
 
@@ -81,11 +73,7 @@ public class RequestHandler {
     public Response handleDelete(String id) {
         MemorySegment msKey = toMemorySegment(id);
 
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                msKey,
-                null,
-                System.currentTimeMillis()
-        );
+        Entry<MemorySegment> entry = new BaseEntry<>(msKey, null, System.currentTimeMillis());
 
         dao.upsert(entry);
 
@@ -97,7 +85,7 @@ public class RequestHandler {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> httpRequest.GET();
             case Request.METHOD_PUT -> httpRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
-            case Request.METHOD_DELETE ->  httpRequest.DELETE();
+            case Request.METHOD_DELETE -> httpRequest.DELETE();
             default -> throw new IllegalArgumentException("Unsupported method: " + request.getMethod());
         }
         httpRequest.setHeader("X-Internal", "true");

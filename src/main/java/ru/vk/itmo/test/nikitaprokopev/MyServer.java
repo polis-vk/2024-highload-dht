@@ -128,7 +128,8 @@ public class MyServer extends HttpServer {
         }
 
         List<String> targetNodes = getNodesSortedByRendezvousHashing(key, serviceConfig, from);
-        List<HttpRequest> httpRequests = requestHandler.createInternalRequests(request, key, targetNodes, serviceConfig);
+        List<HttpRequest> httpRequests =
+                requestHandler.createRequests(request, key, targetNodes, serviceConfig);
         List<Response> responses = getResponses(request, ack, httpRequests);
         if (responses.isEmpty() || responses.size() < ack) {
             sendResponseWithEmptyBody(session, CustomResponseCodes.RESPONSE_NOT_ENOUGH_REPLICAS.getCode());
@@ -213,12 +214,12 @@ public class MyServer extends HttpServer {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> response = requestHandler.handleGet(id);
-            case Request.METHOD_PUT -> response = requestHandler.handlePut(id, request.getBody());
-            case Request.METHOD_DELETE -> response = requestHandler.handleDelete(id);
+        response = switch (request.getMethod()) {
+            case Request.METHOD_GET -> requestHandler.handleGet(id);
+            case Request.METHOD_PUT -> requestHandler.handlePut(id, request.getBody());
+            case Request.METHOD_DELETE -> requestHandler.handleDelete(id);
             default -> throw new IllegalArgumentException("Unsupported method: " + request.getMethod());
-        }
+        };
         return response;
     }
 
@@ -286,6 +287,8 @@ public class MyServer extends HttpServer {
             nodesHashes.put(Hash.murmur3(nodeUrl + key), nodeUrl);
         }
 
-        return nodesHashes.values().stream().limit(from).toList();
+        return nodesHashes.values().stream()
+                .limit(from)
+                .toList();
     }
 }

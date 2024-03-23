@@ -24,7 +24,7 @@ public class RequestHandler {
         this.dao = dao;
     }
 
-    public List<HttpRequest> createInternalRequests(
+    public List<HttpRequest> createRequests(
             Request request, String key, List<String> targetNodes, ServiceConfig serviceConfig) {
         List<HttpRequest> httpRequests = new ArrayList<>();
         for (String node : targetNodes) {

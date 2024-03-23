@@ -13,9 +13,6 @@ import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -29,27 +26,26 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import ru.vk.itmo.test.nikitaprokopev.dao.BaseEntry;
+import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
+import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
+
 public class MyServer extends HttpServer {
     private static final String BASE_PATH = "/v0/entity";
+    private static final String HEADER_TIMESTAMP = "X-Timestamp: ";
     private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
     private final Logger log = LoggerFactory.getLogger(MyServer.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ThreadPoolExecutor workerPool;
-    private final HttpClient[] httpClients;
+    private final HttpClient httpClient;
     private final int nodeId;
     private final ServiceConfig serviceConfig;
 
-    public MyServer(
-            ServiceConfig serviceConfig,
-            Dao<MemorySegment, Entry<MemorySegment>> dao,
-            ThreadPoolExecutor workerPool,
-            HttpClient[] httpClients,
-            int nodeId
-    ) throws IOException {
+    public MyServer(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao, ThreadPoolExecutor workerPool, HttpClient httpClient, int nodeId) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
         this.workerPool = workerPool;
-        this.httpClients = httpClients;
+        this.httpClient = httpClient;
         this.nodeId = nodeId;
         this.serviceConfig = serviceConfig;
     }
@@ -81,7 +77,8 @@ public class MyServer extends HttpServer {
 
         Entry<MemorySegment> entry = new BaseEntry<>(
                 msKey,
-                MemorySegment.ofArray(request.getBody())
+                MemorySegment.ofArray(request.getBody()),
+                System.currentTimeMillis()
         );
 
         dao.upsert(entry);
@@ -106,11 +103,21 @@ public class MyServer extends HttpServer {
 
         Entry<MemorySegment> entry = dao.get(msKey);
 
+        // entry does not exist
         if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
 
-        return Response.ok(toByteArray(entry.value()));
+        // entry is tombstone
+        if (entry.value() == null) {
+            Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+            response.addHeader(HEADER_TIMESTAMP + entry.timestamp());
+            return response;
+        }
+
+        Response response = Response.ok(toByteArray(entry.value()));
+        response.addHeader(HEADER_TIMESTAMP + entry.timestamp());
+        return response;
     }
 
     @Path(BASE_PATH)
@@ -129,7 +136,8 @@ public class MyServer extends HttpServer {
 
         Entry<MemorySegment> entry = new BaseEntry<>(
                 msKey,
-                null
+                null,
+                System.currentTimeMillis()
         );
 
         dao.upsert(entry);
@@ -154,25 +162,23 @@ public class MyServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         long createdAt = System.currentTimeMillis();
         try {
-            workerPool.execute(
-                    () -> {
-                        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
-                            try {
-                                session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
-                            } catch (IOException e) {
-                                log.error("Exception while sending close connection", e);
-                                session.scheduleClose();
-                            }
-                            return;
-                        }
-
-                        try {
-                            super.handleRequest(request, session);
-                        } catch (Exception e) {
-                            handleRequestException(session, e);
-                        }
+            workerPool.execute(() -> {
+                if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
+                    try {
+                        session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+                    } catch (IOException e) {
+                        log.error("Exception while sending close connection", e);
+                        session.scheduleClose();
                     }
-            );
+                    return;
+                }
+
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    handleRequestException(session, e);
+                }
+            });
         } catch (RejectedExecutionException e) {
             log.error("Workers pool queue overflow", e);
             session.sendError(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), null);
@@ -215,29 +221,19 @@ public class MyServer extends HttpServer {
     }
 
     private Response proxyRequest(Methods method, String id, int targetNode, byte[] body) throws IOException {
-        int idHttpClient = targetNode > nodeId ? targetNode - 1 : targetNode;
         String targetPath = serviceConfig.clusterUrls().get(targetNode) + BASE_PATH + "?id=" + id;
         try {
             switch (method) {
                 case PUT -> {
-                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(targetPath))
-                            .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
-                            .build(), HttpResponse.BodyHandlers.ofByteArray());
+                    HttpResponse<byte[]> response = httpClient.send(HttpRequest.newBuilder().uri(URI.create(targetPath)).PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, Response.EMPTY);
                 }
                 case GET -> {
-                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(targetPath))
-                            .GET()
-                            .build(), HttpResponse.BodyHandlers.ofByteArray());
+                    HttpResponse<byte[]> response = httpClient.send(HttpRequest.newBuilder().uri(URI.create(targetPath)).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, response.body());
                 }
                 case DELETE -> {
-                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(targetPath))
-                            .DELETE()
-                            .build(), HttpResponse.BodyHandlers.ofByteArray());
+                    HttpResponse<byte[]> response = httpClient.send(HttpRequest.newBuilder().uri(URI.create(targetPath)).DELETE().build(), HttpResponse.BodyHandlers.ofByteArray());
                     return proxyResponse(response, Response.EMPTY);
                 }
                 default -> {

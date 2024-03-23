@@ -5,12 +5,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.nikitaprokopev.dao.Config;
+import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
+import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
+import ru.vk.itmo.test.nikitaprokopev.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.util.concurrent.Executors;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -30,7 +31,8 @@ public class MyService implements Service {
     private MyServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ThreadPoolExecutor workerPool;
-    private HttpClient[] httpClients;
+    private HttpClient httpClient;
+    private boolean stopped;
 
     public MyService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -40,28 +42,34 @@ public class MyService implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES));
         workerPool = createPool();
-        httpClients = new HttpClient[serviceConfig.clusterUrls().size() - 1];
-        for (int i = 0; i < serviceConfig.clusterUrls().size() - 1; i++) {
-            httpClients[i] = HttpClient.newHttpClient();
-        }
+        httpClient = HttpClient.newBuilder().executor(
+                        Executors.newFixedThreadPool(
+                                MAX_THREADS,
+                                new CustomThreadFactory("CustomHttpClient")
+                        )
+                )
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
         int nodeId = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
         if (nodeId == -1) {
             log.error("Node id not found in cluster urls");
             return CompletableFuture.completedFuture(null);
         }
-        server = new MyServer(serviceConfig, dao, workerPool, httpClients, nodeId);
+        server = new MyServer(serviceConfig, dao, workerPool, httpClient, nodeId);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
+        if (stopped) {
+            return CompletableFuture.completedFuture(null);
+        }
         server.stop();
         shutdownAndAwaitTermination(workerPool);
-        for (HttpClient httpClient : httpClients) {
-            httpClient.close();
-        }
+        httpClient.close();
         dao.close();
+        stopped = true;
         return CompletableFuture.completedFuture(null);
     }
 

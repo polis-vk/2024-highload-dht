@@ -44,5 +44,4 @@ public class ServiceImpl implements Service {
             return new ServiceImpl(config);
         }
     }
-
 }

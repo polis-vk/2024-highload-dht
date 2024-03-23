@@ -39,7 +39,7 @@ public class MyService implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES));
         workerPool = createPool();
         httpClient = HttpClient.newBuilder().executor(
@@ -61,7 +61,7 @@ public class MyService implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         if (stopped) {
             return CompletableFuture.completedFuture(null);
         }

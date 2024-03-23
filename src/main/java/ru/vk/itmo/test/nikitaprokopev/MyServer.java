@@ -1,5 +1,8 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
+import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
+import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
+
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -24,9 +27,8 @@ import java.util.TreeMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
-import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
-import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
 
 public class MyServer extends HttpServer {
     private static final String HEADER_TIMESTAMP = "X-Timestamp: ";
@@ -143,8 +145,7 @@ public class MyServer extends HttpServer {
 
             mergeGetResponses(session, responses);
         } catch (IOException e) {
-            log.error("Exception while sending response", e);
-            session.scheduleClose();
+            logIOExceptionAndCloseSession(session);
         }
     }
 
@@ -241,8 +242,7 @@ public class MyServer extends HttpServer {
         try {
             session.sendResponse(new Response(status, Response.EMPTY));
         } catch (IOException e) {
-            log.error("Exception while sending close connection", e);
-            session.scheduleClose();
+            logIOExceptionAndCloseSession(session);
         }
     }
 
@@ -255,9 +255,13 @@ public class MyServer extends HttpServer {
             }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (IOException ex) {
-            log.error("Exception while sending close connection", e);
-            session.scheduleClose();
+            logIOExceptionAndCloseSession(session);
         }
+    }
+
+    private void logIOExceptionAndCloseSession(HttpSession session) {
+        log.error("Exception while sending close connection", e);
+        session.scheduleClose();
     }
 
     private Response proxyResponse(HttpResponse<byte[]> response, byte[] body) {
@@ -289,6 +293,6 @@ public class MyServer extends HttpServer {
 
         return nodesHashes.values().stream()
                 .limit(from)
-                .toList();
+                .collect(Collectors.toList());
     }
 }

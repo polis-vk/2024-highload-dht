@@ -55,6 +55,7 @@ public class MyService implements Service {
                 .build();
         server = new MyServer(serviceConfig, dao, workerPool, httpClient);
         server.start();
+        stopped = false;
         return CompletableFuture.completedFuture(null);
     }
 

@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
-
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;

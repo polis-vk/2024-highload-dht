@@ -29,7 +29,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-
 public class MyServer extends HttpServer {
     private static final String HEADER_TIMESTAMP = "X-Timestamp: ";
     private static final String HEADER_INTERNAL = "X-Internal";

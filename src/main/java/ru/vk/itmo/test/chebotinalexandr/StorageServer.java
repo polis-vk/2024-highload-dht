@@ -41,6 +41,7 @@ public class StorageServer extends HttpServer {
     private final HttpClient httpClient;
     private AtomicBoolean closed = new AtomicBoolean();
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    private static final String TIMESTAMP_HEADER = "X-Timestamp";
 
     public StorageServer(
             ServiceConfig config,
@@ -97,7 +98,8 @@ public class StorageServer extends HttpServer {
         String ackParameter = request.getParameter("ack=");
         String fromParameter = request.getParameter("from=");
 
-        int from, ack;
+        int from;
+        int ack;
         if (fromParameter == null || fromParameter.isBlank()) {
             from = clusterUrls.size();
         } else {
@@ -126,17 +128,7 @@ public class StorageServer extends HttpServer {
                             Response response = handleRequest(request, id);
                             responses.add(response);
                         } else {
-                            try {
-                                Response response = routeRequest(nodeIndex, request);
-                                if ((response.getStatus() == 201)
-                                        || (response.getStatus() == 200)
-                                        || (response.getStatus() == 404)
-                                        || (response.getStatus() == 202)) {
-                                    responses.add(response);
-                                }
-                            } catch (ConnectException e) {
-                                log.error("Node is unavailable");
-                            }
+                            remote(request, nodeIndex, responses);
                         }
                     }
 
@@ -144,27 +136,7 @@ public class StorageServer extends HttpServer {
                         if (request.getMethod() == Request.METHOD_PUT || request.getMethod() == Request.METHOD_DELETE) {
                             session.sendResponse(responses.getFirst());
                         } else {
-                            Response lastWriteResponse = responses.getFirst();
-
-                            long maxTimestamp = 0;
-
-                            for (Response response : responses) {
-                                String timestampHeader = response.getHeaders()[response.getHeaderCount() - 1];
-                                Pattern pattern = Pattern.compile("\\d+");
-                                Matcher matcher = pattern.matcher(timestampHeader);
-
-                                long timestamp = 0;
-                                if (matcher.find()) {
-                                    timestamp = Long.parseLong(matcher.group());
-                                }
-
-                                if (maxTimestamp < timestamp) {
-                                    maxTimestamp = timestamp;
-                                    lastWriteResponse = response;
-                                }
-                            }
-
-                            session.sendResponse(lastWriteResponse);
+                            session.sendResponse(findLastWriteResponse(responses));
                         }
                     } else {
                         sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
@@ -181,6 +153,49 @@ public class StorageServer extends HttpServer {
         } catch (RejectedExecutionException e) {
             log.error("Request rejected", e);
             sendEmptyBodyResponse(Response.SERVICE_UNAVAILABLE, session);
+        }
+    }
+
+    private Response findLastWriteResponse(List<Response> responses) {
+        Response result = responses.getFirst();
+        long maxTimestamp = 0;
+        for (Response response : responses) {
+            String timestampHeader = response.getHeaders()[response.getHeaderCount() - 1];
+
+            long timestamp = parseTimestamp(timestampHeader);
+
+            if (maxTimestamp < timestamp) {
+                maxTimestamp = timestamp;
+                result = response;
+            }
+        }
+
+        return result;
+    }
+
+    private long parseTimestamp(String timestampHeader) {
+        Pattern pattern = Pattern.compile("\\d+");
+        Matcher matcher = pattern.matcher(timestampHeader);
+
+        if (matcher.find()) {
+            return Long.parseLong(matcher.group());
+        }
+
+        return 0L;
+    }
+
+    private void remote(Request request, int nodeIndex, List<Response> responses) throws IOException, InterruptedException {
+        try {
+            Response response = routeRequest(nodeIndex, request);
+            if ((response.getStatus() == 201)
+                    || (response.getStatus() == 200)
+                    || (response.getStatus() == 404)
+                    || (response.getStatus() == 202)) {
+                responses.add(response);
+            }
+        } catch (ConnectException e) {
+            //do not add to response list
+            log.error("Can't connect to node " + nodeIndex);
         }
     }
 
@@ -218,7 +233,7 @@ public class StorageServer extends HttpServer {
         };
 
         Response converted = new Response(responseCode, response.body());
-        converted.addHeader(response.headers().firstValue("X-Timestamp").orElse(""));
+        converted.addHeader(response.headers().firstValue(TIMESTAMP_HEADER).orElse(""));
 
         return converted;
     }
@@ -258,11 +273,11 @@ public class StorageServer extends HttpServer {
                 } else if (entry.value() == null) {
                     //tombstone
                     Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                    response.addHeader("X-Timestamp: " + entry.timestamp());
+                    response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
                     return response;
                 } else {
                     Response response = Response.ok(toBytes(entry.value()));
-                    response.addHeader("X-Timestamp: " + entry.timestamp());
+                    response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
                     return response;
                 }
             }

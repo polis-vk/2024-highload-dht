@@ -159,7 +159,6 @@ public class SSTablesStorage {
      * │   BF array length   │  Hash functions count   │    Entries count    │
      * └─────────────────────┴─────────────────────────┴─────────────────────┘
      * where BF is bloom filter.
-     *
      * SStable bloom filter:
      * ┌────────────────────────────┐
      * │    8 x BF array length     │
@@ -167,7 +166,6 @@ public class SSTablesStorage {
      * │           hash_i           │
      * └────────────────────────────┘
      * where i = 1, ... , bloom filter array length
-     *
      * SStable data format:
      * ┌─────────────────────┬──────────┬──────────┬────────────┬────────────┬────────────┐
      * │  8 x Entries count  │    8     │ Key size │     8      │ Value size │     8      │
@@ -175,7 +173,6 @@ public class SSTablesStorage {
      * │     key_i offset    │ Key size │    Key   │ Value size │ Value      │ Timestamp  │
      * └─────────────────────┴──────────┴──────────┴────────────┴────────────┴────────────┘
      * where i = 1, ... , entries count.
-     *
      * If entry is tombstone, sstable has next format:
      * ┌──────────┬──────────┬────────────┬────────────┐
      * │    8     │ Key size │     8      │      8     │

@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.dao.TimestampEntry;
 

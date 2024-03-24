@@ -148,7 +148,6 @@ final class TableSet {
         // First check MemTable
         ExtendedEntry<MemorySegment> result = memTable.get(key);
         if (result != null) {
-            // Transform tombstone
             return result;
         }
 
@@ -156,8 +155,7 @@ final class TableSet {
         if (flushingTable != null) {
             result = flushingTable.get(key);
             if (result != null) {
-                // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
@@ -165,17 +163,12 @@ final class TableSet {
         for (final SSTable ssTable : ssTables) {
             result = ssTable.get(key);
             if (result != null) {
-                // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
         // Nothing found
         return null;
-    }
-
-    private static ExtendedEntry<MemorySegment> swallowTombstone(final ExtendedEntry<MemorySegment> entry) {
-        return entry.value() == null ? null : entry;
     }
 
     ExtendedEntry<MemorySegment> upsert(final ExtendedEntry<MemorySegment> entry) {

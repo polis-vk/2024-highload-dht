@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.proninvalentin.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
@@ -146,6 +144,7 @@ final class SSTable {
         final long valueLength = getValue(offset);
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
             // Tombstone encountered
+            offset += Long.BYTES;
             final long timestamp = getValue(offset);
             return new ExtendedBaseEntry<>(key, null, timestamp);
         } else {
@@ -196,11 +195,13 @@ final class SSTable {
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
                 // Tombstone encountered
                 final long timestamp = getValue(offset);
+                offset += Long.BYTES;
                 return new ExtendedBaseEntry<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
                 final long timestamp = getValue(offset);
+                offset += Long.BYTES;
                 return new ExtendedBaseEntry<>(key, value, timestamp);
             }
         }

@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
 import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
 import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiterConfig;
 import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
@@ -11,7 +12,6 @@ import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPoolConfig;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -43,11 +43,12 @@ public final class StartServer {
             clusterUrls.add(url + ports[i]);
         }
 
-        ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
-        ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 
         FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
         FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);
+
+        ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
+        ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig, failureLimiter);
 
         for (int i = 0; i < clusterSize; i++) {
             int flushThresholdBytes = 1 << 20; // 1 MB
@@ -58,7 +59,7 @@ public final class StartServer {
             Files.createDirectories(profilingDataPath);
 
             Config daoConfig = new Config(profilingDataPath, flushThresholdBytes);
-            ReferenceDao referenceDao = new ReferenceDao(daoConfig);
+            ReferenceDao referenceDao = new ru.vk.itmo.test.proninvalentin.dao.ReferenceDao(daoConfig);
 
             ServiceConfig serviceConfig = new ServiceConfig(ports[i], clusterUrls.get(i), clusterUrls,
                     profilingDataPath);

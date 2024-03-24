@@ -173,7 +173,6 @@ public class StorageServer extends HttpServer {
             String timestampHeader = response.getHeaders()[response.getHeaderCount() - 1];
 
             long timestamp = parseTimestamp(timestampHeader);
-
             if (maxTimestamp < timestamp) {
                 maxTimestamp = timestamp;
                 result = response;

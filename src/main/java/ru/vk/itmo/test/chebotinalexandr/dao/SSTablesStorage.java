@@ -279,9 +279,7 @@ public class SSTablesStorage {
         MemorySegment memorySegment;
         try (Arena arenaForCompact = Arena.ofShared()) {
             try (FileChannel channel = FileChannel.open(path,
-                    StandardOpenOption.READ,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.CREATE)) {
+                    StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
                 memorySegment = channel.map(FileChannel.MapMode.READ_WRITE, 0, sizeForCompaction,
                         arenaForCompact);
             }
@@ -332,10 +330,7 @@ public class SSTablesStorage {
     private static MemorySegment writeMappedSegment(Path basePath, long size, Arena arena) throws IOException {
         Path path = basePath.resolve(SSTABLE_NAME + sstablesCount + SSTABLE_EXTENSION);
         try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.CREATE)) {
-
+                StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
             return channel.map(FileChannel.MapMode.READ_WRITE, 0, size, arena);
         }
     }

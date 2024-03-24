@@ -4,5 +4,6 @@ public interface Entry<D> {
     D key();
 
     D value();
+    
     long timestamp();
 }

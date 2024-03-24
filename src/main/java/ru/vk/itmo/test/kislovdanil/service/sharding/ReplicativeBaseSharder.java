@@ -59,7 +59,6 @@ public abstract class ReplicativeBaseSharder extends BaseSharder {
         return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
     }
 
-
     @Override
     public Response makeDecision(List<Response> responses, int acknowledge, int method) {
         return switch (method) {

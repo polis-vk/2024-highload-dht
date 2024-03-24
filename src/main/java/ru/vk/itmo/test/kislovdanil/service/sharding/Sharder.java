@@ -1,9 +1,7 @@
 package ru.vk.itmo.test.kislovdanil.service.sharding;
 
-import one.nio.http.HttpSession;
 import one.nio.http.Response;
 
-import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 

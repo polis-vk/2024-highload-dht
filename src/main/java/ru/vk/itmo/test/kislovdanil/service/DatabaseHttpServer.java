@@ -108,7 +108,8 @@ public class DatabaseHttpServer extends HttpServer {
                                     @Param(value = "from") Integer fromParam,
                                     // For requests from other nodes
                                     @Param(value = "not-proxy") Boolean notProxyParam) {
-        final int acknowledge, from;
+        final int acknowledge;
+        final int from;
         from = fromParam == null ? clusterSize : fromParam;
         acknowledge = acknowledgeParam == null ? from / 2 + 1 : acknowledgeParam;
         final boolean notProxy = notProxyParam != null && notProxyParam;
@@ -132,9 +133,9 @@ public class DatabaseHttpServer extends HttpServer {
 
     private Response getEntity(MemorySegment entityKey) {
         Entry<MemorySegment> data = dao.get(entityKey);
-        Response response = data == null || data.value() == null ?
-                new Response(Response.NOT_FOUND, Response.EMPTY) :
-                Response.ok(data.value().toArray(ValueLayout.OfByte.JAVA_BYTE));
+        Response response = data == null || data.value() == null
+                ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                : Response.ok(data.value().toArray(ValueLayout.OfByte.JAVA_BYTE));
         long timestamp = data == null ? Long.MAX_VALUE : data.timestamp();
         response.addHeader(sharder.getTimestampHeader() + ": " + timestamp);
         return response;

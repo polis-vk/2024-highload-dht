@@ -99,19 +99,10 @@ public class StorageServer extends HttpServer {
         String ackParameter = request.getParameter("ack=");
         String fromParameter = request.getParameter("from=");
 
-        int from;
-        int ack;
-        if (fromParameter == null || fromParameter.isBlank()) {
-            from = clusterUrls.size();
-        } else {
-            from = Integer.parseInt(fromParameter);
-        }
-
-        if (ackParameter == null || ackParameter.isBlank()) {
-            ack = quorum(from);
-        } else {
-            ack = Integer.parseInt(ackParameter);
-        }
+        int from = fromParameter == null || fromParameter.isBlank()
+                ? clusterUrls.size() : Integer.parseInt(fromParameter);
+        int ack = ackParameter == null || ackParameter.isBlank()
+                ? quorum(from) : Integer.parseInt(ackParameter);
 
         if (ack > from || ack == 0) {
             sendEmptyBodyResponse(Response.BAD_REQUEST, session);
@@ -121,9 +112,9 @@ public class StorageServer extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    List<Response> responses = new ArrayList<>();
                     int partition = selectPartition(id);
 
+                    List<Response> responses = new ArrayList<>();
                     pickResponses(request, id, from, partition, responses);
                     compareReplicasResponses(request, session, responses, ack);
                 } catch (IOException e) {

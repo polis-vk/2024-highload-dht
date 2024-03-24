@@ -227,7 +227,6 @@ public class SSTablesStorage {
             i++;
         }
         //---------
-
         sstablesCount++;
         return memorySegment;
     }
@@ -243,7 +242,6 @@ public class SSTablesStorage {
         } else {
             newOffset = writeValue(entry.value(), dst, newOffset, entry.timestamp());
         }
-
         return newOffset;
     }
 
@@ -325,11 +323,9 @@ public class SSTablesStorage {
 
     private static void finishCompact(Path basePath) throws IOException {
         Path path = basePath.resolve(SSTABLE_NAME + ".tmp");
-
         deleteOldSSTables(basePath);
         Files.move(path, path.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),
                 StandardCopyOption.ATOMIC_MOVE);
-
         sstablesCount = 1;
     }
 

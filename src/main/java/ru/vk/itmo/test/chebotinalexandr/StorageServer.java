@@ -42,6 +42,7 @@ public class StorageServer extends HttpServer {
     private AtomicBoolean closed = new AtomicBoolean();
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String TIMESTAMP_HEADER = "X-Timestamp";
+    private static final String INTERNAL_HEADER = "X-Internal";
 
     public StorageServer(
             ServiceConfig config,
@@ -89,7 +90,7 @@ public class StorageServer extends HttpServer {
         }
 
         //check for internal request
-        if (request.getHeader("internal") != null) {
+        if (request.getHeader(INTERNAL_HEADER) != null) {
             Response response = handleRequest(request, id);
             session.sendResponse(response);
             return;
@@ -114,6 +115,7 @@ public class StorageServer extends HttpServer {
 
         if (ack > from || ack == 0) {
             sendEmptyBodyResponse(Response.BAD_REQUEST, session);
+            return;
         }
 
         try {
@@ -132,16 +134,7 @@ public class StorageServer extends HttpServer {
                         }
                     }
 
-                    if (responses.size() >= ack) {
-                        if (request.getMethod() == Request.METHOD_PUT || request.getMethod() == Request.METHOD_DELETE) {
-                            session.sendResponse(responses.getFirst());
-                        } else {
-                            session.sendResponse(findLastWriteResponse(responses));
-                        }
-                    } else {
-                        sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
-                    }
-
+                    compareReplicasResponses(request, session, responses, ack);
                 } catch (IOException e) {
                     log.error("Exception during handleRequest: ", e);
                     sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
@@ -153,6 +146,23 @@ public class StorageServer extends HttpServer {
         } catch (RejectedExecutionException e) {
             log.error("Request rejected", e);
             sendEmptyBodyResponse(Response.SERVICE_UNAVAILABLE, session);
+        }
+    }
+
+    private void compareReplicasResponses(
+            Request request,
+            HttpSession session,
+            List<Response> responses,
+            int ack
+    ) throws IOException {
+        if (responses.size() >= ack) {
+            if (request.getMethod() == Request.METHOD_PUT || request.getMethod() == Request.METHOD_DELETE) {
+                session.sendResponse(responses.getFirst());
+            } else {
+                session.sendResponse(findLastWriteResponse(responses));
+            }
+        } else {
+            sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
         }
     }
 
@@ -184,7 +194,11 @@ public class StorageServer extends HttpServer {
         return 0L;
     }
 
-    private void remote(Request request, int nodeIndex, List<Response> responses) throws IOException, InterruptedException {
+    private void remote(
+            Request request,
+            int nodeIndex,
+            List<Response> responses
+    ) throws IOException, InterruptedException {
         try {
             Response response = routeRequest(nodeIndex, request);
             if ((response.getStatus() == 201)
@@ -195,7 +209,7 @@ public class StorageServer extends HttpServer {
             }
         } catch (ConnectException e) {
             //do not add to response list
-            log.error("Can't connect to node " + nodeIndex);
+            log.info("Can't connect to node " + nodeIndex);
         }
     }
 
@@ -208,7 +222,7 @@ public class StorageServer extends HttpServer {
 
         HttpRequest newRequest = HttpRequest.newBuilder()
                 .uri(URI.create(partitionUrl))
-                .header("internal", "true")
+                .header(INTERNAL_HEADER, "true")
                 .method(
                         request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(

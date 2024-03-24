@@ -124,16 +124,7 @@ public class StorageServer extends HttpServer {
                     List<Response> responses = new ArrayList<>();
                     int partition = selectPartition(id);
 
-                    for (int i = 0; i < from; i++) {
-                        int nodeIndex = (partition + i) % clusterUrls.size();
-                        if (isCurrentPartition(nodeIndex)) {
-                            Response response = handleRequest(request, id);
-                            responses.add(response);
-                        } else {
-                            remote(request, nodeIndex, responses);
-                        }
-                    }
-
+                    pickResponses(request, id, from, partition, responses);
                     compareReplicasResponses(request, session, responses, ack);
                 } catch (IOException e) {
                     log.error("Exception during handleRequest: ", e);
@@ -146,6 +137,24 @@ public class StorageServer extends HttpServer {
         } catch (RejectedExecutionException e) {
             log.error("Request rejected", e);
             sendEmptyBodyResponse(Response.SERVICE_UNAVAILABLE, session);
+        }
+    }
+
+    private void pickResponses(
+            Request request,
+            String id,
+            int from,
+            int partition,
+            List<Response> responses
+    ) throws IOException, InterruptedException {
+        for (int i = 0; i < from; i++) {
+            int nodeIndex = (partition + i) % clusterUrls.size();
+            if (isCurrentPartition(nodeIndex)) {
+                Response response = handleRequest(request, id);
+                responses.add(response);
+            } else {
+                remote(request, nodeIndex, responses);
+            }
         }
     }
 

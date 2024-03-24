@@ -158,20 +158,31 @@ public class SSTablesStorage {
      * │─────────────────────│─────────────────────────│─────────────────────│
      * │   BF array length   │  Hash functions count   │    Entries count    │
      * └─────────────────────┴─────────────────────────┴─────────────────────┘
+     * where BF is bloom filter.
+     *
      * SStable bloom filter:
      * ┌────────────────────────────┐
-     * │ 8 x BloomFilter array size │
+     * │    8 x BF array length     │
      * │────────────────────────────│
-     * │           Hash_i           │
+     * │           hash_i           │
      * └────────────────────────────┘
-     * where i = 1, ... , bloom filter array size
+     * where i = 1, ... , bloom filter array length
+     *
      * SStable data format:
-     * ┌─────────────────────┬──────────┬──────────┬────────────┬────────────┐
-     * │  8 x Entries count  │    8     │ Key size │     8      │ Value size │
-     * │─────────────────────│──────────│──────────│────────────│────────────│
-     * │     Key_j offset    │ Key size │    Key   │ Value size │ Value      │
-     * └─────────────────────┴──────────┴──────────┴────────────┴────────────┘
-     * where j = 1, ... , entries count.
+     * ┌─────────────────────┬──────────┬──────────┬────────────┬────────────┬────────────┐
+     * │  8 x Entries count  │    8     │ Key size │     8      │ Value size │     8      │
+     * │─────────────────────│──────────│──────────┬────────────┬────────────┬────────────│
+     * │     key_i offset    │ Key size │    Key   │ Value size │ Value      │ Timestamp  │
+     * └─────────────────────┴──────────┴──────────┴────────────┴────────────┴────────────┘
+     * where i = 1, ... , entries count.
+     *
+     * If entry is tombstone, sstable has next format:
+     * ┌──────────┬──────────┬────────────┬────────────┐
+     * │    8     │ Key size │     8      │      8     │
+     * │──────────│──────────│────────────│────────────│
+     * │ Key size │    Key   │    -1      │ Timestamp  │
+     * └──────────┴──────────┴────────────┴────────────┘
+     * where -1 is tombstone tag
      */
     public static MemorySegment write(Collection<Entry<MemorySegment>> dataToFlush,
                                       double bloomFilterFPP, Path basePath) throws IOException {
@@ -183,7 +194,7 @@ public class SSTablesStorage {
 
         long bloomFilterLength = BloomFilter.bloomFilterLength(dataToFlush.size(), bloomFilterFPP);
 
-        size += 2L * Long.BYTES * dataToFlush.size();
+        size += 3L * Long.BYTES * dataToFlush.size();
         size += 3L * Long.BYTES + (long) Long.BYTES * dataToFlush.size(); //for metadata (header + key offsets)
         size += Long.BYTES * bloomFilterLength; //for bloom filter
 

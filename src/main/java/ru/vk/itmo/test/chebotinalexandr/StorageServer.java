@@ -3,8 +3,6 @@ package ru.vk.itmo.test.chebotinalexandr;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
@@ -12,37 +10,37 @@ import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.dao.TimestampEntry;
-import ru.vk.itmo.test.chebotinalexandr.dao.MurmurHash;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
-import java.net.IDN;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.sql.Time;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class StorageServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(StorageServer.class);
-    private static final String PATH = "/v0/entity";
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executor;
     private final List<String> clusterUrls;
     private final String selfUrl;
     private final HttpClient httpClient;
     private AtomicBoolean closed = new AtomicBoolean();
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     public StorageServer(
             ServiceConfig config,
@@ -82,23 +80,96 @@ public class StorageServer extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
+    public void handleRequest(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id=");
         if (id == null || id.isBlank()) {
             sendEmptyBodyResponse(Response.BAD_REQUEST, session);
             return;
         }
 
+        //check for internal request
+        if (request.getHeader("internal") != null) {
+            Response response = handleRequest(request, id);
+            session.sendResponse(response);
+            return;
+        }
+
+        String ackParameter = request.getParameter("ack=");
+        String fromParameter = request.getParameter("from=");
+
+        int from, ack;
+        if (fromParameter == null || fromParameter.isBlank()) {
+            from = clusterUrls.size();
+        } else {
+            from = Integer.parseInt(fromParameter);
+        }
+
+        if (ackParameter == null || ackParameter.isBlank()) {
+            ack = quorum(from);
+        } else {
+            ack = Integer.parseInt(ackParameter);
+        }
+
+        if (ack > from || ack == 0) {
+            sendEmptyBodyResponse(Response.BAD_REQUEST, session);
+        }
+
         try {
             executor.execute(() -> {
                 try {
+                    List<Response> responses = new ArrayList<>();
                     int partition = selectPartition(id);
 
-                    if (isCurrentPartition(partition)) {
-                        super.handleRequest(request, session);
-                    } else {
-                        routeRequest(partition, request, session);
+                    for (int i = 0; i < from; i++) {
+                        int nodeIndex = (partition + i) % clusterUrls.size();
+                        if (isCurrentPartition(nodeIndex)) {
+                            Response response = handleRequest(request, id);
+                            responses.add(response);
+                        } else {
+                            try {
+                                Response response = routeRequest(nodeIndex, request);
+                                if ((response.getStatus() == 201)
+                                        || (response.getStatus() == 200)
+                                        || (response.getStatus() == 404)
+                                        || (response.getStatus() == 202)) {
+                                    responses.add(response);
+                                }
+                            } catch (ConnectException e) {
+                                log.error("Node is unavailable");
+                            }
+                        }
                     }
+
+                    if (responses.size() >= ack) {
+                        if (request.getMethod() == Request.METHOD_PUT || request.getMethod() == Request.METHOD_DELETE) {
+                            session.sendResponse(responses.getFirst());
+                        } else {
+                            Response lastWriteResponse = responses.getFirst();
+
+                            long maxTimestamp = 0;
+
+                            for (Response response : responses) {
+                                String timestampHeader = response.getHeaders()[response.getHeaderCount() - 1];
+                                Pattern pattern = Pattern.compile("\\d+");
+                                Matcher matcher = pattern.matcher(timestampHeader);
+
+                                long timestamp = 0;
+                                if (matcher.find()) {
+                                    timestamp = Long.parseLong(matcher.group());
+                                }
+
+                                if (maxTimestamp < timestamp) {
+                                    maxTimestamp = timestamp;
+                                    lastWriteResponse = response;
+                                }
+                            }
+
+                            session.sendResponse(lastWriteResponse);
+                        }
+                    } else {
+                        sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
+                    }
+
                 } catch (IOException e) {
                     log.error("Exception during handleRequest: ", e);
                     sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
@@ -113,15 +184,16 @@ public class StorageServer extends HttpServer {
         }
     }
 
-    private void routeRequest(
-            int partition,
-            Request request,
-            HttpSession session
-    ) throws IOException, InterruptedException {
+    private int quorum(int from) {
+        return from / 2 + 1;
+    }
+
+    private Response routeRequest(int partition, Request request) throws IOException, InterruptedException {
         String partitionUrl = getPartitionUrl(partition) + request.getURI();
 
         HttpRequest newRequest = HttpRequest.newBuilder()
                 .uri(URI.create(partitionUrl))
+                .header("internal", "true")
                 .method(
                         request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(
@@ -131,7 +203,7 @@ public class StorageServer extends HttpServer {
                 .build();
 
         HttpResponse<byte[]> response = httpClient.send(newRequest, HttpResponse.BodyHandlers.ofByteArray());
-        session.sendResponse(extractResponseFromNode(response));
+        return extractResponseFromNode(response);
     }
 
     private Response extractResponseFromNode(HttpResponse<byte[]> response) {
@@ -145,7 +217,10 @@ public class StorageServer extends HttpServer {
             default -> throw new IllegalStateException("Can not define response code:" + response.statusCode());
         };
 
-        return new Response(responseCode, response.body());
+        Response converted = new Response(responseCode, response.body());
+        converted.addHeader(response.headers().firstValue("X-Timestamp").orElse(""));
+
+        return converted;
     }
 
     private boolean isCurrentPartition(int partitionNumber) {
@@ -172,16 +247,23 @@ public class StorageServer extends HttpServer {
         return clusterUrls.get(partition);
     }
 
-    @Path(PATH)
-    public Response entity(Request request, @Param("id") String id) {
+    private Response handleRequest(Request request, String id) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 Entry<MemorySegment> entry = dao.get(fromString(id));
 
                 if (entry == null) {
+                    //not a tombstone
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
+                } else if (entry.value() == null) {
+                    //tombstone
+                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                    response.addHeader("X-Timestamp: " + entry.timestamp());
+                    return response;
                 } else {
-                    return Response.ok(toBytes(entry.value()));
+                    Response response = Response.ok(toBytes(entry.value()));
+                    response.addHeader("X-Timestamp: " + entry.timestamp());
+                    return response;
                 }
             }
             case Request.METHOD_PUT -> {

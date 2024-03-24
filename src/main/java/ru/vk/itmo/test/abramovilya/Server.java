@@ -71,7 +71,7 @@ public class Server extends HttpServer {
         for (String url : config.clusterUrls()) {
             if (!url.equals(config.selfUrl())) {
                 HttpClient client = new HttpClient(new ConnectionString(url));
-                client.setConnectTimeout(100);
+                client.setConnectTimeout(1000000);
                 httpClients.put(url, client);
             }
         }
@@ -143,26 +143,65 @@ public class Server extends HttpServer {
     public Response getEntity(@Param(value = "id") String id,
                               @Param(value = "from") Integer from,
                               @Param(value = "ack") Integer ack,
-                              @Header("X-Timestamp") Integer timestamp) {
+                              @Header("X-SenderNode: ") String senderNode) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-
-        Optional<Response> responseO =
-                getResponseFromAnotherNode(id, (client) -> client.get(urlSuffix(id)));
-        if (responseO.isPresent()) {
-            return responseO.get();
+        if (from == null) {
+            from = config.clusterUrls().size();
+        }
+        if (ack == null) {
+            ack = quorum(from);
         }
 
+        // Request from user
+        if (senderNode == null) {
+            Optional<Response> result = getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.get(urlSuffix(id)));
+            // Another node is responsible for request handling
+            if (result.isPresent()) {
+                return result.get();
+            }
+            List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
+            List<Response> responses = new ArrayList<>();
+            responses.add(getEntryFromDao(id));
+            for (int nodeNumber : nodesRendezvousSorted) {
+                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
+                    Request request = client.createRequest(Request.METHOD_GET, urlSuffix(id), "X-SenderNode: " + config.selfUrl());
+                    return client.invoke(request, 100);
+                });
+                if (responseO.isEmpty()) {
+                    continue;
+                }
+                if (responseO.get().getStatus() == 404 || responseO.get().getStatus() < 300) {
+                    responses.add(responseO.get());
+                }
+            }
+            if (responses.size() < ack) {
+                return new Response("504 Not Enough Replicas", Response.EMPTY);
+            }
+            return responses.stream()
+                    .max(Comparator.comparingLong(Server::headerTimestampToLong))
+                    .get();
+        }
+        // Request from another node
+        return getEntryFromDao(id);
+    }
+
+    private static int quorum(Integer from) {
+        return from / 2 + 1;
+    }
+
+    private Response getEntryFromDao(String id) {
         Entry<MemorySegment> entry = dao.get(DaoFactory.fromString(id));
         if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         try {
-            ValueWithTimestamp valueWithTimestamp =
-                    (ValueWithTimestamp) byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
+            ValueWithTimestamp valueWithTimestamp = byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
             if (valueWithTimestamp.value() == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
+                Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
+                return response;
             }
             Response response = new Response(Response.OK, valueWithTimestamp.value());
             response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
@@ -177,41 +216,117 @@ public class Server extends HttpServer {
     public Response putEntity(@Param(value = "id") String id,
                               @Param(value = "from") Integer from,
                               @Param(value = "ack") Integer ack,
+                              @Header("X-SenderNode") String senderNode,
                               Request request) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-
-        Optional<Response> responseO =
-                getResponseFromAnotherNode(id, (client) -> client.put(urlSuffix(id), request.getBody()));
-        if (responseO.isPresent()) {
-            return responseO.get();
+        if (from == null) {
+            from = config.clusterUrls().size();
+        }
+        if (ack == null) {
+            ack = quorum(from);
         }
 
+        // Request from user
+        if (senderNode == null) {
+            List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
+            if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
+                return getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.put(urlSuffix(id), request.getBody())).get();
+            }
+            List<Response> responses = new ArrayList<>();
+            responses.add(putEntryIntoDao(id, request));
+            for (int nodeNumber : nodesRendezvousSorted) {
+                if (config.clusterUrls().get(nodeNumber).equals(config.selfUrl())) {
+                    continue;
+                }
+                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
+                    Request clientRequest = client.createRequest(Request.METHOD_PUT, urlSuffix(id), "X-SenderNode: " + config.selfUrl());
+                    clientRequest.setBody(request.getBody());
+                    return client.invoke(clientRequest, 1000000);
+                });
+                if (responseO.isEmpty()) {
+                    continue;
+                }
+                if (responseO.get().getStatus() < 300) {
+                    responses.add(responseO.get());
+                }
+            }
+            if (responses.size() < ack) {
+                return new Response("504 Not Enough Replicas", Response.EMPTY);
+            }
+            return new Response(Response.CREATED, Response.EMPTY);
+        }
+
+        return putEntryIntoDao(id, request);
+    }
+
+    private Response putEntryIntoDao(String id, Request request) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(request.getBody(), System.currentTimeMillis());
         try {
             dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(objToByteArray(valueWithTimestamp))));
+            return new Response(Response.CREATED, Response.EMPTY);
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        return new Response(Response.CREATED, Response.EMPTY);
+    }
+
+    private static long headerTimestampToLong(Response r) {
+        String header = r.getHeader("X-TimeStamp: ");
+        if (header == null) {
+            return Long.MIN_VALUE;
+        }
+        return Long.parseLong(header);
     }
 
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id") String id,
                                  @Param(value = "from") Integer from,
-                                 @Param(value = "ack") Integer ack) {
+                                 @Param(value = "ack") Integer ack,
+                                 @Header("X-SenderNode: ") String senderNode) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-
-        Optional<Response> responseO =
-                getResponseFromAnotherNode(id, (client) -> client.delete(urlSuffix(id)));
-        if (responseO.isPresent()) {
-            return responseO.get();
+        if (from == null) {
+            from = config.clusterUrls().size();
+        }
+        if (ack == null) {
+            ack = quorum(from);
         }
 
+        // Request from user
+        if (senderNode == null) {
+            Optional<Response> result =
+                    getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.delete(urlSuffix(id)));
+            if (result.isPresent()) {
+                return result.get();
+            }
+            List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
+            List<Response> responses = new ArrayList<>();
+            responses.add(deleteValueFromDao(id));
+            for (int nodeNumber : nodesRendezvousSorted) {
+                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
+                    Request clientRequest = client.createRequest(Request.METHOD_DELETE, urlSuffix(id), "X-SenderNode: " + config.selfUrl());
+                    return client.invoke(clientRequest, 100);
+                });
+                if (responseO.isEmpty()) {
+                    continue;
+                }
+                if (responseO.get().getStatus() < 300) {
+                    responses.add(responseO.get());
+                }
+            }
+            if (responses.size() < ack) {
+                return new Response("504 Not Enough Replicas", Response.EMPTY);
+            }
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+
+        }
+        return deleteValueFromDao(id);
+    }
+
+    private Response deleteValueFromDao(String id) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(null, System.currentTimeMillis());
         try {
             dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(objToByteArray(valueWithTimestamp))));
@@ -221,8 +336,7 @@ public class Server extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private Optional<Response> getResponseFromAnotherNode(String id, ResponseProducer responseProducer) {
-        int nodeNumber = getNodeNumber(id);
+    private Optional<Response> getResponseFromAnotherNode(int nodeNumber, ResponseProducer responseProducer) {
         String nodeUrl = config.clusterUrls().get(nodeNumber);
         if (nodeUrl.equals(config.selfUrl())) {
             return Optional.empty();
@@ -242,7 +356,7 @@ public class Server extends HttpServer {
         return ENTITY_PATH + "?id=" + id;
     }
 
-    private List<Integer> getNodesRendezvousSorted(String key) {
+    private List<Integer> getNodesRendezvousSorted(String key, int amount) {
         int clusterSize = config.clusterUrls().size();
         List<NumberToHash> numberToHashList = new ArrayList<>();
         for (int i = 0; i < clusterSize; i++) {
@@ -251,6 +365,7 @@ public class Server extends HttpServer {
         return numberToHashList.stream()
                 .sorted(Comparator.comparingInt(NumberToHash::hash))
                 .map(NumberToHash::number)
+                .limit(amount)
                 .toList();
     }
 
@@ -271,7 +386,7 @@ public class Server extends HttpServer {
         return argMax;
     }
 
-    private static byte[] objToByteArray(Object object) throws IOException {
+    private static byte[] objToByteArray(ValueWithTimestamp object) throws IOException {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         try (ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream)) {
             objectOutputStream.writeObject(object);
@@ -279,10 +394,10 @@ public class Server extends HttpServer {
         }
     }
 
-    private static Object byteArrayToObject(byte[] bytes) throws IOException, ClassNotFoundException {
+    private static ValueWithTimestamp byteArrayToObject(byte[] bytes) throws IOException, ClassNotFoundException {
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
         try (ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream)) {
-            return objectInputStream.readObject();
+            return (ValueWithTimestamp) objectInputStream.readObject();
         }
     }
 

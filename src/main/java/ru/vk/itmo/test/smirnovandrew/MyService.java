@@ -6,6 +6,7 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
@@ -18,6 +19,8 @@ public class MyService implements Service {
 
     private final ServiceConfig config;
 
+    private boolean isServerStopped;
+
     public MyService(ServiceConfig config) {
         this.config = config;
     }
@@ -29,14 +32,23 @@ public class MyService implements Service {
         );
         this.server = new MyServer(config, dao);
         server.start();
+        isServerStopped = false;
 
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        server.stop();
-        dao.close();
+        if (!isServerStopped) {
+            server.stop();
+        }
+        isServerStopped = true;
+
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
 
         return CompletableFuture.completedFuture(null);
     }

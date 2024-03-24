@@ -108,6 +108,19 @@ final class SSTableWriter {
         longBuffer.withArray(os::write);
     }
 
+    private void writeTimestamp(
+            final long timestamp,
+            final OutputStream os) throws IOException {
+        final long size = Long.BYTES;
+        blobBuffer.ensureCapacity(size);
+        blobBuffer.segment().set(ValueLayout.JAVA_LONG, 0L, timestamp);
+        blobBuffer.withArray(array ->
+                os.write(
+                        array,
+                        0,
+                        (int) size));
+    }
+
     private void writeSegment(
             final MemorySegment value,
             final OutputStream os) throws IOException {
@@ -145,6 +158,13 @@ final class SSTableWriter {
         // Key
         writeSegment(key, os);
         result += key.byteSize();
+
+        // Timestamp
+        long timestamp = (entry instanceof ClusterEntry<MemorySegment>)
+                ? ((ClusterEntry<MemorySegment>) entry).timestamp()
+                : System.currentTimeMillis();
+        writeTimestamp(timestamp, os);
+        result += Long.BYTES;
 
         // Value size and possibly value
         if (value == null) {

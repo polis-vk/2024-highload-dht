@@ -2,8 +2,8 @@ package ru.vk.itmo.test.kislovdanil.service;
 
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.kislovdanil.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.kislovdanil.dao.Config;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

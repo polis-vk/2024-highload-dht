@@ -51,6 +51,8 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
     // Have to take read while upsert and write while flushing (to prevent data loss)
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
     private final Arena filesArena = Arena.ofShared();
+    // Limit for SSTables on drive
+    private static final int COMPACTION_THRESHOLD = 5;
 
     private long getMaxTablesId(Iterable<SSTable> tableIterable) {
         long curMaxId = -1;
@@ -146,6 +148,10 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
             // SSTable constructor with entries iterator writes MemTable data on disk deleting old data if it exists
             tables.add(new SSTable(config.basePath(), comparator,
                     getNextId(), additionalStorage.getStorage().values().iterator(), filesArena));
+            if (tables.size() > COMPACTION_THRESHOLD) {
+                compact();
+            }
+
             additionalStorage = null;
         } finally {
             compactionLock.unlock();

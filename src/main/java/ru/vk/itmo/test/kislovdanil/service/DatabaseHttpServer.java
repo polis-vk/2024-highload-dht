@@ -132,10 +132,11 @@ public class DatabaseHttpServer extends HttpServer {
 
     private Response getEntity(MemorySegment entityKey) {
         Entry<MemorySegment> data = dao.get(entityKey);
-        Response response = data.value() == null ?
+        Response response = data == null || data.value() == null ?
                 new Response(Response.NOT_FOUND, Response.EMPTY) :
                 Response.ok(data.value().toArray(ValueLayout.OfByte.JAVA_BYTE));
-        response.addHeader(sharder.getTimestampHeader() + ": " + data.timestamp());
+        long timestamp = data == null ? Long.MAX_VALUE : data.timestamp();
+        response.addHeader(sharder.getTimestampHeader() + ": " + timestamp);
         return response;
     }
 

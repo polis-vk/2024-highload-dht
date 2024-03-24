@@ -26,8 +26,8 @@ public abstract class BaseSharder implements Sharder {
         this.client = client;
     }
 
-    protected Response handleProxiedResponse(int statusCode, byte[] body) {
-        return switch (statusCode) {
+    protected Response handleProxiedResponse(int statusCode, byte[] body, Long timestamp) {
+        Response response = switch (statusCode) {
             case 200 -> new Response(Response.OK, body);
             case 201 -> new Response(Response.CREATED, Response.EMPTY);
             case 202 -> new Response(Response.ACCEPTED, Response.EMPTY);
@@ -35,6 +35,10 @@ public abstract class BaseSharder implements Sharder {
             case 400 -> new Response(Response.BAD_REQUEST, Response.EMPTY);
             default -> new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         };
+        if (timestamp != null) {
+            response.addHeader(TIMESTAMP_HEADER + " " + timestamp);
+        }
+        return response;
     }
 
     private String requestMethodNumberToString(int method) {
@@ -46,9 +50,18 @@ public abstract class BaseSharder implements Sharder {
         };
     }
 
+    private Long tryToExtractTimestampHeader(HttpResponse<byte[]> response) {
+        if (response.statusCode() == 200 || response.statusCode() == 404) {
+            return Long.parseLong(response.headers().map().get(TIMESTAMP_HEADER).getFirst());
+        }
+        return null;
+    }
+
     private Response handleSendingException(HttpResponse<byte[]> response,
                                             Throwable exception) {
-        return exception == null ? handleProxiedResponse(response.statusCode(), response.body()) :
+        return exception == null ? handleProxiedResponse(response.statusCode(),
+                response.body(),
+                tryToExtractTimestampHeader(response)) :
                 new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
     }
 

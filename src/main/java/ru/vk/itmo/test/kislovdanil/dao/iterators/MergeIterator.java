@@ -42,14 +42,16 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
     private void updateCurrentEntry() {
         MemorySegment value = null;
         MemorySegment key = null;
+        Long timestamp = null;
         while (value == null && !itemsPool.isEmpty()) {
             key = itemsPool.firstKey();
             IteratorAndValue iteratorAndValue = itemsPool.get(key);
             itemsPool.remove(key);
             moveIterator(iteratorAndValue.iterator);
             value = iteratorAndValue.value;
+            timestamp = iteratorAndValue.timestamp;
         }
-        currentEntry = (value == null) ? null : new BaseEntry<>(key, value);
+        currentEntry = (value == null) ? null : new BaseEntry<>(key, value, timestamp);
     }
 
     // Move iterator to next value keeping invariant (several iterators mustn't point to equal keys at the same time)
@@ -67,7 +69,7 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
                 moveIterator(concurrentIterator);
             }
             if (!hasConcurrentKey || winPriorityConflict) {
-                itemsPool.put(entry.key(), new IteratorAndValue(iter, entry.value()));
+                itemsPool.put(entry.key(), new IteratorAndValue(iter, entry.value(), entry.timestamp()));
                 break;
             }
         }
@@ -88,10 +90,12 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
     private static final class IteratorAndValue {
         private final DatabaseIterator iterator;
         private final MemorySegment value;
+        private final long timestamp;
 
-        public IteratorAndValue(DatabaseIterator iterator, MemorySegment value) {
+        public IteratorAndValue(DatabaseIterator iterator, MemorySegment value, long timestamp) {
             this.iterator = iterator;
             this.value = value;
+            this.timestamp = timestamp;
         }
     }
 }

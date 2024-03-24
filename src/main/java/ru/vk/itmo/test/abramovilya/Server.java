@@ -143,7 +143,7 @@ public class Server extends HttpServer {
     public Response getEntity(@Param(value = "id") String id,
                               @Param(value = "from") Integer from,
                               @Param(value = "ack") Integer ack,
-                              @Header("X-SenderNode: ") String senderNode) {
+                              @Header("X-SenderNode") String senderNode) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -153,18 +153,28 @@ public class Server extends HttpServer {
         if (ack == null) {
             ack = quorum(from);
         }
+        if (ack <= 0 || from <= 0) {
+            return new Response(Response.BAD_REQUEST, "ack and from should be positive integers".getBytes(StandardCharsets.UTF_8));
+        }
+        if (ack > from) {
+            return new Response(Response.BAD_REQUEST, "ack can't be greater than from".getBytes(StandardCharsets.UTF_8));
+        }
+        if (from > config.clusterUrls().size()) {
+            return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
+        }
 
         // Request from user
         if (senderNode == null) {
-            Optional<Response> result = getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.get(urlSuffix(id)));
-            // Another node is responsible for request handling
-            if (result.isPresent()) {
-                return result.get();
-            }
             List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
+            if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
+                return getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.get(urlSuffix(id))).get();
+            }
             List<Response> responses = new ArrayList<>();
             responses.add(getEntryFromDao(id));
             for (int nodeNumber : nodesRendezvousSorted) {
+                if (config.clusterUrls().get(nodeNumber).equals(config.selfUrl())) {
+                    continue;
+                }
                 Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
                     Request request = client.createRequest(Request.METHOD_GET, urlSuffix(id), "X-SenderNode: " + config.selfUrl());
                     return client.invoke(request, 100);
@@ -227,6 +237,15 @@ public class Server extends HttpServer {
         if (ack == null) {
             ack = quorum(from);
         }
+        if (ack <= 0 || from <= 0) {
+            return new Response(Response.BAD_REQUEST, "ack and from should be positive integers".getBytes(StandardCharsets.UTF_8));
+        }
+        if (ack > from) {
+            return new Response(Response.BAD_REQUEST, "ack can't be greater than from".getBytes(StandardCharsets.UTF_8));
+        }
+        if (from > config.clusterUrls().size()) {
+            return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
+        }
 
         // Request from user
         if (senderNode == null) {
@@ -240,11 +259,7 @@ public class Server extends HttpServer {
                 if (config.clusterUrls().get(nodeNumber).equals(config.selfUrl())) {
                     continue;
                 }
-                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
-                    Request clientRequest = client.createRequest(Request.METHOD_PUT, urlSuffix(id), "X-SenderNode: " + config.selfUrl());
-                    clientRequest.setBody(request.getBody());
-                    return client.invoke(clientRequest, 1000000);
-                });
+                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> client.put(urlSuffix(id), request.getBody(), "X-SenderNode: " + config.selfUrl()));
                 if (responseO.isEmpty()) {
                     continue;
                 }
@@ -284,7 +299,7 @@ public class Server extends HttpServer {
     public Response deleteEntity(@Param(value = "id") String id,
                                  @Param(value = "from") Integer from,
                                  @Param(value = "ack") Integer ack,
-                                 @Header("X-SenderNode: ") String senderNode) {
+                                 @Header("X-SenderNode") String senderNode) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -294,15 +309,22 @@ public class Server extends HttpServer {
         if (ack == null) {
             ack = quorum(from);
         }
+        if (ack <= 0 || from <= 0) {
+            return new Response(Response.BAD_REQUEST, "ack and from should be positive integers".getBytes(StandardCharsets.UTF_8));
+        }
+        if (ack > from) {
+            return new Response(Response.BAD_REQUEST, "ack can't be greater than from".getBytes(StandardCharsets.UTF_8));
+        }
+        if (from > config.clusterUrls().size()) {
+            return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
+        }
 
         // Request from user
         if (senderNode == null) {
-            Optional<Response> result =
-                    getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.delete(urlSuffix(id)));
-            if (result.isPresent()) {
-                return result.get();
-            }
             List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
+            if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
+                return getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.put(urlSuffix(id))).get();
+            }
             List<Response> responses = new ArrayList<>();
             responses.add(deleteValueFromDao(id));
             for (int nodeNumber : nodesRendezvousSorted) {
@@ -358,18 +380,15 @@ public class Server extends HttpServer {
 
     private List<Integer> getNodesRendezvousSorted(String key, int amount) {
         int clusterSize = config.clusterUrls().size();
-        List<NumberToHash> numberToHashList = new ArrayList<>();
+        List<Entry<Integer>> numberToHashList = new ArrayList<>();
         for (int i = 0; i < clusterSize; i++) {
-            numberToHashList.add(new NumberToHash(i, Hash.murmur3(key + i)));
+            numberToHashList.add(new BaseEntry<>(i, Hash.murmur3(key + i)));
         }
         return numberToHashList.stream()
-                .sorted(Comparator.comparingInt(NumberToHash::hash))
-                .map(NumberToHash::number)
+                .sorted(Comparator.comparing(Entry::value, Comparator.reverseOrder()))
+                .map(Entry::key)
                 .limit(amount)
                 .toList();
-    }
-
-    private record NumberToHash(int number, int hash) {
     }
 
     private int getNodeNumber(String key) {

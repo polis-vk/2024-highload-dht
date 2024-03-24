@@ -62,6 +62,6 @@ public class ServiceImplementation implements ru.vk.itmo.Service {
                 "http://localhost",
                 List.of("http://localhost"),
                 tempPath), new MemorySegmentDao(new Config(tempPath, FLUSH_THRESHOLD_BYTES)));
-        server.start(); 
+        server.start();
     }
 }

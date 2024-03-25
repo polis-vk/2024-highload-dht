@@ -39,7 +39,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
-        dao = new ru.vk.itmo.test.proninvalentin.dao.ReferenceDao(daoConfig);
+        dao = new ReferenceDao(daoConfig);
 
         WorkerPoolConfig workerPoolConfig = WorkerPoolConfig.defaultConfig();
         workerPool = new WorkerPool(workerPoolConfig);

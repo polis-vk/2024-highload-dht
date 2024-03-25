@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.proninvalentin.dao;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -22,7 +20,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * @author incubos
  */
-public class ReferenceDao implements ru.vk.itmo.test.proninvalentin.dao.Dao<MemorySegment, ExtendedEntry<MemorySegment>> {
+public class ReferenceDao implements Dao<MemorySegment, ExtendedEntry<MemorySegment>> {
     private final Config config;
     private final Arena arena;
 

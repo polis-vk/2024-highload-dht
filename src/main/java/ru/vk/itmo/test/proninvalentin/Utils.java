@@ -4,6 +4,10 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpRequest;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -28,6 +32,24 @@ public final class Utils {
     );
 
     private Utils() {
+    }
+
+    public static Map<String, HttpRequest> buildRequests(Request request, List<String> nodeUrls, String entryId) {
+        HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
+        for (String nodeUrl : nodeUrls) {
+            httpRequests.put(nodeUrl, buildProxyRequest(request, nodeUrl, entryId));
+        }
+        return httpRequests;
+    }
+
+    public static HttpRequest buildProxyRequest(Request request, String nodeUrl, String parameter) {
+        byte[] body = request.getBody();
+        return HttpRequest.newBuilder(URI.create(nodeUrl + Constants.REQUEST_PATH + parameter))
+                .method(request.getMethodName(), body == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(body))
+                .setHeader(Constants.TERMINATION_HEADER, Constants.TERMINATION_TRUE)
+                .build();
     }
 
     public static boolean isSupportedMethod(int httpMethod) {

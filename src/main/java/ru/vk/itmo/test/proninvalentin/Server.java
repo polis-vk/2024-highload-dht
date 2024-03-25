@@ -15,11 +15,14 @@ import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,18 +42,6 @@ public class Server extends HttpServer {
     private final List<String> clusterUrls;
     private final long requestMaxTimeToTakeInWorkInMillis;
     private final long httpRequestTimeoutInMillis;
-    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-    private static final String METHOD_ADDRESS = "/v0/entity";
-    private static final String ID_PARAMETER_NAME = "id=";
-    private static final String REQUEST_PATH = METHOD_ADDRESS + "?" + ID_PARAMETER_NAME;
-    public static final int SERVER_ERRORS = 500;
-    public static final String FROM_PARAMETER_NAME = "from=";
-    public static final String ACK_PARAMETER_NAME = "ack=";
-    public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
-    private static final String HTTP_TIMESTAMP_HEADER = "X-Timestamp";
-    private static final String TERMINATION_HEADER = "X-Termination";
-    private static final String TERMINATION_TRUE = "true";
 
     public Server(ServiceConfig config, ReferenceDao dao, WorkerPool workerPool,
                   ShardingAlgorithm shardingAlgorithm, ServerConfig serverConfig,
@@ -127,7 +118,7 @@ public class Server extends HttpServer {
             workerPool.execute(() -> processRequest(request, session, createdAt));
         } catch (RejectedExecutionException e) {
             logger.error("New request processing task cannot be scheduled for execution", e);
-            safetySendResponse(session, new Response(TOO_MANY_REQUESTS, Response.EMPTY));
+            safetySendResponse(session, new Response(Constants.TOO_MANY_REQUESTS, Response.EMPTY));
         }
     }
 
@@ -145,9 +136,9 @@ public class Server extends HttpServer {
         }
 
         RequestParameters parameters = new RequestParameters(
-                request.getParameter(ID_PARAMETER_NAME),
-                request.getParameter(FROM_PARAMETER_NAME),
-                request.getParameter(ACK_PARAMETER_NAME),
+                request.getParameter(Constants.ID_PARAMETER_NAME),
+                request.getParameter(Constants.FROM_PARAMETER_NAME),
+                request.getParameter(Constants.ACK_PARAMETER_NAME),
                 clusterUrls.size()
         );
 
@@ -156,7 +147,7 @@ public class Server extends HttpServer {
             return;
         }
 
-        if (request.getHeader(TERMINATION_HEADER) == null) {
+        if (request.getHeader(Constants.TERMINATION_HEADER) == null) {
             safetySendResponse(session, handleLeaderRequest(request, parameters));
         } else {
             safetySendResponse(session, safetyHandleRequest(request, parameters.key()));
@@ -164,7 +155,7 @@ public class Server extends HttpServer {
     }
 
     private boolean hasHandler(Request request) {
-        return request.getURI().startsWith(REQUEST_PATH);
+        return request.getURI().startsWith(Constants.REQUEST_PATH);
     }
 
     private Response handleLeaderRequest(Request request, RequestParameters parameters) {
@@ -174,10 +165,10 @@ public class Server extends HttpServer {
 
         List<String> nodeUrls = shardingAlgorithm.getNodesByKey(entryId, from);
         if (nodeUrls.size() < from) {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
 
-        HashMap<String, HttpRequest> requests = buildRequests(request, nodeUrls, entryId);
+        Map<String, HttpRequest> requests = Utils.buildRequests(request, nodeUrls, entryId);
         List<Response> responses = waitResponses(requests, nodeUrls);
 
         if (requests.get(selfUrl) != null) {
@@ -187,35 +178,28 @@ public class Server extends HttpServer {
         List<Response> positiveResponses = getPositiveResponses(responses);
         if (positiveResponses.size() >= ack) {
             if (request.getMethod() == Request.METHOD_GET) {
-                positiveResponses.sort(Comparator.comparingLong(r -> Long.parseLong(r.getHeader(NIO_TIMESTAMP_HEADER))));
+                positiveResponses.sort(Comparator.comparingLong(r ->
+                        Long.parseLong(r.getHeader(Constants.NIO_TIMESTAMP_HEADER))));
                 return positiveResponses.getLast();
             } else {
                 return positiveResponses.getFirst();
             }
         } else {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
     }
 
     private List<Response> getPositiveResponses(List<Response> responses) {
         List<Response> positiveResponses = new ArrayList<>();
         for (Response response : responses) {
-            if (response.getStatus() < SERVER_ERRORS) {
+            if (response.getStatus() < Constants.SERVER_ERRORS) {
                 positiveResponses.add(response);
             }
         }
         return positiveResponses;
     }
 
-    private HashMap<String, HttpRequest> buildRequests(Request request, List<String> nodeUrls, String entryId) {
-        HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
-        for (String nodeUrl : nodeUrls) {
-            httpRequests.put(nodeUrl, buildProxyRequest(request, nodeUrl, entryId));
-        }
-        return httpRequests;
-    }
-
-    private List<Response> waitResponses(HashMap<String, HttpRequest> requests, List<String> nodeUrls) {
+    private List<Response> waitResponses(Map<String, HttpRequest> requests, List<String> nodeUrls) {
         List<Response> responses = new ArrayList<>();
         for (String nodeUrl : nodeUrls) {
             HttpRequest request = requests.get(nodeUrl);
@@ -239,16 +223,6 @@ public class Server extends HttpServer {
         }
     }
 
-    private HttpRequest buildProxyRequest(Request request, String nodeUrl, String parameter) {
-        byte[] body = request.getBody();
-        return HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + parameter))
-                .method(request.getMethodName(), body == null
-                        ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofByteArray(body))
-                .setHeader(TERMINATION_HEADER, TERMINATION_TRUE)
-                .build();
-    }
-
     private Response handleProxyRequest(HttpRequest httpRequest, String nodeUrl) {
         try {
             HttpResponse<byte[]> httpResponse = httpClient
@@ -261,13 +235,14 @@ public class Server extends HttpServer {
                         + httpResponse.statusCode());
                 return new Response(Response.INTERNAL_ERROR, httpResponse.body());
             } else {
-                if (httpResponse.statusCode() >= SERVER_ERRORS) {
+                if (httpResponse.statusCode() >= Constants.SERVER_ERRORS) {
                     failureLimiter.handleFailure(nodeUrl);
                 }
 
                 Response response = new Response(statusCode, httpResponse.body());
-                long timestamp = httpResponse.headers().firstValueAsLong(HTTP_TIMESTAMP_HEADER).orElse(0);
-                response.addHeader(NIO_TIMESTAMP_HEADER + timestamp);
+                long timestamp = httpResponse.headers()
+                        .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
+                response.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
                 return response;
             }
         } catch (InterruptedException e) {

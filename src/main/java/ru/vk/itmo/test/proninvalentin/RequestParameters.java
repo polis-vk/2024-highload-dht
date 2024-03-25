@@ -1,19 +1,19 @@
 package ru.vk.itmo.test.proninvalentin;
 
 public final class RequestParameters {
-    private String key;
+    private final String key;
     private int from;
     private int ack;
 
     private boolean isValid = true;
 
     public RequestParameters(String keyString, String fromString, String ackString, int clusterSize) {
+        key = keyString;
         if (Utils.isNullOrBlank(keyString)) {
             isValid = false;
             return;
         }
 
-        key = keyString;
         try {
             from = Utils.isNullOrBlank(fromString)
                     ? clusterSize

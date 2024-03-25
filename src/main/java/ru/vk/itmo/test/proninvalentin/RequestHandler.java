@@ -12,11 +12,9 @@ import java.lang.foreign.MemorySegment;
 public class RequestHandler {
     private final ReferenceDao dao;
 
-    private static final String HTTP_TIMESTAMP_HEADER = "X-Timestamp:";
-
+    private static final String HTTP_TIMESTAMP_HEADER = Constants.HTTP_TIMESTAMP_HEADER + ":";
 
     public RequestHandler(ReferenceDao dao) {
-
         this.dao = dao;
     }
 

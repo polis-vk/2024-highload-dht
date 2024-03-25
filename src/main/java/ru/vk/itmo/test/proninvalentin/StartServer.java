@@ -43,7 +43,6 @@ public final class StartServer {
             clusterUrls.add(url + ports[i]);
         }
 
-
         FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
         FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);
 
@@ -59,7 +58,7 @@ public final class StartServer {
             Files.createDirectories(profilingDataPath);
 
             Config daoConfig = new Config(profilingDataPath, flushThresholdBytes);
-            ReferenceDao referenceDao = new ru.vk.itmo.test.proninvalentin.dao.ReferenceDao(daoConfig);
+            ReferenceDao referenceDao = new ReferenceDao(daoConfig);
 
             ServiceConfig serviceConfig = new ServiceConfig(ports[i], clusterUrls.get(i), clusterUrls,
                     profilingDataPath);

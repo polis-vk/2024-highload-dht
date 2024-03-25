@@ -25,7 +25,7 @@ public final class RequestParameters {
             isValid = false;
         }
 
-        if (from <= 0 || clusterSize < from || from < ack) {
+        if (from <= 0 || clusterSize < from || from < ack || ack <= 0) {
             isValid = false;
         }
     }

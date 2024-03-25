@@ -3,43 +3,37 @@ package ru.vk.itmo.test.proninvalentin;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.proninvalentin.dao.Dao;
-import ru.vk.itmo.test.proninvalentin.dao.ExtendedBaseEntry;
-import ru.vk.itmo.test.proninvalentin.dao.ExtendedEntry;
 import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
 import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.*;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class Server extends HttpServer {
-    public static final int SERVER_ERRORS = 500;
-    public static final String FROM_PARAMETER_NAME = "from=";
-    public static final String ACK_PARAMETER_NAME = "ack=";
-    private final Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
     private final ExecutorService workerPool;
     private final ShardingAlgorithm shardingAlgorithm;
     private final HttpClient httpClient;
     private final FailureLimiter failureLimiter;
+    private final RequestHandler requestHandler;
 
     private final String selfUrl;
     private final List<String> clusterUrls;
@@ -50,7 +44,11 @@ public class Server extends HttpServer {
     private static final String METHOD_ADDRESS = "/v0/entity";
     private static final String ID_PARAMETER_NAME = "id=";
     private static final String REQUEST_PATH = METHOD_ADDRESS + "?" + ID_PARAMETER_NAME;
-    private static final String TIMESTAMP_HEADER = "X-Timestamp";
+    public static final int SERVER_ERRORS = 500;
+    public static final String FROM_PARAMETER_NAME = "from=";
+    public static final String ACK_PARAMETER_NAME = "ack=";
+    public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
+    private static final String HTTP_TIMESTAMP_HEADER = "X-Timestamp";
     private static final String TERMINATION_HEADER = "X-Termination";
     private static final String TERMINATION_TRUE = "true";
 
@@ -60,7 +58,6 @@ public class Server extends HttpServer {
             throws IOException {
         super(createServerConfig(config));
 
-        this.dao = dao;
         this.shardingAlgorithm = shardingAlgorithm;
         this.workerPool = workerPool.pool;
         this.httpClient = HttpClient.newBuilder()
@@ -71,6 +68,7 @@ public class Server extends HttpServer {
         this.requestMaxTimeToTakeInWorkInMillis = serverConfig.getRequestMaxTimeToTakeInWorkInMillis();
         this.httpRequestTimeoutInMillis = serverConfig.getHttpRequestTimeoutInMillis();
         this.failureLimiter = failureLimiter;
+        this.requestHandler = new RequestHandler(dao);
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -92,23 +90,25 @@ public class Server extends HttpServer {
         }
     }
 
-    private void safetyHandleRequest(Request request, HttpSession session) {
+    private Response safetyHandleRequest(Request request, String entryId) {
+        logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
+                request.getURI()));
         try {
-            super.handleRequest(request, session);
+            return requestHandler.handle(request, entryId);
         } catch (Exception e) {
             logger.error("Error while processing request", e);
-            safetySendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
-    private static void sendExceptionInfo(HttpSession session, Exception exception) {
+    private static Response handleExceptionInfo(Exception exception) {
         String responseCode;
         if (exception.getClass().equals(TimeoutException.class)) {
             responseCode = Response.REQUEST_TIMEOUT;
         } else {
             responseCode = Response.INTERNAL_ERROR;
         }
-        safetySendResponse(session, new Response(responseCode, Response.EMPTY));
+        return new Response(responseCode, Response.EMPTY);
     }
 
     @Override
@@ -139,19 +139,11 @@ public class Server extends HttpServer {
         }
 
         // To prevent sending unnecessary proxied requests to the nodes
-        if (!hasHandler(request)) {
+        if (!hasHandler(request) || !Utils.isSupportedMethod(request.getMethod())) {
             handleDefault(request, session);
             return;
         }
 
-        if (Objects.equals(request.getHeader(TERMINATION_HEADER), TERMINATION_TRUE)) {
-            safetyHandleRequest(request, session);
-        } else {
-            handleLeaderRequest(request, session);
-        }
-    }
-
-    private void handleLeaderRequest(Request request, HttpSession session) {
         RequestParameters parameters = new RequestParameters(
                 request.getParameter(ID_PARAMETER_NAME),
                 request.getParameter(FROM_PARAMETER_NAME),
@@ -164,52 +156,10 @@ public class Server extends HttpServer {
             return;
         }
 
-        String entryId = parameters.key();
-        int from = parameters.from();
-        int ack = parameters.ack();
-
-        List<String> nodeUrls = shardingAlgorithm.getNodesByKey(entryId, from);
-        if (nodeUrls.size() < from) {
-            safetySendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-        }
-
-        requests = buildRequests(request, nodeUrls);
-        responses = waitResponses(request, session, nodeUrls, entryId);
-
-        if (responses.size < ack) {
-            safetySendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+        if (request.getHeader(TERMINATION_HEADER) == null) {
+            safetySendResponse(session, handleLeaderRequest(request, parameters));
         } else {
-            actualResponse = getActualResponse(responses);
-            safetySendResponse(session, actualResponse);
-        }
-    }
-
-    private Object buildRequests(Request request, List<String> nodeUrls) {
-
-    }
-
-    private void waitResponses(Request request, HttpSession session, List<String> nodeUrls, String entryId) {
-        for (String nodeUrl : nodeUrls) {
-            if (Objects.equals(selfUrl, nodeUrl)) {
-                logger.debug("[%s] Process request: %s%s".formatted(selfUrl, request.getMethodName(),
-                        request.getURI()));
-                safetyHandleRequest(request, session);
-            } else {
-                sendRequestToProxy(request, session, entryId, nodeUrl);
-            }
-        }
-    }
-
-    private void sendRequestToProxy(Request request, HttpSession session, String entryId, String nodeUrl) {
-        logger.debug("[%s] Send request to node [%s]: %s%s".formatted(selfUrl, nodeUrl, request.getMethodName(),
-                request.getURI()));
-
-        if (failureLimiter.readyForRequests(nodeUrl)) {
-            handleProxyRequest(request, session, nodeUrl, entryId);
-        } else {
-            logger.warn("[%s] Can't send request to closed node [%s]: %s%s".formatted(selfUrl, nodeUrl,
-                    request.getMethodName(), request.getURI()));
-            safetySendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+            safetySendResponse(session, safetyHandleRequest(request, parameters.key()));
         }
     }
 
@@ -217,18 +167,89 @@ public class Server extends HttpServer {
         return request.getURI().startsWith(REQUEST_PATH);
     }
 
-    private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String parameter) {
+    private Response handleLeaderRequest(Request request, RequestParameters parameters) {
+        String entryId = parameters.key();
+        int from = parameters.from();
+        int ack = parameters.ack();
+
+        List<String> nodeUrls = shardingAlgorithm.getNodesByKey(entryId, from);
+        if (nodeUrls.size() < from) {
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        }
+
+        HashMap<String, HttpRequest> requests = buildRequests(request, nodeUrls, entryId);
+        List<Response> responses = waitResponses(requests, nodeUrls);
+
+        if (requests.get(selfUrl) != null) {
+            responses.add(safetyHandleRequest(request, entryId));
+        }
+
+        List<Response> positiveResponses = getPositiveResponses(responses);
+        if (positiveResponses.size() >= ack) {
+            if (request.getMethod() == Request.METHOD_GET) {
+                positiveResponses.sort(Comparator.comparingLong(r -> Long.parseLong(r.getHeader(NIO_TIMESTAMP_HEADER))));
+                return positiveResponses.getLast();
+            } else {
+                return positiveResponses.getFirst();
+            }
+        } else {
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        }
+    }
+
+    private List<Response> getPositiveResponses(List<Response> responses) {
+        List<Response> positiveResponses = new ArrayList<>();
+        for (Response response : responses) {
+            if (response.getStatus() < SERVER_ERRORS) {
+                positiveResponses.add(response);
+            }
+        }
+        return positiveResponses;
+    }
+
+    private HashMap<String, HttpRequest> buildRequests(Request request, List<String> nodeUrls, String entryId) {
+        HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
+        for (String nodeUrl : nodeUrls) {
+            httpRequests.put(nodeUrl, buildProxyRequest(request, nodeUrl, entryId));
+        }
+        return httpRequests;
+    }
+
+    private List<Response> waitResponses(HashMap<String, HttpRequest> requests, List<String> nodeUrls) {
+        List<Response> responses = new ArrayList<>();
+        for (String nodeUrl : nodeUrls) {
+            HttpRequest request = requests.get(nodeUrl);
+            if (!Objects.equals(selfUrl, nodeUrl)) {
+                responses.add(sendRequestToProxy(request, nodeUrl));
+            }
+        }
+        return responses;
+    }
+
+    private Response sendRequestToProxy(HttpRequest request, String nodeUrl) {
+        logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, request.method(),
+                request.uri()));
+
+        if (failureLimiter.readyForRequests(nodeUrl)) {
+            return handleProxyRequest(request, nodeUrl);
+        } else {
+            logger.warn("[%s] Can't send request to closed node [%s]: %s %s".formatted(selfUrl, nodeUrl,
+                    request.method(), request.uri()));
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        }
+    }
+
+    private HttpRequest buildProxyRequest(Request request, String nodeUrl, String parameter) {
         byte[] body = request.getBody();
-        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + parameter))
+        return HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + parameter))
                 .method(request.getMethodName(), body == null
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofByteArray(body))
                 .setHeader(TERMINATION_HEADER, TERMINATION_TRUE)
                 .build();
-        sendProxyRequest(session, httpRequest, nodeUrl);
     }
 
-    private void sendProxyRequest(HttpSession session, HttpRequest httpRequest, String nodeUrl) {
+    private Response handleProxyRequest(HttpRequest httpRequest, String nodeUrl) {
         try {
             HttpResponse<byte[]> httpResponse = httpClient
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
@@ -238,77 +259,30 @@ public class Server extends HttpServer {
             if (statusCode == null) {
                 logger.error("The proxied node returned a response with an unexpected status: "
                         + httpResponse.statusCode());
-                safetySendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
+                return new Response(Response.INTERNAL_ERROR, httpResponse.body());
             } else {
                 if (httpResponse.statusCode() >= SERVER_ERRORS) {
                     failureLimiter.handleFailure(nodeUrl);
                 }
 
-                safetySendResponse(session, new Response(statusCode, httpResponse.body()));
+                Response response = new Response(statusCode, httpResponse.body());
+                long timestamp = httpResponse.headers().firstValueAsLong(HTTP_TIMESTAMP_HEADER).orElse(0);
+                response.addHeader(NIO_TIMESTAMP_HEADER + timestamp);
+                return response;
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error(e.getMessage());
-            sendExceptionInfo(session, e);
             failureLimiter.handleFailure(nodeUrl);
+            return handleExceptionInfo(e);
         } catch (ExecutionException e) {
             logger.error("Execution exception while processing the httpRequest", e);
-            sendExceptionInfo(session, e);
             failureLimiter.handleFailure(nodeUrl);
+            return handleExceptionInfo(e);
         } catch (TimeoutException e) {
             logger.error("Request timed out. Maximum processing time exceeded", e);
-            sendExceptionInfo(session, e);
             failureLimiter.handleFailure(nodeUrl);
+            return handleExceptionInfo(e);
         }
     }
-
-    // region Handlers
-
-    @Path(METHOD_ADDRESS)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response upsert(@Param(value = "id", required = true) String id, Request request) {
-        if (Utils.isNullOrBlank(id) || request.getBody() == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        MemorySegment key = MemorySegmentFactory.fromString(id);
-        MemorySegment value = MemorySegment.ofArray(request.getBody());
-        dao.upsert(new ExtendedBaseEntry<>(key, value, System.currentTimeMillis()));
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path(METHOD_ADDRESS)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(required = true, value = "id") String id) {
-        if (Utils.isNullOrBlank(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        MemorySegment key = MemorySegmentFactory.fromString(id);
-        ExtendedEntry<MemorySegment> entry = dao.get(key);
-
-        if (entry == null || entry.value() == null) {
-            Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-            response.addHeader(TIMESTAMP_HEADER + (entry != null ? entry.timestamp() : 0));
-            return response;
-        }
-
-        Response response = new Response(Response.OK, MemorySegmentFactory.toByteArray(entry.value()));
-        response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
-        return response;
-    }
-
-    @Path(METHOD_ADDRESS)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(required = true, value = "id") String id) {
-        if (Utils.isNullOrBlank(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        ExtendedEntry<MemorySegment> deletedMemorySegment =
-                MemorySegmentFactory.toDeletedMemorySegment(id, System.currentTimeMillis());
-        dao.upsert(deletedMemorySegment);
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    // endregion
 }

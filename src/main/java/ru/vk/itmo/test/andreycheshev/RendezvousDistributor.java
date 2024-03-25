@@ -19,10 +19,34 @@ public class RendezvousDistributor {
             int currHash = hashCode(key + i);
             if (currHash > maxHash) {
                 maxHash = currHash;
-                node = thisNodeNumber == i ? -1 : i;
+                node = i;
             }
         }
-        return node; // Return -1 if this node was selected.
+        return node;
+    }
+
+    public int[] getQuorumNodes(String key, int quorumNumber) {
+        int currNode = getNode(key); // Get start node.
+        int[] quorumNodes = new int[quorumNumber];
+        for (int i = 0; i < quorumNumber; i++) {
+            quorumNodes[i] = currNode;
+            if (++currNode >= nodeCount) {
+                currNode = 0;
+            }
+        }
+        return quorumNodes;
+    }
+
+    public int getNodeCount() {
+        return nodeCount;
+    }
+
+    public int getQuorumNumber() {
+        return nodeCount / 2 + 1;
+    }
+
+    public boolean isOurNode(int node) {
+        return node == thisNodeNumber;
     }
 
     private static int hashCode(int key) {

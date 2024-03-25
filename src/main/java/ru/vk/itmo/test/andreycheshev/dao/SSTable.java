@@ -141,10 +141,10 @@ final class SSTable {
 
          // Skip key (will reuse the argument)
         long offset = entryOffset(entry);
-        offset += key.byteSize();
+        offset += key.byteSize() + Long.BYTES;
 
         // Read timestamp
-        final long timestamp = data.get(ValueLayout.JAVA_LONG, offset);
+        final long timestamp = data.get(ValueLayout.OfLong.JAVA_LONG_UNALIGNED, offset);
         offset += Long.BYTES;
 
         // Extract value length
@@ -192,7 +192,7 @@ final class SSTable {
             offset += keyLength;
 
             // Read timestamp
-            final long timestamp = data.get(ValueLayout.JAVA_LONG, offset);
+            final long timestamp = data.get(ValueLayout.OfLong.JAVA_LONG_UNALIGNED, offset);
             offset += Long.BYTES;
 
             // Read value length

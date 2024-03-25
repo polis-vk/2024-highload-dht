@@ -13,24 +13,32 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 public class RequestHandler {
-    private static final Set<Integer> availableMethods = new HashSet<>(3);
+    private static final Set<Integer> AVAILABLE_METHODS;
+
+    static {
+        AVAILABLE_METHODS = Set.of(
+                Request.METHOD_GET,
+                Request.METHOD_PUT,
+                Request.METHOD_DELETE
+        ); // Immutable set.
+    }
+
+    private static final String REDIRECT_HTTP_HEADER = "Node-request";
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID_PARAMETER = "id=";
+    private static final String ACK_PARAMETER = "id=";
+    private static final String FROM_PARAMETER = "id=";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final HttpClient[] clusterConnections;
 
     private final RendezvousDistributor distributor;
 
-    static {
-        availableMethods.add(Request.METHOD_GET);
-        availableMethods.add(Request.METHOD_PUT);
-        availableMethods.add(Request.METHOD_DELETE);
-    }
 
     public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao,
                           HttpClient[] clusterConnections,
@@ -54,30 +62,86 @@ public class RequestHandler {
         }
 
         int method = request.getMethod();
-        if (!availableMethods.contains(method)) {
+        if (!AVAILABLE_METHODS.contains(method)) {
             return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
 
-        int currNodeNumber = distributor.getNode(id);
-        if (currNodeNumber >= 0) {
-            // Redirect request, processing on another node.
-            HttpClient client = clusterConnections[currNodeNumber];
-            Request remoteRequest = client.createRequest(method, request.getURI());
-
-            byte[] body = request.getBody();
-            if (body != null) {
-                remoteRequest.addHeader("Content-Length: " + body.length);
-                remoteRequest.setBody(body);
-            }
-
-            return client.invoke(remoteRequest);
+        if (request.getHeader(REDIRECT_HTTP_HEADER) != null) {
+            return processLocalRequest(method, id, request);
         }
 
-        // Processing locally.
+        String ackParameter = request.getParameter(ACK_PARAMETER);
+        String fromParameter = request.getParameter(FROM_PARAMETER);
+
+        boolean shouldProcessWithParameters = (ackParameter != null && fromParameter != null);
+
+        int ack = shouldProcessWithParameters
+                ? Integer.parseInt(ackParameter)
+                : distributor.getQuorumNumber();
+        int from = shouldProcessWithParameters
+                ? Integer.parseInt(fromParameter)
+                : distributor.getNodeCount();
+
+        int[] nodeCount = distributor.getQuorumNodes(id, from);
+        List<Response> responses = new ArrayList<>();
+        for (int node : nodeCount) {
+            try {
+                Response response = (distributor.isOurNode(node))
+                        ? redirectRequest(method, node, request)
+                        : processLocalRequest(method, id, request);
+
+                if (isRequestSucceeded(method, response.getStatus())) {
+                    responses.add(response);
+                }
+
+                if (responses.size() == ack) {
+                    return analyzeResponses(method, responses);
+                }
+            } catch (Exception ignored) {
+
+            }
+        }
+
+        return //TODO;
+    }
+
+    private Response analyzeResponses(int method, List<Response> responses) {
+
+    }
+
+    private Response getErrorReponse(int method) {
+
+    }
+
+    private boolean isRequestSucceeded(int method, int status) {
+        return (method == Request.METHOD_GET && status == 200 ||
+                method == Request.METHOD_PUT && status == 201 ||
+                method == Request.METHOD_DELETE && status == 202);
+    }
+
+    private Response redirectRequest(
+            int method,
+            int nodeNumber,
+            Request request) throws HttpException, IOException, PoolException, InterruptedException {
+        HttpClient client = clusterConnections[nodeNumber];
+        Request remoteRequest = client.createRequest(method, request.getURI());
+
+        byte[] body = request.getBody();
+        if (body != null) {
+            remoteRequest.addHeader(STR."Content-Length: \{body.length}");
+            remoteRequest.setBody(body);
+        }
+
+        remoteRequest.addHeader(REDIRECT_HTTP_HEADER);
+
+        return client.invoke(remoteRequest);
+    }
+
+    private Response processLocalRequest(int method, String id, Request request) {
         return switch (method) {
             case Request.METHOD_GET -> get(id);
             case Request.METHOD_PUT -> put(id, request.getBody());
-            default -> delete(id); // The check was earlier, so here the delete method.
+            default -> delete(id);
         };
     }
 

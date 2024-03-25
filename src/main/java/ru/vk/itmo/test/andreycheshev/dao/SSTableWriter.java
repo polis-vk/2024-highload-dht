@@ -113,7 +113,7 @@ final class SSTableWriter {
             final OutputStream os) throws IOException {
         final long size = Long.BYTES;
         blobBuffer.ensureCapacity(size);
-        blobBuffer.segment().set(ValueLayout.JAVA_LONG, 0L, timestamp);
+        blobBuffer.segment().set(ValueLayout.OfLong.JAVA_LONG_UNALIGNED, 0L, timestamp);
         blobBuffer.withArray(array ->
                 os.write(
                         array,

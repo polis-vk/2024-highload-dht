@@ -5,6 +5,7 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -18,22 +19,23 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
-public class ServiceImpl implements ru.vk.itmo.Service {
+public class ServiceImpl implements Service {
 
     private final ServiceConfig serviceConfig;
-    private final ProxyRequestHandler proxyRequestHandler;
+    private ProxyRequestHandler proxyRequestHandler;
     private PersistentDao dao;
     private ServerImpl server;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
-        this.proxyRequestHandler = new ProxyRequestHandler(serviceConfig);
     }
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        dao = new PersistentDao(new Config(serviceConfig.workingDir(), 1024 * 1024 * 5));
+        dao = new PersistentDao(new Config(serviceConfig.workingDir(), 1024 * 1024 * 5L));
         server = new ServerImpl(serviceConfig);
+        proxyRequestHandler = new ProxyRequestHandler(serviceConfig);
+
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);

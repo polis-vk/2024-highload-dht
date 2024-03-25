@@ -24,7 +24,6 @@ public class ServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
     private static final String HTTP_SERVICE_NOT_AVAILABLE = "503";
-    private static final String EMPTY_RESPONSE = "";
     private static final int QUEUE_CAPACITY = 3000;
 
     private final ThreadPoolExecutor executor;
@@ -84,8 +83,8 @@ public class ServerImpl extends HttpServer {
             }
         } catch (Exception ex) {
             try {
-                String response = ex.getClass() == HttpException.class ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
-                session.sendError(response, EMPTY_RESPONSE);
+                String response = ex instanceof HttpException ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
+                session.sendError(response, null);
             } catch (IOException ioEx) {
                 log.error("Failed send error response to client.", ioEx);
                 session.close();

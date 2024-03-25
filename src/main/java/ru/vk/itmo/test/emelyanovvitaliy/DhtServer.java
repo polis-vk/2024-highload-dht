@@ -13,6 +13,7 @@ import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -36,33 +37,39 @@ import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class DhtServer extends HttpServer {
-    public static final byte[] EMPTY_BODY = new byte[0];
-    public static final int THREADS_PER_PROCESSOR = 2;
+    protected static final byte[] EMPTY_BODY = new byte[0];
+    protected static final int THREADS_PER_PROCESSOR = 2;
+    protected static final int FLUSH_THRESHOLD_BYTES = 1 << 24; // 16 MiB
+    protected static final long KEEP_ALIVE_TIME_MILLIS = 1000;
+    protected static final int REQUEST_TIMEOUT_MILLIS = 1024;
+    protected static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
+    protected static final int REMOTE_CONNECT_TIMEOUT_MILLIS = 100;
+    protected static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
     protected final HttpClient[] httpClients;
-    public static final long KEEP_ALIVE_TIME_MILLIS = 1000;
-    public static final int REQUEST_TIMEOUT_MILLIS = 1024;
-    public static final int FLUSH_THRESHOLD_BYTES = 1 << 24; // 16 MiB
-    public static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
-    public static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
-    public final AtomicInteger threadsInPool = new AtomicInteger(0);
-    private final ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-            Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
-            Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
-            KEEP_ALIVE_TIME_MILLIS,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(TASK_QUEUE_SIZE),
-            r -> {
-                Thread t = new Thread(r);
-                t.setDaemon(true);
-                t.setName("DhtServerThreadPool-Thread-" + threadsInPool.incrementAndGet());
-                return t;
-            }
-    );
-    private final ReferenceDao dao;
+    protected final int[] clientsHashes;
+
+    protected final AtomicInteger threadsInPool;
+    protected final ThreadPoolExecutor threadPoolExecutor;
+    protected final ReferenceDao dao;
 
     public DhtServer(ServiceConfig config) throws IOException {
         super(createConfig(config));
+        threadsInPool = new AtomicInteger(0);
+        threadPoolExecutor = new ThreadPoolExecutor(
+                Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
+                Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
+                KEEP_ALIVE_TIME_MILLIS,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(TASK_QUEUE_SIZE),
+                r -> {
+                    Thread t = new Thread(r);
+                    t.setDaemon(true);
+                    t.setName("DhtServerThreadPool-Thread-" + threadsInPool.incrementAndGet());
+                    return t;
+                }
+        );
         httpClients = getHttpClients(config.clusterUrls(), config.selfUrl());
+        clientsHashes = getClientHashes(config.clusterUrls());
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
     }
 
@@ -116,8 +123,24 @@ public class DhtServer extends HttpServer {
         }
     }
 
+    // choose the client by rendezvous hashing
     private HttpClient getHttpClientByKey(String key) {
-        return httpClients[Math.abs(key.hashCode()) % httpClients.length];
+        int maxHash = Integer.MIN_VALUE;
+        HttpClient choosen = httpClients[0];
+        for (int i = 0; i < httpClients.length; i++) {
+            // cantor pairing function works nicely only with non-negatives
+            int keyHash = Math.abs(Hash.murmur3(key));
+            int totalHash = cantorPairingFunction(clientsHashes[i], keyHash);
+            if (totalHash > maxHash) {
+                maxHash = totalHash;
+                choosen = httpClients[i];
+            }
+        }
+        return choosen;
+    }
+
+    private static int cantorPairingFunction(int a, int b) {
+        return (a + b) * (a + b + 1) / 2 + b;
     }
 
     private boolean tryForward(HttpSession session, Request request, String key) throws IOException {
@@ -126,7 +149,7 @@ public class DhtServer extends HttpServer {
             return false;
         }
         try {
-            session.sendResponse(httpClient.invoke(request));
+            session.sendResponse(httpClient.invoke(request, REMOTE_CONNECT_TIMEOUT_MILLIS));
         } catch (PoolException | HttpException e) {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, EMPTY_BODY));
         } catch (InterruptedException e) {
@@ -217,7 +240,6 @@ public class DhtServer extends HttpServer {
     }
 
     private static HttpClient[] getHttpClients(List<String> urls, String thisUrl) {
-
         HttpClient[] clients = new HttpClient[urls.size()];
         int cnt = 0;
         List<String> tmpList = new ArrayList<>(urls);
@@ -227,6 +249,20 @@ public class DhtServer extends HttpServer {
         }
         return clients;
     }
+
+    private static int[] getClientHashes(List<String> urls) {
+        int[] hashes = new int[urls.size()];
+        int cnt = 0;
+        List<String> tmpList = new ArrayList<>(urls);
+        tmpList.sort(String::compareTo);
+        for (String url : tmpList) {
+            // cantor pairing function works nicely only with non-negatives
+            hashes[cnt++] = Math.abs(Hash.murmur3(url));
+        }
+        return hashes;
+    }
+
+
 
     private static MemorySegment keyFor(String id) {
         return MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));

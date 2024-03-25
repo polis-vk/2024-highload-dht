@@ -6,10 +6,10 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtProperties;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyException;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.DaoImpl;
 
 import java.io.IOException;
@@ -92,7 +92,7 @@ public class DaoServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() {
         try {
-            final Dao<MemorySegment, Entry<MemorySegment>> dao = createDao(config.workingDir());
+            final Dao<MemorySegment, TimeEntry<MemorySegment>> dao = createDao(config.workingDir());
             server = new DaoHttpServer(createDaoHttpServerConfig(config), dao);
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
@@ -100,7 +100,7 @@ public class DaoServiceImpl implements Service {
         return CompletableFuture.runAsync(server::start);
     }
 
-    private Dao<MemorySegment, Entry<MemorySegment>> createDao(final Path basePath) {
+    private Dao<MemorySegment, TimeEntry<MemorySegment>> createDao(final Path basePath) {
         final long thresholdBytes = flushThresholdMegabytes * 1024L * 1024L;
         return new DaoImpl(new Config(basePath, thresholdBytes));
     }

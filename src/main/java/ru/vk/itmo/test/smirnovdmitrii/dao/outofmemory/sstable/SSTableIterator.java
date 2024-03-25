@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory.sstable;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.util.EqualsComparator;
 
 import java.lang.foreign.MemorySegment;
@@ -11,12 +10,12 @@ import java.util.NoSuchElementException;
 /**
  * Iterator for SSTable.
  */
-public class SSTableIterator implements Iterator<Entry<MemorySegment>> {
+public class SSTableIterator implements Iterator<TimeEntry<MemorySegment>> {
     private final MemorySegment upperBound;
     private final SSTableStorage storage;
     private final EqualsComparator<MemorySegment> comparator;
     private SSTable ssTable;
-    private Entry<MemorySegment> next;
+    private TimeEntry<MemorySegment> next;
     private long upperBoundOffset;
     private long offset;
 
@@ -31,7 +30,7 @@ public class SSTableIterator implements Iterator<Entry<MemorySegment>> {
         this.comparator = comparator;
         this.upperBound = to;
         this.ssTable = ssTable;
-        this.next = new BaseEntry<>(from, null);
+        this.next = new TimeEntry<>(from, null);
         reposition();
         safeNext();
     }
@@ -42,7 +41,7 @@ public class SSTableIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public TimeEntry<MemorySegment> next() {
         if (!hasNext()) {
             throw new NoSuchElementException("No more elements");
         }
@@ -53,8 +52,8 @@ public class SSTableIterator implements Iterator<Entry<MemorySegment>> {
      * Returns null if where is no next element.
      * @return next element.
      */
-    private Entry<MemorySegment> safeNext() {
-        final Entry<MemorySegment> result = next;
+    private TimeEntry<MemorySegment> safeNext() {
+        final TimeEntry<MemorySegment> result = next;
         while (true) {
             if (ssTable == null || offset == upperBoundOffset) {
                 next = null;

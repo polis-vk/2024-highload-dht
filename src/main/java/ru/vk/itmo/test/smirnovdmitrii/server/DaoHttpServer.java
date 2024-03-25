@@ -7,15 +7,16 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -34,7 +35,7 @@ public class DaoHttpServer extends HttpServer {
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
     private final ExecutorService workerPool;
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
     private final Balancer balancer;
     private final RedirectService redirectService;
     private final String selfUrl;
@@ -42,7 +43,7 @@ public class DaoHttpServer extends HttpServer {
 
     public DaoHttpServer(
             final DaoHttpServerConfig config,
-            final Dao<MemorySegment, Entry<MemorySegment>> dao
+            final Dao<MemorySegment, TimeEntry<MemorySegment>> dao
     ) throws IOException {
         super(config);
         this.dao = dao;
@@ -84,13 +85,13 @@ public class DaoHttpServer extends HttpServer {
             final Request request
     ) {
         final MemorySegment value = MemorySegment.ofArray(request.getBody());
-        final Entry<MemorySegment> entry = new BaseEntry<>(key, value);
+        final TimeEntry<MemorySegment> entry = new TimeEntry<>(epochMillisNow(), key, value);
         dao.upsert(entry);
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
     public Response delete(final MemorySegment key) {
-        final Entry<MemorySegment> entry = new BaseEntry<>(key, null);
+        final TimeEntry<MemorySegment> entry = new TimeEntry<>(epochMillisNow(), key, null);
         dao.upsert(entry);
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
@@ -120,22 +121,77 @@ public class DaoHttpServer extends HttpServer {
                 stop();
                 return;
             }
+
             final String id = request.getParameter("id=");
             final Response validationFailedResponse = validateResponse(path, id);
             if (validationFailedResponse != null) {
                 session.sendResponse(validationFailedResponse);
                 return;
             }
-            final Response shardResponse = shardResponse(request, id);
-            if (shardResponse != null) {
-                session.sendResponse(shardResponse);
+            final String redirectHeader = request.getHeader(RedirectService.REDIRECT_HEADER_NAME);
+            logger.info(selfUrl);
+            for (final String header: request.getHeaders()) {
+                logger.info(header);
+            }
+            if (redirectHeader != null && redirectHeader.equals("true")) {
+                final int method = request.getMethod();
+                final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
+                final MemorySegment key = MemorySegment.ofArray(keyBytes);
+                session.sendResponse(processRequest(request, method, key));
                 return;
             }
-            final int method = request.getMethod();
-            final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
-            final MemorySegment key = MemorySegment.ofArray(keyBytes);
-            Response response = processRequest(request, method, key);
-            session.sendResponse(response);
+            final String ackParam = request.getParameter("ack=");
+            final String fromParam = request.getParameter("from=");
+            final int from;
+            if (fromParam == null) {
+                from = balancer.clusterSize();
+            } else {
+                try {
+                    from = Integer.parseInt(fromParam);
+                } catch (final NumberFormatException e) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+            }
+            final int ack;
+            if (ackParam == null) {
+                ack = balancer.quorum(from);
+            } else {
+                try {
+                    ack = Integer.parseInt(ackParam);
+                } catch (final NumberFormatException e) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+            }
+            if (ack < 1 || from < 1 || ack > from) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+            final String[] nodeUrls = balancer.getNodeUrls(id, from);
+            int success = 0;
+            Response response = null;
+            for (final String url : nodeUrls) {
+                final Response curResponse;
+                if (url.equals(selfUrl)) {
+                    final int method = request.getMethod();
+                    final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
+                    final MemorySegment key = MemorySegment.ofArray(keyBytes);
+                    curResponse = processRequest(request, method, key);
+                } else {
+                    curResponse = shardResponse(request, url);
+                }
+                final int status = curResponse.getStatus();
+                if (200 <= status && status < 300) {
+                    success++;
+                    response = curResponse;
+                }
+            }
+            if (success >= ack) {
+                session.sendResponse(response);
+            } else {
+                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+            }
         } catch (final IOException e) {
             logger.error("IOException in send response.");
         }
@@ -143,12 +199,8 @@ public class DaoHttpServer extends HttpServer {
 
     private Response shardResponse(
             final Request request,
-            final String id
+            final String nodeUrl
     ) {
-        final String nodeUrl = balancer.getNodeUrl(id);
-        if (selfUrl.equals(nodeUrl)) {
-            return null;
-        }
         try {
             return redirectService.redirect(nodeUrl, request);
         } catch (final IOException e) {
@@ -230,5 +282,9 @@ public class DaoHttpServer extends HttpServer {
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private long epochMillisNow() {
+        return Instant.now().toEpochMilli();
     }
 }

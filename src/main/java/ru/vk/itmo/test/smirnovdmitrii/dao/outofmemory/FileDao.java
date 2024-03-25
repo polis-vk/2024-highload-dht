@@ -1,6 +1,7 @@
 package ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory;
 
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory.sstable.OpenedSSTable;
 import ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory.sstable.SSTable;
 import ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory.sstable.SSTableIterator;
@@ -32,7 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>> {
+public class FileDao implements OutMemoryDao<MemorySegment, TimeEntry<MemorySegment>> {
     private static final String INDEX_FILE_NAME = "index.idx";
     private final MemorySegmentComparator comparator = new MemorySegmentComparator();
     private final SSTableStorage storage;
@@ -66,7 +67,7 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public Entry<MemorySegment> get(
+    public TimeEntry<MemorySegment> get(
             final State state,
             final MemorySegment key
     ) {
@@ -85,7 +86,7 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public void flush(final Iterable<Entry<MemorySegment>> entries) throws IOException {
+    public void flush(final Iterable<TimeEntry<MemorySegment>> entries) throws IOException {
         storage.add(save(entries));
     }
 
@@ -108,7 +109,7 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
      * @return File name, where entries were saved.
      */
     public String save(
-            final Iterable<Entry<MemorySegment>> entries
+            final Iterable<TimeEntry<MemorySegment>> entries
     ) throws IOException {
         Objects.requireNonNull(entries, "entries must be not null");
         long appendSize = 0;
@@ -124,7 +125,7 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
         if (count == 0) {
             return null;
         }
-        final long offsetsPartSize = count * Long.BYTES * 2;
+        final long offsetsPartSize = count * Long.BYTES * 3;
         appendSize += offsetsPartSize;
         final Path filePath = newSsTablePath();
         final Path tmpFilePath = filePath.resolveSibling(filePath.getFileName() + ".tmp");
@@ -140,9 +141,11 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
             }
             long indexOffset = 0;
             long blockOffset = offsetsPartSize;
-            for (final Entry<MemorySegment> entry : entries) {
+            for (final TimeEntry<MemorySegment> entry : entries) {
                 mappedSsTable.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, blockOffset);
                 indexOffset += Long.BYTES;
+                mappedSsTable.set(ValueLayout.JAVA_LONG_UNALIGNED, blockOffset, entry.millis());
+                blockOffset += Long.BYTES;
                 final MemorySegment key = entry.key();
                 final long keySize = key.byteSize();
                 MemorySegment.copy(key, 0, mappedSsTable, blockOffset, keySize);
@@ -172,12 +175,12 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
         return basePath.resolve(UUID.randomUUID().toString());
     }
 
-    private List<Iterator<Entry<MemorySegment>>> get(
+    private List<Iterator<TimeEntry<MemorySegment>>> get(
             final MemorySegment from,
             final MemorySegment to,
             final Iterable<SSTable> iterable
     ) {
-        final List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>();
+        final List<Iterator<TimeEntry<MemorySegment>>> iterators = new ArrayList<>();
         for (final SSTable ssTable : iterable) {
             iterators.add(new SSTableIterator(
                     ssTable, from, to, storage, comparator
@@ -187,7 +190,7 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public List<Iterator<Entry<MemorySegment>>> get(
+    public List<Iterator<TimeEntry<MemorySegment>>> get(
             final State state,
             final MemorySegment from,
             final MemorySegment to
@@ -218,7 +221,7 @@ public class FileDao implements OutMemoryDao<MemorySegment, Entry<MemorySegment>
             return;
         }
         final String compactionFileName = save(() -> {
-            final MergeIterator.Builder<MemorySegment, Entry<MemorySegment>> builder
+            final MergeIterator.Builder<MemorySegment, TimeEntry<MemorySegment>> builder
                     = new MergeIterator.Builder<>(comparator);
             for (int i = 0; i < ssTables.size(); i++) {
                 builder.addIterator(new WrappedIterator<>(i,

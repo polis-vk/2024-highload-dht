@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,8 @@ public class RedirectService {
     private static int REDIRECT_TIMEOUT;
     private final Map<String, HttpClient> clients = new HashMap<>();
     private static final Logger logger = LoggerFactory.getLogger(RedirectService.class);
+    public static final String REDIRECT_HEADER_NAME = "X-REPLICATION-REQUEST:";
+    public static final String REDIRECT_HEADER = REDIRECT_HEADER_NAME + " true";
 
     public RedirectService(final String selfUrl, List<String> clusterUrls) {
         for (final String clusterUrl: clusterUrls) {
@@ -38,7 +41,17 @@ public class RedirectService {
         final HttpClient client = clients.get(url);
         try {
             logger.trace("sending redirect to node {}", url);
-            return client.invoke(request, REDIRECT_TIMEOUT);
+            final Request redirectRequest = client.createRequest(
+                    request.getMethod(),
+                    request.getURI(),
+                    REDIRECT_HEADER
+            );
+            final byte[] body = request.getBody();
+            if (body != null) {
+                redirectRequest.setBody(body);
+                redirectRequest.addHeader("Content-Length: " + body.length);
+            }
+            return client.invoke(redirectRequest, REDIRECT_TIMEOUT);
         } catch (PoolException e) {
             return new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }

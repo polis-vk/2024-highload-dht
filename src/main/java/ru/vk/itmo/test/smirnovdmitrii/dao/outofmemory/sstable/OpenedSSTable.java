@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory.sstable;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 
 import java.io.Closeable;
 import java.lang.foreign.MemorySegment;
@@ -23,8 +22,9 @@ public class OpenedSSTable extends AbstractSSTable implements Closeable {
         mapped = null;
     }
 
-    public Entry<MemorySegment> readBlock(final long index) {
-        return new BaseEntry<>(
+    public TimeEntry<MemorySegment> readBlock(final long index) {
+        return new TimeEntry<>(
+                readBlockTimestamp(index),
                 readBlockKey(index),
                 readBlockValue(index)
         );

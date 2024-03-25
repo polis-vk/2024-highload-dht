@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.server;
 
+import one.nio.http.Request;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +9,7 @@ import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Random;
 
 public class Balancer {
@@ -50,8 +52,47 @@ public class Balancer {
         logger.info("creating key map for nodes is done.");
     }
 
-    public String getNodeUrl(final String key) {
+    public String[] getNodeUrls(final String key) {
+        return clusterUrls.toArray(new String[0]);
+    }
+
+    public String[] getNodeUrls(
+            final String key,
+            final int count
+    ) {
+        if (count >= clusterUrls.size()) {
+            return getNodeUrls(key);
+        }
+        final String[] urls = new String[count];
         final int hash = Math.abs(Hash.murmur3(key));
-        return clusterUrls.get(partitionMapping[hash % partitionMapping.length]);
+        int vnodeIndex = hash % partitionMapping.length;
+        int index = 0;
+        while (index < urls.length) {
+            final int cur = partitionMapping[vnodeIndex];
+            final String curUrl = clusterUrls.get(cur);
+            boolean isTaken = false;
+            for (int i = 0; i < index; i++) {
+                final String value = urls[i];
+                if (Objects.equals(curUrl, value)) {
+                    isTaken = true;
+                    break;
+                }
+            }
+            vnodeIndex = (vnodeIndex + 1) % partitionMapping.length;
+            if (isTaken) {
+                continue;
+            }
+            urls[index] = clusterUrls.get(cur);
+            index++;
+        }
+        return urls;
+    }
+
+    public int clusterSize() {
+        return clusterUrls.size();
+    }
+
+    public int quorum(final int from) {
+        return from / 2 + 1;
     }
 }

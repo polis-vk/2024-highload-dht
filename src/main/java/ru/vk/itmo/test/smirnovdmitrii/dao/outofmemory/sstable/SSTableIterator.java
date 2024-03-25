@@ -30,7 +30,7 @@ public class SSTableIterator implements Iterator<TimeEntry<MemorySegment>> {
         this.comparator = comparator;
         this.upperBound = to;
         this.ssTable = ssTable;
-        this.next = new TimeEntry<>(from, null);
+        this.next = new TimeEntry<>(-1, from, null);
         reposition();
         safeNext();
     }

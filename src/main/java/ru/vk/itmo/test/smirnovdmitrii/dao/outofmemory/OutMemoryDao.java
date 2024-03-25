@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory;
 
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.state.State;
 
 import java.io.IOException;

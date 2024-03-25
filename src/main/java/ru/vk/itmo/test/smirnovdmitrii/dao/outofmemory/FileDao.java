@@ -95,7 +95,7 @@ public class FileDao implements OutMemoryDao<MemorySegment, TimeEntry<MemorySegm
      * One block is:
      * [bytes] key [bytes] value.
      * One meta block is :
-     * [JAVA_LONG_UNALIGNED] key_offset [JAVA_LONG_UNALIGNED] value_offset
+     * [JAVA_LONG_UNALIGNED] timestamp [JAVA_LONG_UNALIGNED] key_offset [JAVA_LONG_UNALIGNED] value_offset
      * SSTable structure:
      * meta block 1
      * meta block 2
@@ -142,10 +142,10 @@ public class FileDao implements OutMemoryDao<MemorySegment, TimeEntry<MemorySegm
             long indexOffset = 0;
             long blockOffset = offsetsPartSize;
             for (final TimeEntry<MemorySegment> entry : entries) {
+                mappedSsTable.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, entry.millis());
+                indexOffset += Long.BYTES;
                 mappedSsTable.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, blockOffset);
                 indexOffset += Long.BYTES;
-                mappedSsTable.set(ValueLayout.JAVA_LONG_UNALIGNED, blockOffset, entry.millis());
-                blockOffset += Long.BYTES;
                 final MemorySegment key = entry.key();
                 final long keySize = key.byteSize();
                 MemorySegment.copy(key, 0, mappedSsTable, blockOffset, keySize);

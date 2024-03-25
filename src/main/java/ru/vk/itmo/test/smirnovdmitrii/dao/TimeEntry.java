@@ -4,7 +4,7 @@ import ru.vk.itmo.dao.Entry;
 
 public record TimeEntry<D>(
         long millis,
-        D value,
-        D key
+        D key,
+        D value
 ) implements Entry<D> {
 }

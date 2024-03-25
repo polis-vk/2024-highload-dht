@@ -30,6 +30,10 @@ public class OpenedSSTable extends AbstractSSTable implements Closeable {
         );
     }
 
+    private long readBlockTimestamp(final long index) {
+        return mapped.get(ValueLayout.JAVA_LONG_UNALIGNED, index * Long.BYTES * 3);
+    }
+
     public MemorySegment readBlockKey(final long index) {
         final long startOfKey = startOfKey(index);
         return mapped.asSlice(startOfKey, endOfKey(index) - startOfKey);
@@ -44,11 +48,11 @@ public class OpenedSSTable extends AbstractSSTable implements Closeable {
     }
 
     private long startOfKey(final long index) {
-        return mapped.get(ValueLayout.JAVA_LONG_UNALIGNED, index * Long.BYTES * 2);
+        return mapped.get(ValueLayout.JAVA_LONG_UNALIGNED, index * Long.BYTES * 3 + Long.BYTES);
     }
 
     private long startOfValue(final long index) {
-        return mapped.get(ValueLayout.JAVA_LONG_UNALIGNED, index * Long.BYTES * 2 + Long.BYTES);
+        return mapped.get(ValueLayout.JAVA_LONG_UNALIGNED, index * Long.BYTES * 3 + 2 * Long.BYTES);
     }
 
     private long normalizedStartOfValue(final long index) {
@@ -67,7 +71,7 @@ public class OpenedSSTable extends AbstractSSTable implements Closeable {
     }
 
     public long blockCount() {
-        return mapped.get(ValueLayout.JAVA_LONG_UNALIGNED, 0) / Long.BYTES / 2;
+        return mapped.get(ValueLayout.JAVA_LONG_UNALIGNED, Long.BYTES) / Long.BYTES / 3;
     }
 
     /**

@@ -8,7 +8,6 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 
 import java.io.IOException;
@@ -34,6 +33,7 @@ public class DaoHttpServer extends HttpServer {
     private static final String SERVER_STOP_PATH = "/stop";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
+    private static final String TIMESTAMP_HEADER_NAME = "X-KEY-TS: ";
     private final ExecutorService workerPool;
     private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
     private final Balancer balancer;
@@ -73,11 +73,17 @@ public class DaoHttpServer extends HttpServer {
     }
 
     public Response get(final MemorySegment key) {
-        final Entry<MemorySegment> entry = dao.get(key);
+        final TimeEntry<MemorySegment> entry = dao.get(key);
         if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else if (entry.value() == null) {
+            final Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+            response.addHeader(TIMESTAMP_HEADER_NAME + entry.millis());
+            return response;
         }
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+        final Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+        response.addHeader(TIMESTAMP_HEADER_NAME + entry.millis());
+        return response;
     }
 
     public Response put(
@@ -121,9 +127,9 @@ public class DaoHttpServer extends HttpServer {
                 stop();
                 return;
             }
-
+            final int method = request.getMethod();
             final String id = request.getParameter("id=");
-            final Response validationFailedResponse = validateResponse(path, id);
+            final Response validationFailedResponse = validateResponse(path, id, method);
             if (validationFailedResponse != null) {
                 session.sendResponse(validationFailedResponse);
                 return;
@@ -134,67 +140,127 @@ public class DaoHttpServer extends HttpServer {
                 logger.info(header);
             }
             if (redirectHeader != null && redirectHeader.equals("true")) {
-                final int method = request.getMethod();
                 final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
                 final MemorySegment key = MemorySegment.ofArray(keyBytes);
                 session.sendResponse(processRequest(request, method, key));
                 return;
             }
-            final String ackParam = request.getParameter("ack=");
-            final String fromParam = request.getParameter("from=");
-            final int from;
-            if (fromParam == null) {
-                from = balancer.clusterSize();
-            } else {
-                try {
-                    from = Integer.parseInt(fromParam);
-                } catch (final NumberFormatException e) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
-            }
-            final int ack;
-            if (ackParam == null) {
-                ack = balancer.quorum(from);
-            } else {
-                try {
-                    ack = Integer.parseInt(ackParam);
-                } catch (final NumberFormatException e) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
-            }
-            if (ack < 1 || from < 1 || ack > from) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-            final String[] nodeUrls = balancer.getNodeUrls(id, from);
-            int success = 0;
-            Response response = null;
-            for (final String url : nodeUrls) {
-                final Response curResponse;
-                if (url.equals(selfUrl)) {
-                    final int method = request.getMethod();
-                    final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
-                    final MemorySegment key = MemorySegment.ofArray(keyBytes);
-                    curResponse = processRequest(request, method, key);
-                } else {
-                    curResponse = shardResponse(request, url);
-                }
-                final int status = curResponse.getStatus();
-                if (200 <= status && status < 300) {
-                    success++;
-                    response = curResponse;
-                }
-            }
-            if (success >= ack) {
-                session.sendResponse(response);
-            } else {
-                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-            }
+            processRequestAck(request, session, id, method);
         } catch (final IOException e) {
             logger.error("IOException in send response.");
         }
+    }
+
+    private void processRequestAck(
+            final Request request,
+            final HttpSession session,
+            final String id,
+            final int method
+    ) throws IOException {
+        final String ackParam = request.getParameter("ack=");
+        final String fromParam = request.getParameter("from=");
+        final int from;
+        if (fromParam == null) {
+            from = balancer.clusterSize();
+        } else {
+            try {
+                from = Integer.parseInt(fromParam);
+            } catch (final NumberFormatException e) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+        }
+        final int ack;
+        if (ackParam == null) {
+            ack = balancer.quorum(from);
+        } else {
+            try {
+                ack = Integer.parseInt(ackParam);
+            } catch (final NumberFormatException e) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+        }
+        if (ack < 1 || from < 1 || ack > from) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        final String[] nodeUrls = balancer.getNodeUrls(id, from);
+        final Response response;
+        if (method == METHOD_GET) {
+            response = processGetRequest(request, nodeUrls, id, ack);
+        } else {
+            response = processNotGetRequest(request, nodeUrls, id, ack);
+        }
+        session.sendResponse(response);
+    }
+
+    private Response processNotGetRequest(
+            final Request request,
+            final String[] nodeUrls,
+            final String id,
+            final int ack
+    ) {
+        int success = 0;
+        Response response = null;
+        for (final String url : nodeUrls) {
+            final Response curResponse = processRequestWithUrl(request, url, id);
+            final int status = curResponse.getStatus();
+            if (200 <= status && status < 300) {
+                success++;
+                response = curResponse;
+            }
+        }
+        if (success >= ack) {
+            return response;
+        } else {
+            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+        }
+    }
+
+    private Response processGetRequest(
+            final Request request,
+            final String[] nodeUrls,
+            final String id,
+            final int ack
+    ) {
+        int success = 0;
+        Response response = null;
+        long responseTs = -1;
+        for (final String url : nodeUrls) {
+            final Response curResponse = processRequestWithUrl(request, url, id);
+            final int status = curResponse.getStatus();
+            if (200 <= status && status < 500) {
+                success++;
+                final String headerTs = curResponse.getHeader(TIMESTAMP_HEADER_NAME);
+                final long responseMillis = headerTs == null ? 0 : Long.parseLong(headerTs);
+                if (responseTs < responseMillis) {
+                    response = curResponse;
+                    responseTs = responseMillis;
+                }
+            }
+        }
+        if (success >= ack) {
+            return response;
+        } else {
+            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+        }
+    }
+
+    private Response processRequestWithUrl(
+            final Request request,
+            final String url,
+            final String id
+    ) {
+        final Response response;
+        if (url.equals(selfUrl)) {
+            final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
+            final MemorySegment key = MemorySegment.ofArray(keyBytes);
+            response = processRequest(request, request.getMethod(), key);
+        } else {
+            response = shardResponse(request, url);
+        }
+        return response;
     }
 
     private Response shardResponse(
@@ -232,12 +298,15 @@ public class DaoHttpServer extends HttpServer {
 
     public Response validateResponse(
             final String path,
-            final String id
+            final String id,
+            final int method
     ) {
         if (!path.equals(REQUEST_PATH)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else if (isInvalidKey(id)) {
             return new Response(Response.BAD_REQUEST, INVALID_KEY_MESSAGE);
+        } else if (METHOD_GET != method && METHOD_DELETE != method && METHOD_PUT != method) {
+            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
         return null;
     }

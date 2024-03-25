@@ -44,13 +44,13 @@ public class RedirectService {
             final Request redirectRequest = client.createRequest(
                     request.getMethod(),
                     request.getURI(),
-                    REDIRECT_HEADER
+                    Arrays.copyOf(request.getHeaders(), request.getHeaderCount())
             );
             final byte[] body = request.getBody();
             if (body != null) {
                 redirectRequest.setBody(body);
-                redirectRequest.addHeader("Content-Length: " + body.length);
             }
+            redirectRequest.addHeader(REDIRECT_HEADER);
             return client.invoke(redirectRequest, REDIRECT_TIMEOUT);
         } catch (PoolException e) {
             return new Response(Response.BAD_GATEWAY, Response.EMPTY);

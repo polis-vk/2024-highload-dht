@@ -58,9 +58,6 @@ public class DaoImpl implements Dao<MemorySegment, TimeEntry<MemorySegment>> {
         if (result == null) {
             result = outMemoryDao.get(state, key);
         }
-        if (result == null || result.value() == null) {
-            return null;
-        }
         return result;
     }
 

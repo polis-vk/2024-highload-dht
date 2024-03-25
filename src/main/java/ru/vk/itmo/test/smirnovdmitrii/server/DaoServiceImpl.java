@@ -9,8 +9,8 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtProperties;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.PropertyException;
-import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.DaoImpl;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

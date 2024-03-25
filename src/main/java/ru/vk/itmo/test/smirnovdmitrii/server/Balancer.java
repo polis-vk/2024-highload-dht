@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.smirnovdmitrii.server;
 
-import one.nio.http.Request;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,7 +51,7 @@ public class Balancer {
         logger.info("creating key map for nodes is done.");
     }
 
-    public String[] getNodeUrls(final String key) {
+    public String[] getNodeUrls() {
         return clusterUrls.toArray(new String[0]);
     }
 
@@ -61,7 +60,7 @@ public class Balancer {
             final int count
     ) {
         if (count >= clusterUrls.size()) {
-            return getNodeUrls(key);
+            return getNodeUrls();
         }
         final String[] urls = new String[count];
         final int hash = Math.abs(Hash.murmur3(key));

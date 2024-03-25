@@ -22,12 +22,9 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.abramovilya.dao.DaoFactory;
+import ru.vk.itmo.test.abramovilya.util.Util;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -43,6 +40,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class Server extends HttpServer {
     public static final String ENTITY_PATH = "/v0/entity";
@@ -51,6 +50,7 @@ public class Server extends HttpServer {
     public static final int MAXIMUM_POOL_SIZE = 8;
     public static final int KEEP_ALIVE_TIME = 1;
     public static final int QUEUE_CAPACITY = 80;
+    public static final String RESPONSE_NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private final Map<String, HttpClient> httpClients = new HashMap<>();
     private final ServiceConfig config;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -162,38 +162,13 @@ public class Server extends HttpServer {
         if (from > config.clusterUrls().size()) {
             return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
         }
-
-        // Request from user
         if (senderNode == null) {
-            List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
-            if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
-                return getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.get(urlSuffix(id))).get();
-            }
-            List<Response> responses = new ArrayList<>();
-            responses.add(getEntryFromDao(id));
-            for (int nodeNumber : nodesRendezvousSorted) {
-                if (config.clusterUrls().get(nodeNumber).equals(config.selfUrl())) {
-                    continue;
-                }
-                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
-                    Request request = client.createRequest(Request.METHOD_GET, urlSuffix(id), "X-SenderNode: " + config.selfUrl());
-                    return client.invoke(request, 100);
-                });
-                if (responseO.isEmpty()) {
-                    continue;
-                }
-                if (responseO.get().getStatus() == 404 || responseO.get().getStatus() < 300) {
-                    responses.add(responseO.get());
-                }
-            }
-            if (responses.size() < ack) {
-                return new Response("504 Not Enough Replicas", Response.EMPTY);
-            }
-            return responses.stream()
-                    .max(Comparator.comparingLong(Server::headerTimestampToLong))
-                    .get();
+            return handleRequestFromUser(id, from, ack,
+                    client -> client.get(urlSuffix(id)),
+                    client -> client.get(urlSuffix(id), "X-SenderNode: " + config.selfUrl()),
+                    response -> response.getStatus() < 300 || response.getStatus() == 404,
+                    () -> getEntryFromDao(id));
         }
-        // Request from another node
         return getEntryFromDao(id);
     }
 
@@ -207,7 +182,7 @@ public class Server extends HttpServer {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         try {
-            ValueWithTimestamp valueWithTimestamp = byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
+            ValueWithTimestamp valueWithTimestamp = Util.byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
             if (valueWithTimestamp.value() == null) {
                 Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
                 response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
@@ -247,52 +222,26 @@ public class Server extends HttpServer {
             return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
         }
 
-        // Request from user
         if (senderNode == null) {
-            List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
-            if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
-                return getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.put(urlSuffix(id), request.getBody())).get();
-            }
-            List<Response> responses = new ArrayList<>();
-            responses.add(putEntryIntoDao(id, request));
-            for (int nodeNumber : nodesRendezvousSorted) {
-                if (config.clusterUrls().get(nodeNumber).equals(config.selfUrl())) {
-                    continue;
-                }
-                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> client.put(urlSuffix(id), request.getBody(), "X-SenderNode: " + config.selfUrl()));
-                if (responseO.isEmpty()) {
-                    continue;
-                }
-                if (responseO.get().getStatus() < 300) {
-                    responses.add(responseO.get());
-                }
-            }
-            if (responses.size() < ack) {
-                return new Response("504 Not Enough Replicas", Response.EMPTY);
-            }
-            return new Response(Response.CREATED, Response.EMPTY);
+            return handleRequestFromUser(id, from, ack,
+                    client -> client.put(urlSuffix(id), request.getBody()),
+                    client -> client.put(urlSuffix(id), request.getBody(), "X-SenderNode: " + config.selfUrl()),
+                    response -> response.getStatus() < 300,
+                    () -> putEntryIntoDao(id, request));
         }
-
         return putEntryIntoDao(id, request);
     }
 
     private Response putEntryIntoDao(String id, Request request) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(request.getBody(), System.currentTimeMillis());
         try {
-            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(objToByteArray(valueWithTimestamp))));
+            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
-    private static long headerTimestampToLong(Response r) {
-        String header = r.getHeader("X-TimeStamp: ");
-        if (header == null) {
-            return Long.MIN_VALUE;
-        }
-        return Long.parseLong(header);
-    }
 
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_DELETE)
@@ -319,31 +268,12 @@ public class Server extends HttpServer {
             return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
         }
 
-        // Request from user
         if (senderNode == null) {
-            List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
-            if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
-                return getResponseFromAnotherNode(getNodeNumber(id), (client) -> client.put(urlSuffix(id))).get();
-            }
-            List<Response> responses = new ArrayList<>();
-            responses.add(deleteValueFromDao(id));
-            for (int nodeNumber : nodesRendezvousSorted) {
-                Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
-                    Request clientRequest = client.createRequest(Request.METHOD_DELETE, urlSuffix(id), "X-SenderNode: " + config.selfUrl());
-                    return client.invoke(clientRequest, 100);
-                });
-                if (responseO.isEmpty()) {
-                    continue;
-                }
-                if (responseO.get().getStatus() < 300) {
-                    responses.add(responseO.get());
-                }
-            }
-            if (responses.size() < ack) {
-                return new Response("504 Not Enough Replicas", Response.EMPTY);
-            }
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-
+            return handleRequestFromUser(id, from, ack,
+                    client -> client.delete(urlSuffix(id)),
+                    client -> client.delete(urlSuffix(id), "X-SenderNode: " + config.selfUrl()),
+                    response -> response.getStatus() < 300,
+                    () -> deleteValueFromDao(id));
         }
         return deleteValueFromDao(id);
     }
@@ -351,11 +281,49 @@ public class Server extends HttpServer {
     private Response deleteValueFromDao(String id) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(null, System.currentTimeMillis());
         try {
-            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(objToByteArray(valueWithTimestamp))));
+            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private Response handleRequestFromUser(String id,
+                                           int from,
+                                           int ack,
+                                           ResponseProducer delegateToAnotherNode,
+                                           ResponseProducer askAnotherNode,
+                                           Function<Response, Boolean> isResponseSuccess,
+                                           Supplier<Response> daoOperation) {
+        List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
+        if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
+            return getResponseFromAnotherNode(getNodeNumber(id), delegateToAnotherNode).get();
+        }
+        List<Response> responses = new ArrayList<>();
+        responses.add(daoOperation.get());
+        for (int nodeNumber : nodesRendezvousSorted) {
+            Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, askAnotherNode);
+            if (responseO.isPresent()) {
+                Response response = responseO.get();
+                if (isResponseSuccess.apply(response)) {
+                    responses.add(responseO.get());
+                }
+            }
+        }
+        if (responses.size() < ack) {
+            return new Response(RESPONSE_NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        }
+        return responses.stream()
+                .max(Comparator.comparingLong(Server::headerTimestampToLong))
+                .get();
+    }
+
+    private static long headerTimestampToLong(Response r) {
+        String header = r.getHeader("X-TimeStamp: ");
+        if (header == null) {
+            return Long.MIN_VALUE;
+        }
+        return Long.parseLong(header);
     }
 
     private Optional<Response> getResponseFromAnotherNode(int nodeNumber, ResponseProducer responseProducer) {
@@ -403,21 +371,6 @@ public class Server extends HttpServer {
             }
         }
         return argMax;
-    }
-
-    private static byte[] objToByteArray(ValueWithTimestamp object) throws IOException {
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        try (ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream)) {
-            objectOutputStream.writeObject(object);
-            return byteArrayOutputStream.toByteArray();
-        }
-    }
-
-    private static ValueWithTimestamp byteArrayToObject(byte[] bytes) throws IOException, ClassNotFoundException {
-        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
-        try (ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream)) {
-            return (ValueWithTimestamp) objectInputStream.readObject();
-        }
     }
 
     @FunctionalInterface

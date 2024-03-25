@@ -81,10 +81,10 @@ public class DaoHttpServer extends HttpServer {
                     }
                     super.handleRequest(request, session);
                 } catch (DaoException e) {
-                    logger.error(STR."Exception with local dao: \{e.getMessage()}", e);
+                    logger.error("Exception with local dao: {}", e.getMessage(), e);
                     sessionSendResponse(session, DaoResponse.INTERNAL_ERROR);
                 } catch (RemoteServiceException e) {
-                    logger.error(STR."Exception in remote service: \{e.getUrl()}", e);
+                    logger.error("Exception in remote service: {}", e.getUrl(), e);
                     sessionSendResponse(session, e.getHttpCode());
                 } catch (Exception e) {
                     logger.error("Exception from one nio handle", e);

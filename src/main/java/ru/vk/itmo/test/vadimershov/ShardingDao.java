@@ -61,12 +61,12 @@ public class ShardingDao {
         try {
             response = virtualNode.httpClient().get(ENTITY_URI + key);
         } catch (InterruptedException e) {
-            logger.error(STR."InterruptedException get with key=\{key} in remote node url=\{virtualNode.url()}", e);
+            logger.error("Can't get with key={} in remote node url={}", key, virtualNode.url(), e);
             Thread.currentThread().interrupt();
-            throw new DaoException(STR."Can't get value by key=\{key} in remote node url=\{virtualNode.url()}", e);
+            throw new DaoException("Can't get value from remote node", e);
         } catch (PoolException | IOException | HttpException e) {
-            logger.error(STR."Exception get with key=\{key} in remote node url=\{virtualNode.url()}", e);
-            throw new DaoException(STR."Can't get value by key=\{key} in remote node url=\{virtualNode.url()}", e);
+            logger.error("Can't get with key={} in remote node url={}", key, virtualNode.url(), e);
+            throw new DaoException("Can't get value from remote node", e);
         }
         checkCodeInRemoteResp(virtualNode.url(), response);
         return response.getBody();
@@ -80,21 +80,20 @@ public class ShardingDao {
                 return;
             } catch (Exception e) {
                 logger.error("Can't upsert value by key={}", key, e);
-                throw new DaoException(STR."Can't upsert value by key=\{key}", e);
+                throw new DaoException("Can't upsert value", e);
             }
         }
 
         Response response;
         try {
             response = virtualNode.httpClient().put(ENTITY_URI + key, value);
-            checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
-            logger.error(STR."InterruptedException upsert by key=\{key} in remote node url=\{virtualNode.url()}", e);
+            logger.error("InterruptedException upsert by key={} in remote node url={}", key, virtualNode.url(), e);
             Thread.currentThread().interrupt();
-            throw new DaoException(STR."Can't upsert value by key=\{key} in remote node url=\{virtualNode.url()}", e);
+            throw new DaoException("Can't upsert value from remote node", e);
         } catch (PoolException | IOException | HttpException e) {
-            logger.error(STR."Exception upsert by key=\{key} in service url=\{virtualNode.url()}", e);
-            throw new DaoException(STR."Can't upsert value by key=\{key} in remote node url=\{virtualNode.url()}", e);
+            logger.error("Exception upsert by key={} in service url={}", key, virtualNode.url(), e);
+            throw new DaoException("Can't upsert value from remote node", e);
         }
         checkCodeInRemoteResp(virtualNode.url(), response);
     }
@@ -106,7 +105,7 @@ public class ShardingDao {
                 localDao.upsert(toDeletedEntity(key));
                 return;
             } catch (Exception e) {
-                logger.error(STR."Can't delete by key=\{key}", e);
+                logger.error(STR."Can't delete by key=\{key}", key, virtualNode.url(), e);
                 throw new DaoException(STR."Can't delete by key=\{key}", e);
             }
         }
@@ -114,14 +113,13 @@ public class ShardingDao {
         Response response;
         try {
             response = virtualNode.httpClient().delete(ENTITY_URI + key);
-            checkCodeInRemoteResp(virtualNode.url(), response);
         } catch (InterruptedException e) {
-            logger.error(STR."InterruptedException delete by key=\{key} in service url=\{virtualNode.url()}", e);
+            logger.error("InterruptedException delete by key={} in service url={}", key, virtualNode.url(), e);
             Thread.currentThread().interrupt();
-            throw new DaoException(STR."Can't delete value by key=\{key} in remote node url=\{virtualNode.url()}", e);
+            throw new DaoException("Can't delete value from remote node", e);
         } catch (PoolException | IOException | HttpException e) {
-            logger.error(STR."Exception delete by key=\{key} in service url=\{virtualNode.url()}", e);
-            throw new DaoException(STR."Can't delete value by key=\{key} in remote node url=\{virtualNode.url()}", e);
+            logger.error("Exception delete by key={} in service url={}", key, virtualNode.url(), e);
+            throw new DaoException("Can't delete value from remote node", e);
         }
         checkCodeInRemoteResp(virtualNode.url(), response);
     }

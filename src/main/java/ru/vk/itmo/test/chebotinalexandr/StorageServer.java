@@ -221,7 +221,11 @@ public class StorageServer extends HttpServer {
         return from / 2 + 1;
     }
 
-    private Response routeRequest(int partition, Request request, long timestamp) throws IOException, InterruptedException {
+    private Response routeRequest(
+            int partition,
+            Request request,
+            long timestamp
+    ) throws IOException, InterruptedException {
         String partitionUrl = getPartitionUrl(partition) + request.getURI();
 
         HttpRequest newRequest = HttpRequest.newBuilder()

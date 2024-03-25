@@ -262,8 +262,6 @@ public class DhtServer extends HttpServer {
         return hashes;
     }
 
-
-
     private static MemorySegment keyFor(String id) {
         return MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
     }

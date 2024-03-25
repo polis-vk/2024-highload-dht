@@ -48,8 +48,8 @@ public class ShardingDao {
             try {
                 entry = localDao.get(toMemorySegment(key));
             } catch (Exception e) {
-                logger.error(STR."Can't get value by key=\{key}", e);
-                throw new DaoException(STR."Can't get value by key=\{key}", e);
+                logger.error("Can't get value by key={}", key, e);
+                throw new DaoException("Can't get value from local dao", e);
             }
             if (entry == null) {
                 throw new NotFoundException();
@@ -80,7 +80,7 @@ public class ShardingDao {
                 return;
             } catch (Exception e) {
                 logger.error("Can't upsert value by key={}", key, e);
-                throw new DaoException("Can't upsert value", e);
+                throw new DaoException("Can't upsert value in local dao", e);
             }
         }
 
@@ -90,10 +90,10 @@ public class ShardingDao {
         } catch (InterruptedException e) {
             logger.error("InterruptedException upsert by key={} in remote node url={}", key, virtualNode.url(), e);
             Thread.currentThread().interrupt();
-            throw new DaoException("Can't upsert value from remote node", e);
+            throw new DaoException("Can't upsert value in remote node", e);
         } catch (PoolException | IOException | HttpException e) {
             logger.error("Exception upsert by key={} in service url={}", key, virtualNode.url(), e);
-            throw new DaoException("Can't upsert value from remote node", e);
+            throw new DaoException("Can't upsert value in remote node", e);
         }
         checkCodeInRemoteResp(virtualNode.url(), response);
     }
@@ -105,8 +105,8 @@ public class ShardingDao {
                 localDao.upsert(toDeletedEntity(key));
                 return;
             } catch (Exception e) {
-                logger.error(STR."Can't delete by key=\{key}", key, virtualNode.url(), e);
-                throw new DaoException(STR."Can't delete by key=\{key}", e);
+                logger.error("Can't delete by key={}", key, e);
+                throw new DaoException("Can't delete value in local dao", e);
             }
         }
 
@@ -116,10 +116,10 @@ public class ShardingDao {
         } catch (InterruptedException e) {
             logger.error("InterruptedException delete by key={} in service url={}", key, virtualNode.url(), e);
             Thread.currentThread().interrupt();
-            throw new DaoException("Can't delete value from remote node", e);
+            throw new DaoException("Can't delete value in remote node", e);
         } catch (PoolException | IOException | HttpException e) {
             logger.error("Exception delete by key={} in service url={}", key, virtualNode.url(), e);
-            throw new DaoException("Can't delete value from remote node", e);
+            throw new DaoException("Can't delete value in remote node", e);
         }
         checkCodeInRemoteResp(virtualNode.url(), response);
     }

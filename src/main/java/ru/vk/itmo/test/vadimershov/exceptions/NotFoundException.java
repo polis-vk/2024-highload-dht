@@ -1,4 +1,4 @@
 package ru.vk.itmo.test.vadimershov.exceptions;
 
-public class NotFoundException extends RuntimeException {
+public class NotFoundException extends Exception {
 }

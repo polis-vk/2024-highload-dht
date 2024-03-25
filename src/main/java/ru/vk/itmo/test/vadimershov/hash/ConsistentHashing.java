@@ -19,14 +19,13 @@ public class ConsistentHashing {
         this.ring = new TreeMap<>();
         HashMap<String, HttpClient> httpClientMap = new HashMap<>();
         for (String currentUrl : clusterUrls) {
-            int existingReplicas = countReplicas(currentUrl);
             HttpClient currentHttpClient = httpClientMap.get(currentUrl);
             if (currentHttpClient == null) {
                 currentHttpClient = new HttpClient(new ConnectionString(currentUrl));
                 httpClientMap.put(currentUrl, currentHttpClient);
             }
             for (int j = 0; j < VIRTUAL_NODE_COUNT; j++) {
-                VirtualNode virtualNode = new VirtualNode(currentUrl, currentHttpClient, j + existingReplicas);
+                VirtualNode virtualNode = new VirtualNode(currentUrl, currentHttpClient, j);
                 ring.put(Hash.murmur3(virtualNode.key()), virtualNode);
             }
         }
@@ -42,16 +41,6 @@ public class ConsistentHashing {
             nodeHashVal = tailMap.firstKey();
         }
         return ring.get(nodeHashVal);
-    }
-
-    private int countReplicas(String url) {
-        int replicas = 0;
-        for (VirtualNode virtualNode : ring.values()) {
-            if (virtualNode.url().equals(url)) {
-                replicas++;
-            }
-        }
-        return replicas;
     }
 
     public void close() {

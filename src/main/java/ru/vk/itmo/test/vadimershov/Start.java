@@ -24,9 +24,9 @@ public final class Start {
         for (int port : ports) {
             Path path = Path.of("/Users/ruarsv5/Developer/ITMO/temp/" + port);
             Files.createDirectories(path);
-            ReferenceDao referenceDao = new ReferenceDao(new Config(path, 1 << 15));
+            Config daoConfig = new Config(path, 1 << 15);
             ServiceConfig serviceConfig = new ServiceConfig(port, "http://localhost:" + port, clusterUrls, path);
-            DaoHttpServer server = new DaoHttpServer(serviceConfig, referenceDao, new RequestThreadExecutor.Config());
+            DaoHttpServer server = new DaoHttpServer(serviceConfig, daoConfig, new RequestThreadExecutor.Config());
             server.start();
         }
 

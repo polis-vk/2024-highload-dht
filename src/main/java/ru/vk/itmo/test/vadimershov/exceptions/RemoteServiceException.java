@@ -1,6 +1,8 @@
 package ru.vk.itmo.test.vadimershov.exceptions;
 
-public class RemoteServiceException extends RuntimeException {
+import java.io.IOException;
+
+public class RemoteServiceException extends IOException {
     private final String httpCode;
     private final String url;
 

@@ -1,8 +1,10 @@
 package ru.vk.itmo.test.vadimershov.exceptions;
 
-public class DaoException extends RuntimeException {
+import java.io.IOException;
 
-    public DaoException(Throwable cause) {
-        super(cause);
+public class DaoException extends IOException {
+
+    public DaoException(String message, Throwable cause) {
+        super(message, cause);
     }
 }

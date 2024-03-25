@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.server;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -29,10 +30,15 @@ import static one.nio.http.Request.METHOD_PUT;
 
 public class DaoHttpServer extends HttpServer {
     private static final String REQUEST_PATH = "/v0/entity";
+    private static final String SERVER_STOP_PATH = "/stop";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
     private final ExecutorService workerPool;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final Balancer balancer;
+    private final RedirectService redirectService;
+    private final String selfUrl;
+    private boolean stopped = false;
 
     public DaoHttpServer(
             final DaoHttpServerConfig config,
@@ -40,6 +46,9 @@ public class DaoHttpServer extends HttpServer {
     ) throws IOException {
         super(config);
         this.dao = dao;
+        this.balancer = new Balancer(config.clusterUrls);
+        this.redirectService = new RedirectService(config.selfUrl, config.clusterUrls);
+        this.selfUrl = config.selfUrl;
         if (config.useWorkers && config.useVirtualThreads) {
             this.workerPool = Executors.newVirtualThreadPerTaskExecutor();
         } else if (config.useWorkers) {
@@ -106,23 +115,54 @@ public class DaoHttpServer extends HttpServer {
 
     private void handleRequestTask(final Request request, final HttpSession session) {
         try {
-            final String uri = request.getURI();
+            final String path = request.getPath();
+            if (path.equals(SERVER_STOP_PATH)) {
+                stop();
+                return;
+            }
             final String id = request.getParameter("id=");
-            final Response validationFailedResponse = validate(uri, id);
+            final Response validationFailedResponse = validateResponse(path, id);
             if (validationFailedResponse != null) {
                 session.sendResponse(validationFailedResponse);
                 return;
             }
-            final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+            final Response shardResponse = shardResponse(request, id);
+            if (shardResponse != null) {
+                session.sendResponse(shardResponse);
+                return;
+            }
             final int method = request.getMethod();
-            Response response = getResponse(request, method, key);
+            final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
+            final MemorySegment key = MemorySegment.ofArray(keyBytes);
+            Response response = processRequest(request, method, key);
             session.sendResponse(response);
         } catch (final IOException e) {
             logger.error("IOException in send response.");
         }
     }
 
-    private Response getResponse(final Request request, final int method, final MemorySegment key) {
+    private Response shardResponse(
+            final Request request,
+            final String id
+    ) {
+        final String nodeUrl = balancer.getNodeUrl(id);
+        if (selfUrl.equals(nodeUrl)) {
+            return null;
+        }
+        try {
+            return redirectService.redirect(nodeUrl, request);
+        } catch (final IOException e) {
+            logger.error("IOException in get response from node {}", nodeUrl, e);
+        } catch (final HttpException e) {
+            logger.error("HttpException in sending to node {}", nodeUrl, e);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Timeout in sending to node {}", nodeUrl, e);
+        }
+        return new Response(Response.BAD_GATEWAY, Response.EMPTY);
+    }
+
+    private Response processRequest(final Request request, final int method, final MemorySegment key) {
         Response response;
         try {
             response = switch (method) {
@@ -138,11 +178,11 @@ public class DaoHttpServer extends HttpServer {
         return response;
     }
 
-    public Response validate(
+    public Response validateResponse(
             final String path,
             final String id
     ) {
-        if (!path.startsWith(REQUEST_PATH)) {
+        if (!path.equals(REQUEST_PATH)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else if (isInvalidKey(id)) {
             return new Response(Response.BAD_REQUEST, INVALID_KEY_MESSAGE);
@@ -156,7 +196,13 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        if (stopped) {
+            return;
+        }
+        logger.info("server start stop.");
+        stopped = true;
         super.stop();
+        redirectService.close();
         if (workerPool != null) {
             gracefulShutdown(workerPool);
         }
@@ -165,6 +211,7 @@ public class DaoHttpServer extends HttpServer {
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
+        logger.info("server stopped.");
     }
 
     private static void gracefulShutdown(final ExecutorService executorService) {
@@ -173,14 +220,14 @@ public class DaoHttpServer extends HttpServer {
             if (executorService.awaitTermination(20, TimeUnit.SECONDS)) {
                 return;
             }
-        } catch (InterruptedException e) {
+        } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 
         executorService.shutdownNow();
         try {
             executorService.awaitTermination(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
+        } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }

@@ -29,6 +29,7 @@ public final class DhtProperties {
     private static final Logger logger = LoggerFactory.getLogger(DhtProperties.class);
     private static final Map<String, String> properties = new HashMap<>();
     private static final AtomicBoolean isPropertiesSet = new AtomicBoolean(false);
+    private static final char DEFAULT_VALUE_DELIMITER = ':';
 
     static {
         ResourceBundle bundle = ResourceBundle.getBundle(PROPERTIES_FILE_PATH);
@@ -109,7 +110,10 @@ public final class DhtProperties {
             if (!Modifier.isStatic(modifiers)) {
                 throwModifierException(clazz, field, "not static");
             }
-            final String value = properties.get(dhtValue.value());
+            final String propertyValue = dhtValue.value();
+            final String propertyName = propertyName(propertyValue);
+            final String defaultValue = defaultValue(propertyValue);
+            final String value = properties.getOrDefault(propertyName, defaultValue);
             if (value == null) {
                 throw new PropertyException(
                         "property '" + dhtValue.value() + "' not found, annotated field " + field.getName()
@@ -171,5 +175,24 @@ public final class DhtProperties {
                     + ", class " + clazz.getName());
         }
         return valueToSet;
+    }
+
+    private static String propertyName(final String propertyValue) {
+        for (int i = 0; i < propertyValue.length(); i++) {
+            if (propertyValue.charAt(i) == DEFAULT_VALUE_DELIMITER) {
+                return propertyValue.substring(0, i);
+            }
+        }
+        return propertyValue;
+    }
+
+    private static String defaultValue(final String propertyValue) {
+        final int length = propertyValue.length();
+        for (int i = length - 1; i >= 0; i--) {
+            if (propertyValue.charAt(i) == DEFAULT_VALUE_DELIMITER) {
+                return propertyValue.substring(i + 1, length);
+            }
+        }
+        return null;
     }
 }

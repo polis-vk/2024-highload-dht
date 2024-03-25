@@ -91,7 +91,8 @@ public class StorageServer extends HttpServer {
 
         //check for internal request
         if (request.getHeader(INTERNAL_HEADER) != null) {
-            Response response = handleRequest(request, id);
+            long timestamp = parseTimestamp(request.getHeader(TIMESTAMP_HEADER));
+            Response response = handleRequest(request, id, timestamp);
             session.sendResponse(response);
             return;
         }
@@ -138,13 +139,16 @@ public class StorageServer extends HttpServer {
             int partition,
             List<Response> responses
     ) throws IOException, InterruptedException {
+        long timestamp = System.currentTimeMillis();
+
         for (int i = 0; i < from; i++) {
             int nodeIndex = (partition + i) % clusterUrls.size();
+
             if (isCurrentPartition(nodeIndex)) {
-                Response response = handleRequest(request, id);
+                Response response = handleRequest(request, id, timestamp);
                 responses.add(response);
             } else {
-                remote(request, nodeIndex, responses);
+                remote(request, timestamp, nodeIndex, responses);
             }
         }
     }
@@ -195,11 +199,12 @@ public class StorageServer extends HttpServer {
 
     private void remote(
             Request request,
+            long timestamp,
             int nodeIndex,
             List<Response> responses
     ) throws IOException, InterruptedException {
         try {
-            Response response = routeRequest(nodeIndex, request);
+            Response response = routeRequest(nodeIndex, request, timestamp);
             if ((response.getStatus() == 201)
                     || (response.getStatus() == 200)
                     || (response.getStatus() == 404)
@@ -216,12 +221,13 @@ public class StorageServer extends HttpServer {
         return from / 2 + 1;
     }
 
-    private Response routeRequest(int partition, Request request) throws IOException, InterruptedException {
+    private Response routeRequest(int partition, Request request, long timestamp) throws IOException, InterruptedException {
         String partitionUrl = getPartitionUrl(partition) + request.getURI();
 
         HttpRequest newRequest = HttpRequest.newBuilder()
                 .uri(URI.create(partitionUrl))
                 .header(INTERNAL_HEADER, "true")
+                .header(TIMESTAMP_HEADER, String.valueOf(timestamp))
                 .method(
                         request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(
@@ -256,7 +262,7 @@ public class StorageServer extends HttpServer {
     }
 
     private int selectPartition(String id) {
-        Long maxHash = Long.MIN_VALUE;
+        long maxHash = Long.MIN_VALUE;
         int partition = -1;
 
         for (int i = 0; i < clusterUrls.size(); i++) {
@@ -275,7 +281,7 @@ public class StorageServer extends HttpServer {
         return clusterUrls.get(partition);
     }
 
-    private Response handleRequest(Request request, String id) {
+    private Response handleRequest(Request request, String id, long timestamp) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 Entry<MemorySegment> entry = dao.get(fromString(id));
@@ -298,17 +304,18 @@ public class StorageServer extends HttpServer {
                 Entry<MemorySegment> entry = new TimestampEntry<>(
                         fromString(id),
                         fromBytes(request.getBody()),
-                        System.currentTimeMillis()
+                        timestamp
                 );
                 dao.upsert(entry);
 
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
+                //tombstone
                 Entry<MemorySegment> entry = new TimestampEntry<>(
                         fromString(id),
                         null,
-                        System.currentTimeMillis()
+                        timestamp
                 );
                 dao.upsert(entry);
 

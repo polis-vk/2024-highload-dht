@@ -265,19 +265,7 @@ public class Server extends HttpServer {
     }
 
     private Optional<Response> getResponseFromAnotherNode(int nodeNumber, ResponseProducer responseProducer) {
-        String nodeUrl = config.clusterUrls().get(nodeNumber);
-        if (nodeUrl.equals(config.selfUrl())) {
-            return Optional.empty();
-        }
-        HttpClient client = httpClients.get(nodeUrl);
-        try {
-            return Optional.of(responseProducer.getResponse(client));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Optional.of(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        } catch (Exception e) {
-            return Optional.of(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        }
+        return NodesCommunicationHandler.getResponseFromAnotherNode(nodeNumber, responseProducer, config, httpClients);
     }
 
     private static String urlSuffix(String id) {

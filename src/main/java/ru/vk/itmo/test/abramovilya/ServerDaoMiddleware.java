@@ -43,7 +43,7 @@ public class ServerDaoMiddleware {
     Response putEntryIntoDao(String id, Request request) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(request.getBody(), System.currentTimeMillis());
         try {
-            dao.upsert(new BaseEntry<MemorySegment>(DaoFactory.fromString(id),
+            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id),
                     MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (IOException e) {
@@ -54,7 +54,7 @@ public class ServerDaoMiddleware {
     Response deleteValueFromDao(String id) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(null, System.currentTimeMillis());
         try {
-            dao.upsert(new BaseEntry<MemorySegment>(DaoFactory.fromString(id),
+            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id),
                     MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);

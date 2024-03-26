@@ -101,7 +101,7 @@ public class TimofeevProxyService {
         };
     }
 
-    public List<String> getNodesByHash(String id, int numOfNodes) {
+    public List<String> getNodesByHash(int numOfNodes) {
         return urlHashes.entrySet().stream()
                 .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
                 .limit(numOfNodes)

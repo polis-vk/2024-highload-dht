@@ -26,7 +26,7 @@ public class RequestData {
             from = isEmptyParam(fromString) ? clusterSize : Integer.parseInt(fromString);
             ack = isEmptyParam(ackString) ? (from + 1) / 2 : Integer.parseInt(ackString);
         } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException();
+            throw new IllegalArgumentException(ex);
         }
 
         if (from <= 0 || ack <= 0 || from < ack || clusterSize < from) {

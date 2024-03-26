@@ -4,8 +4,8 @@ import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.timofeevkirill.dao.BaseTimestampEntry;
-import ru.vk.itmo.test.timofeevkirill.dao.TimestampEntry;
 import ru.vk.itmo.test.timofeevkirill.dao.Dao;
+import ru.vk.itmo.test.timofeevkirill.dao.TimestampEntry;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -48,9 +48,9 @@ public class RequestHandler {
     }
 
     public Response put(@Param(value = "id", required = true) String id, Request request) {
-        if (RequestData.isEmptyParam(id)
-                || RequestData.isEmptyRequest(request))
+        if (RequestData.isEmptyParam(id) || RequestData.isEmptyRequest(request)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
 
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         MemorySegment value = MemorySegment.ofArray(request.getBody());
@@ -62,7 +62,12 @@ public class RequestHandler {
     public Response delete(@Param(value = "id", required = true) String id) {
         if (RequestData.isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
 
-        dao.upsert(new BaseTimestampEntry<>(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)), null, System.currentTimeMillis()));
+        dao.upsert(
+                new BaseTimestampEntry<>(
+                        MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
+                        null,
+                        System.currentTimeMillis())
+        );
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }

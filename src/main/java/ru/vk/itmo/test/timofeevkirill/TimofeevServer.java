@@ -123,7 +123,7 @@ public class TimofeevServer extends HttpServer {
     }
 
     private void processFirstRequest(Request request, HttpSession session, RequestData parameters) throws IOException {
-        List<String> nodeUrls = proxyService.getNodesByHash(parameters.id, parameters.from);
+        List<String> nodeUrls = proxyService.getNodesByHash(parameters.from);
         if (nodeUrls.size() < parameters.from) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
         }
@@ -142,7 +142,7 @@ public class TimofeevServer extends HttpServer {
             if (request.getMethod() == Request.METHOD_GET) {
                 validResponses.sort(
                         Comparator.comparingLong(r -> {
-                                    String timestamp =  r.getHeader(RequestData.NIO_TIMESTAMP_STRING_HEADER);
+                                    String timestamp = r.getHeader(RequestData.NIO_TIMESTAMP_STRING_HEADER);
                                     return timestamp == null ? 0 : Long.parseLong(timestamp);
                                 }
                         )

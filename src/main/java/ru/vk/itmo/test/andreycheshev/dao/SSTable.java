@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.andreycheshev.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;

@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.andreycheshev.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -153,7 +151,7 @@ final class TableSet {
         Entry<MemorySegment> result = memTable.get(key);
         if (result != null) {
             // Transform tombstone
-            return swallowTombstone(result);
+            return result;
         }
 
         // Then check flushing
@@ -161,7 +159,7 @@ final class TableSet {
             result = flushingTable.get(key);
             if (result != null) {
                 // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
@@ -170,7 +168,7 @@ final class TableSet {
             result = ssTable.get(key);
             if (result != null) {
                 // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
@@ -178,9 +176,9 @@ final class TableSet {
         return null;
     }
 
-    private static Entry<MemorySegment> swallowTombstone(final Entry<MemorySegment> entry) {
-        return entry.value() == null ? null : entry;
-    }
+//    private static Entry<MemorySegment> swallowTombstone(final Entry<MemorySegment> entry) {
+//        return entry.value() == null ? null : entry;
+//    }
 
     Entry<MemorySegment> upsert(final Entry<MemorySegment> entry) {
         return memTable.upsert(entry);

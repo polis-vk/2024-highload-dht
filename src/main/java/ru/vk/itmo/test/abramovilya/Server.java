@@ -144,28 +144,19 @@ public class Server extends HttpServer {
                               @Param(value = "from") Integer from,
                               @Param(value = "ack") Integer ack,
                               @Header("X-SenderNode") String senderNode) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         if (from == null) {
             from = config.clusterUrls().size();
         }
         if (ack == null) {
             ack = quorum(from);
         }
-        if (ack <= 0 || from <= 0) {
-            return new Response(Response.BAD_REQUEST, "ack and from should be positive integers".getBytes(StandardCharsets.UTF_8));
-        }
-        if (ack > from) {
-            return new Response(Response.BAD_REQUEST, "ack can't be greater than from".getBytes(StandardCharsets.UTF_8));
-        }
-        if (from > config.clusterUrls().size()) {
-            return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
+        Response badParams = verifyParams(id, from, ack);
+        if (badParams != null) {
+            return badParams;
         }
         if (senderNode == null) {
             return handleRequestFromUser(id, from, ack,
-                    client -> client.get(urlSuffix(id)),
-                    client -> client.get(urlSuffix(id), "X-SenderNode: " + config.selfUrl()),
+                    new Request(Request.METHOD_GET, urlSuffix(id), true),
                     response -> response.getStatus() < 300 || response.getStatus() == 404,
                     () -> getEntryFromDao(id));
         }
@@ -182,7 +173,8 @@ public class Server extends HttpServer {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         try {
-            ValueWithTimestamp valueWithTimestamp = Util.byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
+            ValueWithTimestamp valueWithTimestamp =
+                    Util.byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
             if (valueWithTimestamp.value() == null) {
                 Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
                 response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
@@ -203,29 +195,23 @@ public class Server extends HttpServer {
                               @Param(value = "ack") Integer ack,
                               @Header("X-SenderNode") String senderNode,
                               Request request) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         if (from == null) {
             from = config.clusterUrls().size();
         }
         if (ack == null) {
             ack = quorum(from);
         }
-        if (ack <= 0 || from <= 0) {
-            return new Response(Response.BAD_REQUEST, "ack and from should be positive integers".getBytes(StandardCharsets.UTF_8));
-        }
-        if (ack > from) {
-            return new Response(Response.BAD_REQUEST, "ack can't be greater than from".getBytes(StandardCharsets.UTF_8));
-        }
-        if (from > config.clusterUrls().size()) {
-            return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
+        Response badParams = verifyParams(id, from, ack);
+        if (badParams != null) {
+            return badParams;
         }
 
         if (senderNode == null) {
+            Request requestToAnotherNode = new Request(Request.METHOD_PUT, urlSuffix(id), true);
+            requestToAnotherNode.addHeader("Content-Length: " + request.getBody().length);
+            requestToAnotherNode.setBody(request.getBody());
             return handleRequestFromUser(id, from, ack,
-                    client -> client.put(urlSuffix(id), request.getBody()),
-                    client -> client.put(urlSuffix(id), request.getBody(), "X-SenderNode: " + config.selfUrl()),
+                    requestToAnotherNode,
                     response -> response.getStatus() < 300,
                     () -> putEntryIntoDao(id, request));
         }
@@ -235,7 +221,8 @@ public class Server extends HttpServer {
     private Response putEntryIntoDao(String id, Request request) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(request.getBody(), System.currentTimeMillis());
         try {
-            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
+            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id),
+                    MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -249,39 +236,50 @@ public class Server extends HttpServer {
                                  @Param(value = "from") Integer from,
                                  @Param(value = "ack") Integer ack,
                                  @Header("X-SenderNode") String senderNode) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         if (from == null) {
             from = config.clusterUrls().size();
         }
         if (ack == null) {
             ack = quorum(from);
         }
-        if (ack <= 0 || from <= 0) {
-            return new Response(Response.BAD_REQUEST, "ack and from should be positive integers".getBytes(StandardCharsets.UTF_8));
-        }
-        if (ack > from) {
-            return new Response(Response.BAD_REQUEST, "ack can't be greater than from".getBytes(StandardCharsets.UTF_8));
-        }
-        if (from > config.clusterUrls().size()) {
-            return new Response(Response.BAD_REQUEST, "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
+        Response badParams = verifyParams(id, from, ack);
+        if (badParams != null) {
+            return badParams;
         }
 
         if (senderNode == null) {
             return handleRequestFromUser(id, from, ack,
-                    client -> client.delete(urlSuffix(id)),
-                    client -> client.delete(urlSuffix(id), "X-SenderNode: " + config.selfUrl()),
+                    new Request(Request.METHOD_DELETE, urlSuffix(id), true),
                     response -> response.getStatus() < 300,
                     () -> deleteValueFromDao(id));
         }
         return deleteValueFromDao(id);
     }
 
+    private Response verifyParams(String id, Integer from, Integer ack) {
+        if (id == null || id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+        if (ack <= 0 || from <= 0) {
+            return new Response(Response.BAD_REQUEST,
+                    "ack and from should be positive integers".getBytes(StandardCharsets.UTF_8));
+        }
+        if (ack > from) {
+            return new Response(Response.BAD_REQUEST,
+                    "ack can't be greater than from".getBytes(StandardCharsets.UTF_8));
+        }
+        if (from > config.clusterUrls().size()) {
+            return new Response(Response.BAD_REQUEST,
+                    "from can't be greater than total cluster size".getBytes(StandardCharsets.UTF_8));
+        }
+        return null;
+    }
+
     private Response deleteValueFromDao(String id) {
         ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(null, System.currentTimeMillis());
         try {
-            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id), MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
+            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id),
+                    MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
@@ -291,18 +289,20 @@ public class Server extends HttpServer {
     private Response handleRequestFromUser(String id,
                                            int from,
                                            int ack,
-                                           ResponseProducer delegateToAnotherNode,
-                                           ResponseProducer askAnotherNode,
+                                           Request request,
                                            Function<Response, Boolean> isResponseSuccess,
                                            Supplier<Response> daoOperation) {
         List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
         if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
-            return getResponseFromAnotherNode(getNodeNumber(id), delegateToAnotherNode).get();
+            return getResponseFromAnotherNode(getNodeNumber(id), client -> client.invoke(request)).get();
         }
         List<Response> responses = new ArrayList<>();
         responses.add(daoOperation.get());
         for (int nodeNumber : nodesRendezvousSorted) {
-            Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, askAnotherNode);
+            Optional<Response> responseO = getResponseFromAnotherNode(nodeNumber, client -> {
+                request.addHeader("X-SenderNode: " + config.selfUrl());
+                return client.invoke(request);
+            });
             if (responseO.isPresent()) {
                 Response response = responseO.get();
                 if (isResponseSuccess.apply(response)) {

@@ -8,7 +8,10 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
-public class Util {
+public final class Util {
+    private Util() {
+    }
+
     public static ValueWithTimestamp byteArrayToObject(byte[] bytes) throws IOException, ClassNotFoundException {
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
         try (ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream)) {

@@ -14,13 +14,12 @@ import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.abramovilya.util.Util;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -142,7 +141,7 @@ public class Server extends HttpServer {
                               @Param(value = "ack") Integer ackParam,
                               @Header("X-SenderNode") String senderNode) {
         int from = fromParam == null ? config.clusterUrls().size() : fromParam;
-        int ack = ackParam == null ? quorum(from) : ackParam;
+        int ack = ackParam == null ? Util.quorum(from) : ackParam;
         Response badParams = verifyParams(id, from, ack);
         if (badParams != null) {
             return badParams;
@@ -164,7 +163,7 @@ public class Server extends HttpServer {
                               @Header("X-SenderNode") String senderNode,
                               Request request) {
         int from = fromParam == null ? config.clusterUrls().size() : fromParam;
-        int ack = ackParam == null ? quorum(from) : ackParam;
+        int ack = ackParam == null ? Util.quorum(from) : ackParam;
         Response badParams = verifyParams(id, from, ack);
         if (badParams != null) {
             return badParams;
@@ -189,7 +188,7 @@ public class Server extends HttpServer {
                                  @Param(value = "ack") Integer ackParam,
                                  @Header("X-SenderNode") String senderNode) {
         int from = fromParam == null ? config.clusterUrls().size() : fromParam;
-        int ack = ackParam == null ? quorum(from) : ackParam;
+        int ack = ackParam == null ? Util.quorum(from) : ackParam;
         Response badParams = verifyParams(id, from, ack);
         if (badParams != null) {
             return badParams;
@@ -202,10 +201,6 @@ public class Server extends HttpServer {
                     () -> serverDaoMiddleware.deleteValueFromDao(id));
         }
         return serverDaoMiddleware.deleteValueFromDao(id);
-    }
-
-    private static int quorum(Integer from) {
-        return from / 2 + 1;
     }
 
     private Response verifyParams(String id, Integer from, Integer ack) {
@@ -230,9 +225,9 @@ public class Server extends HttpServer {
     private Response handleRequestFromUser(String id, int from, int ack, Request request,
                                            Function<Response, Boolean> isResponseSuccess,
                                            Supplier<Response> daoOperation) {
-        List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);
+        List<Integer> nodesRendezvousSorted = Util.getNodesRendezvousSorted(id, from, config);
         if (nodesRendezvousSorted.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
-            return getResponseFromAnotherNode(getNodeNumber(id), client -> client.invoke(request)).get();
+            return getResponseFromAnotherNode(Util.getNodeNumber(id, config), client -> client.invoke(request)).get();
         }
         List<Response> responses = new ArrayList<>();
         responses.add(daoOperation.get());
@@ -252,17 +247,10 @@ public class Server extends HttpServer {
             return new Response(RESPONSE_NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
         return responses.stream()
-                .max(Comparator.comparingLong(Server::headerTimestampToLong))
+                .max(Comparator.comparingLong(Util::headerTimestampToLong))
                 .get();
     }
 
-    private static long headerTimestampToLong(Response r) {
-        String header = r.getHeader("X-TimeStamp: ");
-        if (header == null) {
-            return Long.MIN_VALUE;
-        }
-        return Long.parseLong(header);
-    }
 
     private Optional<Response> getResponseFromAnotherNode(int nodeNumber, ResponseProducer responseProducer) {
         return NodesCommunicationHandler.getResponseFromAnotherNode(nodeNumber, responseProducer, config, httpClients);
@@ -270,33 +258,6 @@ public class Server extends HttpServer {
 
     private static String urlSuffix(String id) {
         return ENTITY_PATH + "?id=" + id;
-    }
-
-    private List<Integer> getNodesRendezvousSorted(String key, int amount) {
-        int clusterSize = config.clusterUrls().size();
-        List<Entry<Integer>> numberToHashList = new ArrayList<>();
-        for (int i = 0; i < clusterSize; i++) {
-            numberToHashList.add(new BaseEntry<>(i, Hash.murmur3(key + i)));
-        }
-        return numberToHashList.stream()
-                .sorted(Comparator.comparing(Entry::value, Comparator.reverseOrder()))
-                .map(Entry::key)
-                .limit(amount)
-                .toList();
-    }
-
-    private int getNodeNumber(String key) {
-        int clusterSize = config.clusterUrls().size();
-        int maxHash = Integer.MIN_VALUE;
-        int argMax = 0;
-        for (int i = 0; i < clusterSize; i++) {
-            int hash = Hash.murmur3(key + i);
-            if (hash > maxHash) {
-                maxHash = hash;
-                argMax = i;
-            }
-        }
-        return argMax;
     }
 
     @FunctionalInterface

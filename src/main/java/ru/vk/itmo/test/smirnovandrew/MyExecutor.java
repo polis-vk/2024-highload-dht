@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.smirnovandrew;
 
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;

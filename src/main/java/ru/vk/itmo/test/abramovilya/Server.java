@@ -21,13 +21,10 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.abramovilya.dao.DaoFactory;
-import ru.vk.itmo.test.abramovilya.util.Util;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -53,7 +50,6 @@ public class Server extends HttpServer {
     public static final String RESPONSE_NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private final Map<String, HttpClient> httpClients = new HashMap<>();
     private final ServiceConfig config;
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService = new ThreadPoolExecutor(
             CORE_POOL_SIZE,
             MAXIMUM_POOL_SIZE,
@@ -61,12 +57,13 @@ public class Server extends HttpServer {
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(QUEUE_CAPACITY)
     );
+    private final ServerDaoMiddleware serverDaoMiddleware;
     private boolean alive;
 
     public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createConfig(config));
         this.config = config;
-        this.dao = dao;
+        this.serverDaoMiddleware = new ServerDaoMiddleware(dao);
 
         for (String url : config.clusterUrls()) {
             if (!url.equals(config.selfUrl())) {
@@ -141,15 +138,11 @@ public class Server extends HttpServer {
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id") String id,
-                              @Param(value = "from") Integer from,
-                              @Param(value = "ack") Integer ack,
+                              @Param(value = "from") Integer fromParam,
+                              @Param(value = "ack") Integer ackParam,
                               @Header("X-SenderNode") String senderNode) {
-        if (from == null) {
-            from = config.clusterUrls().size();
-        }
-        if (ack == null) {
-            ack = quorum(from);
-        }
+        int from = fromParam == null ? config.clusterUrls().size() : fromParam;
+        int ack = ackParam == null ? quorum(from) : ackParam;
         Response badParams = verifyParams(id, from, ack);
         if (badParams != null) {
             return badParams;
@@ -158,49 +151,20 @@ public class Server extends HttpServer {
             return handleRequestFromUser(id, from, ack,
                     new Request(Request.METHOD_GET, urlSuffix(id), true),
                     response -> response.getStatus() < 300 || response.getStatus() == 404,
-                    () -> getEntryFromDao(id));
+                    () -> serverDaoMiddleware.getEntryFromDao(id));
         }
-        return getEntryFromDao(id);
-    }
-
-    private static int quorum(Integer from) {
-        return from / 2 + 1;
-    }
-
-    private Response getEntryFromDao(String id) {
-        Entry<MemorySegment> entry = dao.get(DaoFactory.fromString(id));
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        try {
-            ValueWithTimestamp valueWithTimestamp =
-                    Util.byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
-            if (valueWithTimestamp.value() == null) {
-                Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
-                return response;
-            }
-            Response response = new Response(Response.OK, valueWithTimestamp.value());
-            response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
-            return response;
-        } catch (IOException | ClassNotFoundException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        return serverDaoMiddleware.getEntryFromDao(id);
     }
 
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntity(@Param(value = "id") String id,
-                              @Param(value = "from") Integer from,
-                              @Param(value = "ack") Integer ack,
+                              @Param(value = "from") Integer fromParam,
+                              @Param(value = "ack") Integer ackParam,
                               @Header("X-SenderNode") String senderNode,
                               Request request) {
-        if (from == null) {
-            from = config.clusterUrls().size();
-        }
-        if (ack == null) {
-            ack = quorum(from);
-        }
+        int from = fromParam == null ? config.clusterUrls().size() : fromParam;
+        int ack = ackParam == null ? quorum(from) : ackParam;
         Response badParams = verifyParams(id, from, ack);
         if (badParams != null) {
             return badParams;
@@ -213,35 +177,19 @@ public class Server extends HttpServer {
             return handleRequestFromUser(id, from, ack,
                     requestToAnotherNode,
                     response -> response.getStatus() < 300,
-                    () -> putEntryIntoDao(id, request));
+                    () -> serverDaoMiddleware.putEntryIntoDao(id, request));
         }
-        return putEntryIntoDao(id, request);
+        return serverDaoMiddleware.putEntryIntoDao(id, request);
     }
-
-    private Response putEntryIntoDao(String id, Request request) {
-        ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(request.getBody(), System.currentTimeMillis());
-        try {
-            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id),
-                    MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (IOException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
-
 
     @Path(ENTITY_PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id") String id,
-                                 @Param(value = "from") Integer from,
-                                 @Param(value = "ack") Integer ack,
+                                 @Param(value = "from") Integer fromParam,
+                                 @Param(value = "ack") Integer ackParam,
                                  @Header("X-SenderNode") String senderNode) {
-        if (from == null) {
-            from = config.clusterUrls().size();
-        }
-        if (ack == null) {
-            ack = quorum(from);
-        }
+        int from = fromParam == null ? config.clusterUrls().size() : fromParam;
+        int ack = ackParam == null ? quorum(from) : ackParam;
         Response badParams = verifyParams(id, from, ack);
         if (badParams != null) {
             return badParams;
@@ -251,9 +199,13 @@ public class Server extends HttpServer {
             return handleRequestFromUser(id, from, ack,
                     new Request(Request.METHOD_DELETE, urlSuffix(id), true),
                     response -> response.getStatus() < 300,
-                    () -> deleteValueFromDao(id));
+                    () -> serverDaoMiddleware.deleteValueFromDao(id));
         }
-        return deleteValueFromDao(id);
+        return serverDaoMiddleware.deleteValueFromDao(id);
+    }
+
+    private static int quorum(Integer from) {
+        return from / 2 + 1;
     }
 
     private Response verifyParams(String id, Integer from, Integer ack) {
@@ -275,21 +227,7 @@ public class Server extends HttpServer {
         return null;
     }
 
-    private Response deleteValueFromDao(String id) {
-        ValueWithTimestamp valueWithTimestamp = new ValueWithTimestamp(null, System.currentTimeMillis());
-        try {
-            dao.upsert(new BaseEntry<>(DaoFactory.fromString(id),
-                    MemorySegment.ofArray(Util.objToByteArray(valueWithTimestamp))));
-        } catch (IOException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private Response handleRequestFromUser(String id,
-                                           int from,
-                                           int ack,
-                                           Request request,
+    private Response handleRequestFromUser(String id, int from, int ack, Request request,
                                            Function<Response, Boolean> isResponseSuccess,
                                            Supplier<Response> daoOperation) {
         List<Integer> nodesRendezvousSorted = getNodesRendezvousSorted(id, from);

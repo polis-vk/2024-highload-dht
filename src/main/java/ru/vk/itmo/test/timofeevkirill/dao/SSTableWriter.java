@@ -15,7 +15,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 
 /**
- * Writes {@link Entry} {@link Iterator} to SSTable on disk.
+ * Writes {@link TimestampEntry} {@link Iterator} to SSTable on disk.
  *
  * <p>Index file {@code <N>.index} contains {@code long} offsets to entries in data file:
  * {@code [offset0, offset1, ...]}
@@ -40,7 +40,7 @@ final class SSTableWriter {
     void write(
             final Path baseDir,
             final int sequence,
-            final Iterator<Entry<MemorySegment>> entries) throws IOException {
+            final Iterator<TimestampEntry<MemorySegment>> entries) throws IOException {
         // Write to temporary files
         final Path tempIndexName = SSTables.tempIndexName(baseDir, sequence);
         final Path tempDataName = SSTables.tempDataName(baseDir, sequence);
@@ -71,7 +71,7 @@ final class SSTableWriter {
                 writeLong(entryOffset, index);
 
                 // Then write the entry
-                final Entry<MemorySegment> entry = entries.next();
+                final TimestampEntry<MemorySegment> entry = entries.next();
                 entryOffset += writeEntry(entry, data);
             }
         }
@@ -132,7 +132,7 @@ final class SSTableWriter {
      * @return written bytes
      */
     private long writeEntry(
-            final Entry<MemorySegment> entry,
+            final TimestampEntry<MemorySegment> entry,
             final OutputStream os) throws IOException {
         final MemorySegment key = entry.key();
         final MemorySegment value = entry.value();

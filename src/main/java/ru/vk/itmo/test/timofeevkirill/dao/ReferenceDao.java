@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.timofeevkirill.dao;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -18,11 +16,11 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Reference implementation of {@link Dao}.
+ * Reference implementation of {@link ru.vk.itmo.dao.Dao}.
  *
  * @author incubos
  */
-public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class ReferenceDao implements Dao<MemorySegment, TimestampEntry<MemorySegment>> {
     private final Config config;
     private final Arena arena;
 
@@ -63,23 +61,22 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(
+    public Iterator<TimestampEntry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
-        return new LiveFilteringIterator(
-                tableSet.get(
-                        from,
-                        to));
+        return tableSet.get(
+                from,
+                to);
     }
 
     @Override
-    public Entry<MemorySegment> get(final MemorySegment key) {
+    public TimestampEntry<MemorySegment> get(final MemorySegment key) {
         // Without lock, just snapshot of table set
         return tableSet.get(key);
     }
 
     @Override
-    public void upsert(final Entry<MemorySegment> entry) {
+    public void upsert(final TimestampEntry<MemorySegment> entry) {
         final boolean autoFlush;
         lock.readLock().lock();
         try {
@@ -89,7 +86,7 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
             }
 
             // Upsert
-            final Entry<MemorySegment> previous = tableSet.upsert(entry);
+            final TimestampEntry<MemorySegment> previous = tableSet.upsert(entry);
 
             // Update size estimate
             final long size = tableSet.memTableSize.addAndGet(sizeOf(entry) - sizeOf(previous));
@@ -103,7 +100,7 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
         }
     }
 
-    private static long sizeOf(final Entry<MemorySegment> entry) {
+    private static long sizeOf(final TimestampEntry<MemorySegment> entry) {
         if (entry == null) {
             return 0L;
         }
@@ -200,8 +197,7 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
                         .write(
                                 config.basePath(),
                                 0,
-                                new LiveFilteringIterator(
-                                        currentTableSet.allSSTableEntries()));
+                                currentTableSet.allSSTableEntries());
             } catch (IOException e) {
                 e.printStackTrace();
                 Runtime.getRuntime().halt(-3);

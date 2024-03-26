@@ -5,8 +5,8 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.timofeevkirill.dao.Dao;
 import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
 
 import java.io.IOException;
@@ -70,7 +70,7 @@ public class TimofeevService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

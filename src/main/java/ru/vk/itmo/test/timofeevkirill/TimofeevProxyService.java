@@ -12,55 +12,72 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
+import static ru.vk.itmo.test.timofeevkirill.RequestHandler.HTTP_TIMESTAMP_HEADER;
+import static ru.vk.itmo.test.timofeevkirill.TimofeevServer.NIO_TIMESTAMP_HEADER;
 import static ru.vk.itmo.test.timofeevkirill.TimofeevServer.PATH;
 
 public class TimofeevProxyService {
+    public static final String IS_SELF_PROCESS = "X-Self";
     private static final Logger logger = LoggerFactory.getLogger(TimofeevProxyService.class);
     private static final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
-    private final ArrayList<HttpClient> httpClients;
-    private final ArrayList<Integer> urlHashes;
-    private final ServiceConfig serviceConfig;
-    private final int selfId;
+    private final Map<String, HttpClient> httpClients;
+    private final Map<String, Integer> urlHashes;
 
     public TimofeevProxyService(ServiceConfig serviceConfig) {
-        this.serviceConfig = serviceConfig;
-        this.selfId = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
-        this.httpClients = new ArrayList<>(serviceConfig.clusterUrls().size() - 1);
-        for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
-            if (i != selfId) {
-                httpClients.add(HttpClient.newHttpClient());
+        this.httpClients = new HashMap<>(serviceConfig.clusterUrls().size() - 1);
+        for (String url : serviceConfig.clusterUrls()) {
+            if (!Objects.equals(url, serviceConfig.selfUrl())) {
+                httpClients.put(url, HttpClient.newHttpClient());
             }
         }
-        this.urlHashes = new ArrayList<>(serviceConfig.clusterUrls().size());
-        for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
-            urlHashes.add(Hash.murmur3(serviceConfig.clusterUrls().get(i)));
+        this.urlHashes = new HashMap<>(serviceConfig.clusterUrls().size());
+        for (String url : serviceConfig.clusterUrls()) {
+            urlHashes.put(url, Hash.murmur3(url));
         }
     }
 
     public void close() {
-        for (HttpClient httpClient : httpClients) {
+        for (HttpClient httpClient : httpClients.values()) {
             httpClient.close();
         }
     }
 
-    public Response proxyRequest(int method, String id, byte[] body) throws IOException {
-        int proxiedNodeId = getNodeIdByHash(id);
-        int clientId = proxiedNodeId > selfId ? proxiedNodeId - 1 : proxiedNodeId;
-        URI uri = URI.create(serviceConfig.clusterUrls().get(proxiedNodeId) + PATH + "?id=" + id);
+    public Map<String, Response> proxyRequests(Request request, List<String> nodeUrls, String id) throws IOException {
+        Map<String, Response> responses = new HashMap<>(nodeUrls.size());
+        for (String url : nodeUrls) {
+            Response response = proxyRequest(request, url, id);
+            responses.put(url, response);
+        }
+
+        return responses;
+    }
+
+    public Response proxyRequest(Request request, String proxiedNodeUrl, String id) throws IOException {
+        byte[] body = request.getBody();
+        URI uri = URI.create(proxiedNodeUrl + PATH + "?id=" + id);
         try {
-            HttpResponse<byte[]> response = httpClients.get(clientId).send(
+            HttpResponse<byte[]> httpResponse = httpClients.get(proxiedNodeUrl).send(
                     requestBuilder
                             .uri(uri)
                             .method(
-                                    requestMethodToString(method),
-                                    body == null ? HttpRequest.BodyPublishers.noBody()
+                                    request.getMethodName(),
+                                    body == null
+                                            ? HttpRequest.BodyPublishers.noBody()
                                             : HttpRequest.BodyPublishers.ofByteArray(body)
                             )
+                            .header(IS_SELF_PROCESS, "true")
                             .build(),
                     HttpResponse.BodyHandlers.ofByteArray());
-            return proxyResponse(response, response.body());
+            Response response = new Response(proxyResponseCode(httpResponse), httpResponse.body());
+            long timestamp = httpResponse.headers().firstValueAsLong(HTTP_TIMESTAMP_HEADER).orElse(0);
+            response.addHeader(NIO_TIMESTAMP_HEADER + timestamp);
+            return response;
         } catch (InterruptedException e) {
             logger.error("Proxy request exception: ", e);
             Thread.currentThread().interrupt();
@@ -71,8 +88,8 @@ public class TimofeevProxyService {
         }
     }
 
-    private Response proxyResponse(HttpResponse<byte[]> response, byte[] body) {
-        String responseCode = switch (response.statusCode()) {
+    private String proxyResponseCode(HttpResponse<byte[]> response) {
+        return switch (response.statusCode()) {
             case 200 -> Response.OK;
             case 201 -> Response.CREATED;
             case 202 -> Response.ACCEPTED;
@@ -80,33 +97,13 @@ public class TimofeevProxyService {
             case 404 -> Response.NOT_FOUND;
             default -> Response.INTERNAL_ERROR;
         };
-
-        return new Response(responseCode, body);
     }
 
-    private String requestMethodToString(int method) {
-        return switch (method) {
-            case Request.METHOD_GET -> "GET";
-            case Request.METHOD_PUT -> "PUT";
-            case Request.METHOD_DELETE -> "DELETE";
-            default -> throw new IllegalArgumentException();
-        };
-    }
-
-    public boolean needProxyRequest(String id) {
-        return getNodeIdByHash(id) != selfId;
-    }
-
-    private int getNodeIdByHash(String id) {
-        int maxHash = Integer.MIN_VALUE;
-        int nodeId = 0;
-        for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
-            int currentHash = Hash.murmur3(urlHashes.get(i) + id);
-            if (maxHash < currentHash) {
-                maxHash = currentHash;
-                nodeId = i;
-            }
-        }
-        return nodeId;
+    public List<String> getNodesByHash(String id, int numOfNodes) {
+        return urlHashes.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(numOfNodes)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
     }
 }

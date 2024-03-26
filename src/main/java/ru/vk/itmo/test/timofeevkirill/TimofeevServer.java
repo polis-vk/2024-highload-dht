@@ -14,13 +14,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.timofeevkirill.dao.Dao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -31,9 +36,12 @@ public class TimofeevServer extends HttpServer {
     public static final String PATH = VERSION_PREFIX + "/entity";
     private static final Logger logger = LoggerFactory.getLogger(TimofeevServer.class);
     private static final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
-    private final Dao dao;
+    private static final String NOT_ENOUGH_REPLICAS_RESPONSE = "504 Not Enough Replicas";
+    public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
     private final ThreadPoolExecutor threadPoolExecutor;
     private final TimofeevProxyService proxyService;
+    private final ServiceConfig serviceConfig;
+    private final RequestHandler requestHandler;
 
     public TimofeevServer(
             ServiceConfig serviceConfig,
@@ -42,9 +50,10 @@ public class TimofeevServer extends HttpServer {
             TimofeevProxyService proxyService
     ) throws IOException {
         super(createServerConfig(serviceConfig));
-        this.dao = dao;
+        this.serviceConfig = serviceConfig;
         this.threadPoolExecutor = threadPoolExecutor;
         this.proxyService = proxyService;
+        this.requestHandler = new RequestHandler(dao);
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -62,52 +71,6 @@ public class TimofeevServer extends HttpServer {
     @Path(VERSION_PREFIX + "/status")
     public Response status() {
         return Response.ok("OK");
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) throws IOException {
-        if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-
-        if (proxyService.needProxyRequest(id)) {
-            return proxyService.proxyRequest(Request.METHOD_GET, id, Response.EMPTY);
-        }
-
-        Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)));
-
-        return entry == null
-                ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                : Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) throws IOException {
-        if (isEmptyParam(id) || isEmptyRequest(request)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-
-        if (proxyService.needProxyRequest(id)) {
-            return proxyService.proxyRequest(Request.METHOD_PUT, id, request.getBody());
-        }
-
-        MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        MemorySegment value = MemorySegment.ofArray(request.getBody());
-        dao.upsert(new BaseEntry<>(key, value));
-
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) throws IOException {
-        if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-
-        if (proxyService.needProxyRequest(id)) {
-            return proxyService.proxyRequest(Request.METHOD_DELETE, id, Response.EMPTY);
-        }
-
-        dao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)), null));
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
@@ -142,8 +105,20 @@ public class TimofeevServer extends HttpServer {
             return;
         }
 
+        if (!Settings.SUPPORTED_METHODS.contains(request.getMethod())) {
+            handleDefault(request, session);
+            return;
+        }
+
         try {
-            super.handleRequest(request, session);
+            RequestParameters parameters = new RequestParameters(request, serviceConfig.clusterUrls().size());
+            if (request.getHeader(TimofeevProxyService.IS_SELF_PROCESS) == null) {
+                processFirstRequest(request, session, parameters);
+            } else {
+                handleRequest(request, session);
+            }
+        } catch (IllegalArgumentException e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
                 logger.error("Http exception: ", e);
@@ -156,11 +131,41 @@ public class TimofeevServer extends HttpServer {
         }
     }
 
-    private boolean isEmptyParam(String param) {
-        return param == null || param.isEmpty();
+    private void processFirstRequest(Request request, HttpSession session, RequestParameters parameters) throws IOException {
+        List<String> nodeUrls = proxyService.getNodesByHash(parameters.id, parameters.from);
+        if (nodeUrls.size() < parameters.from) {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        }
+
+        boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
+        Map<String, Response> responses = proxyService.proxyRequests(request, nodeUrls, parameters.id);
+
+        if (isSelfProcessing) {
+            responses.put(serviceConfig.selfUrl(), requestHandler.handle(request, parameters.id));
+        }
+
+        List<Response> positiveResponses = getPositiveResponses(responses);
+        if (positiveResponses.size() >= parameters.ack) {
+            if (request.getMethod() == Request.METHOD_GET) {
+                positiveResponses.sort(Comparator.comparingLong(r ->
+                        Long.parseLong(r.getHeader(NIO_TIMESTAMP_HEADER))));
+                session.sendResponse(positiveResponses.getLast());
+            } else {
+                session.sendResponse(positiveResponses.getFirst());
+            }
+        } else {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        }
+
     }
 
-    private boolean isEmptyRequest(Request request) {
-        return request.getBody() == null;
+    private List<Response> getPositiveResponses(Map<String, Response> responses) {
+        List<Response> positiveResponses = new ArrayList<>();
+        for (Response response : responses.values()) {
+            if (response.getStatus() < 500) {
+                positiveResponses.add(response);
+            }
+        }
+        return positiveResponses;
     }
 }

@@ -1,5 +1,9 @@
+math.randomseed(os.time())
+
 function request()
-    id = math.random(1, 1000000)
-    path = "/v0/entity?id=" .. id
-    return wrk.format("GET", path, body)
+    counter = math.random(100000100, 100000000 + 5000000)
+    headers = {}
+    headers["Host"] = "localhost:8080"
+    return wrk.format("GET", "/v0/entity?id=" .. tostring(counter), headers)
+
 end

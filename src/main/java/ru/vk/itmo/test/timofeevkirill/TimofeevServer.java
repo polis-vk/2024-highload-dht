@@ -4,30 +4,22 @@ import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.timofeevkirill.dao.Dao;
 
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.stream.Collectors;
 
 import static ru.vk.itmo.test.timofeevkirill.Settings.MAX_PROCESSING_TIME_FOR_REQUEST;
 import static ru.vk.itmo.test.timofeevkirill.Settings.VERSION_PREFIX;
@@ -37,7 +29,6 @@ public class TimofeevServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(TimofeevServer.class);
     private static final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
     private static final String NOT_ENOUGH_REPLICAS_RESPONSE = "504 Not Enough Replicas";
-    public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
     private final ThreadPoolExecutor threadPoolExecutor;
     private final TimofeevProxyService proxyService;
     private final ServiceConfig serviceConfig;
@@ -111,11 +102,11 @@ public class TimofeevServer extends HttpServer {
         }
 
         try {
-            RequestParameters parameters = new RequestParameters(request, serviceConfig.clusterUrls().size());
-            if (request.getHeader(TimofeevProxyService.IS_SELF_PROCESS) == null) {
+            RequestData parameters = new RequestData(request, serviceConfig.clusterUrls().size());
+            if (request.getHeader(RequestData.SELF_PROCESS_HEADER) == null) {
                 processFirstRequest(request, session, parameters);
             } else {
-                handleRequest(request, session);
+                session.sendResponse(requestHandler.handle(request, parameters.id));
             }
         } catch (IllegalArgumentException e) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -131,7 +122,7 @@ public class TimofeevServer extends HttpServer {
         }
     }
 
-    private void processFirstRequest(Request request, HttpSession session, RequestParameters parameters) throws IOException {
+    private void processFirstRequest(Request request, HttpSession session, RequestData parameters) throws IOException {
         List<String> nodeUrls = proxyService.getNodesByHash(parameters.id, parameters.from);
         if (nodeUrls.size() < parameters.from) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
@@ -144,14 +135,21 @@ public class TimofeevServer extends HttpServer {
             responses.put(serviceConfig.selfUrl(), requestHandler.handle(request, parameters.id));
         }
 
-        List<Response> positiveResponses = getPositiveResponses(responses);
-        if (positiveResponses.size() >= parameters.ack) {
+        List<Response> validResponses = responses.values().stream()
+                .filter(response -> isSuccessProcessed(response.getStatus()))
+                .collect(Collectors.toList());
+        if (validResponses.size() >= parameters.ack) {
             if (request.getMethod() == Request.METHOD_GET) {
-                positiveResponses.sort(Comparator.comparingLong(r ->
-                        Long.parseLong(r.getHeader(NIO_TIMESTAMP_HEADER))));
-                session.sendResponse(positiveResponses.getLast());
+                validResponses.sort(
+                        Comparator.comparingLong(r -> {
+                                    String timestamp =  r.getHeader(RequestData.NIO_TIMESTAMP_STRING_HEADER);
+                                    return timestamp == null ? 0 : Long.parseLong(timestamp);
+                                }
+                        )
+                );
+                session.sendResponse(validResponses.getLast());
             } else {
-                session.sendResponse(positiveResponses.getFirst());
+                session.sendResponse(validResponses.getFirst());
             }
         } else {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
@@ -159,13 +157,8 @@ public class TimofeevServer extends HttpServer {
 
     }
 
-    private List<Response> getPositiveResponses(Map<String, Response> responses) {
-        List<Response> positiveResponses = new ArrayList<>();
-        for (Response response : responses.values()) {
-            if (response.getStatus() < 500) {
-                positiveResponses.add(response);
-            }
-        }
-        return positiveResponses;
+    private boolean isSuccessProcessed(int status) {
+        // not server and time limit errors
+        return status < 500;
     }
 }

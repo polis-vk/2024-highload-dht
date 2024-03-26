@@ -150,16 +150,14 @@ final class TableSet {
         // First check MemTable
         TimestampEntry<MemorySegment> result = memTable.get(key);
         if (result != null) {
-            // Transform tombstone
-            return swallowTombstone(result);
+            return result;
         }
 
         // Then check flushing
         if (flushingTable != null) {
             result = flushingTable.get(key);
             if (result != null) {
-                // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
@@ -167,17 +165,12 @@ final class TableSet {
         for (final SSTable ssTable : ssTables) {
             result = ssTable.get(key);
             if (result != null) {
-                // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
         // Nothing found
         return null;
-    }
-
-    private static TimestampEntry<MemorySegment> swallowTombstone(final TimestampEntry<MemorySegment> entry) {
-        return entry.value() == null ? null : entry;
     }
 
     TimestampEntry<MemorySegment> upsert(final TimestampEntry<MemorySegment> entry) {

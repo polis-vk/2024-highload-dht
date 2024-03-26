@@ -106,10 +106,10 @@ public class ReferenceDao implements Dao<MemorySegment, TimestampEntry<MemorySeg
         }
 
         if (entry.value() == null) {
-            return entry.key().byteSize();
+            return entry.key().byteSize() + Long.BYTES;
         }
 
-        return entry.key().byteSize() + entry.value().byteSize();
+        return entry.key().byteSize() + entry.value().byteSize() + Long.BYTES;
     }
 
     private void initiateFlush(final boolean auto) {

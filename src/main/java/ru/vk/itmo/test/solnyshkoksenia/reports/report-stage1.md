@@ -13,7 +13,7 @@
 
 Все запросы завершились. Заметим, что примерно 99.8% запросов завершились примерно за 2.5ms. Оставшиеся 0.2% можно считать выбросами
 
-![image](images/put-d10-t1-c1-R100.png)
+![image](images/stage1/put-d10-t1-c1-R100.png)
 
 2. **RPS: 10000**, Duration: 10s
 
@@ -25,7 +25,7 @@
 
 Увеличив RPS в 100 раз, можем заметить, что мы потеряли 12 запросов. Также время выполнения одного запроса уже менее стабильно, значит приближаемся к точке разладки
 
-![image](images/put-d10-t1-c1-R10000.png)
+![image](images/stage1/put-d10-t1-c1-R10000.png)
 
 3. **RPS: 40000**, Duration: 10s
 
@@ -37,7 +37,7 @@
 
 Пока всё ещё относительно хорошо
 
-![image](images/put-d10-t1-c1-R40000.png)
+![image](images/stage1/put-d10-t1-c1-R40000.png)
 
 4. **RPS: 50000**, Duration: 10s
 
@@ -49,7 +49,7 @@
 
 Здесь сервер уже не выдержал, не выполнил значительное количество запросов, а среднее время выполнения одного запроса взлетело до 2 секунд. Будем считать точкой разладки **RPS 40000**
 
-![image](images/put-d10-t1-c1-R50000.png)
+![image](images/stage1/put-d10-t1-c1-R50000.png)
 
 5. **RPS: 40000**, Duration: 60s
 
@@ -61,7 +61,7 @@
 | Max         | 172.800   |
 | Total count | 1999639   |
 
-![image](images/put-d60-t1-c1-R40000.png)
+![image](images/stage1/put-d60-t1-c1-R40000.png)
 
 6. **RPS: 40000**, Duration: 120s
 
@@ -71,7 +71,7 @@
 | Max         | 187.520   |
 | Total count | 4400179   |
 
-![image](images/put-d120-t1-c1-R40000.png)
+![image](images/stage1/put-d120-t1-c1-R40000.png)
 
 ### Тестирование `GET` запросами
 
@@ -85,7 +85,7 @@
 
 Всё хорошо!
 
-![image](images/get-d10-t1-c1-R100.png)
+![image](images/stage1/get-d10-t1-c1-R100.png)
 
 2. **RPS: 10000**, Duration: 10s
 
@@ -97,7 +97,7 @@
 
 Потеряли 15 запросов. Время выполнения одного запроса менее стабильно
 
-![image](images/get-d10-t1-c1-R10000.png)
+![image](images/stage1/get-d10-t1-c1-R10000.png)
 
 3. **RPS: 40000**, Duration: 10s
 
@@ -109,7 +109,7 @@
 
 Всё хорошо!
 
-![image](images/get-d10-t1-c1-R40000.png)
+![image](images/stage1/get-d10-t1-c1-R40000.png)
 
 4. **RPS: 50000**, Duration: 10s
 
@@ -121,7 +121,7 @@
 
 На RPS 50000 опять сломались, однако выполнилось больше запросов, чем в случае с `PUT`-запросами, и время исполнения одного запроса меньше. Так же будем считать точкой разладки **RPS 40000**
 
-![image](images/get-d10-t1-c1-R50000.png)
+![image](images/stage1/get-d10-t1-c1-R50000.png)
 
 5. **RPS: 40000**, Duration: 60s
 
@@ -133,7 +133,7 @@
 | Max         | 4.492     |
 | Total count | 1999807   |
 
-![image](images/get-d60-t1-c1-R40000.png)
+![image](images/stage1/get-d60-t1-c1-R40000.png)
 
 6. **RPS: 40000**, Duration: 120s
 
@@ -143,7 +143,7 @@
 | Max         | 155.904   |
 | Total count | 4399819   |
 
-![image](images/get-d120-t1-c1-R40000.png)
+![image](images/stage1/get-d120-t1-c1-R40000.png)
 
 ## Профилирование с помощью async-profiler
 

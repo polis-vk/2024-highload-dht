@@ -251,7 +251,6 @@ public class Server extends HttpServer {
                 .get();
     }
 
-
     private Optional<Response> getResponseFromAnotherNode(int nodeNumber, ResponseProducer responseProducer) {
         return NodesCommunicationHandler.getResponseFromAnotherNode(nodeNumber, responseProducer, config, httpClients);
     }

@@ -41,6 +41,13 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> get(String key, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     public HttpResponse<byte[]> delete(String key) throws Exception {
         return client.send(
                 requestForKey(key).DELETE().build(),
@@ -48,9 +55,23 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> delete(String key, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).DELETE().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     public HttpResponse<byte[]> upsert(String key, byte[] data) throws Exception {
         return client.send(
                 requestForKey(key).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> upsert(String key, byte[] data, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
@@ -68,5 +89,9 @@ public class ServiceInfo {
 
     private HttpRequest.Builder requestForKey(String key) {
         return request(STR."/v0/entity?id=\{key}");
+    }
+
+    private HttpRequest.Builder requestForKey(String key, int ack, int from) {
+        return request(STR."/v0/entity?id=\{key}&from=\{from}&ack=\{ack}");
     }
 }

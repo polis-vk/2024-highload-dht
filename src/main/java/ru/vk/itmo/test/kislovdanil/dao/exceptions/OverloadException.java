@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.kislovdanil.dao.exceptions;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kislovdanil.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
 

@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.kislovdanil.dao.sstable;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kislovdanil.dao.Entry;
 import ru.vk.itmo.test.kislovdanil.dao.iterators.DatabaseIterator;
 
 import java.lang.foreign.MemorySegment;

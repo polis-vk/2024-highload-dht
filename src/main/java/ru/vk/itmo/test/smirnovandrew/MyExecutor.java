@@ -25,7 +25,7 @@ public class MyExecutor extends ThreadPoolExecutor {
         );
     }
 
-    private static class MyStack<E> extends LinkedBlockingDeque<E> implements BlockingQueue<E> {
+    private static class MyStack<E> extends LinkedBlockingDeque<E> {
 
         public MyStack(int capacity) {
             super(capacity);

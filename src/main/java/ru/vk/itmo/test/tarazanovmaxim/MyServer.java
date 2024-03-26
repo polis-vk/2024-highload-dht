@@ -99,6 +99,7 @@ public class MyServer extends HttpServer {
     public void close() throws IOException {
         executorService.shutdown();
         executorService.shutdownNow();
+
         for (HttpClient httpClient : httpClients.values()) {
             httpClient.close();
         }
@@ -112,11 +113,9 @@ public class MyServer extends HttpServer {
     private Response shardLookup(final String id, final Request request) {
         Response response;
         Request redirect = new Request(request);
-        String shard = shardKeyMap.get(id);
-        if (shard == null) {
-            shard = shards.getShardByKey(id);
-            shardKeyMap.put(id, shard);
-        }
+        String shard = shardKeyMap.computeIfAbsent(id, key -> {
+            return shards.getShardByKey(id);
+        });
         try {
             response = httpClients.get(shard).invoke(redirect, 500);
         } catch (Exception e) {

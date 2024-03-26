@@ -22,4 +22,8 @@ public class Hasher {
         final byte[] hash = messageDigest.get().digest(bytes);
         return ByteBuffer.wrap(hash).getInt();
     }
+
+    public void close() {
+        messageDigest.remove();
+    }
 }

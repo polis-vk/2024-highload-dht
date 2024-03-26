@@ -30,7 +30,7 @@ public final class ServerMain {
                 new MyService(
                     new ServiceConfig(
                         port,
-                        "http://localhost",
+                        "http://localhost:" + port,
                         urls,
                         Files.createTempDirectory("dao" + Integer.toString(port))
                     )

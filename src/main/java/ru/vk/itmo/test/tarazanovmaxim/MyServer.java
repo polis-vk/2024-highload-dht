@@ -37,12 +37,13 @@ import java.util.concurrent.TimeUnit;
 public class MyServer extends HttpServer {
 
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20;
-    private static final long REQUEST_TTL = TimeUnit.SECONDS.toNanos(100);
+    private static final long REQUEST_TTL = TimeUnit.SECONDS.toNanos(1000);
     private static final String PATH = "/v0/entity";
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
     private final Map<String, HttpClient> httpClients = new HashMap<>();
+    private final Map<String, String> shardKeyMap = new HashMap<>();
     private final ConsistentHashing shards;
     private final String selfUrl;
 
@@ -65,10 +66,10 @@ public class MyServer extends HttpServer {
                 new ThreadPoolExecutor.AbortPolicy()
         );
 
+        int nodeCount = 1;
+        HashSet<Integer> nodeSet = new HashSet<>(nodeCount);
+        Hasher hasher = new Hasher();
         for (String url : config.clusterUrls()) {
-            int nodeCount = 1;
-            HashSet<Integer> nodeSet = new HashSet<>(nodeCount);
-            Hasher hasher = new Hasher();
             for (int i = 0; i < nodeCount; ++i) {
                 nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
             }
@@ -96,7 +97,8 @@ public class MyServer extends HttpServer {
     }
 
     public void close() throws IOException {
-        executorService.close();
+        executorService.shutdown();
+        executorService.shutdownNow();
         for (HttpClient httpClient : httpClients.values()) {
             httpClient.close();
         }
@@ -110,8 +112,13 @@ public class MyServer extends HttpServer {
     private Response shardLookup(final String id, final Request request) {
         Response response;
         Request redirect = new Request(request);
+        String shard = shardKeyMap.get(id);
+        if (shard == null) {
+            shard = shards.getShardByKey(id);
+            shardKeyMap.put(id, shard);
+        }
         try {
-            response = httpClients.get(shards.getShardByKey(id)).invoke(redirect, 500);
+            response = httpClients.get(shard).invoke(redirect, 500);
         } catch (Exception e) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }

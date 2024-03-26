@@ -92,6 +92,10 @@ public class RequestHandler {
                 ? Integer.parseInt(fromParameter)
                 : distributor.getNodeCount();
 
+        if (checkReplicasParameters(ack, from)) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
         int[] nodeCount = distributor.getQuorumNodes(id, from);
         List<Response> responses = new ArrayList<>();
 
@@ -117,6 +121,10 @@ public class RequestHandler {
         return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
     }
 
+    private boolean checkReplicasParameters(int ack, int from) {
+        return ack <= 0 || ack > from;
+    }
+
     private Response analyzeResponses(int method, List<Response> responses) {
         // The required number of successful responses has already been received here.
         switch (method) {
@@ -126,7 +134,7 @@ public class RequestHandler {
                 Response response = responses.getFirst();
 
                 return (response.getStatus() == 410)
-                        ? new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY)
+                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
                         : response;
             }
             case Request.METHOD_PUT -> {

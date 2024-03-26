@@ -197,7 +197,7 @@ public class DaoServer extends HttpServer {
             Thread.currentThread().interrupt();
         }
     }
-
+  
     private void sendResponseSafe(HttpSession session, Response response) {
         try {
             session.sendResponse(response);

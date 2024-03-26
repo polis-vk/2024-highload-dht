@@ -26,7 +26,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -38,10 +40,9 @@ public class NewServer extends HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
     private final Logger log = LoggerFactory.getLogger(NewServer.class);
-    private final List<HttpClient> httpClients;
+    private final Map<String, HttpClient> httpClients;
     private final ConsistentHashing<String> consistentHashing;
     private final String selfUrl;
-    private final List<String> clusterUrls;
 
     public NewServer(ServiceConfig config,
                      Dao<MemorySegment, Entry<MemorySegment>> dao,
@@ -54,8 +55,10 @@ public class NewServer extends HttpServer {
         this.executorService = executorService;
         this.consistentHashing = new ConsistentHashing<>(Hash::murmur3, clusterUrls);
         this.selfUrl = config.selfUrl();
-        this.httpClients = httpClients;
-        this.clusterUrls = clusterUrls;
+        this.httpClients = new HashMap<>();
+        for (int i = 0; i < clusterUrls.size(); i++) {
+            this.httpClients.put(clusterUrls.get(i), httpClients.get(i));
+        }
     }
 
     private static HttpServerConfig configureServer(ServiceConfig serviceConfig) {
@@ -198,7 +201,7 @@ public class NewServer extends HttpServer {
     }
 
     private Response proxyRequest(Request request, String node, String id, byte[] body) throws IOException {
-        HttpClient httpClient = httpClients.get(clusterUrls.indexOf(node));
+        HttpClient httpClient = httpClients.get(node);
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(node + PATH + "?id=" + id));
 

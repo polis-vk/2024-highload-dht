@@ -158,6 +158,7 @@ public class ServerImpl extends HttpServer {
                 session.sendResponse(handleProxyRequest(request, targetUrl));
                 return;
             }
+
             final int method = request.getMethod();
             if (method == Request.METHOD_GET) {
                 response = get(request.getParameter(ID));

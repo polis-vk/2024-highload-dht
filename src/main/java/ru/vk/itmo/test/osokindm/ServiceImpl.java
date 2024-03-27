@@ -108,9 +108,11 @@ public class ServiceImpl implements Service {
         if (from == null) {
             from = config.clusterUrls().size();
         }
+
         if (ack == null) {
             ack = calculateAck(from);
         }
+
         if (ack > from || ack == 0) {
             return new Response(Response.BAD_REQUEST, "wrong 'ack' value".getBytes(StandardCharsets.UTF_8));
         }

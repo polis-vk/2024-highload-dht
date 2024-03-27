@@ -109,23 +109,27 @@ public class RequestHandler {
             String id,
             Request request,
             int ack,
-            int from) throws HttpException, IOException, PoolException, InterruptedException {
+            int from) throws InterruptedException {
 
         int[] nodeCount = distributor.getQuorumNodes(id, from);
         List<Response> responses = new ArrayList<>();
 
         long currTimestamp = System.currentTimeMillis();
         for (int node : nodeCount) {
-            Response response = distributor.isOurNode(node)
-                    ? processLocally(method, id, request, currTimestamp)
-                    : redirectRequest(method, node, request, currTimestamp);
+            try {
+                Response response = distributor.isOurNode(node)
+                        ? processLocally(method, id, request, currTimestamp)
+                        : redirectRequest(method, node, request, currTimestamp);
 
-            if (isRequestSucceeded(method, response.getStatus())) {
-                responses.add(response);
-            }
+                if (isRequestSucceeded(method, response.getStatus())) {
+                    responses.add(response);
+                }
 
-            if (method == Request.METHOD_GET && responses.size() == ack) {
-                return analyzeResponses(method, responses, ack);
+                if (method == Request.METHOD_GET && responses.size() == ack) {
+                    return analyzeResponses(method, responses, ack);
+                }
+            } catch (PoolException | HttpException | IOException e) {
+                // Ignored.
             }
         }
 

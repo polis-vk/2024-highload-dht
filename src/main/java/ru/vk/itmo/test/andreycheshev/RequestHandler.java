@@ -36,6 +36,7 @@ public class RequestHandler {
     private static final String FROM_PARAMETER = "from=";
 
     public static final String TIMESTAMP_HEADER = "Timestamp: ";
+    private static final String CONTENT_LENGTH_HEADER = "Content-Length: ";
 
     private static final int OK = 200;
     private static final int CREATED = 201;
@@ -137,7 +138,7 @@ public class RequestHandler {
 
         byte[] body = request.getBody();
         if (body != null) {
-            remoteRequest.addHeader(STR."Content-Length: \{body.length}");
+            remoteRequest.addHeader(CONTENT_LENGTH_HEADER + body.length);
             remoteRequest.setBody(body);
         }
 

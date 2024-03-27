@@ -9,6 +9,7 @@ public class ServiceFactoryImpl implements ServiceFactory.Factory {
 
     @Override
     public Service create(ServiceConfig config) {
+
         return new ServiceImpl(config);
     }
 }

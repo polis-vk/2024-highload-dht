@@ -5,9 +5,9 @@ import one.nio.http.Request;
 
 import java.io.IOException;
 
-import static ru.vk.itmo.test.kovalevigor.server.ServerDaoStrategy.log;
 import static ru.vk.itmo.test.kovalevigor.server.ServerUtil.closeSession;
 import static ru.vk.itmo.test.kovalevigor.server.ServerUtil.sendResponseWithoutIo;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
 
 public class ServerTask implements Runnable {
     public final Request request;

@@ -1,14 +1,12 @@
 package ru.vk.itmo.test.kachmareugene;
 
-import one.nio.http.HttpClient;
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.pool.PoolException;
 import ru.vk.itmo.ServiceConfig;
 
 import java.sql.Timestamp;
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
 
 public class Coordinator {
 
@@ -79,8 +77,9 @@ public class Coordinator {
 
         return new Response(maximalResponse.getHeaders()[0], clearedBody);
     }
+
     private static long convertToLong(byte[] bytes) {
-        long value = 0l;
+        long value = 0L;
         for (byte b : bytes) {
             value = (value << 8) + (b & 255);
         }

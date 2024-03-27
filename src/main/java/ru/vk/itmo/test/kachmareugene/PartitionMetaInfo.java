@@ -2,8 +2,12 @@ package ru.vk.itmo.test.kachmareugene;
 
 import one.nio.http.Request;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Random;
+import java.util.Set;
 
 public class PartitionMetaInfo {
     private final List<Integer> mappedVnodes;
@@ -29,6 +33,7 @@ public class PartitionMetaInfo {
 
         return urls.get(mappedVnodes.get(vnode));
     }
+
     public List<String> getSlaveUrls(Request request, int numberOfCopies) {
         int requestHash = Math.abs(request.getParameter("id").hashCode());
         int vnode = requestHash % mappedVnodes.size();

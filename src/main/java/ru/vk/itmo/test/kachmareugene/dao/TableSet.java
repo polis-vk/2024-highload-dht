@@ -1,9 +1,11 @@
 package ru.vk.itmo.test.kachmareugene.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -174,9 +176,8 @@ final class TableSet {
         return null;
     }
 
-    // fixme
     private static EntryWithTimestamp<MemorySegment> swallowTombstone(final EntryWithTimestamp<MemorySegment> entry) {
-        return  entry;
+        return entry;
     }
 
     EntryWithTimestamp<MemorySegment> upsert(final EntryWithTimestamp<MemorySegment> entry) {

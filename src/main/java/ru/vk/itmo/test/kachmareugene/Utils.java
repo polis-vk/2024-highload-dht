@@ -4,11 +4,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class Utils {
-    public static byte[] longToBytes(long l) {
+    private Utils() {
+    }
+
+    public static byte[] longToBytes(long longValue) {
         byte[] result = new byte[8];
         for (int i = 7; i >= 0; i--) {
-            result[i] = (byte)(l & 0xFF);
-            l >>= 8;
+            result[i] = (byte)(longValue & 0xFF);
+            longValue >>= 8;
         }
         return result;
     }

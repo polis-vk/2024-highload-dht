@@ -136,6 +136,18 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        String path = request.getPath();
+        if (!path.equals("/v0/entity")) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
         try {
             executorService.execute(() -> {
                 try {
@@ -197,15 +209,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     public Response handleToDaoOperations(Request request, long timestamp) {
-        String path = request.getPath();
-        if (!path.equals("/v0/entity")) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
         String key = request.getParameter("id");
-        if (key == null || key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
 
         int m = request.getMethod();
         return switch (m) {

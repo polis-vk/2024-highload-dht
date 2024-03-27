@@ -141,7 +141,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             executorService.execute(() -> {
                 try {
-                    if (extracted1(request, session)) return;
+                    task(request, session);
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
                 } catch (IOException e) {
@@ -158,13 +158,13 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private boolean extracted1(Request request, HttpSession session) throws IOException,
+    private void task(Request request, HttpSession session) throws IOException,
             InterruptedException,
             HttpException {
         if (request.getHeader("X-Timestamp", null) != null) {
             session.sendResponse(handleToDaoOperations(request,
                     System.currentTimeMillis()));
-            return true;
+            return;
         }
 
         String urlToSend = partitionTable.getCorrectURL(request);
@@ -190,7 +190,6 @@ public class HttpServerImpl extends HttpServer {
 
         session.sendResponse(
                 coordinator.resolve(responses, request.getMethod()));
-        return false;
     }
 
     private static boolean checkRequest(Request request, HttpSession session) throws IOException {

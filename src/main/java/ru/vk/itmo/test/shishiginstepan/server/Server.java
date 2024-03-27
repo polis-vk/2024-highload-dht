@@ -86,18 +86,7 @@ public class Server extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    try {
-                        handleRequestInOtherThread(request, session, requestExpirationDate);
-                    } catch (IOException e) {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-
-                    } catch (HttpException | DistributedDao.ClusterLimitExceeded e) {
-                        session.sendError(Response.BAD_REQUEST, null);
-
-                    } catch (DistributedDao.NoConsensus e) {
-                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-
-                    }
+                    handleRequestWithExceptions(request, session, requestExpirationDate);
                 } catch (IOException exceptionHandlingException) {
                     logger.error(exceptionHandlingException.initCause(exceptionHandlingException));
                     session.scheduleClose();
@@ -106,6 +95,20 @@ public class Server extends HttpServer {
         } catch (RejectedExecutionException e) {
             logger.error(e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private void handleRequestWithExceptions(Request request,
+                                             HttpSession session,
+                                             LocalDateTime requestExpirationDate) throws IOException {
+        try {
+            handleRequestInOtherThread(request, session, requestExpirationDate);
+        } catch (IOException e) {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (HttpException | DistributedDao.ClusterLimitExceeded e) {
+            session.sendError(Response.BAD_REQUEST, null);
+        } catch (DistributedDao.NoConsensus e) {
+            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         }
     }
 
@@ -136,14 +139,14 @@ public class Server extends HttpServer {
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         EntryWithTimestamp<MemorySegment> entry;
 
-        if (request.getHeader(INNER_REQUEST_HEADER) != null) {
-            entry = dao.get(key);
-        } else {
+        if (request.getHeader(INNER_REQUEST_HEADER) == null) {
             entry = dao.get(
                     key,
                     from == null ? null : Integer.parseInt(from),
                     ack == null ? null : Integer.parseInt(ack)
             );
+        } else {
+            entry = dao.get(key);
         }
 
         if (entry.value() == null) {

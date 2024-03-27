@@ -148,22 +148,24 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
     }
 
     public EntryWithTimestamp<MemorySegment> get(MemorySegment key, Integer from, Integer ack) {
-        if (ack == null) {
-            ack = quorum;
+        Integer shouldAck = ack;
+        Integer requestFrom = from;
+        if (shouldAck == null) {
+            shouldAck = quorum;
         }
-        if (from == null) {
-            from = totalNodes;
+        if (requestFrom == null) {
+            requestFrom = totalNodes;
         }
-        if (ack > totalNodes || from > totalNodes || ack == 0 || from == 0) {
+        if (shouldAck > totalNodes || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
         }
         List<NodeWrapper> nodesToPoll =
                 selectMultipleNodes(
                         new String(key.toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
-                        from
+                        requestFrom
                 );
         PriorityQueue<EntryWithTimestamp<MemorySegment>> entries = new PriorityQueue<>(
-                from,
+                requestFrom,
                 (e1, e2) -> -e1.timestamp().compareTo(e2.timestamp())
         );
 
@@ -176,7 +178,7 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
                 logger.error(e);
             }
         }
-        if (entries.size() < ack) {
+        if (entries.size() < shouldAck) {
             throw new NoConsensus();
         }
         return entries.peek();

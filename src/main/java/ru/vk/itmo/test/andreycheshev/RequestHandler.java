@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Set;
 
 public class RequestHandler {
-    private static final GetResponseComparator getComparator = new GetResponseComparator();
+    private static final TimestampComparator timestampComparator = new TimestampComparator();
     private static final Set<Integer> AVAILABLE_METHODS;
 
     static {
@@ -36,6 +36,12 @@ public class RequestHandler {
     private static final String FROM_PARAMETER = "from=";
 
     public static final String TIMESTAMP_HEADER = "Timestamp: ";
+
+    private static final int OK = 200;
+    private static final int CREATED = 201;
+    private static final int ACCEPTED = 202;
+    private static final int NOT_FOUND = 404;
+    private static final int GONE = 410;
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final HttpClient[] clusterConnections;
@@ -92,7 +98,7 @@ public class RequestHandler {
                 ? Integer.parseInt(fromParameter)
                 : distributor.getNodeCount();
 
-        if (checkReplicasParameters(ack, from)) {
+        if (!checkReplicasParameters(ack, from)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -110,46 +116,15 @@ public class RequestHandler {
                     responses.add(response);
                 }
 
-                if (responses.size() == ack) {
-                    return analyzeResponses(method, responses);
+                if (method == Request.METHOD_GET && responses.size() == ack) {
+                    return analyzeResponses(method, responses, ack);
                 }
             } catch (Exception ignored) {
                 // Ignore exception.
             }
         }
 
-        return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-    }
-
-    private boolean checkReplicasParameters(int ack, int from) {
-        return ack <= 0 || ack > from;
-    }
-
-    private Response analyzeResponses(int method, List<Response> responses) {
-        // The required number of successful responses has already been received here.
-        switch (method) {
-            case Request.METHOD_GET -> {
-                responses.sort(getComparator);
-
-                Response response = responses.getFirst();
-
-                return (response.getStatus() == 410)
-                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                        : response;
-            }
-            case Request.METHOD_PUT -> {
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            default -> { // For delete method.
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-        }
-    }
-
-    private boolean isRequestSucceeded(int method, int status) {
-        return (method == Request.METHOD_GET && (status == 200 || status == 404 || status == 410)) ||
-                (method == Request.METHOD_PUT && status == 201) ||
-                (method == Request.METHOD_DELETE && status == 202);
+        return analyzeResponses(method, responses, ack);
     }
 
     private Response redirectRequest(
@@ -179,17 +154,54 @@ public class RequestHandler {
         };
     }
 
+    private Response analyzeResponses(int method, List<Response> responses, int ack) {
+        if (responses.size() < ack) {
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        }
+
+        // The required number of successful responses has already been received here.
+        switch (method) {
+            case Request.METHOD_GET -> {
+                responses.sort(timestampComparator);
+
+                Response response = responses.getFirst();
+
+                return (response.getStatus() == GONE)
+                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                        : response;
+            }
+            case Request.METHOD_PUT -> {
+                return new Response(Response.CREATED, Response.EMPTY);
+            }
+            default -> { // For delete method.
+                return new Response(Response.ACCEPTED, Response.EMPTY);
+            }
+        }
+    }
+
+    private boolean isRequestSucceeded(int method, int status) {
+        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE)) ||
+                (method == Request.METHOD_PUT && status == CREATED) ||
+                (method == Request.METHOD_DELETE && status == ACCEPTED);
+    }
+
+    private boolean checkReplicasParameters(int ack, int from) {
+        return ack > 0 && ack <= from;
+    }
+
     private Response get(String id) {
         ClusterEntry<MemorySegment> entry = (ClusterEntry<MemorySegment>) dao.get(fromString(id));
 
+        Response response;
         if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+            response = new Response(Response.NOT_FOUND, Response.EMPTY);
+            response.addHeader(TIMESTAMP_HEADER + -1);
+        } else {
+            response = (entry.value() == null)
+                    ? new Response(Response.GONE, Response.EMPTY)
+                    : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
+            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
         }
-
-        Response response = (entry.value() == null)
-                ? new Response(Response.GONE, Response.EMPTY)
-                : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
-        response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
 
         return response;
     }

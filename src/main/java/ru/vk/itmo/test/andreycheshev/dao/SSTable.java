@@ -137,7 +137,7 @@ final class SSTable {
             return null;
         }
 
-         // Skip key (will reuse the argument)
+        // Skip key (will reuse the argument)
         long offset = entryOffset(entry);
         offset += key.byteSize() + Long.BYTES;
 

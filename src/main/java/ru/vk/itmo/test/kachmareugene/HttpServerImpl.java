@@ -5,27 +5,26 @@ import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.kachmareugene.dao.BaseTimestampEntry;
+import ru.vk.itmo.test.kachmareugene.dao.EntryWithTimestamp;
+import ru.vk.itmo.test.kachmareugene.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -43,19 +42,12 @@ public class HttpServerImpl extends HttpServer {
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
                         10L, TimeUnit.MILLISECONDS,
                                     queue);
-    Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
+    Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> daoImpl;
     private final String selfNodeURL;
     private final ServiceConfig serviceConfig;
     private final PartitionMetaInfo partitionTable;
     private final Map<String, HttpClient> clientMap = new HashMap<>();
     private boolean closed;
-
-    public HttpServerImpl(ServiceConfig conf) throws IOException {
-        super(convertToHttpConfig(conf));
-        this.serviceConfig = conf;
-        this.partitionTable = new PartitionMetaInfo(conf.clusterUrls(), 1);
-        this.selfNodeURL = conf.selfUrl();
-    }
 
     public HttpServerImpl(ServiceConfig config, PartitionMetaInfo info) throws IOException {
         super(convertToHttpConfig(config));
@@ -91,67 +83,54 @@ public class HttpServerImpl extends HttpServer {
         super.start();
     }
 
-    private static void closeExecutorService(ExecutorService exec) {
-        if (exec == null) {
-            return;
-        }
-
-        exec.shutdownNow();
-        while (!exec.isTerminated()) {
-            try {
-                if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
-                    exec.shutdownNow();
-                }
-
-            } catch (InterruptedException e) {
-                exec.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    @Path(value = "/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response getEntry(
-            @Param("id") String key) {
+    public Response getEntry(String key) {
 
         if (key == null || key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return new Response(Response.BAD_REQUEST, Utils.longToBytes(0L));
         }
 
-        Entry<MemorySegment> result = daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
+        EntryWithTimestamp<MemorySegment> result =
+                daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
         if (result == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+            return new Response(Response.NOT_FOUND, Utils.longToBytes(0L));
         }
-        return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
+
+        byte[] time = Utils.longToBytes(result.timestamp());
+
+        if (result.value() == null) {
+            return new Response(Response.NOT_FOUND, time);
+        }
+
+        byte[] value = result.value().toArray(ValueLayout.JAVA_BYTE);
+        byte[] responseBody = new byte[value.length + time.length];
+
+        System.arraycopy(time, 0, responseBody, 0, time.length);
+        System.arraycopy(value, 0, responseBody, time.length, value.length);
+
+        return new Response("200", responseBody);
     }
 
-    @Path(value = "/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response putOrEmplaceEntry(
-            @Param("id") String key,
-            Request request) {
-
+    public Response putOrEmplaceEntry(String key, Request request, long timestamp) {
         if (key == null || key.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        daoImpl.upsert(
-                new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
-                                MemorySegment.ofArray(request.getBody())));
+        daoImpl.upsert(new BaseTimestampEntry<>(
+                MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
+                MemorySegment.ofArray(request.getBody()),
+                timestamp));
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(value = "/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param("id") String key) {
+    public Response delete(String key, long timestamp) {
         if (key.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         daoImpl.upsert(
-                new BaseEntry<>(
-                    MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
-                    null));
+                new BaseTimestampEntry<>(
+                        MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
+                        null,
+                        timestamp));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
@@ -160,16 +139,41 @@ public class HttpServerImpl extends HttpServer {
         try {
             executorService.execute(() -> {
                 try {
+                    if (request.getHeader("X-Timestamp", null) != null) {
+                        session.sendResponse(handleToDaoOperations(request,
+                                System.currentTimeMillis()));
+                        return;
+                    }
+
                     String urlToSend = partitionTable.getCorrectURL(request);
 
+                    Coordinator coordinator = new Coordinator();
+                    coordinator.getCoordinatorParams(request, serviceConfig);
+
+                    List<String> slaves = partitionTable.getSlaveUrls(request, coordinator.from);
+                    List<Response> responses = new ArrayList<>();
+
                     if (urlToSend.equals(selfNodeURL)) {
-                        super.handleRequest(request, session);
+                        responses.add(handleToDaoOperations(request,
+                                System.currentTimeMillis()));
                     } else {
-                        session.sendResponse(clientMap.get(urlToSend).invoke(request, 100));
+                        slaves.addFirst(urlToSend);
                     }
+
+                    for (String slaveUrl : slaves) {
+                        Request req = new Request(request);
+                        req.addHeader("X-Timestamp: " + System.currentTimeMillis());
+                        try {
+                            responses.add(clientMap.get(slaveUrl).invoke(req, 100));
+                        } catch (PoolException e) {
+                            responses.add(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                        }
+                    }
+
+                    session.sendResponse(
+                            coordinator.resolve(responses, request.getMethod()));
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
-
                 } catch (IOException e) {
                     errorAccept(session, e, Response.CONFLICT);
                 } catch (InterruptedException e) {
@@ -177,8 +181,6 @@ public class HttpServerImpl extends HttpServer {
                     errorAccept(session, e, Response.CONFLICT);
                 } catch (HttpException e) {
                     errorAccept(session, e, Response.NOT_ACCEPTABLE);
-                } catch (PoolException e) {
-                    errorAccept(session, e, Response.INTERNAL_ERROR);
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -192,6 +194,26 @@ public class HttpServerImpl extends HttpServer {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
+    }
+
+    public Response handleToDaoOperations(Request request, long timestamp) {
+        String path = request.getPath();
+        if (!path.equals("/v0/entity")) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        String key = request.getParameter("id");
+        if (key == null || key.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        int m = request.getMethod();
+        return switch (m) {
+            case Request.METHOD_GET -> getEntry(key);
+            case Request.METHOD_PUT -> putOrEmplaceEntry(key, request, timestamp);
+            case Request.METHOD_DELETE -> delete(key, timestamp);
+            default -> new Response(Response.METHOD_NOT_ALLOWED);
+        };
     }
 
     @Override
@@ -217,7 +239,7 @@ public class HttpServerImpl extends HttpServer {
         closed = true;
         super.stop();
         try {
-            closeExecutorService(executorService);
+            Utils.closeExecutorService(executorService);
             daoImpl.close();
             for (final HttpClient client: clientMap.values()) {
                 client.close();

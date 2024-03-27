@@ -49,14 +49,4 @@ public final class ServerActivator {
         }
 
     }
-
-    public static void oneNode() throws IOException {
-        HttpServerImpl server = new HttpServerImpl(new ServiceConfig(
-                8080, "http://localhost/",
-                List.of("http://localhost/"),
-                Files.createTempDirectory(".")
-        ));
-        server.start();
-    }
-
 }

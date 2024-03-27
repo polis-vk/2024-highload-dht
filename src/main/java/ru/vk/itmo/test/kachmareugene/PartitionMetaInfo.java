@@ -2,10 +2,8 @@ package ru.vk.itmo.test.kachmareugene;
 
 import one.nio.http.Request;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class PartitionMetaInfo {
     private final List<Integer> mappedVnodes;
@@ -30,5 +28,23 @@ public class PartitionMetaInfo {
         int vnode = requestHash % mappedVnodes.size();
 
         return urls.get(mappedVnodes.get(vnode));
+    }
+    public List<String> getSlaveUrls(Request request, int numberOfCopies) {
+        int requestHash = Math.abs(request.getParameter("id").hashCode());
+        int vnode = (requestHash) % mappedVnodes.size();
+        String master = urls.get(mappedVnodes.get(vnode));
+        int numberOfSlaves = numberOfCopies - 1;
+
+        Set<String> slaves = new HashSet<>();
+        while (slaves.size() < numberOfSlaves) {
+
+            String currNode = urls.get(mappedVnodes.get(vnode));
+            if (!slaves.contains(currNode) && !currNode.equals(master)) {
+                slaves.add(currNode);
+            }
+            vnode = (vnode + 1) % mappedVnodes.size();
+        }
+
+        return new ArrayList<>(slaves);
     }
 }

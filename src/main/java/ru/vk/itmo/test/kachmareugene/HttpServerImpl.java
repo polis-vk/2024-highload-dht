@@ -136,7 +136,7 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (extracted(request, session)) return;
+        if (checkRequest(request, session)) return;
 
         try {
             executorService.execute(() -> {
@@ -185,7 +185,7 @@ public class HttpServerImpl extends HttpServer {
         for (String slaveUrl : slaves) {
             Request req = new Request(request);
             req.addHeader("X-Timestamp: " + System.currentTimeMillis());
-            extracted(slaveUrl, responses, req);
+            responseSafeAdd(slaveUrl, responses, req);
         }
 
         session.sendResponse(
@@ -193,7 +193,7 @@ public class HttpServerImpl extends HttpServer {
         return false;
     }
 
-    private static boolean extracted(Request request, HttpSession session) throws IOException {
+    private static boolean checkRequest(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
         if (!path.equals("/v0/entity")) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -208,7 +208,11 @@ public class HttpServerImpl extends HttpServer {
         return false;
     }
 
-    private void extracted(String slaveUrl, List<Response> responses, Request req) throws InterruptedException,
+    private void responseSafeAdd(
+            String slaveUrl,
+            List<Response> responses,
+            Request req) throws
+            InterruptedException,
             IOException,
             HttpException {
         try {

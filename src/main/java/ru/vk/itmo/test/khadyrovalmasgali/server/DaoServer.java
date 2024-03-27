@@ -8,6 +8,7 @@ import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,12 +18,15 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.khadyrovalmasgali.dao.ReferenceDao;
+import ru.vk.itmo.test.khadyrovalmasgali.hashing.Node;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -37,8 +41,9 @@ public class DaoServer extends HttpServer {
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int Q_SIZE = 512;
     private static final int KEEP_ALIVE_TIME = 50;
-    private static final int TIMEOUT = 60;
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private static final int TERMINATION_TIMEOUT = 60;
+    private static final int HTTP_CLIENT_TIMEOUT_MS = 1000;
+
     private final ServiceConfig config;
     private final ExecutorService executorService = new ThreadPoolExecutor(
             THREADS,
@@ -47,10 +52,17 @@ public class DaoServer extends HttpServer {
             TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(Q_SIZE),
             new ThreadPoolExecutor.AbortPolicy());
+    private final List<Node> nodes;
+    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private boolean isClosed = false;
 
     public DaoServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config));
         this.config = config;
+        nodes = new ArrayList<>();
+        for (String url : config.clusterUrls()) {
+            nodes.add(new Node(url));
+        }
     }
 
     @Override
@@ -78,14 +90,17 @@ public class DaoServer extends HttpServer {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
                     if (e instanceof HttpException) {
+                        log.error(e.getMessage());
                         sendResponseSafe(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                     } else {
+
+                        log.error(e.getMessage());
                         sendResponseSafe(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                     }
                 }
             });
         } catch (RejectedExecutionException e) {
-            log.error("Can't handle request", e);
+            log.error("too many requests", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }
@@ -94,6 +109,11 @@ public class DaoServer extends HttpServer {
     public Response entity(@Param(value = "id", required = true) String id, Request request) {
         if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+        Node node = nodes.get(determineResponsibleNode(id));
+        String nodeUrl = node.getUrl();
+        if (!config.selfUrl().equals(nodeUrl)) {
+            return handleRedirect(request, node);
         }
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
@@ -121,6 +141,10 @@ public class DaoServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        if (isClosed) {
+            return;
+        }
+        isClosed = true;
         super.stop();
         shutdownAndAwaitTermination(executorService);
         try {
@@ -130,12 +154,43 @@ public class DaoServer extends HttpServer {
         }
     }
 
+    private Response handleRedirect(Request request, Node node) {
+        try {
+            return node.getClient().invoke(request, HTTP_CLIENT_TIMEOUT_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error(e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (PoolException e) {
+            log.error(e.getMessage());
+            return new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        } catch (HttpException e) {
+            log.error(e.getMessage());
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private int determineResponsibleNode(String key) {
+        int result = -1;
+        int max = Integer.MIN_VALUE;
+        for (int i = 0; i < nodes.size(); ++i) {
+            int score = nodes.get(i).computeScore(key);
+            if (score > max) {
+                max = score;
+                result = i;
+            }
+        }
+        return result;
+    }
+
     private void shutdownAndAwaitTermination(ExecutorService pool) {
         pool.shutdown();
         try {
-            if (!pool.awaitTermination(TIMEOUT, TimeUnit.SECONDS)) {
+            if (!pool.awaitTermination(TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(TIMEOUT, TimeUnit.SECONDS)) {
+                if (!pool.awaitTermination(TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
                     log.error("Pool did not terminate");
                 }
             }
@@ -144,7 +199,7 @@ public class DaoServer extends HttpServer {
             Thread.currentThread().interrupt();
         }
     }
-
+  
     private void sendResponseSafe(HttpSession session, Response response) {
         try {
             session.sendResponse(response);

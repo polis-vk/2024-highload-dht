@@ -54,20 +54,28 @@ public class RemoteDaoNode implements Dao<MemorySegment, EntryWithTimestamp<Memo
             Thread.currentThread().interrupt();
             throw new RemoteNodeAccessFailure(e);
         }
+        var timestamp = getTimestampHeaderValue(response);
+
         if (response.getStatus() == 404) {
-            var timestamp = response.getHeader("X-timestamp");
             if (timestamp != null) {
                 return new EntryWithTimestamp<>(
                         key,
                         null,
-                        Long.parseLong(response.getHeader("X-timestamp").substring(2))
+                        timestamp
                 );
             }
             return new EntryWithTimestamp<>(key, null, 0L);
         }
         MemorySegment value = MemorySegment.ofArray(response.getBody());
-        Long timestamp = Long.parseLong(response.getHeader("X-timestamp").substring(2));
-        return new EntryWithTimestamp<MemorySegment>(key, value, timestamp);
+        return new EntryWithTimestamp<>(key, value, timestamp);
+    }
+
+    private static Long getTimestampHeaderValue(Response response) {
+        var timestamp = response.getHeader("X-timestamp");
+        if (timestamp == null) {
+            return null;
+        }
+        return Long.parseLong(timestamp.substring(2));
     }
 
     @Override

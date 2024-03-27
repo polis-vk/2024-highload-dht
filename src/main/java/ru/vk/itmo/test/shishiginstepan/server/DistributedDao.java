@@ -42,8 +42,6 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
     public static final class ClusterLimitExceeded extends RuntimeException {
     }
 
-
-
     private static class NodeWrapper implements Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> {
         Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao;
         String realNodeKey;
@@ -185,19 +183,21 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
     }
 
     public void upsert(EntryWithTimestamp<MemorySegment> entry, Integer from, Integer ack) {
-        if (ack == null) {
-            ack = quorum;
+        Integer shouldAck = ack;
+        Integer requestFrom = from;
+        if (shouldAck == null) {
+            shouldAck = quorum;
         }
-        if (from == null) {
-            from = totalNodes;
+        if (requestFrom == null) {
+            requestFrom = totalNodes;
         }
-        if (ack > totalNodes || from > totalNodes || ack == 0 || from == 0) {
+        if (shouldAck > totalNodes || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
         }
         List<NodeWrapper> nodesToPoll =
                 selectMultipleNodes(
                         new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
-                        from
+                        requestFrom
                 );
         Integer n = 0;
 
@@ -209,7 +209,7 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
                 logger.error(e);
             }
         }
-        if (n < ack) {
+        if (n < shouldAck) {
             throw new NoConsensus();
         }
     }

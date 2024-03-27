@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.osokindm.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -21,7 +19,7 @@ import java.util.Iterator;
  * {@code [offset0, offset1, ...]}
  *
  * <p>Data file {@code <N>.data} contains serialized entries:
- * {@code <long keyLength><key><long valueLength><value>}
+ * {@code <long keyLength><key><long timestamp><long valueLength><value>}
  *
  * <p>Tombstones are encoded as {@code valueLength} {@code -1} and no subsequent value.
  *
@@ -136,6 +134,7 @@ final class SSTableWriter {
             final OutputStream os) throws IOException {
         final MemorySegment key = entry.key();
         final MemorySegment value = entry.value();
+        final long timestamp = entry.timestamp();
         long result = 0L;
 
         // Key size
@@ -145,6 +144,11 @@ final class SSTableWriter {
         // Key
         writeSegment(key, os);
         result += key.byteSize();
+
+        // timestamp
+        writeLong(timestamp, os);
+        result += Long.BYTES;
+
 
         // Value size and possibly value
         if (value == null) {

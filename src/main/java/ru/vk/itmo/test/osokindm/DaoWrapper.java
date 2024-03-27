@@ -1,9 +1,9 @@
 package ru.vk.itmo.test.osokindm;
 
 import one.nio.http.Request;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.osokindm.dao.BaseEntry;
+import ru.vk.itmo.test.osokindm.dao.Entry;
 import ru.vk.itmo.test.osokindm.dao.ReferenceDao;
 
 import java.io.IOException;
@@ -23,15 +23,15 @@ public class DaoWrapper {
         return storage.get(key);
     }
 
-    public void delete(String id) {
+    public void delete(String id,  long timestamp) {
         MemorySegment key = getMemorySegment(id);
-        storage.upsert(new BaseEntry<>(key, null));
+        storage.upsert(new BaseEntry<>(key, null, timestamp));
     }
 
-    public void upsert(String id, Request request) {
+    public void upsert(String id, Request request, long timestamp) {
         MemorySegment key = getMemorySegment(id);
         MemorySegment value = getMemorySegment(request.getBody());
-        storage.upsert(new BaseEntry<>(key, value));
+        storage.upsert(new BaseEntry<>(key, value, timestamp));
     }
 
     public void stop() throws IOException {

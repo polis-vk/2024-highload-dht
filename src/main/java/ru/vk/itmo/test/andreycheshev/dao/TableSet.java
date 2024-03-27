@@ -176,10 +176,6 @@ final class TableSet {
         return null;
     }
 
-//    private static Entry<MemorySegment> swallowTombstone(final Entry<MemorySegment> entry) {
-//        return entry.value() == null ? null : entry;
-//    }
-
     Entry<MemorySegment> upsert(final Entry<MemorySegment> entry) {
         return memTable.upsert(entry);
     }

@@ -5,9 +5,9 @@ import one.nio.http.HttpException;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.pool.PoolException;
+import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
-import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -46,9 +46,7 @@ public class RequestHandler {
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final HttpClient[] clusterConnections;
-
     private final RendezvousDistributor distributor;
-
 
     public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao,
                           HttpClient[] clusterConnections,
@@ -103,25 +101,31 @@ public class RequestHandler {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        return processDistributed(method, id, request, ack, from);
+    }
+
+    private Response processDistributed(
+            int method,
+            String id,
+            Request request,
+            int ack,
+            int from) throws HttpException, IOException, PoolException, InterruptedException {
+
         int[] nodeCount = distributor.getQuorumNodes(id, from);
         List<Response> responses = new ArrayList<>();
 
         long currTimestamp = System.currentTimeMillis();
         for (int node : nodeCount) {
-            try {
-                Response response = distributor.isOurNode(node)
-                        ? processLocally(method, id, request, currTimestamp)
-                        : redirectRequest(method, node, request, currTimestamp);
+            Response response = distributor.isOurNode(node)
+                    ? processLocally(method, id, request, currTimestamp)
+                    : redirectRequest(method, node, request, currTimestamp);
 
-                if (isRequestSucceeded(method, response.getStatus())) {
-                    responses.add(response);
-                }
+            if (isRequestSucceeded(method, response.getStatus())) {
+                responses.add(response);
+            }
 
-                if (method == Request.METHOD_GET && responses.size() == ack) {
-                    return analyzeResponses(method, responses, ack);
-                }
-            } catch (Exception ignored) {
-                // Ignore exception.
+            if (method == Request.METHOD_GET && responses.size() == ack) {
+                return analyzeResponses(method, responses, ack);
             }
         }
 
@@ -133,6 +137,7 @@ public class RequestHandler {
             int nodeNumber,
             Request request,
             long timestamp) throws HttpException, IOException, PoolException, InterruptedException {
+
         HttpClient client = clusterConnections[nodeNumber];
         Request remoteRequest = client.createRequest(method, request.getURI());
 
@@ -181,9 +186,9 @@ public class RequestHandler {
     }
 
     private boolean isRequestSucceeded(int method, int status) {
-        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE)) ||
-                (method == Request.METHOD_PUT && status == CREATED) ||
-                (method == Request.METHOD_DELETE && status == ACCEPTED);
+        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE))
+                || (method == Request.METHOD_PUT && status == CREATED)
+                || (method == Request.METHOD_DELETE && status == ACCEPTED);
     }
 
     private boolean checkReplicasParameters(int ack, int from) {

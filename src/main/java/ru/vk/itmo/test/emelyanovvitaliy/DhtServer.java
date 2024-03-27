@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
-import one.nio.http.HttpClient;
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -10,22 +8,15 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
-import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.emelyanovvitaliy.dao.ReferenceDao;
+import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -36,34 +27,36 @@ import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class DhtServer extends HttpServer {
-    public static final byte[] EMPTY_BODY = new byte[0];
-    public static final int THREADS_PER_PROCESSOR = 2;
-    protected final HttpClient[] httpClients;
-    public static final long KEEP_ALIVE_TIME_MILLIS = 1000;
-    public static final int REQUEST_TIMEOUT_MILLIS = 1024;
-    public static final int FLUSH_THRESHOLD_BYTES = 1 << 24; // 16 MiB
-    public static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
-    public static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
-    public final AtomicInteger threadsInPool = new AtomicInteger(0);
-    private final ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-            Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
-            Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
-            KEEP_ALIVE_TIME_MILLIS,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(TASK_QUEUE_SIZE),
-            r -> {
-                Thread t = new Thread(r);
-                t.setDaemon(true);
-                t.setName("DhtServerThreadPool-Thread-" + threadsInPool.incrementAndGet());
-                return t;
-            }
-    );
-    private final ReferenceDao dao;
+    public static final String NOT_ENOUGH_REPLICAS_STATUS = "504 Not Enough Replicas";
+    public static final String TIMESTAMP_HEADER = "X-Timestamp: ";
+    public static final String ID_KEY = "id=";
+    protected static final int THREADS_PER_PROCESSOR = 2;
+    protected static final byte[] EMPTY_BODY = new byte[0];
+    protected static final long KEEP_ALIVE_TIME_MILLIS = 1000;
+    protected static final int REQUEST_TIMEOUT_MILLIS = 1024;
+    protected static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
+    protected static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
+    protected final MergeDaoMediator mergeDaoMediator;
+    protected final AtomicInteger threadsInPool;
+    protected final ThreadPoolExecutor threadPoolExecutor;
 
     public DhtServer(ServiceConfig config) throws IOException {
         super(createConfig(config));
-        httpClients = getHttpClients(config.clusterUrls(), config.selfUrl());
-        dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        mergeDaoMediator = new MergeDaoMediator(config.workingDir(), config.selfUrl(), config.clusterUrls());
+        threadsInPool = new AtomicInteger(0);
+        threadPoolExecutor = new ThreadPoolExecutor(
+                Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
+                Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
+                KEEP_ALIVE_TIME_MILLIS,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(TASK_QUEUE_SIZE),
+                r -> {
+                    Thread t = new Thread(r);
+                    t.setDaemon(true);
+                    t.setName("DhtServerThreadPool-Thread-" + threadsInPool.incrementAndGet());
+                    return t;
+                }
+        );
     }
 
     @Override
@@ -74,14 +67,7 @@ public class DhtServer extends HttpServer {
             if (!threadPoolExecutor.awaitTermination(THREAD_POOL_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 throw new UncheckedTimeoutException("Waited too lot to stop the thread pool");
             }
-            for (HttpClient httpClient : httpClients) {
-                if (httpClient != null && !httpClient.isClosed()) {
-                    httpClient.close();
-                }
-            }
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            mergeDaoMediator.stop();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new UncheckedInterruptedException(e);
@@ -90,7 +76,8 @@ public class DhtServer extends HttpServer {
 
     @RequestMethod(METHOD_GET)
     @Path("/v0/entity")
-    public void entity(@Param(value = "id") String id, HttpSession session, Request request) throws IOException {
+    public void entity(HttpSession session, Request request) throws IOException {
+        String id = request.getParameter(ID_KEY);
         if (isKeyIncorrect(id)) {
             sendBadRequestResponse(session);
         } else {
@@ -100,41 +87,32 @@ public class DhtServer extends HttpServer {
                         try {
                             if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
                                 session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
-                            } else if (!tryForward(session, request, id)) {
-                                Entry<MemorySegment> entry = dao.get(keyFor(id));
-                                if (entry == null) {
-                                    session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+                            }
+                            TimestampedEntry<MemorySegment> entry = mergeDaoMediator.get(request);
+                            if (entry == null) {
+                                sendNotEnoughReplicas(session);
+                            } else if (entry.timestamp() == DaoMediator.NEVER_TIMESTAMP) {
+                                session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+                            } else {
+                                Response response;
+                                if (entry.value() == null) {
+                                    response = new Response(Response.NOT_FOUND, EMPTY_BODY);
                                 } else {
-                                    session.sendResponse(new Response(Response.OK, valueFor(entry)));
+                                    response = new Response(Response.OK, ((Entry<MemorySegment>) entry).value().toArray(ValueLayout.JAVA_BYTE));
                                 }
+                                response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+                                session.sendResponse(response);
                             }
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
+                        } catch (IllegalArgumentException e) {
+                            sendBadRequestResponseUnchecked(session);
                         }
                     }
             );
         }
     }
 
-    private HttpClient getHttpClientByKey(String key) {
-        return httpClients[Math.abs(key.hashCode()) % httpClients.length];
-    }
-
-    private boolean tryForward(HttpSession session, Request request, String key) throws IOException {
-        HttpClient httpClient = getHttpClientByKey(key);
-        if (httpClient == null) {
-            return false;
-        }
-        try {
-            session.sendResponse(httpClient.invoke(request));
-        } catch (PoolException | HttpException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, EMPTY_BODY));
-        } catch (InterruptedException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, EMPTY_BODY));
-            Thread.currentThread().interrupt();
-        }
-        return true;
-    }
 
     @RequestMethod(METHOD_PUT)
     @Path("/v0/entity")
@@ -150,12 +128,15 @@ public class DhtServer extends HttpServer {
                                 httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
                                 return;
                             }
-                            if (!tryForward(httpSession, request, id)) {
-                                dao.upsert(new BaseEntry<>(keyFor(id), MemorySegment.ofArray(request.getBody())));
+                            if (mergeDaoMediator.put(request)) {
                                 httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
+                            } else {
+                                sendNotEnoughReplicas(httpSession);
                             }
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
+                        } catch (IllegalArgumentException e) {
+                            sendBadRequestResponseUnchecked(httpSession);
                         }
                     }
             );
@@ -176,12 +157,15 @@ public class DhtServer extends HttpServer {
                                 httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
                                 return;
                             }
-                            if (!tryForward(httpSession, request, id)) {
-                                dao.upsert(new BaseEntry<>(keyFor(id), null));
+                            if (mergeDaoMediator.delete(request)) {
                                 httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
+                            } else {
+                                sendNotEnoughReplicas(httpSession);
                             }
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
+                        } catch (IllegalArgumentException e) {
+                            sendBadRequestResponseUnchecked(httpSession);
                         }
                     }
             );
@@ -198,8 +182,19 @@ public class DhtServer extends HttpServer {
         }
     }
 
+    private static void sendNotEnoughReplicas(HttpSession session) throws IOException {
+        session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_STATUS, EMPTY_BODY));
+    }
+
     private static void sendBadRequestResponse(HttpSession httpSession) throws IOException {
         httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+    }
+    private void sendBadRequestResponseUnchecked(HttpSession session) {
+        try {
+            sendBadRequestResponse(session);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static boolean isKeyIncorrect(String key) {
@@ -215,25 +210,4 @@ public class DhtServer extends HttpServer {
         config.closeSessions = true;
         return config;
     }
-
-    private static HttpClient[] getHttpClients(List<String> urls, String thisUrl) {
-
-        HttpClient[] clients = new HttpClient[urls.size()];
-        int cnt = 0;
-        List<String> tmpList = new ArrayList<>(urls);
-        tmpList.sort(String::compareTo);
-        for (String url : tmpList) {
-            clients[cnt++] = url.equals(thisUrl) ? null : new HttpClient(new ConnectionString(url));
-        }
-        return clients;
-    }
-
-    private static MemorySegment keyFor(String id) {
-        return MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static byte[] valueFor(Entry<MemorySegment> entry) {
-        return entry.value().toArray(ValueLayout.JAVA_BYTE);
-    }
-
 }

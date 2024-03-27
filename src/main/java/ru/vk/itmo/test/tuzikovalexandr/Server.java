@@ -26,7 +26,7 @@ public final class Server {
         List<String> clusterUrls = new ArrayList<>();
         int tempPortValue;
         for (int i = 0; i < clusterSize; i++) {
-            tempPortValue = BASE_PORT + i * 1000;
+            tempPortValue = BASE_PORT + i;
             clusterUrls.add(BASE_URL + ":" + tempPortValue);
         }
 
@@ -37,10 +37,10 @@ public final class Server {
 
             Dao dao = new ReferenceDao(new Config(dataPath, flushThresholdBytes));
 
-            ServiceConfig serviceConfig = new ServiceConfig(BASE_PORT + i * 1000,
+            ServiceConfig serviceConfig = new ServiceConfig(BASE_PORT + i,
                     clusterUrls.get(i), clusterUrls, dataPath);
 
-            ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, 15);
+            ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, 5);
 
             ServerImpl server = new ServerImpl(serviceConfig, dao, worker, consistentHashing);
 

@@ -1,11 +1,14 @@
 package ru.vk.itmo.test.tuzikovalexandr;
 
+import one.nio.util.Hash;
+
 import java.util.List;
+import java.util.NavigableMap;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
 public class ConsistentHashing {
-    private final SortedMap<Integer, String> circle;
+    private final NavigableMap<Integer, String> circle;
 
     public ConsistentHashing(List<String> clusterUrls, int numbOfVirtualNodes) {
         circle = new TreeMap<>();
@@ -18,7 +21,7 @@ public class ConsistentHashing {
     }
 
     public void addNode(int numOfNode, String node) {
-        int hash = getHash(numOfNode + node);
+        final int hash = getHash(node + numOfNode);
         circle.put(hash, node);
     }
 
@@ -27,16 +30,19 @@ public class ConsistentHashing {
             return null;
         }
 
-        int hash = getHash(key);
-        if (!circle.containsKey(hash)) {
-            SortedMap<Integer, String> tailMap = circle.tailMap(hash);
-            hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
-        }
+        final int hash = getHash(key);
+        SortedMap<Integer, String> tailMap = circle.tailMap(hash);
+        return (tailMap.isEmpty() ? circle.firstEntry() : tailMap.firstEntry()).getValue();
 
-        return circle.get(hash);
+//        if (!circle.containsKey(hash)) {
+//            SortedMap<Integer, String> tailMap = circle.tailMap(hash);
+//            hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
+//        }
+//
+//        return circle.get(hash);
     }
 
     private int getHash(String key) {
-        return key.hashCode();
+        return Hash.murmur3(key);
     }
 }

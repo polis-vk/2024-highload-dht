@@ -5,6 +5,8 @@ import one.nio.http.HttpException;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.pool.PoolException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
@@ -12,12 +14,14 @@ import ru.vk.itmo.test.andreycheshev.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 public class RequestHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
     private static final TimestampComparator timestampComparator = new TimestampComparator();
     private static final Set<Integer> AVAILABLE_METHODS;
 
@@ -31,6 +35,7 @@ public class RequestHandler {
 
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String REQUEST_PATH = "/v0/entity";
+
     private static final String ID_PARAMETER = "id=";
     private static final String ACK_PARAMETER = "ack=";
     private static final String FROM_PARAMETER = "from=";
@@ -48,15 +53,17 @@ public class RequestHandler {
     private final HttpClient[] clusterConnections;
     private final RendezvousDistributor distributor;
 
-    public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao,
-                          HttpClient[] clusterConnections,
-                          RendezvousDistributor distributor) {
+    public RequestHandler(
+            Dao<MemorySegment, Entry<MemorySegment>> dao,
+            HttpClient[] clusterConnections,
+            RendezvousDistributor distributor) {
+
         this.dao = dao;
         this.clusterConnections = clusterConnections;
         this.distributor = distributor;
     }
 
-    public Response handle(Request request) throws HttpException, IOException, PoolException, InterruptedException {
+    public Response handle(Request request) {
 
         // Checking the correctness.
         String path = request.getPath();
@@ -74,9 +81,9 @@ public class RequestHandler {
             return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
 
-        String timestamp = request.getHeader(TIMESTAMP_HEADER);
         // A timestamp is an indication that the request
         // came from the client directly or from the cluster node
+        String timestamp = request.getHeader(TIMESTAMP_HEADER);
         if (timestamp != null) {
             return processLocally(method,
                     id,
@@ -85,6 +92,7 @@ public class RequestHandler {
             );
         }
 
+        // Get and check ack and from parameters.
         String ackParameter = request.getParameter(ACK_PARAMETER);
         String fromParameter = request.getParameter(FROM_PARAMETER);
 
@@ -109,7 +117,7 @@ public class RequestHandler {
             String id,
             Request request,
             int ack,
-            int from) throws InterruptedException {
+            int from) {
 
         int[] nodeCount = distributor.getQuorumNodes(id, from);
         List<Response> responses = new ArrayList<>();
@@ -128,8 +136,10 @@ public class RequestHandler {
                 if (method == Request.METHOD_GET && responses.size() == ack) {
                     return analyzeResponses(method, responses, ack);
                 }
-            } catch (PoolException | HttpException | IOException e) {
-                // Ignored.
+            } catch (SocketTimeoutException e) {
+                LOGGER.error("Processing time exceeded on another node in the cluster", e);
+            } catch (InterruptedException | PoolException | HttpException | IOException e) {
+                LOGGER.error("Processing error on another node in the cluster", e);
             }
         }
 

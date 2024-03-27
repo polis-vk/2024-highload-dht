@@ -149,7 +149,6 @@ final class SSTableWriter {
         writeLong(timestamp, os);
         result += Long.BYTES;
 
-
         // Value size and possibly value
         if (value == null) {
             // Tombstone

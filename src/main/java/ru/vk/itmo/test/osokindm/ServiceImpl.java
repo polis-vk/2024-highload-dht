@@ -120,7 +120,8 @@ public class ServiceImpl implements Service {
         List<Node> targetNodes = router.getNodes(id, from);
         List<Response> responses = sendRequestsToNodes(request, targetNodes, id);
         if (responses.size() < ack) {
-            return new Response(Response.GATEWAY_TIMEOUT, "Not enough replicas responded".getBytes(StandardCharsets.UTF_8));
+            String message = "Not enough replicas responded";
+            return new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8));
         } else if (request.getMethod() == Request.METHOD_GET) {
             return selectLatestResponse(responses);
         } else {

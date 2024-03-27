@@ -23,7 +23,7 @@ public class DaoWrapper {
         return storage.get(key);
     }
 
-    public void delete(String id,  long timestamp) {
+    public void delete(String id, long timestamp) {
         MemorySegment key = getMemorySegment(id);
         storage.upsert(new BaseEntry<>(key, null, timestamp));
     }

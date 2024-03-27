@@ -27,6 +27,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -93,16 +94,15 @@ public class HttpServerImpl extends HttpServer {
             String ackStr = request.getParameter("ack=");
             int from = fromStr == null || fromStr.isEmpty() ? nodes.size()
                     : Integer.parseInt(fromStr);
-            int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr); //TODO move quorum to method
+            int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
             if (ack == 0 || ack > from || from > nodes.size()) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
 
             List<String> nodesHashes = getSortedNodes(id, from);
-            int success = 0; //todo rename
-            Response[] responses = new Response[ack]; //todo replace with list & check length
-            request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis()); //todo remove unused
+            int success = 0;
+            Response[] responses = new Response[ack];
 
 
             for (int i = 0; i < from; i++) {
@@ -144,16 +144,16 @@ public class HttpServerImpl extends HttpServer {
 
     private Response validateGetRequests(int ack, Response[] responses) {
         int notFound = 0;
-        long latestTimestamp = Integer.MIN_VALUE;
+        long latestTimestamp = 0L;
         Response latestResponse = null;
         for (Response response : responses) {
-            long timestamp = response.getHeader(TIMESTAMP_HEADER) == null ? Integer.MIN_VALUE
+            long timestamp = response.getHeader(TIMESTAMP_HEADER) == null ? 0L
                     : Long.parseLong(response.getHeader(TIMESTAMP_HEADER));
             if (response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
                 notFound++;
-                if (timestamp != Integer.MIN_VALUE && latestTimestamp < timestamp) {
+                if (timestamp != 0L && latestTimestamp < timestamp) {
                     latestTimestamp = timestamp;
-                    latestResponse = null;
+                    latestResponse = response;
                 }
                 continue;
             }
@@ -163,7 +163,7 @@ public class HttpServerImpl extends HttpServer {
             }
         }
         Response response;
-        if (notFound == ack || latestResponse == null) { //todo more checks?
+        if (notFound == ack || latestResponse == null) {
             response = new Response(Response.NOT_FOUND, Response.EMPTY);
         } else {
             response = new Response(Response.OK, latestResponse.getBody());
@@ -261,9 +261,13 @@ public class HttpServerImpl extends HttpServer {
                 .method(method.name(), body == null
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofByteArray(body))
-                .header(REDIRECTED_HEADER, "true"
+                .header(REDIRECTED_HEADER, "true")
+                .header("X-timestamp", String.valueOf(System.currentTimeMillis())
                 ).build(), HttpResponse.BodyHandlers.ofByteArray());
-        return new Response(getResponseByCode(response.statusCode()), response.body());
+        Response result = new Response(getResponseByCode(response.statusCode()), response.body());
+        Optional<String> respTimestamp = response.headers().firstValue("X-timestamp");
+        respTimestamp.ifPresent(v-> result.addHeader(TIMESTAMP_HEADER + v));
+        return result;
     }
 
     private Response handleLocalRequest(Request request, String id) {

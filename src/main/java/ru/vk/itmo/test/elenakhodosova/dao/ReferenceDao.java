@@ -6,12 +6,9 @@ import ru.vk.itmo.dao.Dao;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -94,7 +91,7 @@ public class ReferenceDao implements Dao<MemorySegment, EntryWithTimestamp<Memor
             final EntryWithTimestamp<MemorySegment> previous = tableSet.upsert(entry);
 
             // Update size estimate
-            final long size = tableSet.memTableSize.addAndGet(sizeOf(entry) + sizeOf(previous));
+            final long size = tableSet.memTableSize.addAndGet(sizeOf(entry) - sizeOf(previous));
             autoFlush = size > config.flushThresholdBytes();
         } finally {
             lock.readLock().unlock();
@@ -111,10 +108,10 @@ public class ReferenceDao implements Dao<MemorySegment, EntryWithTimestamp<Memor
         }
 
         if (entry.value() == null) {
-            return entry.key().byteSize() + ValueLayout.JAVA_LONG.byteSize();
+            return entry.key().byteSize() + Long.BYTES;
         }
 
-        return entry.key().byteSize() + entry.value().byteSize() + ValueLayout.JAVA_LONG.byteSize();
+        return entry.key().byteSize() + entry.value().byteSize() + Long.BYTES;
     }
 
     private void initiateFlush(final boolean auto) {
@@ -140,13 +137,12 @@ public class ReferenceDao implements Dao<MemorySegment, EntryWithTimestamp<Memor
             }
 
             // Write
-            final long timestamp = System.currentTimeMillis();
-            // final int sequence = currentTableSet.nextSequence();
+            final int sequence = currentTableSet.nextSequence();
             try {
                 new SSTableWriter()
                         .write(
                                 config.basePath(),
-                                timestamp,
+                                sequence,
                                 currentTableSet.flushingTable.get(null, null));
             } catch (IOException e) {
                 e.printStackTrace();
@@ -160,7 +156,7 @@ public class ReferenceDao implements Dao<MemorySegment, EntryWithTimestamp<Memor
                 flushed = SSTables.open(
                         arena,
                         config.basePath(),
-                        timestamp);
+                        sequence);
             } catch (IOException e) {
                 e.printStackTrace();
                 Runtime.getRuntime().halt(-2);
@@ -243,7 +239,7 @@ public class ReferenceDao implements Dao<MemorySegment, EntryWithTimestamp<Memor
                 try {
                     SSTables.remove(
                             config.basePath(),
-                            ssTable.timestamp);
+                            ssTable.sequence);
                 } catch (IOException e) {
                     e.printStackTrace();
                     Runtime.getRuntime().halt(-5);

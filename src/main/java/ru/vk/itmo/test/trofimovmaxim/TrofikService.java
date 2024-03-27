@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 public class TrofikService implements Service {
     private TrofikServer server;
     private final ServiceConfig config;
+    private boolean stopped;
 
     public TrofikService(ServiceConfig config) {
         this.config = config;
@@ -19,16 +20,20 @@ public class TrofikService implements Service {
     public CompletableFuture<Void> start() throws IOException {
         server = new TrofikServer(config);
         server.start();
+        stopped = false;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> stop() {
-        server.stop();
+        if (!stopped) {
+            server.stop();
+        }
+        stopped = true;
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

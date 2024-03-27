@@ -1,6 +1,14 @@
 package ru.vk.itmo.test.shishiginstepan.server;
 
-import one.nio.http.*;
+import one.nio.http.HttpException;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.apache.log4j.Logger;
 import ru.vk.itmo.ServiceConfig;
@@ -15,7 +23,13 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
@@ -130,7 +144,11 @@ public class Server extends HttpServer {
         if (request.getHeader("X-inner-request") != null) {
             entry = dao.get(key);
         } else {
-            entry = dao.get(key, from == null ? null : Integer.parseInt(from), ack == null ? null : Integer.parseInt(ack));
+            entry = dao.get(
+                    key,
+                    from == null ? null : Integer.parseInt(from),
+                    ack == null ? null : Integer.parseInt(ack)
+            );
         }
 
         if (entry.value() == null) {
@@ -159,7 +177,13 @@ public class Server extends HttpServer {
         if (request.getHeader("X-inner-request") != null) {
             var timestamp = request.getHeader("X-timestamp");
             if (timestamp != null) {
-                dao.upsert(new EntryWithTimestamp<>(key, val, Long.parseLong(request.getHeader("X-timestamp").substring(2))));
+                dao.upsert(
+                        new EntryWithTimestamp<>(
+                                key,
+                                val,
+                                Long.parseLong(request.getHeader("X-timestamp").substring(2))
+                        )
+                );
             }
         } else {
             dao.upsert(
@@ -190,7 +214,13 @@ public class Server extends HttpServer {
         if (request.getHeader("X-inner-request") != null) {
             var timestamp = request.getHeader("X-timestamp");
             if (timestamp != null) {
-                dao.upsert(new EntryWithTimestamp<>(key, null, Long.parseLong(request.getHeader("X-timestamp").substring(2))));
+                dao.upsert(
+                        new EntryWithTimestamp<>(
+                                key,
+                                null,
+                                Long.parseLong(request.getHeader("X-timestamp").substring(2))
+                        )
+                );
             }
         } else {
             dao.upsert(

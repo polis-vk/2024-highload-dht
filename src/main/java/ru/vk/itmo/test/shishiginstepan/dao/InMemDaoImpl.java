@@ -10,7 +10,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -47,12 +53,12 @@ public class InMemDaoImpl implements Dao<MemorySegment, EntryWithTimestamp<Memor
 
     private final long memStorageLimit;
 
-    private final AtomicReference<ConcurrentNavigableMap<MemorySegment, EntryWithTimestamp<MemorySegment>>> tempStorage =
-            new AtomicReference<>(
-                    new ConcurrentSkipListMap<>(
-                            keyComparator
-                    )
-            );
+    private final AtomicReference<ConcurrentNavigableMap<MemorySegment, EntryWithTimestamp<MemorySegment>>>
+            tempStorage = new AtomicReference<>(
+                new ConcurrentSkipListMap<>(
+                        keyComparator
+                )
+    );
     private final AtomicReference<ConcurrentNavigableMap<MemorySegment, EntryWithTimestamp<MemorySegment>>> memStorage =
             new AtomicReference<>(
                     new ConcurrentSkipListMap<>(

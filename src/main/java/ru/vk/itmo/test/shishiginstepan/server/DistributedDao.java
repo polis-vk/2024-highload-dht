@@ -9,7 +9,13 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.PriorityQueue;
+import java.util.Set;
+import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> {
@@ -80,7 +86,8 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
         quorum = (totalNodes / 2) + 1;
     }
 
-    // Здесь мы будем итерироваться по кольцу и выбирать ноды, причем не просто первые N, а первые N которые памятся на уникальные реальные ноды
+    // Здесь мы будем итерироваться по кольцу и выбирать ноды, причем не просто первые N,
+    // а первые N которые памятся на уникальные реальные ноды
     private List<NodeWrapper> selectMultipleNodes(String key, int numberOfNodes) {
         int keyHash = Hash.murmur3(key);
         List<NodeWrapper> chosenNodes = new ArrayList<>(numberOfNodes);
@@ -96,7 +103,8 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
             chosenNodes.add(node);
             tokensOfChosenNodes.add(node.realNodeKey);
             numberOfNodes--;
-        } // здесь мы можем дойти до конца мапы которая является кольцом нод. если мы до сих пор не набрали нужное кол-во нод, нужно теперь посмотреть другую часть кольца.
+        } // здесь мы можем дойти до конца мапы которая является кольцом нод. если мы до сих пор не набрали нужное
+        // кол-во нод, нужно теперь посмотреть другую часть кольца.
         ringPart = this.nodeRing.headMap(keyHash);
         for (NodeWrapper node : ringPart.values()) {
             if (numberOfNodes == 0) {

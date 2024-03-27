@@ -57,7 +57,11 @@ public class RemoteDaoNode implements Dao<MemorySegment, EntryWithTimestamp<Memo
         if (response.getStatus() == 404) {
             var timestamp = response.getHeader("X-timestamp");
             if (timestamp != null) {
-                return new EntryWithTimestamp<>(key, null, Long.parseLong(response.getHeader("X-timestamp").substring(2)));
+                return new EntryWithTimestamp<>(
+                        key,
+                        null,
+                        Long.parseLong(response.getHeader("X-timestamp").substring(2))
+                );
             }
             return new EntryWithTimestamp<>(key, null, 0L);
         }
@@ -73,7 +77,10 @@ public class RemoteDaoNode implements Dao<MemorySegment, EntryWithTimestamp<Memo
         String innerRequest = "X-inner-request: " + 1;
         try {
             if (entry.value() == null) {
-                response = client.delete(BASE_REQUEST_PATH + segmentToString(entry.key()), timestampHeader, innerRequest);
+                response = client.delete(
+                        BASE_REQUEST_PATH + segmentToString(entry.key()),
+                        timestampHeader, innerRequest
+                );
             } else {
                 response = client.put(
                         BASE_REQUEST_PATH + segmentToString(entry.key()),

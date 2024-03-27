@@ -26,10 +26,16 @@ public class DatabaseService implements ru.vk.itmo.Service {
 
     @Override
     public CompletableFuture<Void> start() {
-        Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao = new InMemDaoImpl(config.workingDir(), 1024 * 1024);
+        Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao =
+                new InMemDaoImpl(
+                        config.workingDir(),
+                        1024 * 1024
+                );
         distributedDao = new DistributedDao(localDao, config.selfUrl());
         for (String url : config.clusterUrls()) {
-            if (url.equals(config.selfUrl())){continue;}
+            if (url.equals(config.selfUrl())) {
+                continue;
+            }
             distributedDao.addNode(
                     new RemoteDaoNode(url), url
             );

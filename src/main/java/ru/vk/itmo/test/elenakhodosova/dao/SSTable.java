@@ -13,17 +13,17 @@ import java.util.NoSuchElementException;
  * @see SSTables
  */
 final class SSTable {
-    final long timestamp;
+    final int sequence;
 
     private final MemorySegment index;
     private final MemorySegment data;
     private final long size;
 
     SSTable(
-            final long timestamp,
+            final int sequence,
             final MemorySegment index,
             final MemorySegment data) {
-        this.timestamp = timestamp;
+        this.sequence = sequence;
         this.index = index;
         this.data = data;
         this.size = index.byteSize() / Long.BYTES;
@@ -143,15 +143,18 @@ final class SSTable {
         // Extract value length
         final long valueLength = getLength(offset);
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
+            // Get timestamp
+            offset += Long.BYTES;
+            final long timestamp = getLength(offset);
             // Tombstone encountered
             return new BaseEntryWithTimestamp<>(key, null, timestamp);
         } else {
             // Get value
-            offset += Long.BYTES;
+           // offset += Long.BYTES;
             final MemorySegment value = data.asSlice(offset, valueLength);
 
             // Get timestamp
-            offset += Long.BYTES;
+            offset += valueLength;
             final long timestamp = getLength(offset);
             return new BaseEntryWithTimestamp<>(key, value, timestamp);
         }
@@ -193,15 +196,14 @@ final class SSTable {
 
             // Read value
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
-                //add timestamp length
-                offset += Long.BYTES;
                 // Tombstone encountered
+                final long timestamp = getLength(offset);
+                offset += Long.BYTES;
                 return new BaseEntryWithTimestamp<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
                 final long timestamp = getLength(offset);
-                //add timestamp length
                 offset += Long.BYTES;
                 return new BaseEntryWithTimestamp<>(key, value, timestamp);
             }

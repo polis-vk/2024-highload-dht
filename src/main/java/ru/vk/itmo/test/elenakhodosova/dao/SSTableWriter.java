@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.elenakhodosova.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -15,7 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 
 /**
- * Writes {@link Entry} {@link Iterator} to SSTable on disk.
+ * Writes {@link EntryWithTimestamp} {@link Iterator} to SSTable on disk.
  *
  * <p>Index file {@code <N>.index} contains {@code long} offsets to entries in data file:
  * {@code [offset0, offset1, ...]}
@@ -39,11 +37,11 @@ final class SSTableWriter {
 
     void write(
             final Path baseDir,
-            final long timestamp,
+            final int sequence,
             final Iterator<EntryWithTimestamp<MemorySegment>> entries) throws IOException {
         // Write to temporary files
-        final Path tempIndexName = SSTables.tempIndexName(baseDir, timestamp);
-        final Path tempDataName = SSTables.tempDataName(baseDir, timestamp);
+        final Path tempIndexName = SSTables.tempIndexName(baseDir, sequence);
+        final Path tempDataName = SSTables.tempDataName(baseDir, sequence);
 
         // Delete temporary files to eliminate tails
         Files.deleteIfExists(tempIndexName);
@@ -81,7 +79,7 @@ final class SSTableWriter {
         final Path indexName =
                 SSTables.indexName(
                         baseDir,
-                        timestamp);
+                        sequence);
         Files.move(
                 tempIndexName,
                 indexName,
@@ -90,7 +88,7 @@ final class SSTableWriter {
         final Path dataName =
                 SSTables.dataName(
                         baseDir,
-                        timestamp);
+                        sequence);
         Files.move(
                 tempDataName,
                 dataName,
@@ -127,7 +125,7 @@ final class SSTableWriter {
     }
 
     /**
-     * Writes {@link Entry} to {@link FileChannel}.
+     * Writes {@link EntryWithTimestamp} to {@link FileChannel}.
      *
      * @return written bytes
      */
@@ -152,6 +150,10 @@ final class SSTableWriter {
             // Tombstone
             writeLong(SSTables.TOMBSTONE_VALUE_LENGTH, os);
             result += Long.BYTES;
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         } else {
             // Value length
             writeLong(value.byteSize(), os);
@@ -160,11 +162,12 @@ final class SSTableWriter {
             // Value
             writeSegment(value, os);
             result += value.byteSize();
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         }
 
-        // Timestamp
-        writeLong(timestamp, os);
-        result += Long.BYTES;
         return result;
     }
 }

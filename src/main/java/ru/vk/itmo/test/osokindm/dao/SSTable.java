@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.osokindm.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
@@ -54,7 +51,7 @@ final class SSTable {
         while (low <= high) {
             final long mid = (low + high) >>> 1;
             final long midEntryOffset = entryOffset(mid);
-            final long midKeyLength = getLength(midEntryOffset);
+            final long midKeyLength = getLongValue(midEntryOffset);
             final int compare =
                     MemorySegmentComparator.compare(
                             data,
@@ -82,7 +79,7 @@ final class SSTable {
                 entry * Long.BYTES);
     }
 
-    private long getLength(final long offset) {
+    private long getLongValue(final long offset) {
         return data.get(
                 ValueLayout.OfLong.JAVA_LONG_UNALIGNED,
                 offset);
@@ -143,16 +140,21 @@ final class SSTable {
         // Skip key (will reuse the argument)
         long offset = entryOffset(entry);
         offset += Long.BYTES + key.byteSize();
+
+        // Extract timestamp
+        final long timestamp = getLongValue(offset);
+        offset += Long.BYTES;
+
         // Extract value length
-        final long valueLength = getLength(offset);
+        final long valueLength = getLongValue(offset);
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
             // Tombstone encountered
-            return new BaseEntry<>(key, null);
+            return new BaseEntry<>(key, null, timestamp);
         } else {
             // Get value
             offset += Long.BYTES;
             final MemorySegment value = data.asSlice(offset, valueLength);
-            return new BaseEntry<>(key, value);
+            return new BaseEntry<>(key, value, timestamp);
         }
     }
 
@@ -179,25 +181,29 @@ final class SSTable {
             }
 
             // Read key length
-            final long keyLength = getLength(offset);
+            final long keyLength = getLongValue(offset);
             offset += Long.BYTES;
 
             // Read key
             final MemorySegment key = data.asSlice(offset, keyLength);
             offset += keyLength;
 
+            // Read timestamp
+            final long timestamp = getLongValue(offset);
+            offset += Long.BYTES;
+
             // Read value length
-            final long valueLength = getLength(offset);
+            final long valueLength = getLongValue(offset);
             offset += Long.BYTES;
 
             // Read value
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
                 // Tombstone encountered
-                return new BaseEntry<>(key, null);
+                return new BaseEntry<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
-                return new BaseEntry<>(key, value);
+                return new BaseEntry<>(key, value, timestamp);
             }
         }
     }

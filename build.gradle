@@ -68,9 +68,10 @@ compileTestJava {
     options.compilerArgs += ["--enable-preview"]
 }
 
-application {
-    mainClass = 'ru.vk.itmo.test.reference.ReferenceService'
-    applicationDefaultJvmArgs = ['-Xmx128m', '--enable-preview', '-Xlog:gc']
-    // + ['-XX:+UseSerialGC']
-//
+task runApp(type: JavaExec) {
+    jvmArgs += ["--enable-preview"]
+    maxHeapSize = '128m'
+    main = 'ru.vk.itmo.test.osokindm.TestServer'
+//    main = 'ru.vk.itmo.test.reference.ReferenceService'
+    classpath = sourceSets.main.runtimeClasspath
 }

@@ -26,6 +26,8 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
     private final SortedMap<Integer, NodeWrapper> nodeRing = new ConcurrentSkipListMap<>();
 
     private final List<NodeWrapper> nodesUnique = new ArrayList<>();
+    private int totalNodes;
+    private int quorum;
 
     public DistributedDao(Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao, String selfUrl) {
         this.localDao = new NodeWrapper(localDao, selfUrl);
@@ -40,8 +42,7 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
     public static final class ClusterLimitExceeded extends RuntimeException {
     }
 
-    private int totalNodes = 0;
-    private int quorum = 0;
+
 
     private static class NodeWrapper implements Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> {
         Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao;
@@ -88,7 +89,8 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
 
     // Здесь мы будем итерироваться по кольцу и выбирать ноды, причем не просто первые N,
     // а первые N которые памятся на уникальные реальные ноды
-    private List<NodeWrapper> selectMultipleNodes(String key, int numberOfNodes) {
+    private List<NodeWrapper> selectMultipleNodes(String key, int n) {
+        int numberOfNodes = n;
         int keyHash = Hash.murmur3(key);
         List<NodeWrapper> chosenNodes = new ArrayList<>(numberOfNodes);
         SortedMap<Integer, NodeWrapper> ringPart = this.nodeRing.tailMap(keyHash);

@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Server extends HttpServer {
     private final DistributedDao dao;
     private static final String BASE_PATH = "/v0/entity";
+    private static final String TIMESTAMP_HEADER = "X-timestamp: ";
+    private static final String INNER_REQUEST_HEADER = "X-inner-request: ";
 
     private final Logger logger = Logger.getLogger("lsm-db-server");
 
@@ -84,28 +86,21 @@ public class Server extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    handleRequestInOtherThread(request, session, requestExpirationDate);
-                } catch (IOException e) {
                     try {
+                        handleRequestInOtherThread(request, session, requestExpirationDate);
+                    } catch (IOException e) {
                         session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                    } catch (IOException exceptionHandlingException) {
-                        logger.error(exceptionHandlingException.initCause(e));
-                        session.close();
-                    }
-                } catch (HttpException | DistributedDao.ClusterLimitExceeded e) {
-                    try {
+
+                    } catch (HttpException | DistributedDao.ClusterLimitExceeded e) {
                         session.sendError(Response.BAD_REQUEST, null);
-                    } catch (IOException exceptionHandlingException) {
-                        logger.error(exceptionHandlingException.initCause(e));
-                        session.close();
-                    }
-                } catch (DistributedDao.NoConsensus e) {
-                    try {
+
+                    } catch (DistributedDao.NoConsensus e) {
                         session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                    } catch (IOException exceptionHandlingException) {
-                        logger.error(exceptionHandlingException.initCause(e));
-                        session.close();
+
                     }
+                } catch (IOException exceptionHandlingException) {
+                    logger.error(exceptionHandlingException.initCause(exceptionHandlingException));
+                    session.scheduleClose();
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -141,7 +136,7 @@ public class Server extends HttpServer {
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         EntryWithTimestamp<MemorySegment> entry;
 
-        if (request.getHeader("X-inner-request") != null) {
+        if (request.getHeader(INNER_REQUEST_HEADER) != null) {
             entry = dao.get(key);
         } else {
             entry = dao.get(
@@ -153,11 +148,11 @@ public class Server extends HttpServer {
 
         if (entry.value() == null) {
             Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-            response.addHeader("X-timestamp: " + entry.timestamp());
+            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
             return response;
         }
         Response response = new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
-        response.addHeader("X-timestamp: " + entry.timestamp());
+        response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
         return response;
     }
 
@@ -174,18 +169,7 @@ public class Server extends HttpServer {
         }
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         MemorySegment val = MemorySegment.ofArray(request.getBody());
-        if (request.getHeader("X-inner-request") != null) {
-            var timestamp = request.getHeader("X-timestamp");
-            if (timestamp != null) {
-                dao.upsert(
-                        new EntryWithTimestamp<>(
-                                key,
-                                val,
-                                Long.parseLong(request.getHeader("X-timestamp").substring(2))
-                        )
-                );
-            }
-        } else {
+        if (request.getHeader(INNER_REQUEST_HEADER) == null) {
             dao.upsert(
                     new EntryWithTimestamp<>(
                             key,
@@ -194,6 +178,17 @@ public class Server extends HttpServer {
                     from == null ? null : Integer.parseInt(from),
                     ack == null ? null : Integer.parseInt(ack)
             );
+        } else {
+            var timestamp = getTimestampHeaderValue(request);
+            if (timestamp != null) {
+                dao.upsert(
+                        new EntryWithTimestamp<>(
+                                key,
+                                val,
+                                timestamp
+                        )
+                );
+            }
         }
         return new Response(Response.CREATED, Response.EMPTY);
     }
@@ -210,19 +205,7 @@ public class Server extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-
-        if (request.getHeader("X-inner-request") != null) {
-            var timestamp = request.getHeader("X-timestamp");
-            if (timestamp != null) {
-                dao.upsert(
-                        new EntryWithTimestamp<>(
-                                key,
-                                null,
-                                Long.parseLong(request.getHeader("X-timestamp").substring(2))
-                        )
-                );
-            }
-        } else {
+        if (request.getHeader(INNER_REQUEST_HEADER) == null) {
             dao.upsert(
                     new EntryWithTimestamp<>(
                             key,
@@ -231,9 +214,28 @@ public class Server extends HttpServer {
                     from == null ? null : Integer.parseInt(from),
                     ack == null ? null : Integer.parseInt(ack)
             );
+        } else {
+            var timestamp = getTimestampHeaderValue(request);
+            if (timestamp != null) {
+                dao.upsert(
+                        new EntryWithTimestamp<>(
+                                key,
+                                null,
+                                timestamp
+                        )
+                );
+            }
         }
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private static Long getTimestampHeaderValue(Request request) {
+        var headerRaw = request.getHeader(TIMESTAMP_HEADER).substring(2);
+        if (headerRaw == null) {
+            return null;
+        }
+        return Long.parseLong(headerRaw);
     }
 
     @Path(BASE_PATH)

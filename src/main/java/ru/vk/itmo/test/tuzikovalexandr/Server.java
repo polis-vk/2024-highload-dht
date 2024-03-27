@@ -2,8 +2,8 @@ package ru.vk.itmo.test.tuzikovalexandr;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.tuzikovalexandr.dao.Dao;
+import ru.vk.itmo.test.tuzikovalexandr.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.nio.file.Files;

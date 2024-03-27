@@ -13,9 +13,9 @@ import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.tuzikovalexandr.dao.BaseEntryWithTimestamp;
+import ru.vk.itmo.test.tuzikovalexandr.dao.Dao;
+import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -122,9 +122,9 @@ public class ServerImpl extends HttpServer {
         }
 
         MemorySegment key = fromString(id);
-        Entry<MemorySegment> entry = dao.get(key);
+        EntryWithTimestamp<MemorySegment> entry = dao.get(key);
 
-        if (entry == null) {
+        if (entry == null || entry.value() == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
 
@@ -141,7 +141,7 @@ public class ServerImpl extends HttpServer {
         MemorySegment key = fromString(id);
         MemorySegment value = MemorySegment.ofArray(request.getBody());
 
-        dao.upsert(new BaseEntry<>(key, value));
+        dao.upsert(new BaseEntryWithTimestamp(key, value, System.currentTimeMillis()));
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
@@ -153,7 +153,7 @@ public class ServerImpl extends HttpServer {
         }
 
         MemorySegment key = fromString(id);
-        dao.upsert(new BaseEntry<>(key, null));
+        dao.upsert(new BaseEntryWithTimestamp<>(key, null, System.currentTimeMillis()));
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }

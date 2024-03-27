@@ -136,54 +136,12 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        String path = request.getPath();
-        if (!path.equals("/v0/entity")) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-
-        String key = request.getParameter("id=");
-        if (key == null || key.isEmpty()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
+        if (extracted(request, session)) return;
 
         try {
             executorService.execute(() -> {
                 try {
-                    if (request.getHeader("X-Timestamp", null) != null) {
-                        session.sendResponse(handleToDaoOperations(request,
-                                System.currentTimeMillis()));
-                        return;
-                    }
-
-                    String urlToSend = partitionTable.getCorrectURL(request);
-
-                    Coordinator coordinator = new Coordinator();
-                    coordinator.getCoordinatorParams(request, serviceConfig);
-
-                    List<String> slaves = partitionTable.getSlaveUrls(request, coordinator.from);
-                    List<Response> responses = new ArrayList<>();
-
-                    if (urlToSend.equals(selfNodeURL)) {
-                        responses.add(handleToDaoOperations(request,
-                                System.currentTimeMillis()));
-                    } else {
-                        slaves.addFirst(urlToSend);
-                    }
-
-                    for (String slaveUrl : slaves) {
-                        Request req = new Request(request);
-                        req.addHeader("X-Timestamp: " + System.currentTimeMillis());
-                        try {
-                            responses.add(clientMap.get(slaveUrl).invoke(req, 100));
-                        } catch (PoolException e) {
-                            responses.add(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                        }
-                    }
-
-                    session.sendResponse(
-                            coordinator.resolve(responses, request.getMethod()));
+                    if (extracted1(request, session)) return;
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
                 } catch (IOException e) {
@@ -197,6 +155,66 @@ public class HttpServerImpl extends HttpServer {
             });
         } catch (RejectedExecutionException e) {
             session.sendError(Response.CONFLICT, e.toString());
+        }
+    }
+
+    private boolean extracted1(Request request, HttpSession session) throws IOException,
+            InterruptedException,
+            HttpException {
+        if (request.getHeader("X-Timestamp", null) != null) {
+            session.sendResponse(handleToDaoOperations(request,
+                    System.currentTimeMillis()));
+            return true;
+        }
+
+        String urlToSend = partitionTable.getCorrectURL(request);
+
+        Coordinator coordinator = new Coordinator();
+        coordinator.getCoordinatorParams(request, serviceConfig);
+
+        List<String> slaves = partitionTable.getSlaveUrls(request, coordinator.from);
+        List<Response> responses = new ArrayList<>();
+
+        if (urlToSend.equals(selfNodeURL)) {
+            responses.add(handleToDaoOperations(request,
+                    System.currentTimeMillis()));
+        } else {
+            slaves.addFirst(urlToSend);
+        }
+
+        for (String slaveUrl : slaves) {
+            Request req = new Request(request);
+            req.addHeader("X-Timestamp: " + System.currentTimeMillis());
+            extracted(slaveUrl, responses, req);
+        }
+
+        session.sendResponse(
+                coordinator.resolve(responses, request.getMethod()));
+        return false;
+    }
+
+    private static boolean extracted(Request request, HttpSession session) throws IOException {
+        String path = request.getPath();
+        if (!path.equals("/v0/entity")) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return true;
+        }
+
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return true;
+        }
+        return false;
+    }
+
+    private void extracted(String slaveUrl, List<Response> responses, Request req) throws InterruptedException,
+            IOException,
+            HttpException {
+        try {
+            responses.add(clientMap.get(slaveUrl).invoke(req, 100));
+        } catch (PoolException e) {
+            responses.add(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         }
     }
 

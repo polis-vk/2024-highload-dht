@@ -85,6 +85,7 @@ public class Coordinator {
         }
         return value;
     }
+
     private Response majorityWins(List<Response> responses, Response response) {
         int responses2XX = 0;
         for (Response res : responses) {

@@ -3,11 +3,12 @@ package ru.vk.itmo.test.kachmareugene;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class Utils {
+public final class Utils {
     private Utils() {
     }
 
-    public static byte[] longToBytes(long longValue) {
+    public static byte[] longToBytes(long l) {
+        long longValue = l;
         byte[] result = new byte[8];
         for (int i = 7; i >= 0; i--) {
             result[i] = (byte)(longValue & 0xFF);

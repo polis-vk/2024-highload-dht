@@ -2,8 +2,8 @@ package ru.vk.itmo.test.shishiginstepan.service;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.shishiginstepan.dao.EntryWithTimestamp;
 import ru.vk.itmo.test.shishiginstepan.dao.InMemDaoImpl;
 import ru.vk.itmo.test.shishiginstepan.server.DistributedDao;
 import ru.vk.itmo.test.shishiginstepan.server.RemoteDaoNode;
@@ -26,9 +26,10 @@ public class DatabaseService implements ru.vk.itmo.Service {
 
     @Override
     public CompletableFuture<Void> start() {
-        Dao<MemorySegment, Entry<MemorySegment>> localDao = new InMemDaoImpl(config.workingDir(), 1024 * 1024);
-        distributedDao = new DistributedDao();
+        Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao = new InMemDaoImpl(config.workingDir(), 1024 * 1024);
+        distributedDao = new DistributedDao(localDao, config.selfUrl());
         for (String url : config.clusterUrls()) {
+            if (url.equals(config.selfUrl())){continue;}
             distributedDao.addNode(
                     new RemoteDaoNode(url), url
             );
@@ -50,7 +51,7 @@ public class DatabaseService implements ru.vk.itmo.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

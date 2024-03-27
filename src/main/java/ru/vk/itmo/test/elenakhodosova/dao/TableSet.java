@@ -40,6 +40,13 @@ final class TableSet {
                 ssTables);
     }
 
+    int nextSequence() {
+        return ssTables.stream()
+                .mapToInt(t -> t.sequence)
+                .max()
+                .orElse(0) + 1;
+    }
+
     TableSet flushing() {
         if (memTable.isEmpty()) {
             throw new IllegalStateException("Nothing to flush");
@@ -144,7 +151,7 @@ final class TableSet {
         EntryWithTimestamp<MemorySegment> result = memTable.get(key);
         if (result != null) {
             // Transform tombstone
-            return swallowTombstone(result);
+            return result;
         }
 
         // Then check flushing
@@ -152,16 +159,16 @@ final class TableSet {
             result = flushingTable.get(key);
             if (result != null) {
                 // Transform tombstone
-                return swallowTombstone(result);
+                return result;
             }
         }
 
         // At last check SSTables from freshest to oldest
         for (final SSTable ssTable : ssTables) {
-            EntryWithTimestamp<MemorySegment> resultFromSstable = ssTable.get(key);
-            if (resultFromSstable != null) {
+            result = ssTable.get(key);
+            if (result != null) {
                 // Transform tombstone
-                return swallowTombstone(resultFromSstable);
+                return result;
             }
         }
 
@@ -169,10 +176,10 @@ final class TableSet {
         return null;
     }
 
-    private static EntryWithTimestamp<MemorySegment> swallowTombstone(final EntryWithTimestamp<MemorySegment> entry) {
-        if (entry.value() == null) return null;
+/*    private static EntryWithTimestamp<MemorySegment> swallowTombstone(final EntryWithTimestamp<MemorySegment> entry) {
+        if (entry.value() == null) return new BaseEntryWithTimestamp<>(entry.key(), null, entry.timestamp());;
         return new BaseEntryWithTimestamp<>(entry.key(), entry.value(), entry.timestamp());
-    }
+    }*/
 
     EntryWithTimestamp<MemorySegment> upsert(final EntryWithTimestamp<MemorySegment> entry) {
         return memTable.upsert(entry);

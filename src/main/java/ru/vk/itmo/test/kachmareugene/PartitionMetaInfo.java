@@ -31,7 +31,7 @@ public class PartitionMetaInfo {
     }
     public List<String> getSlaveUrls(Request request, int numberOfCopies) {
         int requestHash = Math.abs(request.getParameter("id").hashCode());
-        int vnode = (requestHash) % mappedVnodes.size();
+        int vnode = requestHash % mappedVnodes.size();
         String master = urls.get(mappedVnodes.get(vnode));
         int numberOfSlaves = numberOfCopies - 1;
 

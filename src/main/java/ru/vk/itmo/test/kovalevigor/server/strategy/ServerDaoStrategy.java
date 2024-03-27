@@ -3,12 +3,13 @@ package ru.vk.itmo.test.kovalevigor.server.strategy;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.kovalevigor.config.DaoServerConfig;
 import ru.vk.itmo.test.kovalevigor.dao.DaoImpl;
+import ru.vk.itmo.test.kovalevigor.dao.SSTimeTableManager;
+import ru.vk.itmo.test.kovalevigor.dao.entry.MSegmentTimeEntry;
+import ru.vk.itmo.test.kovalevigor.dao.entry.TimeEntry;
 import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
 import ru.vk.itmo.test.kovalevigor.server.util.Paths;
 import ru.vk.itmo.test.kovalevigor.server.util.Responses;
@@ -18,6 +19,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.logging.Logger;
 
 import static one.nio.http.Request.METHOD_DELETE;
@@ -27,11 +29,14 @@ import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.createIllegalSt
 
 public class ServerDaoStrategy extends ServerRejectStrategy {
     private static final Charset CHARSET = StandardCharsets.UTF_8;
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
     public static final Logger log = Logger.getLogger(ServerDaoStrategy.class.getName());
 
     public ServerDaoStrategy(DaoServerConfig config) throws IOException {
-        dao = new DaoImpl(mapConfig(config));
+        dao = new DaoImpl<>(
+                mapConfig(config),
+                SSTimeTableManager::new
+        );
     }
 
     @Override
@@ -59,7 +64,7 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
     }
 
     private Response getEntity(MemorySegment key) {
-        Entry<MemorySegment> entity = dao.get(key);
+        TimeEntry<MemorySegment> entity = dao.get(key);
         if (entity == null) {
             return Responses.NOT_FOUND.toResponse();
         }
@@ -83,8 +88,8 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
         );
     }
 
-    private static Entry<MemorySegment> makeEntry(MemorySegment key, MemorySegment value) {
-        return new BaseEntry<>(key, value);
+    private static TimeEntry<MemorySegment> makeEntry(MemorySegment key, MemorySegment value) {
+        return new MSegmentTimeEntry(key, value, Instant.now().toEpochMilli());
     }
 
     private static MemorySegment fromString(final String data) {

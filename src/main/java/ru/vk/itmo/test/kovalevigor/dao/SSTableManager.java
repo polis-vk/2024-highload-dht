@@ -1,6 +1,10 @@
 package ru.vk.itmo.test.kovalevigor.dao;
 
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kovalevigor.dao.entry.DaoEntry;
+import ru.vk.itmo.test.kovalevigor.dao.iterators.MemEntryPriorityIterator;
+import ru.vk.itmo.test.kovalevigor.dao.iterators.MergeEntryIterator;
+import ru.vk.itmo.test.kovalevigor.dao.iterators.PriorityShiftedIterator;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -14,13 +18,20 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class SSTableManager implements DaoFileGet<MemorySegment, Entry<MemorySegment>>, AutoCloseable {
+import static ru.vk.itmo.test.kovalevigor.dao.SSTableUtils.getDataPath;
+import static ru.vk.itmo.test.kovalevigor.dao.SSTableUtils.getIndexPath;
+
+public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implements
+        DaoFileGet<MemorySegment, T>,
+        AutoCloseable
+{
 
     public static final String SSTABLE_NAME = "sstable";
 
@@ -60,14 +71,43 @@ public class SSTableManager implements DaoFileGet<MemorySegment, Entry<MemorySeg
         return getFormattedSSTableName(totalSize++);
     }
 
-    public String write(SortedMap<MemorySegment, Entry<MemorySegment>> map) throws IOException {
+    public String write(SortedMap<MemorySegment, T> map) throws IOException {
         if (map.isEmpty()) {
             return null;
         }
 
         final String name = getNextSSTableName();
-        SSTable.write(map, root, name);
+        write(map, root, name);
         return name;
+    }
+
+    public static SizeInfo getMapSize(final SortedMap<MemorySegment, ? extends DaoEntry<MemorySegment>> map) {
+        long keysSize = 0;
+        long valuesSize = 0;
+        for (Map.Entry<MemorySegment, ? extends DaoEntry<MemorySegment>> entry : map.entrySet()) {
+            final DaoEntry<MemorySegment> value = entry.getValue();
+
+            keysSize += entry.getKey().byteSize();
+            valuesSize += value == null ? 0 : value.valueSize();
+        }
+        return new SizeInfo(map.size(), keysSize, valuesSize);
+    }
+
+    public void write(
+            final SortedMap<MemorySegment, T> map,
+            final Path path,
+            final String name
+    ) throws IOException {
+        try (Arena arena = Arena.ofConfined(); SStorageDumper<T> dumper = getDumper(
+                getMapSize(map),
+                getDataPath(path, name),
+                getIndexPath(path, name),
+                arena
+        )) {
+            for (final T entry: map.values()) {
+                dumper.writeEntry(entry);
+            }
+        }
     }
 
     public void addSSTable(final String name) throws IOException {
@@ -79,30 +119,30 @@ public class SSTableManager implements DaoFileGet<MemorySegment, Entry<MemorySeg
         }
     }
 
-    public static Iterator<Entry<MemorySegment>> get(
+    public Iterator<T> get(
             Collection<SSTable> ssTables,
             final MemorySegment from,
             final MemorySegment to
     ) throws IOException {
-        List<PriorityShiftedIterator<Entry<MemorySegment>>> iterators = new ArrayList<>();
+        List<PriorityShiftedIterator<T>> iterators = new ArrayList<>();
         int i = 0;
         for (final SSTable ssTable : ssTables) {
-            iterators.add(new MemEntryPriorityIterator(i, ssTable.get(from, to)));
+            iterators.add(new MemEntryPriorityIterator<>(i, keyValueEntryTo(ssTable.get(from, to))));
             i++;
         }
-        return new MergeEntryIterator(iterators);
+        return new MergeEntryIterator<>(iterators);
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) throws IOException {
+    public Iterator<T> get(final MemorySegment from, final MemorySegment to) throws IOException {
         return get(ssTables, from, to);
     }
 
     @Override
-    public Entry<MemorySegment> get(final MemorySegment key) throws IOException {
-        Entry<MemorySegment> value = null;
+    public T get(final MemorySegment key) throws IOException {
+        T value = null;
         for (final SSTable ssTable : ssTables) {
-            value = ssTable.get(key);
+            value = keyValueEntryTo(ssTable.get(key));
             if (value != null) {
                 if (value.value() == null) {
                     value = null;
@@ -113,6 +153,7 @@ public class SSTableManager implements DaoFileGet<MemorySegment, Entry<MemorySeg
         return value;
     }
 
+    // TODO: Теперь нужен еще и mergeEntries для значений
     private static SizeInfo getTotalInfoSize(final Collection<SSTable> ssTables) {
         final SizeInfo result = new SizeInfo();
         for (SSTable ssTable: ssTables) {
@@ -134,17 +175,17 @@ public class SSTableManager implements DaoFileGet<MemorySegment, Entry<MemorySeg
             tableTmpPath = Files.createTempFile(null, null);
             indexTmpPath = Files.createTempFile(null, null);
             final SizeInfo realSize = new SizeInfo();
-            try (Arena tmpArena = Arena.ofConfined(); SStorageDumper dumper = new SStorageDumper(
+            try (Arena tmpArena = Arena.ofConfined(); SStorageDumper<T> dumper = getDumper(
                     sizes,
                     tableTmpPath,
                     indexTmpPath,
                     tmpArena
             )) {
-                final Iterator<Entry<MemorySegment>> iterator = new MergeEntryIterator(List.of(
-                        new MemEntryPriorityIterator(0, get(compactTables, null, null))
+                final Iterator<T> iterator = new MergeEntryIterator<>(List.of(
+                        new MemEntryPriorityIterator<>(0, get(compactTables, null, null))
                 ));
                 while (iterator.hasNext()) {
-                    final Entry<MemorySegment> entry = iterator.next();
+                    final T entry = iterator.next();
                     if (entry.value() != null) {
                         dumper.writeEntry(entry);
                         realSize.size += 1;
@@ -165,8 +206,8 @@ public class SSTableManager implements DaoFileGet<MemorySegment, Entry<MemorySeg
 
             final String sstableName = getNextSSTableName();
 
-            final Path dataPath = SSTable.getDataPath(root, sstableName);
-            final Path indexPath = SSTable.getIndexPath(root, sstableName);
+            final Path dataPath = getDataPath(root, sstableName);
+            final Path indexPath = getIndexPath(root, sstableName);
 
             Files.copy(tableTmpPath, dataPath);
             try {
@@ -217,4 +258,16 @@ public class SSTableManager implements DaoFileGet<MemorySegment, Entry<MemorySeg
 
         ssTables.clear();
     }
+
+    public abstract T mergeEntries(T oldEntry, T newEntry);
+
+    protected abstract SStorageDumper<T> getDumper(
+            SizeInfo sizeInfo,
+            Path storagePath,
+            Path indexPath,
+            Arena arena
+    ) throws IOException;
+
+    protected abstract T keyValueEntryTo(Entry<MemorySegment> entry);
+    protected abstract Iterator<T> keyValueEntryTo(Iterator<Entry<MemorySegment>> entry);
 }

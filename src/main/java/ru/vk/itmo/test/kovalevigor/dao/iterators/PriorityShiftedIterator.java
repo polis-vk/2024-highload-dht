@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.dao;
+package ru.vk.itmo.test.kovalevigor.dao.iterators;
 
 import java.util.Iterator;
 

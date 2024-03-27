@@ -1,11 +1,11 @@
 package ru.vk.itmo.test.reference;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
@@ -26,31 +26,33 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.time.temporal.TemporalUnit;
-import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class ReferenceServer extends HttpServer {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
+    private final static int THREADS = Runtime.getRuntime().availableProcessors();
 
-    private final Executor executor;
+    private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("local-work"));
+    private final ExecutorService executorRemote = Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("remote-work"));
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ServiceConfig config;
     private final HttpClient httpClient;
 
     public ReferenceServer(ServiceConfig config,
-                           Executor executor,
                            Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
         super(createServerConfigWithPort(config.selfPort()));
-        this.executor = executor;
         this.dao = dao;
         this.config = config;
-        this.httpClient = HttpClient.newHttpClient();
+
+
+        this.httpClient = HttpClient.newBuilder()
+                .executor(Executors.newFixedThreadPool(THREADS))
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     private static HttpServerConfig createServerConfigWithPort(int port) {
@@ -58,6 +60,9 @@ public class ReferenceServer extends HttpServer {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = port;
         acceptorConfig.reusePort = true;
+//        acceptorConfig.threads = Runtime.getRuntime().availableProcessors() / 2;
+        serverConfig.selectors = Runtime.getRuntime().availableProcessors() / 2;
+
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
@@ -65,10 +70,48 @@ public class ReferenceServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        handleAsync(session, () -> super.handleRequest(request, session));
+        if (!"/v0/entity".equals(request.getPath())) {
+            session.sendError(Response.BAD_REQUEST, null);
+            return;
+        }
+
+        String id = request.getParameter("id=");
+        if (id == null || id.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, null);
+            return;
+        }
+
+        String executorNode = getNodeByEntityId(id);
+        if (executorNode.equals(config.selfUrl())) {
+            handleAsync(session, executorLocal, () -> local(request, session, id));
+        } else {
+            handleAsync(session, executorRemote, () -> remote(request, session, executorNode));
+        }
     }
 
-    private void handleAsync(HttpSession session, ERunnable runnable) throws IOException {
+    private void remote(Request request, HttpSession session, String executorNode) throws IOException {
+
+
+        try {
+            Response response = invokeRemote(executorNode, request);
+            session.sendResponse(response);
+        } catch (IOException e) {
+            log.info("I/O exception while calling remote node", e);
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.info("Thread interrupted");
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+
+    }
+
+    private void local(Request request, HttpSession session, String id) throws IOException {
+        Response response = invokeLocal(request, id);
+        session.sendResponse(response);
+    }
+
+    private void handleAsync(HttpSession session, ExecutorService executor, ERunnable runnable) throws IOException {
         try {
             executor.execute(() -> {
                 try {
@@ -99,44 +142,16 @@ public class ReferenceServer extends HttpServer {
         return Response.ok("OK");
     }
 
-    @Path("/v0/entity")
-    public Response entity(Request request, @Param(value = "id") String id) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        String executorNode = getNodeByEntityId(id);
-
-        if (executorNode.equals(config.selfUrl())) {
-            return invokeLocal(request, id);
-        }
-
-        try {
-            return invokeRemote(executorNode, request);
-        } catch (HttpTimeoutException e) {
-            log.info("timeout while invoking remote node");
-            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
-        } catch (IOException e) {
-            log.info("I/O exception while calling remote node");
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.info("Thread interrupted");
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
-    }
-
-
     private Response invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
-            .method(
-                request.getMethodName(),
-                request.getBody() == null
-                    ? HttpRequest.BodyPublishers.noBody()
-                    : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-            )
-            .timeout(Duration.ofMillis(500))
-            .build();
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .timeout(Duration.ofMillis(500))
+                .build();
         HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         return new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
     }
@@ -186,5 +201,12 @@ public class ReferenceServer extends HttpServer {
 
     private interface ERunnable {
         void run() throws Exception;
+    }
+
+    @Override
+    public synchronized void stop() {
+        super.stop();
+        ReferenceService.shutdownAndAwaitTermination(executorLocal);
+        ReferenceService.shutdownAndAwaitTermination(executorRemote);
     }
 }

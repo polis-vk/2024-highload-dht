@@ -170,7 +170,7 @@ class SingleNodeTest extends TestBase {
         service.start();
 
         // Check absent data
-         assertEquals(HttpURLConnection.HTTP_NOT_FOUND, service.get(key).statusCode());
+        assertEquals(HttpURLConnection.HTTP_NOT_FOUND, service.get(key).statusCode());
     }
 
     @ServiceTest(stage = 1)

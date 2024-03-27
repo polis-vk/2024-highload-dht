@@ -11,9 +11,9 @@ function generateKey()
 end
 
 function generateValue()
-    key_part = math.random(1000000000, 1500000000)
+    key_part = math.random(10000000000, 25000000000)
     key = ""
-    for i = 0, 4, 1 do
+    for i = 0, 20, 1 do
         key = key .. key_part
     end
     return key
@@ -34,9 +34,9 @@ end
 request = function()
     --    magic_selector = math.random(0,3)
     --    if magic_selector < 2 then
-    return getOneRandom()
+    --  return getOneRandom()
     --    elseif magic_selector == 3 then
-    --    return putOneRandom()
+      return putOneRandom()
     --    else
     --        return deleteOneRandom()
     --    end

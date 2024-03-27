@@ -41,7 +41,9 @@ public class DaoServer extends HttpServer {
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int Q_SIZE = 512;
     private static final int KEEP_ALIVE_TIME = 50;
-    private static final int TIMEOUT = 60;
+    private static final int TERMINATION_TIMEOUT = 60;
+    private static final int HTTP_CLIENT_TIMEOUT_MS = 1000;
+
     private final ServiceConfig config;
     private final ExecutorService executorService = new ThreadPoolExecutor(
             THREADS,
@@ -154,7 +156,7 @@ public class DaoServer extends HttpServer {
 
     private Response handleRedirect(Request request, Node node) {
         try {
-            return node.getClient().invoke(request, 1000);
+            return node.getClient().invoke(request, HTTP_CLIENT_TIMEOUT_MS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error(e.getMessage());
@@ -186,9 +188,9 @@ public class DaoServer extends HttpServer {
     private void shutdownAndAwaitTermination(ExecutorService pool) {
         pool.shutdown();
         try {
-            if (!pool.awaitTermination(TIMEOUT, TimeUnit.SECONDS)) {
+            if (!pool.awaitTermination(TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(TIMEOUT, TimeUnit.SECONDS)) {
+                if (!pool.awaitTermination(TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
                     log.error("Pool did not terminate");
                 }
             }

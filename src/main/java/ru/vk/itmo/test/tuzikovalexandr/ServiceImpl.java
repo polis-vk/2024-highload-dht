@@ -11,10 +11,10 @@ import ru.vk.itmo.test.tuzikovalexandr.dao.ReferenceDao;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
-public class ServiceImpl implements Service {
+import static ru.vk.itmo.test.tuzikovalexandr.Constants.FLUSHING_THRESHOLD_BYTES;
+import static ru.vk.itmo.test.tuzikovalexandr.Constants.NUMBER_OF_VIRTUAL_NODES;
 
-    private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
-    private static final int NUMBER_OF_VIRTUAL_NODES = 5;
+public class ServiceImpl implements Service {
 
     private final ServiceConfig config;
     private ServerImpl server;

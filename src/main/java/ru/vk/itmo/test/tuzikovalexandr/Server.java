@@ -11,9 +11,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import static ru.vk.itmo.test.tuzikovalexandr.Constants.BASE_PORT;
+import static ru.vk.itmo.test.tuzikovalexandr.Constants.BASE_URL;
+import static ru.vk.itmo.test.tuzikovalexandr.Constants.FLUSHING_THRESHOLD_BYTES;
+import static ru.vk.itmo.test.tuzikovalexandr.Constants.NUMBER_OF_VIRTUAL_NODES;
+
+
 public final class Server {
-    private static String BASE_URL = "http://localhost";
-    private static int BASE_PORT = 8080;
 
     private Server() {
 
@@ -21,7 +25,6 @@ public final class Server {
 
     public static void main(String[] args) throws IOException {
         int clusterSize = 3;
-        long flushThresholdBytes = 1024 * 1024;
 
         List<String> clusterUrls = new ArrayList<>();
         int tempPortValue;
@@ -35,12 +38,12 @@ public final class Server {
         for (int i = 0; i < clusterSize; i++) {
             Path dataPath = Files.createTempDirectory("data");
 
-            Dao dao = new ReferenceDao(new Config(dataPath, flushThresholdBytes));
+            Dao dao = new ReferenceDao(new Config(dataPath, FLUSHING_THRESHOLD_BYTES));
 
             ServiceConfig serviceConfig = new ServiceConfig(BASE_PORT + i,
                     clusterUrls.get(i), clusterUrls, dataPath);
 
-            ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, 5);
+            ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, NUMBER_OF_VIRTUAL_NODES);
 
             ServerImpl server = new ServerImpl(serviceConfig, dao, worker, consistentHashing);
 

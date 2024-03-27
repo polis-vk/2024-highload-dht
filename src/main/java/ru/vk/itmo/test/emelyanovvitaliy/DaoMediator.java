@@ -1,18 +1,16 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import one.nio.http.Response;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 
-import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public abstract class DaoMediator {
     public static final long NEVER_TIMESTAMP = Long.MIN_VALUE;
+
     protected static MemorySegment keyFor(String id) {
         return MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
     }
@@ -22,16 +20,16 @@ public abstract class DaoMediator {
     }
 
     abstract void stop();
+
     abstract boolean isStopped();
 
     abstract boolean put(Request request);
 
-    /**
-     * @return null if error,
-     *  entry with null value and timestamp if the answer is tombstone
-     *  entry with null value and timestamp equals NEVER_TIMESTAMP if no answer
-     *  entry if it exists
-     */
+    // returns null if error,
+    // entry with null value and timestamp if the answer is tombstone
+    // entry with null value and timestamp equals NEVER_TIMESTAMP if no answer
+    // entry if it exists
     abstract TimestampedEntry<MemorySegment> get(Request request);
+
     abstract boolean delete(Request request);
 }

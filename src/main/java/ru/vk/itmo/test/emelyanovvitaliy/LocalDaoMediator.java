@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class LocalDaoMediator extends DaoMediator {
     protected final ReferenceDao dao;
     protected final AtomicBoolean isClosed = new AtomicBoolean(false);
+
     LocalDaoMediator(ReferenceDao dao) {
         this.dao = dao;
     }
@@ -44,7 +45,10 @@ public class LocalDaoMediator extends DaoMediator {
     TimestampedEntry<MemorySegment> get(Request request) {
         MemorySegment id = keyFor(request.getParameter(DhtServer.ID_KEY));
         TimestampedEntry<MemorySegment> entry = dao.get(id);
-        return entry != null ? entry : new TimestampedEntry<>(id, null, NEVER_TIMESTAMP);
+        if (entry == null) {
+            return new TimestampedEntry<>(id, null, NEVER_TIMESTAMP);
+        }
+        return entry;
     }
 
     @Override

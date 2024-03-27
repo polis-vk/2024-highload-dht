@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.emelyanovvitaliy.dao;
 
-import one.nio.os.Mem;
-import ru.vk.itmo.dao.BaseEntry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;

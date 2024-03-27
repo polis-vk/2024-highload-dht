@@ -78,98 +78,74 @@ public class DhtServer extends HttpServer {
     @Path("/v0/entity")
     public void entity(HttpSession session, Request request) throws IOException {
         String id = request.getParameter(ID_KEY);
-        if (isKeyIncorrect(id)) {
-            sendBadRequestResponse(session);
-        } else {
-            long startTimeInMillis = System.currentTimeMillis();
-            threadPoolExecutor.execute(
-                    () -> {
-                        try {
-                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
-                                session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
-                            }
-                            TimestampedEntry<MemorySegment> entry = mergeDaoMediator.get(request);
-                            if (entry == null) {
-                                sendNotEnoughReplicas(session);
-                            } else if (entry.timestamp() == DaoMediator.NEVER_TIMESTAMP) {
-                                session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+        requestProccessing(id, session,
+                () -> {
+                    try {
+                        TimestampedEntry<MemorySegment> entry = mergeDaoMediator.get(request);
+                        if (entry == null) {
+                            sendNotEnoughReplicas(session);
+                        } else if (entry.timestamp() == DaoMediator.NEVER_TIMESTAMP) {
+                            session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+                        } else {
+                            Response response;
+                            if (entry.value() == null) {
+                                response = new Response(Response.NOT_FOUND, EMPTY_BODY);
                             } else {
-                                Response response;
-                                if (entry.value() == null) {
-                                    response = new Response(Response.NOT_FOUND, EMPTY_BODY);
-                                } else {
-                                    response = new Response(Response.OK, ((Entry<MemorySegment>) entry).value().toArray(ValueLayout.JAVA_BYTE));
-                                }
-                                response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
-                                session.sendResponse(response);
+                                response = new Response(
+                                        Response.OK,
+                                        ((Entry<MemorySegment>) entry).value().toArray(ValueLayout.JAVA_BYTE)
+                                );
                             }
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        } catch (IllegalArgumentException e) {
-                            sendBadRequestResponseUnchecked(session);
+                            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+                            session.sendResponse(response);
                         }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    } catch (IllegalArgumentException e) {
+                        sendBadRequestResponseUnchecked(session);
                     }
-            );
-        }
+                }
+        );
     }
-
 
     @RequestMethod(METHOD_PUT)
     @Path("/v0/entity")
     public void putEntity(@Param(value = "id") String id, HttpSession httpSession, Request request) throws IOException {
-        if (isKeyIncorrect(id) || request.getBody() == null) {
-            sendBadRequestResponse(httpSession);
-        } else {
-            long startTimeInMillis = System.currentTimeMillis();
-            threadPoolExecutor.execute(
-                    () -> {
-                        try {
-                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
-                                httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
-                                return;
-                            }
-                            if (mergeDaoMediator.put(request)) {
-                                httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
-                            } else {
-                                sendNotEnoughReplicas(httpSession);
-                            }
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        } catch (IllegalArgumentException e) {
-                            sendBadRequestResponseUnchecked(httpSession);
+        requestProccessing(id, httpSession,
+                () -> {
+                    try {
+                        if (mergeDaoMediator.put(request)) {
+                            httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
+                        } else {
+                            sendNotEnoughReplicas(httpSession);
                         }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    } catch (IllegalArgumentException e) {
+                        sendBadRequestResponseUnchecked(httpSession);
                     }
-            );
-        }
+                }
+        );
     }
 
     @RequestMethod(METHOD_DELETE)
     @Path("/v0/entity")
     public void deleteEntity(@Param("id") String id, HttpSession httpSession, Request request) throws IOException {
-        if (isKeyIncorrect(id)) {
-            sendBadRequestResponse(httpSession);
-        } else {
-            long startTimeInMillis = System.currentTimeMillis();
-            threadPoolExecutor.execute(
-                    () -> {
-                        try {
-                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
-                                httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
-                                return;
-                            }
-                            if (mergeDaoMediator.delete(request)) {
-                                httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
-                            } else {
-                                sendNotEnoughReplicas(httpSession);
-                            }
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        } catch (IllegalArgumentException e) {
-                            sendBadRequestResponseUnchecked(httpSession);
+        requestProccessing(id, httpSession,
+                () -> {
+                    try {
+                        if (mergeDaoMediator.delete(request)) {
+                            httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
+                        } else {
+                            sendNotEnoughReplicas(httpSession);
                         }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    } catch (IllegalArgumentException e) {
+                        sendBadRequestResponseUnchecked(httpSession);
                     }
-            );
-        }
+                }
+        );
     }
 
     @Override
@@ -182,6 +158,27 @@ public class DhtServer extends HttpServer {
         }
     }
 
+    private void requestProccessing(String id, HttpSession session, Runnable runnable) throws IOException {
+        if (isKeyIncorrect(id)) {
+            sendBadRequestResponse(session);
+        } else {
+            long startTimeInMillis = System.currentTimeMillis();
+            threadPoolExecutor.execute(
+                    () -> {
+                        try {
+                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
+                                session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
+                                return;
+                            }
+                            runnable.run();
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+            );
+        }
+    }
+
     private static void sendNotEnoughReplicas(HttpSession session) throws IOException {
         session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_STATUS, EMPTY_BODY));
     }
@@ -189,6 +186,7 @@ public class DhtServer extends HttpServer {
     private static void sendBadRequestResponse(HttpSession httpSession) throws IOException {
         httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
     }
+
     private void sendBadRequestResponseUnchecked(HttpSession session) {
         try {
             sendBadRequestResponse(session);

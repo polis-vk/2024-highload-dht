@@ -69,7 +69,7 @@ final class SSTableWriter {
                             new FileOutputStream(
                                     tempTimeName.toFile()),
                             BUFFER_SIZE)
-        ){
+        ) {
             long entryOffset = 0L;
 
             // Iterate and serialize

@@ -1,9 +1,7 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
 import one.nio.http.HttpClient;
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.util.Hash;
 import ru.vk.itmo.dao.Config;
@@ -24,10 +22,12 @@ public class MergeDaoMediator extends DaoMediator {
     public static final String FROM_KEY = "from=";
     protected static final String TRUE_STRING = "true";
     protected static final int FLUSH_THRESHOLD_BYTES = 1 << 24; // 16 MiB
+    public static final String ID_KEY = "id=";
     protected final AtomicBoolean isStopped = new AtomicBoolean(false);
     protected final DaoMediator[] daoMediators;
     protected final int[] mediatorsHashes;
     private final LocalDaoMediator localDaoMediator;
+
     MergeDaoMediator(Path localDir, String thisUrl, List<String> urls) throws IOException {
         localDaoMediator = new LocalDaoMediator(
                 new ReferenceDao(
@@ -66,7 +66,9 @@ public class MergeDaoMediator extends DaoMediator {
         if (Objects.equals(request.getHeader(FINAL_EXECUTION_HEADER), TRUE_STRING)) {
             return localDaoMediator.get(request);
         } else {
-            int ack, from, answered = 0;
+            int ack;
+            int from;
+            int answered = 0;
             try {
                 ack = getAck(request);
                 from = getFrom(request);
@@ -76,7 +78,7 @@ public class MergeDaoMediator extends DaoMediator {
             if (!isAckFromCorrect(ack, from)) {
                 throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
             }
-            String id = request.getParameter("id=");
+            String id = request.getParameter(ID_KEY);
             request.addHeader(FINAL_EXECUTION_HEADER + TRUE_STRING);
             int currentMediatorIndex = getFirstMediatorIndex(id);
             TimestampedEntry<MemorySegment> lastEntry = null;
@@ -142,46 +144,42 @@ public class MergeDaoMediator extends DaoMediator {
         return b;
     }
 
-
     private boolean simpleReplicate(Request request, boolean delete)
             throws IllegalArgumentException {
-        int ack = 1;
-        int answered = 0;
-        String id = request.getParameter("id=");
         if (Objects.equals(request.getHeader(FINAL_EXECUTION_HEADER), TRUE_STRING)) {
             if (delete) {
-                localDaoMediator.delete(request);
+                return localDaoMediator.delete(request);
             } else {
-                localDaoMediator.put(request);
+                return localDaoMediator.put(request);
             }
-            answered = 1;
-        } else {
-            int from;
-            try {
-                ack = getAck(request);
-                from = getFrom(request);
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException(e);
+        }
+        int ack;
+        int from;
+        int answered = 0;
+        try {
+            ack = getAck(request);
+            from = getFrom(request);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(e);
+        }
+        if (!isAckFromCorrect(ack, from)) {
+            throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
+        }
+        request.addHeader(FINAL_EXECUTION_HEADER + TRUE_STRING);
+        String id = request.getParameter(ID_KEY);
+        int currentMediatorIndex = getFirstMediatorIndex(id);
+        for (int i = 0; i < from; i++) {
+            boolean res;
+            if (delete) {
+                res = daoMediators[currentMediatorIndex].delete(request);
+            } else {
+                res = daoMediators[currentMediatorIndex].put(request);
             }
-            if (!isAckFromCorrect(ack, from)) {
-                throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
-            }
-            request.addHeader(FINAL_EXECUTION_HEADER + TRUE_STRING);
-            int currentMediatorIndex = getFirstMediatorIndex(id);
-            for (int i = 0; i < from; i++) {
-                boolean res;
-                if (delete) {
-                    res = daoMediators[currentMediatorIndex].delete(request);
-                } else {
-                    res = daoMediators[currentMediatorIndex].put(request);
-                }
-                answered += res ? 1 : 0;
-                currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
-            }
+            answered += res ? 1 : 0;
+            currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
         }
         return answered >= ack;
     }
-
 
     private int getAck(Request request) throws NumberFormatException {
         String rawAck = request.getParameter(ACK_KEY);
@@ -196,7 +194,6 @@ public class MergeDaoMediator extends DaoMediator {
     private boolean isAckFromCorrect(int ack, int from) {
         return ack > 0 && from > 0 && ack <= from && from <= daoMediators.length;
     }
-
 
     private int getFirstMediatorIndex(String key) {
         int maxHash = Integer.MIN_VALUE;

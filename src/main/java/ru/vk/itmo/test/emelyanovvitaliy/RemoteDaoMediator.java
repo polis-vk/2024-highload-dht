@@ -1,6 +1,9 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
-import one.nio.http.*;
+import one.nio.http.HttpClient;
+import one.nio.http.HttpException;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.pool.PoolException;
 import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 
@@ -13,6 +16,7 @@ public class RemoteDaoMediator extends DaoMediator {
     protected static final int DEFAULT_TIMEOUT = 100;
     protected final HttpClient client;
     protected final int timeout;
+
     RemoteDaoMediator(HttpClient httpClient) {
         this(httpClient, DEFAULT_TIMEOUT);
     }

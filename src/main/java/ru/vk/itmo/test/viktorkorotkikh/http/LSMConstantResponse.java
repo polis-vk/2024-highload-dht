@@ -18,6 +18,9 @@ public final class LSMConstantResponse {
     public static final Response SERVICE_UNAVAILABLE_CLOSE =
             new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
 
+    public static final Response GATEWAY_TIMEOUT_CLOSE =
+            new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+
     private static final String CONNECTION_KEEP_ALIVE_HEADER = "Connection: Keep-Alive";
     public static final Response BAD_REQUEST_KEEP_ALIVE = new Response(Response.BAD_REQUEST, Response.EMPTY);
     public static final Response CREATED_KEEP_ALIVE = new Response(Response.CREATED, Response.EMPTY);
@@ -31,6 +34,8 @@ public final class LSMConstantResponse {
             new Response(Response.REQUEST_ENTITY_TOO_LARGE, Response.EMPTY);
     public static final Response SERVICE_UNAVAILABLE_KEEP_ALIVE
             = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+    public static final Response GATEWAY_TIMEOUT_KEEP_ALIVE =
+            new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
 
     static {
         BAD_REQUEST_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
@@ -42,6 +47,7 @@ public final class LSMConstantResponse {
         TOO_MANY_REQUESTS_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
         ENTITY_TOO_LARGE_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
         SERVICE_UNAVAILABLE_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
+        GATEWAY_TIMEOUT_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
 
         BAD_REQUEST_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         CREATED_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
@@ -52,6 +58,7 @@ public final class LSMConstantResponse {
         TOO_MANY_REQUESTS_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         ENTITY_TOO_LARGE_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         SERVICE_UNAVAILABLE_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
+        GATEWAY_TIMEOUT_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
     }
 
     public static Response ok(final Request request) {
@@ -88,6 +95,10 @@ public final class LSMConstantResponse {
 
     public static Response serviceUnavailable(Request request) {
         return keepAlive(request) ? SERVICE_UNAVAILABLE_KEEP_ALIVE : SERVICE_UNAVAILABLE_CLOSE;
+    }
+
+    public static Response gatewayTimeout(Request request) {
+        return keepAlive(request) ? GATEWAY_TIMEOUT_KEEP_ALIVE : GATEWAY_TIMEOUT_CLOSE;
     }
 
     public static boolean keepAlive(final Request request) {

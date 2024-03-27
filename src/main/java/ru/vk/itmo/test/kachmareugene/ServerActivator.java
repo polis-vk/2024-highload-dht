@@ -5,6 +5,10 @@ import ru.vk.itmo.ServiceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class ServerActivator {
     private ServerActivator() {
@@ -12,7 +16,41 @@ public final class ServerActivator {
     }
 
     public static void main(String[] args) throws IOException {
+        String host1 = "http://localhost:8080/";
+        String host2 = "http://localhost:8081/";
 
+        ServiceConfig config1 = new ServiceConfig(
+                8080, host1,
+                List.of(host1, host2),
+                Files.createTempDirectory(".")
+        );
+
+        var m1 = new ServerManager(config1);
+
+        ServiceConfig config2 = new ServiceConfig(
+                8081, host2,
+                List.of(host1, host2),
+                Files.createTempDirectory(".")
+        );
+
+        var m2 = new ServerManager(config2);
+
+        CompletableFuture<Void> start1 = m1.start();
+        CompletableFuture<Void> start2 = m2.start();
+
+        try {
+            start1.get();
+            start2.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            Logger logger = Logger.getAnonymousLogger();
+            logger.log(Level.WARNING, e.toString());
+        }
+
+    }
+
+    public static void oneNode() throws IOException {
         HttpServerImpl server = new HttpServerImpl(new ServiceConfig(
                 8080, "http://localhost/",
                 List.of("http://localhost/"),
@@ -20,4 +58,5 @@ public final class ServerActivator {
         ));
         server.start();
     }
+
 }

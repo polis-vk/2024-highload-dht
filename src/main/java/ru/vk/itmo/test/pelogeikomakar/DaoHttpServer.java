@@ -16,13 +16,10 @@ import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,7 +46,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         this.clients = new ConcurrentHashMap<>();
         for (String url : this.clusterUrls) {
             if (!url.equals(selfUrl)) {
-                this.clients.put(url, new HttpClient(new ConnectionString(url), "INTERNAL_RQ " + selfUrl));
+                this.clients.put(url, new HttpClient(new ConnectionString(url), "X-INTERNAL_RQ " + selfUrl));
             }
         }
         this.dao = dao;
@@ -85,8 +82,18 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
         String url = getServerUrlForKey(id);
         if (url.equals(selfUrl)) {
+            long time = System.currentTimeMillis();
+            if (request.getHeader("X-VALUE_TIME") != null) {
+                try{
+                    time = Long.parseLong(request.getHeader("X-INTERNAL_RQ"));
+                } catch (NumberFormatException e) {
+                    log.warn("Can not parse TimeStamp from header <{}> to long",
+                            request.getHeader("X-VALUE_TIME"));
+                }
+            }
             try {
-                dao.upsert(requestToEntry(id, request.getBody()));
+                System.out.println("TIME insert: " + time);
+                dao.upsert(Convertor.requestToEntry(id, request.getBody(), time));
             } catch (IllegalStateException e) {
                 log.error("Exception during upsert (key: {})", id, e);
                 return new Response(Response.CONFLICT, Response.EMPTY);
@@ -95,9 +102,9 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             return new Response(Response.CREATED, Response.EMPTY);
 
         } else {
-            if (request.getHeader("INTERNAL_RQ") != null) {
+            if (request.getHeader("X-INTERNAL_RQ") != null) {
                 log.warn("Cycle redirect in PUT key: {}, from: {}, now: {}, to: {}",
-                        id, request.getHeader("INTERNAL_RQ"), selfUrl, url);
+                        id, request.getHeader("X-INTERNAL_RQ"), selfUrl, url);
             }
             String statusStr = putDataToServer(url, id, request.getBody());
             return new Response(statusStr, Response.EMPTY);
@@ -114,11 +121,11 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         String url = getServerUrlForKey(id);
 
         if (url.equals(selfUrl)) {
-            Entry<MemorySegment> result = dao.get(stringToMemorySegment(id));
-            if (result == null) {
+            Entry<MemorySegment> result = dao.get(Convertor.stringToMemorySegment(id));
+            if (result == null || Convertor.isValNull(result.value())) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
-            return Response.ok(memorySegmentToBytes(result.value()));
+            return Response.ok(Convertor.getValueAsBytes(result.value()));
 
         } else {
             Response subResponse = getDataFromServer(url, id);
@@ -130,7 +137,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteDaoMethod(@Param(value = "id", required = false) String id) {
+    public Response deleteDaoMethod(@Param(value = "id", required = false) String id, Request request) {
 
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -139,8 +146,20 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         String url = getServerUrlForKey(id);
 
         if (url.equals(selfUrl)) {
+            ////
+            long time = System.currentTimeMillis();
+            if (request.getHeader("X-VALUE_TIME") != null) {
+                try {
+                    time = Long.parseLong(request.getHeader("X-INTERNAL_RQ"));
+                } catch (NumberFormatException e) {
+                    log.warn("Can not parse TimeStamp from header <{}> to long",
+                            request.getHeader("X-VALUE_TIME"));
+                }
+            }
+            System.out.println("TIME delete: " + time);
+            ///
             try {
-                dao.upsert(requestToEntry(id, null));
+                dao.upsert(Convertor.requestToEntry(id, null, time));
             } catch (IllegalStateException e) {
                 log.error("Exception during delete-upsert", e);
                 return new Response(Response.CONFLICT, Response.EMPTY);
@@ -194,10 +213,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
         session.sendResponse(response);
-    }
-
-    private MemorySegment stringToMemorySegment(String str) {
-        return MemorySegment.ofArray(str.getBytes(StandardCharsets.UTF_8));
     }
 
     private String getServerUrlForKey(String key) {
@@ -270,13 +285,5 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         for (HttpClient client : clients.values()) {
             client.close();
         }
-    }
-
-    private Entry<MemorySegment> requestToEntry(String key, byte[] value) {
-        return new BaseEntry<>(stringToMemorySegment(key), value == null ? null : MemorySegment.ofArray(value));
-    }
-
-    private byte[] memorySegmentToBytes(MemorySegment segment) {
-        return segment.toArray(ValueLayout.JAVA_BYTE);
     }
 }

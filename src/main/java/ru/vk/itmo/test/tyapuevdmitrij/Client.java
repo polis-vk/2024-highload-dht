@@ -68,10 +68,10 @@ public class Client {
             case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
             default -> throw new IllegalStateException("Unexpected value: " + response.statusCode());
         };
-        Optional<String> timeStamp = response.headers().firstValue(NODE_TIMESTAMP_HEADER);
+        Optional<String> nodeHeader = response.headers().firstValue(NODE_TIMESTAMP_HEADER);
         Response finalResponse = new Response(statusCode, response.body());
-        if (timeStamp.isPresent()) {
-            long time = Long.parseLong(timeStamp.get());
+        if (nodeHeader.isPresent()) {
+            long time = Long.parseLong(nodeHeader.get());
             finalResponse.addHeader(Client.NODE_TIMESTAMP_HEADER + ":" + time);
         }
         return finalResponse;

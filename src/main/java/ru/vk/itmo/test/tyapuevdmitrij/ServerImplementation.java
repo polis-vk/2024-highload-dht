@@ -109,16 +109,7 @@ public class ServerImplementation extends HttpServer {
                     }
                     long timeNow = System.currentTimeMillis();
                     List<String> url = getTargetNodesUrls(id, from);
-                    List<Response> responses = new ArrayList<>(from);
-                    for (int i = 0; i < from; i++) {
-                        if (url.get(i).equals(config.selfUrl())) {
-                            responses.add(handleNodeRequest(request, id, timeNow));
-                        } else {
-                            client.setUrl(url.get(i));
-                            client.setTimeStamp(timeNow);
-                            responses.add(client.handleProxyRequest(request));
-                        }
-                    }
+                    List<Response> responses = collectResponses(request, from, url, id, timeNow);
                     Response finalResponse = aggregateResponses(responses, ack);
                     session.sendResponse(finalResponse);
                 } catch (Exception e) {
@@ -236,6 +227,20 @@ public class ServerImplementation extends HttpServer {
         if (value == null) {
             return defaultValue;
         } else return Integer.parseInt(value);
+    }
+
+    private List<Response> collectResponses(Request request, int from, List<String> url, String id, long timeNow) {
+        List<Response> responses = new ArrayList<>(from);
+        for (int i = 0; i < from; i++) {
+            if (url.get(i).equals(config.selfUrl())) {
+                responses.add(handleNodeRequest(request, id, timeNow));
+            } else {
+                client.setUrl(url.get(i));
+                client.setTimeStamp(timeNow);
+                responses.add(client.handleProxyRequest(request));
+            }
+        }
+        return responses;
     }
 
     private Response aggregateResponses(List<Response> responses, int ack) {

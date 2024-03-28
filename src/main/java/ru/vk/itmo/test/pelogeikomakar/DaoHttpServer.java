@@ -105,22 +105,14 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             int currFrom = defaultFrom;
 
             if (ack != null) {
-                try {
-                    currAck = Integer.parseInt(ack);
-                } catch (NumberFormatException e) {
-                    log.warn("Can not parse number", e);
-                }
+                currAck = Convertor.intOfString(ack, defaultAck, log);
             }
 
             if (from != null) {
-                try {
-                    currFrom = Integer.parseInt(from);
-                } catch (NumberFormatException e) {
-                    log.warn("Can not parse number", e);
-                }
+                currFrom = Convertor.intOfString(from, defaultFrom, log);
             }
 
-            if (currFrom > clusterUrls.size() || currFrom < 1 || currAck > currFrom || currAck < 1) {
+            if (currFrom > clusterUrls.size() || currAck > currFrom || currAck < 1) {
                 log.error("BAD ack or from parameter: [ack: {}, from: {}]", currAck, currFrom);
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
@@ -130,11 +122,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
         } else {
             // Redirected request
-            try {
-                time = Long.parseLong(request.getHeader(TIME_HEADER));
-            } catch (NumberFormatException e) {
-                log.warn("Can not parse number", e);
-            }
+            time = Convertor.longOfString(request.getHeader(TIME_HEADER), time, log);
             subResponse = executeMethodLocal(id, request, time);
         }
 

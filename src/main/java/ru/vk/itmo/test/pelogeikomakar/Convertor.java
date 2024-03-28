@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.pelogeikomakar;
 
+import org.slf4j.Logger;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 
@@ -13,15 +14,16 @@ public final class Convertor {
         throw new UnsupportedOperationException("cannot be instantiated");
     }
 
-    public static byte[] addLongToArray(long encodingValue, byte[] given) {
+    public static byte[] addLongToArray(long encodedValue, byte[] given) {
         int givenLength = 0;
+        long value = encodedValue;
         if (given != null) {
             givenLength = given.length;
         }
         byte[] result = new byte[Long.BYTES + givenLength];
         for (int i = 0; i < Long.BYTES; ++i) {
-            result[i] = (byte)(encodingValue & 0xFF);
-            encodingValue >>= Byte.SIZE;
+            result[i] = (byte)(value & 0xFF);
+            value >>= Byte.SIZE;
         }
 
         if (given == null) {
@@ -60,4 +62,23 @@ public final class Convertor {
         return segment.asSlice(Long.BYTES).toArray(ValueLayout.JAVA_BYTE);
     }
 
+    public static long longOfString(String inputString, long defaultValue, Logger log) {
+        long result = defaultValue;
+        try {
+            result = Long.parseLong(inputString);
+        } catch (NumberFormatException e) {
+            log.warn("Can not parse Log number", e);
+        }
+        return result;
+    }
+
+    public static int intOfString(String inputString, int defaultValue, Logger log) {
+        int result = defaultValue;
+        try {
+            result = Integer.parseInt(inputString);
+        } catch (NumberFormatException e) {
+            log.warn("Can not parse Integer number", e);
+        }
+        return result;
+    }
 }

@@ -12,33 +12,43 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
+    private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
+    private static final int NUMBER_OF_VIRTUAL_NODES = 5;
+
     private final ServiceConfig config;
     private ServerImpl server;
     private Dao dao;
     private Worker worker;
+    private Boolean isClosed = false;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
-        dao = new ReferenceDao(new Config(config.workingDir(), 1024 * 1024));
+    public synchronized CompletableFuture<Void> start() throws IOException {
+        dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
         worker = new Worker(new WorkerConfig());
-        server = new ServerImpl(config, dao, worker);
+        ConsistentHashing consistentHashing = new ConsistentHashing(config.clusterUrls(), NUMBER_OF_VIRTUAL_NODES);
+        server = new ServerImpl(config, dao, worker, consistentHashing);
         server.start();
+        isClosed = false;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
+        if (isClosed) {
+            return CompletableFuture.completedFuture(null);
+        }
         server.stop();
         worker.shutdownAndAwaitTermination();
         dao.close();
+        isClosed = true;
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

@@ -20,26 +20,54 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class ServerImpl extends HttpServer {
 
     private final Dao dao;
     private final ExecutorService executorService;
+    private final HttpClient httpClient;
+    private final ConsistentHashing consistentHashing;
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
+
+    private final String selfUrl;
     private static final Set<Integer> METHODS = Set.of(
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    public static final int REQUEST_TIMEOUT = 300;
+    private static final Map<Integer, String> HTTP_CODE = Map.of(
+            HttpURLConnection.HTTP_OK, Response.OK,
+            HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
+            HttpURLConnection.HTTP_CREATED, Response.CREATED,
+            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND,
+            HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
+            HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR
+    );
 
-    public ServerImpl(ServiceConfig config, Dao dao, Worker worker) throws IOException {
+    public ServerImpl(ServiceConfig config, Dao dao, Worker worker,
+                      ConsistentHashing consistentHashing) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
         this.executorService = worker.getExecutorService();
+        this.consistentHashing = consistentHashing;
+        this.selfUrl = config.selfUrl();
+        this.httpClient = HttpClient.newBuilder()
+                .executor(Executors.newFixedThreadPool(2)).build();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -67,7 +95,7 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            long processingStartTime = System.nanoTime();
+            long processingStartTime = System.currentTimeMillis();
             executorService.execute(() -> {
                 try {
                     processingRequest(request, session, processingStartTime);
@@ -135,13 +163,25 @@ public class ServerImpl extends HttpServer {
     }
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime) throws IOException {
-        if (System.nanoTime() - processingStartTime > TimeUnit.SECONDS.toNanos(2)) {
+        if (System.currentTimeMillis() - processingStartTime > 300) {
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
 
+        String paramId = request.getParameter("id=");
+
+        if (paramId == null || paramId.isEmpty()) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
         try {
-            super.handleRequest(request, session);
+            String nodeUrl = consistentHashing.getNode(paramId);
+            if (Objects.equals(selfUrl, nodeUrl)) {
+                super.handleRequest(request, session);
+            } else {
+                handleProxyRequest(request, session, nodeUrl, paramId);
+            }
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -149,6 +189,67 @@ public class ServerImpl extends HttpServer {
                 log.error("Exception during handleRequest: ", e);
                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
+        }
+    }
+
+    private void sendException(HttpSession session, Exception exception) {
+        try {
+            String responseCode;
+            if (exception.getClass().equals(TimeoutException.class)) {
+                responseCode = Response.REQUEST_TIMEOUT;
+            } else {
+                responseCode = Response.INTERNAL_ERROR;
+            }
+            session.sendResponse(new Response(responseCode, Response.EMPTY));
+        } catch (IOException e) {
+            log.error("Error sending exception", e);
+        }
+    }
+
+    private void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            log.error("Error sending response", e);
+            session.scheduleClose();
+        }
+    }
+
+    private HttpRequest createProxyRequest(Request request, String nodeUrl, String params) {
+        return HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params))
+                .method(request.getMethodName(), request.getBody() == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .build();
+    }
+
+    private void sendProxyRequest(HttpSession session, HttpRequest httpRequest) {
+        try {
+            HttpResponse<byte[]> httpResponse = httpClient
+                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .get(REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+
+            String statusCode = HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
+            if (statusCode == null) {
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
+            } else {
+                sendResponse(session, new Response(statusCode, httpResponse.body()));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            sendException(session, e);
+        } catch (ExecutionException | TimeoutException e) {
+            sendException(session, e);
+        }
+    }
+
+    private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String params) {
+        HttpRequest httpRequest = createProxyRequest(request, nodeUrl, params);
+
+        if (httpRequest == null) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+        } else {
+            sendProxyRequest(session, httpRequest);
         }
     }
 }

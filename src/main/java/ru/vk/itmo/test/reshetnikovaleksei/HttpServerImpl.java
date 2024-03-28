@@ -117,26 +117,19 @@ public class HttpServerImpl extends HttpServer {
         }
 
         if (request.getHeader(REDIRECTED_REQUEST_HEADER_NAME) == null) {
-            List<Response> responses = sendRequestsAndGetResponses(
-                    request,
-                    id,
-                    requestRouter.getNodesByEntityId(id, from)
+            List<Response> not5xxResponses = getNot5xxResponses(
+                    sendRequestsAndGetResponses(
+                            request, id, requestRouter.getNodesByEntityId(id, from)
+                    )
             );
 
-            List<Response> positiveResponses = new ArrayList<>();
-            for (Response response : responses) {
-                if (response.getStatus() < 500) {
-                    positiveResponses.add(response);
-                }
-            }
-
-            if (positiveResponses.size() >= ack) {
+            if (not5xxResponses.size() >= ack) {
                 if (request.getMethod() == Request.METHOD_GET) {
-                    positiveResponses.sort(Comparator.comparingLong(r ->
+                    not5xxResponses.sort(Comparator.comparingLong(r ->
                             Long.parseLong(r.getHeader(TIMESTAMP_HEADER_NAME + ": "))));
-                    return positiveResponses.getLast();
+                    return not5xxResponses.getLast();
                 } else {
-                    return positiveResponses.getFirst();
+                    return not5xxResponses.getFirst();
                 }
             }
 
@@ -203,6 +196,17 @@ public class HttpServerImpl extends HttpServer {
         }
 
         return responses;
+    }
+
+    private List<Response> getNot5xxResponses(List<Response> responses) {
+        List<Response> not5xxResponses = new ArrayList<>();
+        for (Response response : responses) {
+            if (response.getStatus() < 500) {
+                not5xxResponses.add(response);
+            }
+        }
+
+        return not5xxResponses;
     }
 
     private void processIOException(Request request, HttpSession session, IOException e) {

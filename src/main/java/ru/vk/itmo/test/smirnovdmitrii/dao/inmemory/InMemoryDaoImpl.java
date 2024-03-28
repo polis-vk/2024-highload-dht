@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.dao.inmemory;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.state.State;
 import ru.vk.itmo.test.smirnovdmitrii.dao.util.exceptions.TooManyUpsertsException;
 
@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class InMemoryDaoImpl implements InMemoryDao<MemorySegment, Entry<MemorySegment>> {
+public class InMemoryDaoImpl implements InMemoryDao<MemorySegment, TimeEntry<MemorySegment>> {
 
     private static final int MAX_MEMTABLES = 2;
     private final long flushThresholdBytes;
@@ -24,12 +24,12 @@ public class InMemoryDaoImpl implements InMemoryDao<MemorySegment, Entry<MemoryS
     }
 
     @Override
-    public List<Iterator<Entry<MemorySegment>>> get(
+    public List<Iterator<TimeEntry<MemorySegment>>> get(
             final State state,
             final MemorySegment from,
             final MemorySegment to
     ) {
-        final List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>();
+        final List<Iterator<TimeEntry<MemorySegment>>> iterators = new ArrayList<>();
         for (final Memtable memtable : state.memtables()) {
             iterators.add(memtable.get(from, to));
         }
@@ -37,12 +37,12 @@ public class InMemoryDaoImpl implements InMemoryDao<MemorySegment, Entry<MemoryS
     }
 
     @Override
-    public Entry<MemorySegment> get(
+    public TimeEntry<MemorySegment> get(
             final State state,
             final MemorySegment key
     ) {
         for (final Memtable memtable : state.memtables()) {
-            final Entry<MemorySegment> result = memtable.get(key);
+            final TimeEntry<MemorySegment> result = memtable.get(key);
             if (result != null) {
                 return result;
             }
@@ -53,7 +53,7 @@ public class InMemoryDaoImpl implements InMemoryDao<MemorySegment, Entry<MemoryS
     @Override
     public boolean upsert(
             final State state,
-            final Entry<MemorySegment> entry
+            final TimeEntry<MemorySegment> entry
     ) {
         final List<Memtable> currentMemtables = state.memtables();
         final Memtable memtable = currentMemtables.getFirst();

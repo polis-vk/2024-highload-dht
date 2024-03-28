@@ -1,7 +1,10 @@
 package ru.vk.itmo.test.smirnovdmitrii.dao.inmemory;
 
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.util.MemorySegmentComparator;
+
+import javax.annotation.Nonnull;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
@@ -16,15 +19,15 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class SkipListMemtable implements Memtable {
     public final Comparator<MemorySegment> comparator = new MemorySegmentComparator();
-    private final SortedMap<MemorySegment, Entry<MemorySegment>> storage = new ConcurrentSkipListMap<>(comparator);
+    private final SortedMap<MemorySegment, TimeEntry<MemorySegment>> storage = new ConcurrentSkipListMap<>(comparator);
     private final AtomicLong currentSize = new AtomicLong(0);
     private final ReadWriteLock lock = new ReentrantReadWriteLock(true);
     private final Lock readLock = lock.readLock();
     private final Lock writeLock = lock.writeLock();
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
-        final Map<MemorySegment, Entry<MemorySegment>> map;
+    public Iterator<TimeEntry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
+        final Map<MemorySegment, TimeEntry<MemorySegment>> map;
         if (from == null && to == null) {
             map = storage;
         } else if (from == null) {
@@ -53,7 +56,7 @@ public class SkipListMemtable implements Memtable {
     }
 
     @Override
-    public Entry<MemorySegment> get(final MemorySegment key) {
+    public TimeEntry<MemorySegment> get(final MemorySegment key) {
         return storage.get(key);
     }
 
@@ -63,7 +66,7 @@ public class SkipListMemtable implements Memtable {
     }
 
     @Override
-    public void upsert(final Entry<MemorySegment> entry) {
+    public void upsert(final TimeEntry<MemorySegment> entry) {
 
         final Entry<MemorySegment> oldValue = storage.put(entry.key(), entry);
         long sizeAdd = 0;
@@ -79,8 +82,9 @@ public class SkipListMemtable implements Memtable {
         currentSize.addAndGet(sizeAdd);
     }
 
+    @Nonnull
     @Override
-    public Iterator<Entry<MemorySegment>> iterator() {
+    public Iterator<TimeEntry<MemorySegment>> iterator() {
         return get(null, null);
     }
 }

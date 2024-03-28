@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.smirnovdmitrii.dao.inmemory;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.outofmemory.OutMemoryDao;
 import ru.vk.itmo.test.smirnovdmitrii.dao.state.StateService;
 
@@ -17,14 +17,14 @@ import java.util.function.Supplier;
 public class Flusher implements Closeable {
 
     private final StateService stateService;
-    private final OutMemoryDao<MemorySegment, Entry<MemorySegment>> outMemoryDao;
+    private final OutMemoryDao<MemorySegment, TimeEntry<MemorySegment>> outMemoryDao;
     private final Supplier<Memtable> memtableSupplier;
     private final AtomicBoolean isFlushing = new AtomicBoolean(false);
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
     public Flusher(
             final StateService stateService,
-            final OutMemoryDao<MemorySegment, Entry<MemorySegment>> outMemoryDao,
+            final OutMemoryDao<MemorySegment, TimeEntry<MemorySegment>> outMemoryDao,
             final Supplier<Memtable> memtableSupplier
     ) {
         this.stateService = stateService;

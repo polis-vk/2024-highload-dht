@@ -16,33 +16,58 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
+import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
+import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.util.Set;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Objects;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class Server extends HttpServer {
+    public static final int SERVER_ERRORS = 500;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
     private final ExecutorService workerPool;
-    public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    private final ShardingAlgorithm shardingAlgorithm;
+    private final HttpClient httpClient;
+    private final FailureLimiter failureLimiter;
 
-    private static final Set<Integer> SUPPORTED_HTTP_METHODS = Set.of(
-            Request.METHOD_GET,
-            Request.METHOD_PUT,
-            Request.METHOD_DELETE
-    );
-    private static final long REQUEST_MAX_PROCESSING_TIME = TimeUnit.SECONDS.toNanos(1);
+    private final String selfUrl;
+    private final long requestMaxTimeToTakeInWorkInMillis;
+    private final long httpRequestTimeoutInMillis;
+    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    private static final String METHOD_ADDRESS = "/v0/entity";
+    private static final String ID_PARAMETER_NAME = "id=";
+    private static final String REQUEST_PATH = METHOD_ADDRESS + "?" + ID_PARAMETER_NAME;
 
-    public Server(ServiceConfig config, ReferenceDao dao, WorkerPool workerPool) throws IOException {
+    public Server(ServiceConfig config, ReferenceDao dao, WorkerPool workerPool,
+                  ShardingAlgorithm shardingAlgorithm, ServerConfig serverConfig,
+                  FailureLimiter failureLimiter)
+            throws IOException {
         super(createServerConfig(config));
 
         this.dao = dao;
+        this.shardingAlgorithm = shardingAlgorithm;
         this.workerPool = workerPool.pool;
+        this.httpClient = HttpClient.newBuilder()
+                .executor(Executors.newFixedThreadPool(serverConfig.getMaxWorkersNumber()))
+                .build();
+        this.selfUrl = config.selfUrl();
+        this.requestMaxTimeToTakeInWorkInMillis = serverConfig.getRequestMaxTimeToTakeInWorkInMillis();
+        this.httpRequestTimeoutInMillis = serverConfig.getHttpRequestTimeoutInMillis();
+        this.failureLimiter = failureLimiter;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -64,39 +89,76 @@ public class Server extends HttpServer {
         }
     }
 
+    private static void sendExceptionInfo(HttpSession session, Exception exception) {
+        try {
+            String responseCode;
+            if (exception.getClass().equals(TimeoutException.class)) {
+                responseCode = Response.REQUEST_TIMEOUT;
+            } else {
+                responseCode = Response.INTERNAL_ERROR;
+            }
+            session.sendResponse(new Response(responseCode, Response.EMPTY));
+        } catch (IOException e) {
+            logger.error("Error while sending exception info", e);
+        }
+    }
+
     @Override
     public void handleDefault(Request request, HttpSession session) {
         int httpMethod = request.getMethod();
-        Response response = isSupportedMethod(httpMethod)
+        Response response = Utils.isSupportedMethod(httpMethod)
                 ? new Response(Response.BAD_REQUEST, Response.EMPTY)
                 : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         sendResponse(session, response);
     }
 
-    private boolean isSupportedMethod(int httpMethod) {
-        return SUPPORTED_HTTP_METHODS.contains(httpMethod);
-    }
-
     @Override
     public void handleRequest(Request request, HttpSession session) {
         try {
-            long createdAt = System.nanoTime();
+            long createdAt = System.currentTimeMillis();
             workerPool.execute(() -> processRequest(request, session, createdAt));
         } catch (RejectedExecutionException e) {
-            logger.error("New process request task cannot be scheduled for execution", e);
+            logger.error("New request processing task cannot be scheduled for execution", e);
             sendResponse(session, new Response(TOO_MANY_REQUESTS, Response.EMPTY));
         }
     }
 
     private void processRequest(Request request, HttpSession session, long createdAt) {
-        boolean timeoutExpired = System.nanoTime() - createdAt > REQUEST_MAX_PROCESSING_TIME;
+        boolean timeoutExpired = System.currentTimeMillis() - createdAt > requestMaxTimeToTakeInWorkInMillis;
         if (timeoutExpired) {
             sendResponse(session, new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
 
+        // To prevent sending unnecessary proxied requests to the nodes
+        if (!hasHandler(request)) {
+            handleDefault(request, session);
+            return;
+        }
+
+        String parameter = request.getParameter(ID_PARAMETER_NAME);
+        if (Utils.isNullOrBlank(parameter)) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
         try {
-            super.handleRequest(request, session);
+            String nodeUrl = shardingAlgorithm.getNodeByKey(parameter);
+            if (Objects.equals(selfUrl, nodeUrl)) {
+                logger.debug("[%s] Process request: %s%s".formatted(selfUrl, request.getMethodName(),
+                        request.getURI()));
+                super.handleRequest(request, session);
+            } else {
+                logger.debug("[%s] Send request to node [%s]: %s%s".formatted(selfUrl, nodeUrl, request.getMethodName(),
+                        request.getURI()));
+                if (failureLimiter.readyForRequests(nodeUrl)) {
+                    handleProxyRequest(request, session, nodeUrl, parameter);
+                } else {
+                    logger.warn("[%s] Can't send request to closed node [%s]: %s%s".formatted(selfUrl, nodeUrl,
+                            request.getMethodName(), request.getURI()));
+                    sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+            }
         } catch (Exception e) {
             logger.error("Error while processing request", e);
 
@@ -107,12 +169,60 @@ public class Server extends HttpServer {
         }
     }
 
+    private boolean hasHandler(Request request) {
+        return request.getURI().startsWith(REQUEST_PATH);
+    }
+
+    private void handleProxyRequest(Request request, HttpSession session, String nodeUrl, String parameter) {
+        byte[] body = request.getBody();
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(nodeUrl + REQUEST_PATH + parameter))
+                .method(request.getMethodName(), body == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(body))
+                .build();
+        sendProxyRequest(session, httpRequest, nodeUrl);
+    }
+
+    private void sendProxyRequest(HttpSession session, HttpRequest httpRequest, String nodeUrl) {
+        try {
+            HttpResponse<byte[]> httpResponse = httpClient
+                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .get(httpRequestTimeoutInMillis, TimeUnit.MILLISECONDS);
+
+            String statusCode = Utils.httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
+            if (statusCode == null) {
+                logger.error("The proxied node returned a response with an unexpected status: "
+                        + httpResponse.statusCode());
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, httpResponse.body()));
+            } else {
+                if (httpResponse.statusCode() >= SERVER_ERRORS) {
+                    failureLimiter.handleFailure(nodeUrl);
+                }
+
+                sendResponse(session, new Response(statusCode, httpResponse.body()));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error(e.getMessage());
+            sendExceptionInfo(session, e);
+            failureLimiter.handleFailure(nodeUrl);
+        } catch (ExecutionException e) {
+            logger.error("Execution exception while processing the httpRequest", e);
+            sendExceptionInfo(session, e);
+            failureLimiter.handleFailure(nodeUrl);
+        } catch (TimeoutException e) {
+            logger.error("Request timed out. Maximum processing time exceeded", e);
+            sendExceptionInfo(session, e);
+            failureLimiter.handleFailure(nodeUrl);
+        }
+    }
+
     // region Handlers
 
-    @Path("/v0/entity")
+    @Path(METHOD_ADDRESS)
     @RequestMethod(Request.METHOD_PUT)
     public Response upsert(@Param(value = "id", required = true) String id, Request request) {
-        if (isNullOrEmpty(id) || request.getBody() == null) {
+        if (Utils.isNullOrBlank(id) || request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -122,10 +232,10 @@ public class Server extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(METHOD_ADDRESS)
     @RequestMethod(Request.METHOD_GET)
     public Response get(@Param(required = true, value = "id") String id) {
-        if (isNullOrEmpty(id)) {
+        if (Utils.isNullOrBlank(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -140,20 +250,16 @@ public class Server extends HttpServer {
         return Response.ok(value);
     }
 
-    @Path("/v0/entity")
+    @Path(METHOD_ADDRESS)
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(required = true, value = "id") String id) {
-        if (isNullOrEmpty(id)) {
+        if (Utils.isNullOrBlank(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> deletedMemorySegment = MemorySegmentFactory.toDeletedMemorySegment(id);
         dao.upsert(deletedMemorySegment);
         return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private boolean isNullOrEmpty(String str) {
-        return str == null || str.isEmpty();
     }
 
     // endregion

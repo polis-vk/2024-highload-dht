@@ -3,21 +3,20 @@ package ru.vk.itmo.test.georgiidalbeev;
 import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.georgiidalbeev.dao.Config;
+import ru.vk.itmo.test.georgiidalbeev.dao.Dao;
+import ru.vk.itmo.test.georgiidalbeev.dao.Entry;
 import ru.vk.itmo.test.georgiidalbeev.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
-import java.util.List;
+import java.time.Duration;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 public class NewService implements Service {
 
@@ -26,12 +25,12 @@ public class NewService implements Service {
     private static final int KEEP_ALIVE_TIME_SECONDS = 60;
     private static final int AWAIT_TERMINATION_SECONDS = 60;
     private static final int QUEUE_SIZE = 1000;
-    private volatile boolean isStopped;
     private final ServiceConfig config;
+    private volatile boolean isStopped;
     private NewServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private ExecutorService executorService;
-    private List<HttpClient> httpClients;
+    private ThreadPoolExecutor executorService;
+    private HttpClient httpClient;
 
     public NewService(ServiceConfig config) {
         this.config = config;
@@ -41,29 +40,27 @@ public class NewService implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
         executorService = createPool();
-
-        httpClients = config.clusterUrls().stream()
-                .map(url -> HttpClient.newHttpClient())
-                .collect(Collectors.toList());
-
-        server = new NewServer(config, dao, executorService, config.clusterUrls(), httpClients);
+        httpClient = HttpClient.newBuilder()
+                .executor(Executors.newFixedThreadPool(THREADS, new CustomThreadFactory("HttpClient")))
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+        server = new NewServer(config, dao, executorService, httpClient);
         server.start();
+        isStopped = false;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        if (!isStopped) {
-            server.stop();
-            isStopped = true;
+        if (isStopped) {
+            return CompletableFuture.completedFuture(null);
         }
+        server.stop();
         shutdownExecutorService();
-
-        for (HttpClient httpClient : httpClients) {
-            httpClient.close();
-        }
-
+        httpClient.close();
         dao.close();
+        isStopped = true;
         return CompletableFuture.completedFuture(null);
     }
 

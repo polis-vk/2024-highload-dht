@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.georgiidalbeev.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -136,6 +134,7 @@ final class SSTableWriter {
             final OutputStream os) throws IOException {
         final MemorySegment key = entry.key();
         final MemorySegment value = entry.value();
+        final long timestamp = entry.timestamp();
         long result = 0L;
 
         // Key size
@@ -151,6 +150,10 @@ final class SSTableWriter {
             // Tombstone
             writeLong(SSTables.TOMBSTONE_VALUE_LENGTH, os);
             result += Long.BYTES;
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         } else {
             // Value length
             writeLong(value.byteSize(), os);
@@ -159,6 +162,10 @@ final class SSTableWriter {
             // Value
             writeSegment(value, os);
             result += value.byteSize();
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         }
 
         return result;

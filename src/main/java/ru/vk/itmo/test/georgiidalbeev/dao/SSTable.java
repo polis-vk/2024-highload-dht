@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.georgiidalbeev.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
@@ -147,18 +144,22 @@ final class SSTable {
         final long valueLength = getLength(offset);
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
             // Tombstone encountered
-            return new BaseEntry<>(key, null);
+            offset += Long.BYTES;
+            final long timestamp = getLength(offset);
+            return new BaseEntry<>(key, null, timestamp);
         } else {
             // Get value
             offset += Long.BYTES;
             final MemorySegment value = data.asSlice(offset, valueLength);
-            return new BaseEntry<>(key, value);
+            offset += valueLength;
+            final long timestamp = getLength(offset);
+            return new BaseEntry<>(key, value, timestamp);
         }
     }
 
     private final class SliceIterator implements Iterator<Entry<MemorySegment>> {
-        private long offset;
         private final long toOffset;
+        private long offset;
 
         private SliceIterator(
                 final long offset,
@@ -193,11 +194,15 @@ final class SSTable {
             // Read value
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
                 // Tombstone encountered
-                return new BaseEntry<>(key, null);
+                final long timestamp = getLength(offset);
+                offset += Long.BYTES;
+                return new BaseEntry<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
-                return new BaseEntry<>(key, value);
+                final long timestamp = getLength(offset);
+                offset += Long.BYTES;
+                return new BaseEntry<>(key, value, timestamp);
             }
         }
     }

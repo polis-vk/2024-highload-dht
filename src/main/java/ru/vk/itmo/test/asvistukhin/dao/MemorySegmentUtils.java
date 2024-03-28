@@ -71,7 +71,7 @@ public final class MemorySegmentUtils {
         if (recordIndex < recordsCount - 1) {
             return startOfKey(segment, recordIndex + 1);
         }
-        return segment.byteSize();
+        return segment.byteSize() - Long.BYTES;
     }
 
     public static long normalize(long value) {

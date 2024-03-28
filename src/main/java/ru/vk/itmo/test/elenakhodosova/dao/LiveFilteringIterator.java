@@ -1,28 +1,26 @@
 package ru.vk.itmo.test.elenakhodosova.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * Filters non tombstone {@link Entry}s.
+ * Filters non tombstone {@link EntryWithTimestamp}s.
  *
  * @author incubos
  */
-final class LiveFilteringIterator implements Iterator<Entry<MemorySegment>> {
-    private final Iterator<Entry<MemorySegment>> delegate;
-    private Entry<MemorySegment> next;
+final class LiveFilteringIterator implements Iterator<EntryWithTimestamp<MemorySegment>> {
+    private final Iterator<EntryWithTimestamp<MemorySegment>> delegate;
+    private EntryWithTimestamp<MemorySegment> next;
 
-    LiveFilteringIterator(final Iterator<Entry<MemorySegment>> delegate) {
+    LiveFilteringIterator(final Iterator<EntryWithTimestamp<MemorySegment>> delegate) {
         this.delegate = delegate;
         skipTombstones();
     }
 
     private void skipTombstones() {
         while (delegate.hasNext()) {
-            final Entry<MemorySegment> entry = delegate.next();
+            final EntryWithTimestamp<MemorySegment> entry = delegate.next();
             if (entry.value() != null) {
                 this.next = entry;
                 break;
@@ -36,13 +34,13 @@ final class LiveFilteringIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public EntryWithTimestamp<MemorySegment> next() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
 
         // Consume
-        final Entry<MemorySegment> result = next;
+        final EntryWithTimestamp<MemorySegment> result = next;
         next = null;
 
         skipTombstones();

@@ -6,4 +6,5 @@ public record TimestampEntry<T>(T key, T value, long timestamp) implements ITime
     public String toString() {
         return "{" + key + ":" + value + " - " + timestamp;
     }
+
 }

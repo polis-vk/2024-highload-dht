@@ -72,9 +72,6 @@ public class PersistentDao implements Dao<MemorySegment, TimestampEntry<MemorySe
     public TimestampEntry<MemorySegment> get(MemorySegment key) {
         TimestampEntry<MemorySegment> entry = storageState.getActiveSSTable().get(key);
         if (entry != null) {
-            if (entry.value() == null) {
-                return null;
-            }
             return entry;
         }
 

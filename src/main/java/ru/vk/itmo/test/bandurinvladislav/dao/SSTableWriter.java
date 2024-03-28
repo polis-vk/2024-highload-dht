@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.bandurinvladislav.dao;
 
-import ru.vk.itmo.test.bandurinvladislav.dao.Entry;
-
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;

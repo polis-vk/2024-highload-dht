@@ -24,7 +24,12 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -129,20 +134,16 @@ public class Server extends HttpServer {
             return;
         }
 
-        switch (request.getMethod()) {
-            case Request.METHOD_CONNECT, Request.METHOD_OPTIONS,
-                    Request.METHOD_TRACE, Request.METHOD_HEAD,
-                    Request.METHOD_POST
-                    -> {
-                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                return;
-            }
+        if (isMethodNotAllowed(request)) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
         }
 
         String key = request.getParameter(Constants.PARAMETER_ID);
         String ackParam = request.getParameter(Constants.PARAMETER_ACK);
         String fromParam = request.getParameter(Constants.PARAMETER_FROM);
-        int ack, from;
+        int ack;
+        int from;
         try {
             ack = ackParam == null ? serverConfig.clusterUrls.size() / 2 + 1 : Integer.parseInt(ackParam);
             from = fromParam == null ? serverConfig.clusterUrls.size() : Integer.parseInt(fromParam);
@@ -165,9 +166,9 @@ public class Server extends HttpServer {
             request.addHeader(Constants.HEADER_SENDER + serverConfig.clusterUrls);
         }
 
-        List<HttpClient> clients = getClientsByKey(key, from);
+        List<HttpClient> sortedClients = getClientsByKey(key, from);
         List<Response> responses = new ArrayList<>(from);
-        for (HttpClient client : clients) {
+        for (HttpClient client : sortedClients) {
             Response response;
             if (client == null) {
                 response = invokeLocal(request, key);
@@ -183,6 +184,15 @@ public class Server extends HttpServer {
         }
 
         session.sendResponse(successResponse(responses));
+    }
+
+    private boolean isMethodNotAllowed(Request request) {
+        return switch (request.getMethod()) {
+            case Request.METHOD_CONNECT, Request.METHOD_OPTIONS,
+                    Request.METHOD_TRACE, Request.METHOD_HEAD,
+                    Request.METHOD_POST -> true;
+            default -> false;
+        };
     }
 
     @SuppressWarnings("OptionalGetWithoutIsPresent")

@@ -17,6 +17,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
@@ -25,6 +27,8 @@ import java.util.concurrent.locks.ReentrantLock;
 public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     private final ExecutorService executor;
     private final Lock flushLock = new ReentrantLock();
+
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     Future<?> flushNotification;
 
@@ -67,6 +71,16 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     private final Path basePath;
 
     private static class MemStorageOverflowException extends RuntimeException {
+    }
+
+    private static class ShutdownInterruptedException extends RuntimeException {
+        public ShutdownInterruptedException(Exception e) {
+            super(e);
+        }
+
+        public ShutdownInterruptedException() {
+            super();
+        }
     }
 
     public InMemDaoImpl(Path basePath, long memStorageLimit) {
@@ -138,9 +152,30 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
 
     @Override
     public void close() {
-        this.flush();
-        executor.close();
-        this.persistentStorage.close();
+        if (closed.compareAndSet(false, true)) {
+            this.flush();
+
+            try {
+                flushNotification.get();
+            } catch (InterruptedException | ExecutionException e) {
+                Thread.currentThread().interrupt();
+                throw new ShutdownInterruptedException(e);
+            }
+
+            this.persistentStorage.close();
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                    if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                        throw new ShutdownInterruptedException();
+                    }
+                }
+            } catch (InterruptedException ex) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     @Override

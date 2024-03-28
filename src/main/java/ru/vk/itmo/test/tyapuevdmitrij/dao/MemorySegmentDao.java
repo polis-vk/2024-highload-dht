@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.tyapuevdmitrij.dao;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -90,13 +88,13 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         State currentState = this.state;
         Entry<MemorySegment> value = currentState.memTable.get(key);
         if (value != null && value.value() == null) {
-            return null;
+            return value;
         }
         if (value == null && currentState.flushMemTable != null) {
             value = currentState.flushMemTable.get(key);
         }
         if (value != null && value.value() == null) {
-            return null;
+            return value;
         }
         if (value != null || currentState.storage.ssTables == null) {
             return value;

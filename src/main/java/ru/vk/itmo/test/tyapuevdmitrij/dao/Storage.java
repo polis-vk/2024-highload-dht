@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.tyapuevdmitrij.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -99,6 +96,9 @@ public class Storage {
                 MemorySegment.copy(entry.value(), 0, buffer, offset, entry.value().byteSize());
                 offset += entry.value().byteSize();
             }
+            // write timeStamp next to the value
+            buffer.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, entry.timeStamp());
+            offset += Long.BYTES;
         }
     }
 
@@ -134,7 +134,8 @@ public class Storage {
                 - (memTableSize - 1L) * Long.BYTES * 2L + index * 2L * Long.BYTES;
         MemorySegment readKey = getKeyByOffset(ssTable, keyIndexOffset);
         MemorySegment readValue = getValueByOffset(ssTable, keyIndexOffset + Long.BYTES);
-        return new BaseEntry<>(readKey, readValue);
+        long timeStamp = getTimeStampByOffset(ssTable, keyIndexOffset + Long.BYTES);
+        return new BaseEntry<>(readKey, readValue, timeStamp);
     }
 
     private MemorySegment getKeyByOffset(MemorySegment ssTable, long offset) {
@@ -152,6 +153,15 @@ public class Storage {
         }
         long valueOffset = valueByteSizeOffset + Long.BYTES;
         return ssTable.asSlice(valueOffset, valueByteSize);
+    }
+
+    private long getTimeStampByOffset(MemorySegment ssTable, long offset) {
+        long valueByteSizeOffset = ssTable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+        long valueByteSize = ssTable.get(ValueLayout.JAVA_LONG_UNALIGNED, valueByteSizeOffset);
+        if (valueByteSize < 0) {
+            return ssTable.get(ValueLayout.JAVA_LONG_UNALIGNED, valueByteSizeOffset + Long.BYTES);
+        }
+        return ssTable.get(ValueLayout.JAVA_LONG_UNALIGNED, valueByteSizeOffset + Long.BYTES + valueByteSize);
     }
 
     public Iterator<Entry<MemorySegment>> range(

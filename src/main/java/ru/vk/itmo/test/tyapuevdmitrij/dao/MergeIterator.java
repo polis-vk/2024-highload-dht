@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.tyapuevdmitrij.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Collection;
 import java.util.Comparator;
@@ -81,15 +79,6 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
             peekFromPriorityQueue();
             if (tableIterator.peek() == null) {
                 tableIterator = null;
-                continue;
-            }
-
-            if (skip(tableIterator.peek())) {
-                tableIterator.next();
-                if (tableIterator.hasNext()) {
-                    priorityQueue.add(tableIterator);
-                }
-                tableIterator = null;
             }
         }
 
@@ -115,13 +104,6 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
                 break;
             }
         }
-    }
-
-    protected boolean skip(Entry<MemorySegment> entry) {
-        if (entry != null) {
-            return entry.value() == null;
-        }
-        return false;
     }
 
     @Override

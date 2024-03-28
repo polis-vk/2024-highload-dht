@@ -219,7 +219,7 @@ public class Server extends HttpServer {
 
         if (from > serverConfig.clusterUrls.size()) {
             return new Response(Response.BAD_REQUEST,
-                    "from can't be greater than nodes count".getBytes(StandardCharsets.UTF_8));
+                    "from can't be greater than nodes count".getBytes(StandardCharsets.UTF_8)); 
         }
 
         return null;

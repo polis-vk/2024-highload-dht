@@ -3,6 +3,8 @@ package ru.vk.itmo.test.asvistukhin;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Hash;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
@@ -19,12 +21,10 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class ProxyRequestHandler {
-
-    public static final String IS_SELF_PROCESS = "X-Self";
+    private static final Logger log = LoggerFactory.getLogger(ProxyRequestHandler.class);
 
     private final Map<String, HttpClient> clients;
     private final Map<String, Integer> urlHashes;
-
 
     public ProxyRequestHandler(ServiceConfig serviceConfig) {
         this.clients = HashMap.newHashMap(serviceConfig.clusterUrls().size() - 1);
@@ -75,12 +75,15 @@ public class ProxyRequestHandler {
             long timestamp = httpResponse.headers().firstValueAsLong(RequestWrapper.NIO_TIMESTAMP_HEADER).orElse(0);
             response.addHeader(RequestWrapper.NIO_TIMESTAMP_STRING_HEADER + timestamp);
             return response;
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ex) {
+            log.error("Proxy request thread interrupted", ex);
             Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException ex) {
+            log.error("IllegalArgumentException during proxy request to another node", ex);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (ConnectException e) {
+        } catch (ConnectException ex) {
+            log.error("ConnectException during proxy request to another node", ex);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }

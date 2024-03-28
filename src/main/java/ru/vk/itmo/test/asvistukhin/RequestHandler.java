@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.asvistukhin;
 
-
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;

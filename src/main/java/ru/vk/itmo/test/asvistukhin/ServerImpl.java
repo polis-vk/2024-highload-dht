@@ -43,7 +43,11 @@ public class ServerImpl extends HttpServer {
     private final ProxyRequestHandler proxyRequestHandler;
     private final AtomicBoolean isServerStopped = new AtomicBoolean(false);
 
-    public ServerImpl(ServiceConfig serviceConfig, PersistentDao persistentDao, ProxyRequestHandler proxyRequestHandler) throws IOException {
+    public ServerImpl(
+        ServiceConfig serviceConfig,
+        PersistentDao persistentDao,
+        ProxyRequestHandler proxyRequestHandler
+    ) throws IOException {
         super(createHttpServerConfig(serviceConfig));
         this.serviceConfig = serviceConfig;
         this.requestHandler = new RequestHandler(persistentDao);
@@ -90,13 +94,12 @@ public class ServerImpl extends HttpServer {
             }
 
             RequestWrapper parameters = new RequestWrapper(request, serviceConfig.clusterUrls().size());
-            if (request.getHeader(ProxyRequestHandler.IS_SELF_PROCESS) == null) {
+            if (request.getHeader(RequestWrapper.SELF_HEADER) == null) {
                 processFirstRequest(request, session, parameters);
             } else {
                 session.sendResponse(requestHandler.handle(request));
             }
-        }
-        catch (RejectedExecutionException executionException) {
+        } catch (RejectedExecutionException executionException) {
             try {
                 log.error("Rejected execution new request.", executionException);
                 session.sendError(HTTP_SERVICE_NOT_AVAILABLE, "Server is overload.");
@@ -107,7 +110,8 @@ public class ServerImpl extends HttpServer {
             }
         } catch (Exception ex) {
             try {
-                String response = ex.getClass() == HttpException.class || ex.getClass() == IllegalArgumentException.class
+                String response = ex.getClass() == HttpException.class
+                    || ex.getClass() == IllegalArgumentException.class
                     ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
                 session.sendError(response, null);
             } catch (IOException ioEx) {
@@ -117,7 +121,12 @@ public class ServerImpl extends HttpServer {
             }
         }
     }
-    private void processFirstRequest(Request request, HttpSession session, RequestWrapper parameters) throws IOException {
+
+    private void processFirstRequest(
+        Request request,
+        HttpSession session,
+        RequestWrapper parameters
+    ) throws IOException {
         List<String> nodeUrls = proxyRequestHandler.getNodesByHash(parameters.from);
         if (nodeUrls.size() < parameters.from) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
@@ -149,7 +158,6 @@ public class ServerImpl extends HttpServer {
         } else {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
         }
-
     }
 
     private boolean isSuccessProcessed(int status) {

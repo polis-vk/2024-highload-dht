@@ -9,7 +9,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class SSTable {
     private final Comparator<MemorySegment> comparator = MemorySegmentUtils::compare;
-    private final NavigableMap<MemorySegment, TimestampEntry<MemorySegment>> storage = new ConcurrentSkipListMap<>(comparator);
+    private final NavigableMap<MemorySegment, TimestampEntry<MemorySegment>> storage =
+        new ConcurrentSkipListMap<>(comparator);
     private final AtomicLong sizeInBytes = new AtomicLong(0);
 
     public Iterator<TimestampEntry<MemorySegment>> getAll() {

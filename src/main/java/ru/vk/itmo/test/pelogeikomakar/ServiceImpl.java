@@ -66,7 +66,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

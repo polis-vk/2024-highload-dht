@@ -33,15 +33,6 @@ public final class Convertor {
         return result;
     }
 
-    public static long bytesToLong(byte[] b, int offset) {
-        long result = 0;
-        for (int i = offset; i < Long.BYTES + offset; i++) {
-            result <<= Byte.SIZE;
-            result |= (b[i] & 0xFF);
-        }
-        return result;
-    }
-
     public static long getTimeStamp(MemorySegment segment) {
         long time = segment.get(ValueLayout.JAVA_LONG_UNALIGNED, 0);
 
@@ -56,7 +47,6 @@ public final class Convertor {
         return ((time >> (Byte.SIZE * 7)) & 0x80) != 0;
     }
 
-
     public static MemorySegment stringToMemorySegment(String str) {
         return MemorySegment.ofArray(str.getBytes(StandardCharsets.UTF_8));
     }
@@ -66,14 +56,8 @@ public final class Convertor {
         return new BaseEntry<>(stringToMemorySegment(key), MemorySegment.ofArray(storedValue));
     }
 
-    public static byte[] getValueAsBytes(MemorySegment segment) {
-        long time = getTimeStamp(segment);
-        System.out.println("TIME get___: " + time);
-
-        if (isValNull(segment)) {
-            return null;
-        } else {
-            return segment.asSlice(Long.BYTES).toArray(ValueLayout.JAVA_BYTE);
-        }
+    public static byte[] getValueNotNullAsBytes(MemorySegment segment) {
+        return segment.asSlice(Long.BYTES).toArray(ValueLayout.JAVA_BYTE);
     }
+
 }

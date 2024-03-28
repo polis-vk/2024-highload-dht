@@ -7,7 +7,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
@@ -21,7 +20,9 @@ import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
+import java.util.NavigableMap;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
@@ -34,6 +35,14 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
+
+    private static final Set<String> GOOD_STATUSES = Set.of(Response.ACCEPTED, Response.CREATED,
+            Response.OK, Response.NOT_FOUND);
+    private static final String TIME_HEADER = "X-VALUE_TIME";
+    private static final String INTERNAL_RQ_HEADER = "X-INTERNAL_RQ";
+    private static final String NOT_REPLICAS_HEADER = "504 Not Enough Replicas";
+    private final int defaultAck;
+    private final int defaultFrom;
     private final List<String> clusterUrls;
     private final String selfUrl;
     private final ConcurrentMap<String, HttpClient> clients;
@@ -46,9 +55,14 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         this.clients = new ConcurrentHashMap<>();
         for (String url : this.clusterUrls) {
             if (!url.equals(selfUrl)) {
-                this.clients.put(url, new HttpClient(new ConnectionString(url), "X-INTERNAL_RQ " + selfUrl));
+                this.clients.put(url, new HttpClient(new ConnectionString(url),
+                        INTERNAL_RQ_HEADER + ' ' + selfUrl));
             }
         }
+
+        defaultFrom = this.clusterUrls.size();
+        defaultAck = defaultFrom / 2 + 1;
+
         this.dao = dao;
         this.executorService = executorService;
     }
@@ -73,107 +87,158 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     }
 
     @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response upsertDaoMethod(@Param(value = "id", required = false) String id, Request request) {
-
-        if (id == null || id.isEmpty() || request.getBody() == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        String url = getServerUrlForKey(id);
-        if (url.equals(selfUrl)) {
-            long time = System.currentTimeMillis();
-            if (request.getHeader("X-VALUE_TIME") != null) {
-                try{
-                    time = Long.parseLong(request.getHeader("X-INTERNAL_RQ"));
-                } catch (NumberFormatException e) {
-                    log.warn("Can not parse TimeStamp from header <{}> to long",
-                            request.getHeader("X-VALUE_TIME"));
-                }
-            }
-            try {
-                System.out.println("TIME insert: " + time);
-                dao.upsert(Convertor.requestToEntry(id, request.getBody(), time));
-            } catch (IllegalStateException e) {
-                log.error("Exception during upsert (key: {})", id, e);
-                return new Response(Response.CONFLICT, Response.EMPTY);
-            }
-
-            return new Response(Response.CREATED, Response.EMPTY);
-
-        } else {
-            if (request.getHeader("X-INTERNAL_RQ") != null) {
-                log.warn("Cycle redirect in PUT key: {}, from: {}, now: {}, to: {}",
-                        id, request.getHeader("X-INTERNAL_RQ"), selfUrl, url);
-            }
-            String statusStr = putDataToServer(url, id, request.getBody());
-            return new Response(statusStr, Response.EMPTY);
-        }
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response getDaoMethod(@Param(value = "id", required = false) String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        String url = getServerUrlForKey(id);
-
-        if (url.equals(selfUrl)) {
-            Entry<MemorySegment> result = dao.get(Convertor.stringToMemorySegment(id));
-            if (result == null || Convertor.isValNull(result.value())) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-            return Response.ok(Convertor.getValueAsBytes(result.value()));
-
-        } else {
-            Response subResponse = getDataFromServer(url, id);
-            String status = subResponse.getHeaders()[0];
-            byte[] body = subResponse.getBody();
-            return new Response(status, body);
-        }
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteDaoMethod(@Param(value = "id", required = false) String id, Request request) {
+    public Response processEntityDaoMethod(@Param(value = "id", required = false) String id,
+                                    @Param(value = "ack", required = false) String ack,
+                                    @Param(value = "from", required = false) String from,
+                                    Request request) {
 
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        String url = getServerUrlForKey(id);
+        Response subResponse;
+        long time = System.currentTimeMillis();
 
-        if (url.equals(selfUrl)) {
-            ////
-            long time = System.currentTimeMillis();
-            if (request.getHeader("X-VALUE_TIME") != null) {
+        if (request.getHeader(INTERNAL_RQ_HEADER) == null) {
+            // Request from outside
+            int currAck = defaultAck;
+            int currFrom = defaultFrom;
+
+            if (ack != null) {
                 try {
-                    time = Long.parseLong(request.getHeader("X-INTERNAL_RQ"));
-                } catch (NumberFormatException e) {
-                    log.warn("Can not parse TimeStamp from header <{}> to long",
-                            request.getHeader("X-VALUE_TIME"));
+                    currAck = Integer.parseInt(ack);
+                } catch (NumberFormatException _) {
+                    log.warn("Can not parse number");
                 }
             }
-            System.out.println("TIME delete: " + time);
-            ///
-            try {
-                dao.upsert(Convertor.requestToEntry(id, null, time));
-            } catch (IllegalStateException e) {
-                log.error("Exception during delete-upsert", e);
-                return new Response(Response.CONFLICT, Response.EMPTY);
+
+            if (from != null) {
+                try {
+                    currFrom = Integer.parseInt(from);
+                } catch (NumberFormatException _) {
+                    log.warn("Can not parse number");
+                }
             }
 
-            return new Response(Response.ACCEPTED, Response.EMPTY);
+            if (currFrom > clusterUrls.size() || currFrom < 1 || currAck > currFrom || currAck < 1) {
+                log.error("BAD ack or from parameter: [ack: {}, from: {}]", currAck, currFrom);
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+
+            String[] urls = getServerUrlsForKey(id, currFrom);
+            subResponse = executeAllRequests(id, request, urls, currAck, time);
 
         } else {
-            Response subResponse = deleteDataFromServer(url, id);
-            String status = subResponse.getHeaders()[0];
-            byte[] body = subResponse.getBody();
-            return new Response(status, body);
+            // Redirected request
+            try {
+                time = Long.parseLong(request.getHeader(TIME_HEADER));
+            } catch (NumberFormatException _) {
+                log.warn("Can not parse number");
+            }
+            subResponse = executeMethodLocal(id, request, time);
         }
+
+        return subResponse;
     }
+
+    private Response executeAllRequests(String id, Request request, String[] urls, int currAck, long timeSt) {
+        int succeededReq = 0;
+        long oldestTime = -2;
+        Response oldestResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+
+        for (String url : urls) {
+            Response currResp = executeMethod(url, id, request, timeSt);
+            String status = currResp.getHeaders()[0];
+            if (GOOD_STATUSES.contains(status)) {
+                succeededReq++;
+                long curTime = -1;
+                try {
+                    curTime = Long.parseLong(currResp.getHeader(TIME_HEADER));
+                } catch (NumberFormatException _) {
+                    log.warn("Can not parse number");
+                }
+
+                if (oldestTime == -2 || oldestTime < curTime) {
+                    oldestTime = curTime;
+                    oldestResponse = currResp;
+                }
+            }
+
+            if (status.equals(Response.METHOD_NOT_ALLOWED)) {
+                return currResp;
+            }
+        }
+
+        if (succeededReq >= currAck) {
+            return oldestResponse;
+        }
+
+        return new Response(NOT_REPLICAS_HEADER, Response.EMPTY);
+    }
+
+    private Response executeMethod(String url, String id, Request request, long timeSt) {
+        Response result;
+        if (url.equals(selfUrl)) {
+            result = executeMethodLocal(id, request, timeSt);
+        } else {
+            result = executeMethodRemote(url, id, request, timeSt);
+        }
+        return result;
+    }
+
+    private Response executeMethodLocal(String id, Request request, long timeSt) {
+        switch (request.getMethod()) {
+            case Request.METHOD_GET:
+                Entry<MemorySegment> result = dao.get(Convertor.stringToMemorySegment(id));
+                if (result == null) {
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+
+                } else if (Convertor.isValNull(result.value())) {
+                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                    long time = Convertor.getTimeStamp(result.value());
+                    response.addHeader(TIME_HEADER + ' ' + time);
+                    return response;
+
+                } else {
+                    long time = Convertor.getTimeStamp(result.value());
+                    Response response = new Response(Response.OK,
+                            Convertor.getValueNotNullAsBytes(result.value()));
+                    response.addHeader(TIME_HEADER + ' ' + time);
+                    return response;
+                }
+
+            case Request.METHOD_PUT:
+                try {
+                    dao.upsert(Convertor.requestToEntry(id, request.getBody(), timeSt));
+                } catch (IllegalStateException e) {
+                    log.error("Exception during upsert (key: {})", id, e);
+                    return new Response(Response.CONFLICT, Response.EMPTY);
+                }
+                return new Response(Response.CREATED, Response.EMPTY);
+
+
+            case Request.METHOD_DELETE:
+                try {
+                    dao.upsert(Convertor.requestToEntry(id, null, timeSt));
+                } catch (IllegalStateException e) {
+                    log.error("Exception during delete-upsert", e);
+                    return new Response(Response.CONFLICT, Response.EMPTY);
+                }
+                return new Response(Response.ACCEPTED, Response.EMPTY);
+        }
+
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
+
+    private Response executeMethodRemote(String url, String id, Request request, long timeSt) {
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> getDataFromServer(url, id);
+            case Request.METHOD_PUT -> putDataToServer(url, id, request.getBody(), timeSt);
+            case Request.METHOD_DELETE -> deleteDataFromServer(url, id, timeSt);
+            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        };
+    }
+
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
@@ -215,17 +280,21 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         session.sendResponse(response);
     }
 
-    private String getServerUrlForKey(String key) {
-        int highestScore = Integer.MIN_VALUE;
-        String preferredUrl = selfUrl;
+    private String[] getServerUrlsForKey(String key, int from) {
+        NavigableMap<Integer, String> allCandidates = new TreeMap<>();
+
         for (String url : clusterUrls) {
             int currentHash = Hash.murmur3(url + key);
-            if (highestScore < currentHash) {
-                highestScore = currentHash;
-                preferredUrl = url;
-            }
+            allCandidates.put(currentHash, url);
         }
-        return preferredUrl;
+
+        String[] resultUrls = new String[from];
+
+        for (int i = 0; i < from; i++) {
+            resultUrls[i] = allCandidates.pollLastEntry().getValue();
+        }
+
+        return resultUrls;
     }
 
     private Response getDataFromServer(String serverUrl, String key) {
@@ -244,12 +313,10 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
     }
 
-    private String putDataToServer(String serverUrl, String key, byte[] value) {
-        String responseStatus = Response.BAD_GATEWAY;
+    private Response putDataToServer(String serverUrl, String key, byte[] value, long timeSt) {
+        Response result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         try {
-            Response result;
-            result = clients.get(serverUrl).put(requestForKey(key), value);
-            responseStatus = result.getHeaders()[0];
+            result = clients.get(serverUrl).put(requestForKey(key), value, TIME_HEADER + ' ' + timeSt);
 
         } catch (PoolException | IOException | HttpException e) {
             log.error("Error in PUT internal request", e);
@@ -257,15 +324,15 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         } catch (InterruptedException e) {
         log.error("Error in PUT internal request", e);
         Thread.currentThread().interrupt();
-    }
-        return responseStatus;
+        }
+        return result;
     }
 
-    private Response deleteDataFromServer(String serverUrl, String key) {
+    private Response deleteDataFromServer(String serverUrl, String key, long timeSt) {
         Response result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
 
         try {
-            result = clients.get(serverUrl).delete(requestForKey(key));
+            result = clients.get(serverUrl).delete(requestForKey(key), TIME_HEADER + ' ' + timeSt);
         } catch (PoolException | IOException | HttpException e) {
             log.error("Error in DELETE internal request", e);
         } catch (InterruptedException e) {

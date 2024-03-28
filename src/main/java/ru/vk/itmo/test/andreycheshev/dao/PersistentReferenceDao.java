@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.andreycheshev.dao;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;

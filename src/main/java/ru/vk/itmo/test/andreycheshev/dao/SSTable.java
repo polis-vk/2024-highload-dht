@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.andreycheshev.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
@@ -142,17 +139,23 @@ final class SSTable {
 
         // Skip key (will reuse the argument)
         long offset = entryOffset(entry);
-        offset += Long.BYTES + key.byteSize();
+        offset += key.byteSize() + Long.BYTES;
+
+        // Read timestamp
+        final long timestamp = data.get(ValueLayout.OfLong.JAVA_LONG_UNALIGNED, offset);
+        offset += Long.BYTES;
+
         // Extract value length
         final long valueLength = getLength(offset);
+
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
             // Tombstone encountered
-            return new BaseEntry<>(key, null);
+            return new ClusterEntry<>(key, null, timestamp);
         } else {
             // Get value
             offset += Long.BYTES;
             final MemorySegment value = data.asSlice(offset, valueLength);
-            return new BaseEntry<>(key, value);
+            return new ClusterEntry<>(key, value, timestamp);
         }
     }
 
@@ -186,6 +189,10 @@ final class SSTable {
             final MemorySegment key = data.asSlice(offset, keyLength);
             offset += keyLength;
 
+            // Read timestamp
+            final long timestamp = data.get(ValueLayout.OfLong.JAVA_LONG_UNALIGNED, offset);
+            offset += Long.BYTES;
+
             // Read value length
             final long valueLength = getLength(offset);
             offset += Long.BYTES;
@@ -193,11 +200,11 @@ final class SSTable {
             // Read value
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
                 // Tombstone encountered
-                return new BaseEntry<>(key, null);
+                return new ClusterEntry<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
-                return new BaseEntry<>(key, value);
+                return new ClusterEntry<>(key, value, timestamp);
             }
         }
     }

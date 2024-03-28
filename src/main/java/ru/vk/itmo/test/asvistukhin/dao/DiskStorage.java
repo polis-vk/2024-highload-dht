@@ -96,7 +96,6 @@ public class DiskStorage {
             // it is ok, actually it is normal state
         }
         List<String> existedFiles = Files.readAllLines(indexFile, StandardCharsets.UTF_8);
-
         String newFileName = String.valueOf(existedFiles.size());
 
         long dataSize = 0;
@@ -235,8 +234,8 @@ public class DiskStorage {
         MemorySegment to
     ) {
         long recordIndexFrom = from == null ? 0 : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, from));
-        long recordIndexTo = to == null ?
-            MemorySegmentUtils.recordsCount(page) : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, to));
+        long recordIndexTo = to == null
+            ? MemorySegmentUtils.recordsCount(page) : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, to));
         long recordsCount = MemorySegmentUtils.recordsCount(page);
 
         return new Iterator<>() {
@@ -259,8 +258,8 @@ public class DiskStorage {
                 );
                 long startOfValue = MemorySegmentUtils.startOfValue(page, index);
                 long endOfValue = MemorySegmentUtils.endOfValue(page, index, recordsCount);
-                MemorySegment value = startOfValue < 0 ?
-                    null : MemorySegmentUtils.slice(page, startOfValue, endOfValue);
+                MemorySegment value = startOfValue < 0
+                    ? null : MemorySegmentUtils.slice(page, startOfValue, endOfValue);
                 long timestamp = page.get(ValueLayout.JAVA_LONG_UNALIGNED, endOfValue);
                 index++;
                 return new TimestampEntry<>(key, value, timestamp);

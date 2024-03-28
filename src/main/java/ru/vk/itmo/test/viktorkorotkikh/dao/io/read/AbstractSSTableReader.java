@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao.io.read;
 
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMPointerIterator;
 import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 

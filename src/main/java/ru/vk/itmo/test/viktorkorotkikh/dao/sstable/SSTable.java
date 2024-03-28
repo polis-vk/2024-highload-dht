@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao.sstable;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMPointerIterator;
 import ru.vk.itmo.test.viktorkorotkikh.dao.MemTable;
 import ru.vk.itmo.test.viktorkorotkikh.dao.MergeIterator;

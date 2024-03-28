@@ -1,6 +1,7 @@
 package ru.vk.itmo.test.viktorkorotkikh.http;
 
 import one.nio.http.Response;
+import ru.vk.itmo.test.viktorkorotkikh.util.AcceptAllBiPredicate;
 
 import javax.net.ssl.SSLSession;
 import java.net.URI;
@@ -14,10 +15,6 @@ import java.util.Map;
 import java.util.Optional;
 
 public class OneNioHttpResponseWrapper implements HttpResponse<byte[]> {
-    private static boolean acceptAll(String x, String y) {
-        return true;
-    }
-
     private final Response response;
 
     public OneNioHttpResponseWrapper(Response response) {
@@ -48,14 +45,20 @@ public class OneNioHttpResponseWrapper implements HttpResponse<byte[]> {
         Map<String, List<String>> headers = new HashMap<>();
         for (int i = 0; i < response.getHeaderCount(); i++) {
             String header = response.getHeaders()[i];
-            int delimiter = header.indexOf(":");
+            int delimiter = header.indexOf(':');
             if (delimiter < 0) {
                 headers.put(header, List.of(""));
             } else {
-                headers.put(header.substring(0, delimiter), List.of(header.substring(delimiter + 1).replaceFirst(" *", "").split(", ?")));
+                String[] values = header.substring(delimiter + 1)
+                        .replaceFirst(" *", "")
+                        .split(", ?");
+                headers.put(
+                        header.substring(0, delimiter),
+                        List.of(values)
+                );
             }
         }
-        return HttpHeaders.of(headers, OneNioHttpResponseWrapper::acceptAll);
+        return HttpHeaders.of(headers, AcceptAllBiPredicate.INSTANCE);
     }
 
     @Override

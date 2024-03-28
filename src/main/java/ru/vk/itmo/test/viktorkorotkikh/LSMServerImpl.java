@@ -144,45 +144,22 @@ public class LSMServerImpl extends HttpServer {
             return;
         }
 
-        final Iterator<Map.Entry<String, String>> parametersIterator = request.getParameters().iterator();
-        String id = null;
-        Integer ack = null;
-        Integer from = null;
-        while (parametersIterator.hasNext() && (id == null || ack == null || from == null)) {
-            final Map.Entry<String, String> parameter = parametersIterator.next();
-            if (id == null && parameter.getKey().equals("id")) { // get first value
-                id = parameter.getValue();
-            }
-
-            if (ack == null && parameter.getKey().equals("ack")) { // get first value
-                try {
-                    ack = Integer.parseInt(parameter.getValue());
-                } catch (NumberFormatException numberFormatException) {
-                    log.info("Bad request: invalid ack parameter");
-                    session.sendResponse(LSMConstantResponse.badRequest(request));
-                    return;
-                }
-            }
-
-            if (from == null && parameter.getKey().equals("from")) { // get first value
-                try {
-                    from = Integer.parseInt(parameter.getValue());
-                } catch (NumberFormatException numberFormatException) {
-                    log.info("Bad request: invalid from parameter");
-                    session.sendResponse(LSMConstantResponse.badRequest(request));
-                    return;
-                }
-            }
+        RequestParameters requestParameters;
+        try {
+            requestParameters = getRequestParameters(request, session);
+        } catch (NumberFormatException e) {
+            log.info("Bad request: invalid parameters");
+            session.sendResponse(LSMConstantResponse.badRequest(request));
+            return;
         }
-
         // validate id parameter
-        if (id == null || id.isEmpty()) {
+        if (requestParameters.id == null || requestParameters.id.isEmpty()) {
             log.info("Bad request: empty id parameter");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
-
-        // validate ack and from parameters
+        Integer ack = requestParameters.ack;
+        Integer from = requestParameters.from;
         if (ack == null ^ from == null) {
             log.info("Bad request: one of the ack or from parameters is missing");
             session.sendResponse(LSMConstantResponse.badRequest(request));
@@ -200,8 +177,53 @@ public class LSMServerImpl extends HttpServer {
             return;
         }
 
-        final byte[] key = id.getBytes(StandardCharsets.UTF_8);
+        final byte[] key = requestParameters.id().getBytes(StandardCharsets.UTF_8);
 
+        final List<String> replicas = getReplicasList(key, requestParameters.from());
+
+        final Response response = getResponseFromReplicas(request, requestParameters.from(), replicas, key, requestParameters.id(), requestParameters.ack());
+        session.sendResponse(response);
+    }
+
+    private RequestParameters getRequestParameters(Request request, HttpSession session) throws IOException {
+        final Iterator<Map.Entry<String, String>> parametersIterator = request.getParameters().iterator();
+        String id = null;
+        Integer ack = null;
+        Integer from = null;
+        while (parametersIterator.hasNext() && (id == null || ack == null || from == null)) {
+            final Map.Entry<String, String> parameter = parametersIterator.next();
+            if (id == null && parameter.getKey().equals("id")) { // get first value
+                id = parameter.getValue();
+            }
+
+            if (ack == null && parameter.getKey().equals("ack")) { // get first value
+                ack = Integer.parseInt(parameter.getValue());
+            }
+
+            if (from == null && parameter.getKey().equals("from")) { // get first value
+                from = Integer.parseInt(parameter.getValue());
+            }
+        }
+
+        return new RequestParameters(id, ack, from);
+    }
+
+    private record RequestParameters(String id, Integer ack, Integer from) {
+    }
+
+    private Response getResponseFromReplicas(Request request, Integer from, List<String> replicas, byte[] key, String id, Integer ack) {
+        final List<HttpResponse<byte[]>> responses = new ArrayList<>(from);
+        for (final String replicaUrl : replicas) {
+            if (replicaUrl.equals(selfUrl)) {
+                responses.add(processLocal(request, key, id));
+            } else {
+                responses.add(processRemote(request, replicaUrl, id));
+            }
+        }
+        return LsmServerUtil.mergeReplicasResponses(request, responses, ack);
+    }
+
+    private List<String> getReplicasList(byte[] key, Integer from) {
         final String server = consistentHashingManager.getServerByKey(key);
         final List<String> replicas = new ArrayList<>(from);
         replicas.add(server);
@@ -215,17 +237,7 @@ public class LSMServerImpl extends HttpServer {
             }
             serverIndex++;
         }
-
-        final List<HttpResponse<byte[]>> responses = new ArrayList<>(from);
-        for (final String replicaUrl : replicas) {
-            if (replicaUrl.equals(selfUrl)) {
-                responses.add(processLocal(request, key, id));
-            } else {
-                responses.add(processRemote(request, replicaUrl, id));
-            }
-        }
-        final Response response = LsmServerUtil.mergeReplicasResponses(request, responses, ack);
-        session.sendResponse(response);
+        return replicas;
     }
 
     private HttpResponse<byte[]> processRemote(
@@ -264,48 +276,22 @@ public class LSMServerImpl extends HttpServer {
             final HttpRequest request
     ) {
         try {
-            HttpResponse<byte[]> clusterResponse = clusterClient
+            return clusterClient
                     .sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
                     .get(CLUSTER_REQUEST_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS);
-            return clusterResponse;
-
-/*            if (clusterResponse.body() == null || clusterResponse.body().length == 0) { // all responses except 200 GET
-                final int statusCode = clusterResponse.statusCode();
-                Response response = switch (statusCode) {
-                    case HTTP_OK -> LSMConstantResponse.ok(originalRequest);
-                    case HTTP_CREATED -> LSMConstantResponse.created(originalRequest);
-                    case HTTP_ACCEPTED -> LSMConstantResponse.accepted(originalRequest);
-                    case HTTP_BAD_REQUEST -> LSMConstantResponse.badRequest(originalRequest);
-                    case HTTP_NOT_FOUND -> LSMConstantResponse.notFound(originalRequest);
-                    case HTTP_ENTITY_TOO_LARGE -> LSMConstantResponse.entityTooLarge(originalRequest);
-                    case 429 -> LSMConstantResponse.tooManyRequests(originalRequest);
-                    case HTTP_UNAVAILABLE -> LSMConstantResponse.serviceUnavailable(originalRequest);
-                    case HTTP_GATEWAY_TIMEOUT -> LSMConstantResponse.gatewayTimeout(originalRequest);
-                    default -> {
-                        log.error("Failed to determine response from cluster by status code {}", statusCode);
-                        yield LSMConstantResponse.serviceUnavailable(originalRequest);
-                    }
-                };
-                sendResponseAndCloseSessionOnError(session, response);
-            } else { // response with body - 200 GET
-                sendResponseAndCloseSessionOnError(session, Response.ok(clusterResponse.body()));
-            }*/
         } catch (InterruptedException e) {
             final String clusterUrl = request.uri().toString();
             Thread.currentThread().interrupt();
             log.warn("Current thread was interrupted during processing request to cluster {}", clusterUrl);
             return new ReplicaEmptyResponse(HTTP_UNAVAILABLE);
-            // sendResponseAndCloseSessionOnError(session, LSMConstantResponse.SERVICE_UNAVAILABLE_CLOSE);
         } catch (ExecutionException e) {
             final String clusterUrl = request.uri().toString();
             log.error("Unexpected exception occurred while sending request to cluster {}", clusterUrl, e);
             return new ReplicaEmptyResponse(HTTP_UNAVAILABLE);
-            // sendResponseAndCloseSessionOnError(session, LSMConstantResponse.SERVICE_UNAVAILABLE_CLOSE);
         } catch (TimeoutException e) {
             final String clusterUrl = request.uri().toString();
             log.warn("Request timeout to cluster server {}", clusterUrl);
             return new ReplicaEmptyResponse(HTTP_GATEWAY_TIMEOUT);
-            // sendResponseAndCloseSessionOnError(session, LSMConstantResponse.gatewayTimeout(originalRequest));
         }
     }
 

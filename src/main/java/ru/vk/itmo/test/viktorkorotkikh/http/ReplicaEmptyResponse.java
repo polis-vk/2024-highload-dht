@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.viktorkorotkikh.http;
 
+import ru.vk.itmo.test.viktorkorotkikh.util.AcceptAllBiPredicate;
+
 import javax.net.ssl.SSLSession;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -33,7 +35,7 @@ public class ReplicaEmptyResponse implements HttpResponse<byte[]> {
 
     @Override
     public HttpHeaders headers() {
-        return HttpHeaders.of(Map.of(), (_, _) -> true);
+        return HttpHeaders.of(Map.of(), AcceptAllBiPredicate.INSTANCE);
     }
 
     @Override

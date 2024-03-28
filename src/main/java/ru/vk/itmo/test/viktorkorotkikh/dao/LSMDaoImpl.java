@@ -2,7 +2,6 @@ package ru.vk.itmo.test.viktorkorotkikh.dao;
 
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.BackgroundExecutionException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.CompactionException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.FlushingException;

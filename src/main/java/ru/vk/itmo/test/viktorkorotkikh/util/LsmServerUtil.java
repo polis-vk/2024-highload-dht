@@ -30,47 +30,61 @@ public class LsmServerUtil {
     ) {
         switch (originalRequest.getMethod()) {
             case Request.METHOD_GET -> {
-                long maxTimestamp = -1;
-                HttpResponse<byte[]> lastValue = null;
-                int successfulResponses = 0;
-                for (HttpResponse<byte[]> response : responses) {
-                    final long valueTimestamp = getTimestamp(response);
-                    if (valueTimestamp > maxTimestamp) {
-                        maxTimestamp = valueTimestamp;
-                        lastValue = response;
-                    }
-                    if (response.statusCode() == HTTP_OK || response.statusCode() == HTTP_NOT_FOUND) {
-                        successfulResponses++;
-                    }
-                }
-                if (successfulResponses < ack) {
-                    return LSMConstantResponse.notEnoughReplicas(originalRequest);
-                }
-                if (lastValue == null) {
-                    lastValue = responses.getFirst();
-                }
-                return switch (lastValue.statusCode()) {
-                    case HTTP_OK -> Response.ok(lastValue.body());
-                    case HTTP_BAD_REQUEST -> LSMConstantResponse.badRequest(originalRequest);
-                    case HTTP_NOT_FOUND -> LSMConstantResponse.notFound(originalRequest);
-                    case HTTP_ENTITY_TOO_LARGE -> LSMConstantResponse.entityTooLarge(originalRequest);
-                    case 429 -> LSMConstantResponse.tooManyRequests(originalRequest);
-                    case HTTP_GATEWAY_TIMEOUT -> LSMConstantResponse.gatewayTimeout(originalRequest);
-                    default -> LSMConstantResponse.serviceUnavailable(originalRequest);
-                };
+                return mergeGetResponses(originalRequest, responses, ack);
             }
             case Request.METHOD_PUT -> {
-                if (hasNotEnoughReplicas(responses, ack))
-                    return LSMConstantResponse.notEnoughReplicas(originalRequest);
-                return LSMConstantResponse.created(originalRequest);
+                return mergePutResponses(originalRequest, responses, ack);
             }
             case Request.METHOD_DELETE -> {
-                if (hasNotEnoughReplicas(responses, ack))
-                    return LSMConstantResponse.notEnoughReplicas(originalRequest);
-                return LSMConstantResponse.accepted(originalRequest);
+                return mergeDeleteResponses(originalRequest, responses, ack);
             }
             default -> throw new IllegalStateException("Unsupported method " + originalRequest.getMethod());
         }
+    }
+
+    private static Response mergeGetResponses(Request originalRequest, List<HttpResponse<byte[]>> responses, int ack) {
+        long maxTimestamp = -1;
+        HttpResponse<byte[]> lastValue = null;
+        int successfulResponses = 0;
+        for (HttpResponse<byte[]> response : responses) {
+            final long valueTimestamp = getTimestamp(response);
+            if (valueTimestamp > maxTimestamp) {
+                maxTimestamp = valueTimestamp;
+                lastValue = response;
+            }
+            if (response.statusCode() == HTTP_OK || response.statusCode() == HTTP_NOT_FOUND) {
+                successfulResponses++;
+            }
+        }
+        if (successfulResponses < ack) {
+            return LSMConstantResponse.notEnoughReplicas(originalRequest);
+        }
+        if (lastValue == null) {
+            lastValue = responses.getFirst();
+        }
+        return switch (lastValue.statusCode()) {
+            case HTTP_OK -> Response.ok(lastValue.body());
+            case HTTP_BAD_REQUEST -> LSMConstantResponse.badRequest(originalRequest);
+            case HTTP_NOT_FOUND -> LSMConstantResponse.notFound(originalRequest);
+            case HTTP_ENTITY_TOO_LARGE -> LSMConstantResponse.entityTooLarge(originalRequest);
+            case 429 -> LSMConstantResponse.tooManyRequests(originalRequest);
+            case HTTP_GATEWAY_TIMEOUT -> LSMConstantResponse.gatewayTimeout(originalRequest);
+            default -> LSMConstantResponse.serviceUnavailable(originalRequest);
+        };
+    }
+
+    private static Response mergePutResponses(Request originalRequest, List<HttpResponse<byte[]>> responses, int ack) {
+        if (hasNotEnoughReplicas(responses, ack)) {
+            return LSMConstantResponse.notEnoughReplicas(originalRequest);
+        }
+        return LSMConstantResponse.created(originalRequest);
+    }
+
+    private static Response mergeDeleteResponses(Request originalRequest, List<HttpResponse<byte[]>> responses, int ack) {
+        if (hasNotEnoughReplicas(responses, ack)) {
+            return LSMConstantResponse.notEnoughReplicas(originalRequest);
+        }
+        return LSMConstantResponse.accepted(originalRequest);
     }
 
     private static boolean hasNotEnoughReplicas(List<HttpResponse<byte[]>> responses, int ack) {

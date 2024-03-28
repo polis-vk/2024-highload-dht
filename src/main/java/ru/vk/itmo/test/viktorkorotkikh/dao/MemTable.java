@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao;
 
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException;
 
 import java.lang.foreign.MemorySegment;

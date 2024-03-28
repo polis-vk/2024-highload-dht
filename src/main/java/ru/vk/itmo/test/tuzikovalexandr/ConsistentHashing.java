@@ -33,13 +33,17 @@ public class ConsistentHashing {
         final int hash = getHash(key);
         SortedMap<Integer, String> tailMap = circle.tailMap(hash);
         return (tailMap.isEmpty() ? circle.firstEntry() : tailMap.firstEntry()).getValue();
+    }
 
-//        if (!circle.containsKey(hash)) {
-//            SortedMap<Integer, String> tailMap = circle.tailMap(hash);
-//            hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
-//        }
-//
-//        return circle.get(hash);
+    public List<String> getNodes(String key, int from) {
+        if (circle.isEmpty()) {
+            return null;
+        }
+
+        final int hash = getHash(key);
+        SortedMap<Integer, String> tailMap = circle.tailMap(hash);
+        return (tailMap.isEmpty() ? circle.values() : tailMap.values())
+                .stream().limit(from).toList();
     }
 
     private int getHash(String key) {

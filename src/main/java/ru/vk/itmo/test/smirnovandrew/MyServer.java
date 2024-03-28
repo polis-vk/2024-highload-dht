@@ -1,28 +1,20 @@
 package ru.vk.itmo.test.smirnovandrew;
 
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -30,33 +22,85 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 public class MyServer extends HttpServer {
 
     private static final String ROOT = "/v0/entity";
 
     private static final String ID = "id=";
+    private static final String FROM = "from=";
+    private static final String ACK = "ack=";
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final long DURATION = 1000L;
 
     private static final long RESPONSE_WAIT = 10;
 
-    private final ReferenceDao dao;
+    private final MyServerDao dao;
 
     private final MyExecutor executor;
 
     private final Logger logger;
 
-    private final HttpClient httpClient;
+    private final Map<String, HttpClient> httpClients;
 
     private final RendezvousClusterManager rendezvousClustersManager;
 
-    private final String selfUrl;
+    private final ServiceConfig config;
 
     private static final Set<Integer> METHOD_SET = new HashSet<>(List.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
     ));
+
+    private static int quorum (int from) {
+        return from / 2 + 1;
+    }
+
+    private Response sendToAnotherNode(Request request, HttpRequest.Builder clusterRequest, HttpSession session, String clusterUrl, String key) throws IOException {
+        if (Objects.equals(clusterUrl, config.selfUrl())) {
+            return switch (request.getMethod()) {
+                case Request.METHOD_GET -> dao.getEntryFromDao(key);
+                case Request.METHOD_DELETE -> dao.deleteValueFromDao(key);
+                case Request.METHOD_PUT -> dao.putEntryIntoDao(key, request);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+        }
+
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> clusterRequest.GET();
+            case Request.METHOD_DELETE -> clusterRequest.DELETE();
+            case Request.METHOD_PUT -> clusterRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
+            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
+
+        var httpClient = httpClients.get(clusterUrl);
+
+        try {
+            var response = httpClient.sendAsync(
+                    clusterRequest.build(),
+                    HttpResponse.BodyHandlers.ofByteArray()
+            ).get(RESPONSE_WAIT, TimeUnit.SECONDS);
+
+            return new Response(
+                            responseFromStatusCode(response.statusCode()),
+                            response.body()
+                    );
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            logger.info(e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+//            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static long headerTimestampToLong(Response r) {
+        String header = r.getHeader("X-TimeStamp: ");
+        if (header == null) {
+            return Long.MIN_VALUE;
+        }
+        return Long.parseLong(header);
+    }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
@@ -75,46 +119,65 @@ public class MyServer extends HttpServer {
             return;
         }
 
-        if (Objects.equals(selfUrl, clusterUrl)) {
+        int from;
+        try {
+            from = Integer.parseInt(request.getParameter(FROM));
+        } catch (NumberFormatException e) {
+            logger.info(e.getMessage());
+            from = config.clusterUrls().size();
+        }
+
+        int ack;
+        try {
+            ack = Integer.parseInt(request.getParameter(ACK));
+        } catch (NumberFormatException e) {
+            logger.info(e.getMessage());
+            ack = quorum(from);
+        }
+
+        String senderNode = request.getHeader("X-SenderNode");
+
+        if (Objects.isNull(senderNode)) {
             handleLocalRequest(request, session);
             return;
         }
+
+        var sortedNodes = RendezvousClusterManager.getSortedNodes(key, from, config);
 
         var clusterRequest = HttpRequest.newBuilder(
                 URI.create(
                         String.join("",
                                 clusterUrl,
                                 ROOT,
-                                "?",
-                                ID,
-                                key
+                                String.join(
+                                        "?",
+                                        ID + key,
+                                        FROM + from,
+                                        ACK + ack
+                                )
                         ))
         );
-
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> clusterRequest.GET();
-            case Request.METHOD_DELETE -> clusterRequest.DELETE();
-            case Request.METHOD_PUT -> clusterRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
-            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        if (sortedNodes.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
+            var resp = sendToAnotherNode(request, clusterRequest, session, clusterUrl, key);
+            session.sendResponse(resp);
+            return;
+        }
+        List<Response> responses = new ArrayList<>();
+        clusterRequest.header("X-SenderNode", config.selfUrl());
+        for (int nodeNumber: sortedNodes) {
+            var response = sendToAnotherNode(request, clusterRequest, session, config.clusterUrls().get(nodeNumber), key);
+            if (response.getStatus() < 300) {
+                responses.add(response);
+            }
+        }
+        if (responses.size() < ack) {
+            sendEmpty(session, NOT_ENOUGH_REPLICAS);
+            return;
         }
 
-        try {
-            var response = httpClient.sendAsync(
-                    clusterRequest.build(),
-                    HttpResponse.BodyHandlers.ofByteArray()
-            ).get(RESPONSE_WAIT, TimeUnit.SECONDS);
-
-            session.sendResponse(
-                    new Response(
-                            responseFromStatusCode(response.statusCode()),
-                            response.body()
-                    )
-            );
-        } catch (IOException | InterruptedException | ExecutionException | TimeoutException e) {
-            logger.info(e.getMessage());
-            sendEmpty(session, Response.INTERNAL_ERROR);
-            Thread.currentThread().interrupt();
-        }
+        session.sendResponse(responses.stream()
+                .max(Comparator.comparingLong(MyServer::headerTimestampToLong))
+                .get());
     }
 
     private static String responseFromStatusCode(int statusCode) {
@@ -125,6 +188,7 @@ public class MyServer extends HttpServer {
             case 202 -> Response.ACCEPTED;
             case 201 -> Response.CREATED;
             case 503 -> Response.SERVICE_UNAVAILABLE;
+            case 504 -> Response.GATEWAY_TIMEOUT;
             default -> Response.INTERNAL_ERROR;
         };
     }
@@ -177,6 +241,10 @@ public class MyServer extends HttpServer {
         this(config, dao, Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().availableProcessors());
     }
 
+//    private static HttpClient initializeClient(String url) {
+//        return HttpClient.newBuilder().connectTimeout(Duration.ofMillis(1000000))..build();
+//    }
+
     public MyServer(
             ServiceConfig config,
             ReferenceDao dao,
@@ -185,22 +253,17 @@ public class MyServer extends HttpServer {
     ) throws IOException {
         super(generateServerConfig(config));
         this.rendezvousClustersManager = new RendezvousClusterManager(config);
-        this.selfUrl = config.selfUrl();
-        this.dao = dao;
+        this.config = config;
+        this.dao = new MyServerDao(dao);
         this.executor = new MyExecutor(corePoolSize, availableProcessors);
         this.logger = Logger.getLogger(MyServer.class.getName());
-        this.httpClient = HttpClient.newHttpClient();
+        this.httpClients = config.clusterUrls().stream()
+                .filter(url -> !Objects.equals(url, config.selfUrl()))
+                .collect(Collectors.toMap(s -> s, _ -> HttpClient.newHttpClient(), (c, _) -> c));
     }
 
     private boolean isStringInvalid(String param) {
         return Objects.isNull(param) || "".equals(param);
-    }
-
-    private MemorySegment fromString(String data) {
-        if (data == null) {
-            return null;
-        }
-        return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
     @Path(ROOT)
@@ -212,14 +275,7 @@ public class MyServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        var key = fromString(id);
-        var got = dao.get(key);
-
-        if (Objects.isNull(got)) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-
-        return Response.ok(got.value().toArray(ValueLayout.JAVA_BYTE));
+        return dao.getEntryFromDao(id);
     }
 
     @Path(ROOT)
@@ -231,9 +287,7 @@ public class MyServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        var key = fromString(id);
-        dao.upsert(new BaseEntry<>(key, null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+        return dao.deleteValueFromDao(id);
     }
 
     @Path(ROOT)
@@ -246,11 +300,7 @@ public class MyServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        var key = fromString(id);
-        var value = MemorySegment.ofArray(request.getBody());
-
-        dao.upsert(new BaseEntry<>(key, value));
-        return new Response(Response.CREATED, Response.EMPTY);
+        return dao.putEntryIntoDao(id, request);
     }
 
     @Override
@@ -267,6 +317,6 @@ public class MyServer extends HttpServer {
     public synchronized void stop() {
         this.executor.shutdown();
         super.stop();
-        httpClient.close();
+        httpClients.values().forEach(HttpClient::close);
     }
 }

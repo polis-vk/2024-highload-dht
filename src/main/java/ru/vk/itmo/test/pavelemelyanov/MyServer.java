@@ -1,108 +1,250 @@
 package ru.vk.itmo.test.pavelemelyanov;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.pavelemelyanov.dao.Dao;
 
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.Set;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.METHODS;
 
 public class MyServer extends HttpServer {
-    private static final String PATH_V0 = "/v0/entity";
-    private static final Set<Integer> AVAILABLE_METHODS;
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
-    private final ReferenceDao dao;
+    private final ExecutorService workersPool;
+    private final HttpClient httpClient;
+    private final ConsistentHashing shards;
+    private final List<String> clusterUrls;
+    private final RequestHandler requestHandler;
+    private static final Logger log = LoggerFactory.getLogger(MyServer.class);
 
-    static {
-        AVAILABLE_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
-    }
+    private final String selfUrl;
+    private final int clusterSize;
 
-    public MyServer(ServiceConfig config, ReferenceDao dao) throws IOException {
-        super(configureServer(config));
-        this.dao = dao;
-    }
+    public MyServer(ServiceConfig config, Dao dao, ExecutorServiceWrapper worker,
+                      ConsistentHashing shards) throws IOException {
+        super(createServerConfig(config));
+        this.selfUrl = config.selfUrl();
+        this.shards = shards;
+        this.requestHandler = new RequestHandler(dao);
+        this.workersPool = worker.getExecutorService();
+        this.clusterSize = config.clusterUrls().size();
+        this.clusterUrls = config.clusterUrls();
 
-    @Path(PATH_V0)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
-        if (isParameterInvalid(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        MemorySegment key = convertFromString(id);
-        Entry<MemorySegment> entry = dao.get(key);
-
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-    }
-
-    @Path(PATH_V0)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) {
-        if (isParameterInvalid(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        MemorySegment key = convertFromString(id);
-        MemorySegment value = MemorySegment.ofArray(request.getBody());
-
-        dao.upsert(new BaseEntry<>(key, value));
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path(PATH_V0)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
-        if (isParameterInvalid(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        MemorySegment key = convertFromString(id);
-
-        dao.upsert(new BaseEntry<>(key, null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+        this.httpClient = HttpClient.newBuilder()
+                .executor(Executors.newFixedThreadPool(2)).build();
     }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = AVAILABLE_METHODS.contains(request.getMethod())
-                ? new Response(Response.BAD_REQUEST, Response.EMPTY)
-                : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-
+        Response response;
+        if (METHODS.contains(request.getMethod())) {
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } else {
+            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        }
         session.sendResponse(response);
     }
 
-    private static boolean isParameterInvalid(String param) {
-        return param == null || param.isEmpty();
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            if (!request.getURI().startsWith("/v0/entity?id=") || !METHODS.contains(request.getMethod())) {
+                handleDefault(request, session);
+                return;
+            }
+
+            String paramId = request.getParameter("id=");
+
+            if (paramId == null || paramId.isBlank()) {
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+
+            String fromStr = request.getParameter("from=");
+            String ackStr = request.getParameter("ack=");
+
+            int from = fromStr == null || fromStr.isEmpty() ? clusterSize : Integer.parseInt(fromStr);
+            int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
+
+            if (ack == 0 || from > clusterSize || ack > from) {
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+
+            long processingStartTime = System.currentTimeMillis();
+            workersPool.execute(() -> {
+                try {
+                    processingRequest(request, session, processingStartTime, paramId, from, ack);
+                } catch (IOException e) {
+                    log.error("Exception while sending close connection", e);
+                    session.scheduleClose();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(new Response("429 Too Many Requests", Response.EMPTY));
+        }
     }
 
-    private static MemorySegment convertFromString(String value) {
-        return MemorySegment.ofArray(value.getBytes(StandardCharsets.UTF_8));
+    private void processingRequest(Request request, HttpSession session, long processingStartTime,
+                                   String paramId, int from, int ack) throws IOException {
+        if (System.currentTimeMillis() - processingStartTime > 350) {
+            session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            return;
+        }
+
+        try {
+            if (request.getHeader(HeaderUtils.HTTP_TERMINATION_HEADER) == null) {
+                session.sendResponse(handleProxyRequest(request, session, paramId, from, ack));
+            } else {
+                session.sendResponse(requestHandler.handle(request, paramId));
+            }
+        } catch (Exception e) {
+            if (e.getClass() == HttpException.class) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            } else {
+                log.error("Exception during handleRequest: ", e);
+                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            }
+        }
     }
 
-    private static HttpServerConfig configureServer(ServiceConfig serviceConfig) {
-        var httpServerConfig = new HttpServerConfig();
-        var acceptorConfig = new AcceptorConfig();
+    private Response sendException(Exception exception) {
+        String responseCode;
+        if (exception.getClass().equals(TimeoutException.class)) {
+            responseCode = Response.REQUEST_TIMEOUT;
+        } else {
+            responseCode = Response.INTERNAL_ERROR;
+        }
+        return new Response(responseCode, Response.EMPTY);
+    }
+
+    private void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            log.error("Error sending response", e);
+            session.scheduleClose();
+        }
+    }
+
+    private HttpRequest createProxyRequest(Request request, String nodeUrl, String params) {
+        return HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params))
+                .method(request.getMethodName(), request.getBody() == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .setHeader(HeaderUtils.HTTP_TERMINATION_HEADER, "true")
+                .build();
+    }
+
+    private Response sendProxyRequest(HttpRequest httpRequest) {
+        try {
+            HttpResponse<byte[]> httpResponse = httpClient
+                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .get(HttpUtils.REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+
+            String statusCode = HttpUtils.HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
+            if (statusCode == null) {
+                return new Response(Response.INTERNAL_ERROR, httpResponse.body());
+            } else {
+
+                Response response = new Response(statusCode, httpResponse.body());
+                long timestamp = httpRequest.headers()
+                        .firstValueAsLong(HeaderUtils.HTTP_TIMESTAMP_HEADER).orElse(0);
+                response.addHeader(HeaderUtils.NIO_TIMESTAMP_HEADER + timestamp);
+                return response;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return sendException(e);
+        } catch (ExecutionException | TimeoutException e) {
+            return sendException(e);
+        }
+    }
+
+    private List<Response> sendProxyRequests(Map<String, HttpRequest> httpRequests, List<String> nodeUrls) {
+        List<Response> responses = new ArrayList<>();
+        for (String nodeUrl : nodeUrls) {
+            HttpRequest httpRequest = httpRequests.get(nodeUrl);
+            if (!Objects.equals(selfUrl, nodeUrl)) {
+                responses.add(sendProxyRequest(httpRequest));
+            }
+        }
+        return responses;
+    }
+
+    private Response handleProxyRequest(Request request, HttpSession session, String paramId, int from, int ack) {
+        List<String> nodeUrls = shards.getNodes(paramId, clusterUrls, from);
+
+        if (nodeUrls.size() < from) {
+            sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+        }
+
+        HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
+        for (String nodeUrl : nodeUrls) {
+            httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
+        }
+
+        List<Response> responses = sendProxyRequests(httpRequests, nodeUrls);
+
+        if (httpRequests.get(selfUrl) != null) {
+            responses.add(requestHandler.handle(request, paramId));
+        }
+
+        List<Response> successResponses = new ArrayList<>();
+        for (Response response : responses) {
+            if (response.getStatus() < 500) {
+                successResponses.add(response);
+            }
+        }
+
+        if (successResponses.size() >= ack) {
+            if (request.getMethod() == Request.METHOD_GET) {
+                successResponses.sort(Comparator.comparingLong(r -> {
+                    String timestamp = r.getHeader(HeaderUtils.NIO_TIMESTAMP_HEADER);
+                    return timestamp == null ? 0 : Long.parseLong(timestamp);
+                }));
+                return successResponses.getFirst();
+            } else {
+                return successResponses.getLast();
+            }
+        } else {
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        }
+    }
+
+    private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
+        HttpServerConfig serverConfig = new HttpServerConfig();
+        AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
-        httpServerConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
-        httpServerConfig.closeSessions = true;
-        return httpServerConfig;
+        serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        serverConfig.closeSessions = true;
+        return serverConfig;
     }
 }

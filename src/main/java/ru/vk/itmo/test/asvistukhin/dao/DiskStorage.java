@@ -108,7 +108,6 @@ public class DiskStorage {
             count++;
         }
         long indexSize = count * 2 * Long.BYTES;
-
         try (
             FileChannel fileChannel = FileChannel.open(
                 storagePath.resolve(newFileName),
@@ -124,14 +123,12 @@ public class DiskStorage {
                 indexSize + dataSize,
                 writeArena
             );
-
             long dataOffset = indexSize;
             int indexOffset = 0;
             for (TimestampEntry<MemorySegment> entry : iterable) {
                 fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
                 dataOffset += entry.key().byteSize();
                 indexOffset += Long.BYTES;
-
                 MemorySegment value = entry.value();
                 if (value == null) {
                     fileSegment.set(
@@ -161,18 +158,7 @@ public class DiskStorage {
             }
         }
 
-        Files.move(indexFile, indexTmp, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        List<String> list = new ArrayList<>(existedFiles.size() + 1);
-        list.addAll(existedFiles);
-        list.add(newFileName);
-        Files.write(
-            indexFile,
-            list,
-            StandardOpenOption.WRITE,
-            StandardOpenOption.CREATE,
-            StandardOpenOption.TRUNCATE_EXISTING
-        );
-        Files.delete(indexTmp);
+        manageDataFiles(indexFile, indexTmp, newFileName, existedFiles);
         return newFileName;
     }
 
@@ -220,6 +206,26 @@ public class DiskStorage {
                 }
             });
         }
+    }
+
+    private static void manageDataFiles(
+        Path indexFile,
+        Path indexTmp,
+        String newFileName,
+        List<String> existedFiles
+    ) throws IOException {
+        Files.move(indexFile, indexTmp, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        List<String> list = new ArrayList<>(existedFiles.size() + 1);
+        list.addAll(existedFiles);
+        list.add(newFileName);
+        Files.write(
+            indexFile,
+            list,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING
+        );
+        Files.delete(indexTmp);
     }
 
     private static Iterator<TimestampEntry<MemorySegment>> iterator(

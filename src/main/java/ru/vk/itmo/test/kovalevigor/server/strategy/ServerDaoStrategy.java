@@ -10,6 +10,7 @@ import ru.vk.itmo.test.kovalevigor.dao.DaoImpl;
 import ru.vk.itmo.test.kovalevigor.dao.SSTimeTableManager;
 import ru.vk.itmo.test.kovalevigor.dao.entry.MSegmentTimeEntry;
 import ru.vk.itmo.test.kovalevigor.dao.entry.TimeEntry;
+import ru.vk.itmo.test.kovalevigor.server.util.Headers;
 import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
 import ru.vk.itmo.test.kovalevigor.server.util.Paths;
 import ru.vk.itmo.test.kovalevigor.server.util.Responses;
@@ -40,19 +41,17 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public Response handleRequest(Request request, HttpSession session) throws IOException {
         switch (Paths.getPathOrThrow(request.getPath())) {
             case V0_ENTITY -> {
                 String entityId = Parameters.getParameter(request, Parameters.ID);
                 MemorySegment key = fromString(entityId);
-                session.sendResponse(
-                        switch (request.getMethod()) {
-                            case METHOD_GET -> getEntity(key);
-                            case METHOD_PUT -> createEntity(key, MemorySegment.ofArray(request.getBody()));
-                            case METHOD_DELETE -> deleteEntity(key);
-                            default -> throw createIllegalState();
-                        }
-                );
+                return switch (request.getMethod()) {
+                    case METHOD_GET -> getEntity(key);
+                    case METHOD_PUT -> createEntity(key, MemorySegment.ofArray(request.getBody()));
+                    case METHOD_DELETE -> deleteEntity(key);
+                    default -> throw createIllegalState();
+                };
             }
             default -> throw createIllegalState();
         }
@@ -64,21 +63,39 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
     }
 
     private Response getEntity(MemorySegment key) {
-        TimeEntry<MemorySegment> entity = dao.get(key);
-        if (entity == null) {
-            return Responses.NOT_FOUND.toResponse();
+        TimeEntry<MemorySegment> entry = dao.get(key);
+        Response response;
+        if (entry == null || entry.value() == null) {
+            response = Responses.NOT_FOUND.toResponse();
+        } else {
+            response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
         }
-        return Response.ok(entity.value().toArray(ValueLayout.JAVA_BYTE));
+        return addTimestamp(response, entry);
+    }
+
+    private Response upsertEntry(
+            MemorySegment key,
+            MemorySegment value,
+            Responses responseBase
+    ) {
+        TimeEntry<MemorySegment> entry = makeEntry(key, value);
+        dao.upsert(entry);
+        return addTimestamp(responseBase.toResponse(), entry);
     }
 
     private Response createEntity(MemorySegment key, MemorySegment value) {
-        dao.upsert(makeEntry(key, value));
-        return Responses.CREATED.toResponse();
+        return upsertEntry(key, value, Responses.CREATED);
     }
 
     private Response deleteEntity(MemorySegment key) {
-        dao.upsert(makeEntry(key, null));
-        return Responses.ACCEPTED.toResponse();
+        return upsertEntry(key, null, Responses.ACCEPTED);
+    }
+
+    private static Response addTimestamp(Response response, TimeEntry<?> entry) {
+        if (entry != null) {
+            Headers.addHeader(response, Headers.TIMESTAMP, entry.timestamp());
+        }
+        return response;
     }
 
     private static Config mapConfig(DaoServerConfig config) {

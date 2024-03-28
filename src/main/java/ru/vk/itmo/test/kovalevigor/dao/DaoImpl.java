@@ -141,7 +141,7 @@ public class DaoImpl<T extends DaoEntry<MemorySegment>> implements Dao<MemorySeg
         }
 
         if (result != null) {
-            if (result.value() == null) {
+            if (ssManager.shouldBeNull(result)) {
                 return null;
             }
             return result;

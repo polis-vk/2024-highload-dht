@@ -25,6 +25,11 @@ public class SSTimeTableManager extends SSTableManager<TimeEntry<MemorySegment>>
     }
 
     @Override
+    public boolean shouldBeNull(TimeEntry<MemorySegment> entry) {
+        return entry == null;
+    }
+
+    @Override
     protected SStorageDumper<TimeEntry<MemorySegment>> getDumper(
             SizeInfo sizeInfo,
             Path storagePath,

@@ -261,6 +261,8 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
 
     public abstract T mergeEntries(T oldEntry, T newEntry);
 
+    public abstract boolean shouldBeNull(T entry);
+
     protected abstract SStorageDumper<T> getDumper(
             SizeInfo sizeInfo,
             Path storagePath,

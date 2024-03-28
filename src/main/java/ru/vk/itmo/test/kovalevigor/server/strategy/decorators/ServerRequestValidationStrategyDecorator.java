@@ -2,6 +2,7 @@ package ru.vk.itmo.test.kovalevigor.server.strategy.decorators;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
 import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
 import ru.vk.itmo.test.kovalevigor.server.util.Paths;
@@ -27,20 +28,20 @@ public class ServerRequestValidationStrategyDecorator extends ServerStrategyDeco
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public Response handleRequest(Request request, HttpSession session) throws IOException {
         Paths path = Paths.getPath(request.getPath());
         if (path != null) {
             if (checkMethods(request, path)) {
                 if (checkParameters(request, path)) {
-                    super.handleRequest(request, session);
-                    return;
+                    return super.handleRequest(request, session);
                 }
             } else {
                 session.sendResponse(Responses.NOT_ALLOWED.toResponse());
-                return;
+                return null;
             }
         }
         handleDefault(request, session);
+        return null;
     }
 
     private static boolean checkMethods(Request request, Paths path) {

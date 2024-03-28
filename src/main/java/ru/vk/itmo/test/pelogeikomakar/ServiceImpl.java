@@ -15,23 +15,25 @@ import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServiceImpl implements Service {
     private final Config daoConfig;
 
     private final ServiceConfig serviceConfig;
     private DaoHttpServer server;
+    private final AtomicBoolean isStopped = new AtomicBoolean(false);
 
     private static final Logger log = LoggerFactory.getLogger(ServiceImpl.class);
 
     public ServiceImpl(ServiceConfig config) {
-        daoConfig = new Config(config.workingDir(), 160_384L);
+        daoConfig = new Config(config.workingDir(), 1_048_576L);
         serviceConfig = config;
     }
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-
+        isStopped.set(false);
         Dao<MemorySegment, Entry<MemorySegment>> dao = new ReferenceDaoPel(daoConfig);
         server = new DaoHttpServer(serviceConfig, dao, ExecutorServiceFactory.newExecutorService());
         server.start();
@@ -40,9 +42,12 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        server.stop();
-        shutdownAndAwaitTermination(server.getExecutorService());
-        server.getDao().close();
+        if (!isStopped.getAndSet(true)) {
+            server.stop();
+            shutdownAndAwaitTermination(server.getExecutorService());
+            server.stopHttpClients();
+            server.getDao().close();
+        }
         return CompletableFuture.completedFuture(null);
     }
 
@@ -61,7 +66,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

@@ -5,6 +5,7 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -18,9 +19,10 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
-public class ServiceImpl implements ru.vk.itmo.Service {
+public class ServiceImpl implements Service {
 
     private final ServiceConfig serviceConfig;
+    private ProxyRequestHandler proxyRequestHandler;
     private PersistentDao dao;
     private ServerImpl server;
 
@@ -30,8 +32,10 @@ public class ServiceImpl implements ru.vk.itmo.Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        dao = new PersistentDao(new Config(serviceConfig.workingDir(), 1024 * 50));
+        dao = new PersistentDao(new Config(serviceConfig.workingDir(), 1024 * 1024 * 5L));
         server = new ServerImpl(serviceConfig);
+        proxyRequestHandler = new ProxyRequestHandler(serviceConfig);
+
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -40,15 +44,20 @@ public class ServiceImpl implements ru.vk.itmo.Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+        proxyRequestHandler.close();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
+    public Response get(@Param(value = "id", required = true) String id, Request request) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (proxyRequestHandler.isNeedProxy(id)) {
+            return proxyRequestHandler.proxyRequest(request);
         }
 
         Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)));
@@ -66,6 +75,10 @@ public class ServiceImpl implements ru.vk.itmo.Service {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        if (proxyRequestHandler.isNeedProxy(id)) {
+            return proxyRequestHandler.proxyRequest(request);
+        }
+
         dao.upsert(
             new BaseEntry<>(
                 MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
@@ -78,9 +91,13 @@ public class ServiceImpl implements ru.vk.itmo.Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
+    public Response delete(@Param(value = "id", required = true) String id, Request request) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (proxyRequestHandler.isNeedProxy(id)) {
+            return proxyRequestHandler.proxyRequest(request);
         }
 
         dao.upsert(
@@ -93,11 +110,11 @@ public class ServiceImpl implements ru.vk.itmo.Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
-        public ru.vk.itmo.Service create(ServiceConfig config) {
+        public Service create(ServiceConfig config) {
             return new ServiceImpl(config);
         }
     }

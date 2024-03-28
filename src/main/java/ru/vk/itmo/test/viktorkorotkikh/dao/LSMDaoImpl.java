@@ -77,11 +77,11 @@ public class LSMDaoImpl implements Dao<MemorySegment, TimestampedEntry<MemorySeg
     public TimestampedEntry<MemorySegment> get(MemorySegment key) {
         TimestampedEntry<MemorySegment> fromMemTable = memTable.get(key);
         if (fromMemTable != null) {
-            return fromMemTable.value() == null ? null : fromMemTable;
+            return fromMemTable;
         }
         TimestampedEntry<MemorySegment> fromFlushingMemTable = flushingMemTable.get(key);
         if (fromFlushingMemTable != null) {
-            return fromFlushingMemTable.value() == null ? null : fromFlushingMemTable;
+            return fromFlushingMemTable;
         }
         return getFromDisk(key);
     }

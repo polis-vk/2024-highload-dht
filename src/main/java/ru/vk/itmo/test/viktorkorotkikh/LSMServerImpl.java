@@ -328,9 +328,15 @@ public class LSMServerImpl extends HttpServer {
             log.error("Unexpected UncheckedIOException occurred", e);
             return LSMConstantResponse.serviceUnavailable(request);
         }
-        if (entry == null || entry.value() == null) {
+        if (entry == null) {
             log.info("Entity(id={}) was not found", idString);
             return LSMConstantResponse.notFound(request);
+        }
+        if (entry.value() == null) {
+            log.info("Entity(id={}) was deleted", idString);
+            Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+            response.addHeader(timestampToHeader(entry.timestamp()));
+            return response;
         }
 
         return new LSMServerResponseWithMemorySegment(Response.OK, entry.value(), timestampToHeader(entry.timestamp()));

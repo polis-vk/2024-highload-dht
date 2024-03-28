@@ -32,12 +32,19 @@ public class LsmServerUtil {
             case Request.METHOD_GET -> {
                 long maxTimestamp = -1;
                 HttpResponse<byte[]> lastValue = null;
+                int successfulResponses = 0;
                 for (HttpResponse<byte[]> response : responses) {
                     final long valueTimestamp = getTimestamp(response);
                     if (valueTimestamp > maxTimestamp) {
                         maxTimestamp = valueTimestamp;
                         lastValue = response;
                     }
+                    if (response.statusCode() == HTTP_OK || response.statusCode() == HTTP_NOT_FOUND) {
+                        successfulResponses++;
+                    }
+                }
+                if (successfulResponses < ack) {
+                    return LSMConstantResponse.notEnoughReplicas(originalRequest);
                 }
                 if (lastValue == null) {
                     lastValue = responses.getFirst();

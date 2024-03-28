@@ -2,7 +2,6 @@ package ru.vk.itmo.test.dariasupriadkina;
 
 import one.nio.http.Request;
 import one.nio.http.Response;
-
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedBaseEntry;
@@ -41,7 +40,7 @@ public class SelfRequestHandler {
             ExtendedEntry<MemorySegment> entry = utils.getEntryById(id);
             if (entry == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
-            } if (entry.value() == null) {
+            } else if (entry.value() == null) {
                 response = new Response(Response.NOT_FOUND, Response.EMPTY);
                 response.addHeader(TIMESTAMP_MILLIS_HEADER + entry.timestampMillis());
                 return response;
@@ -53,6 +52,7 @@ public class SelfRequestHandler {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
+
     public Response put(String id, Request request) {
         try {
             if (id == null || id.isEmpty()) {
@@ -69,6 +69,7 @@ public class SelfRequestHandler {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
+
     public Response delete(String id) {
         try {
             if (id == null || id.isEmpty()) {

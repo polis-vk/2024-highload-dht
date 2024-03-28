@@ -22,6 +22,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -160,21 +161,22 @@ public class Server extends HttpServer {
     }
 
     private Response mergeResponses(List<Response> responses, int ack, int from) {
-        if (responses.stream().filter(response -> response.getStatus() == 400).count() == from ||
-                ack > from ||
-                from > clusterUrls.size() ||
-                ack <= 0) {
+        if (responses.stream().filter(response -> response.getStatus() == 400).count() == from
+                || ack > from
+                || from > clusterUrls.size()
+                || ack <= 0) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        if (responses.stream().filter(response -> response.getStatus() == 200 ||
-                response.getStatus() == 404 || response.getStatus() == 202 ||
-                response.getStatus() == 201).count() < ack) {
+        if (responses.stream().filter(response -> response.getStatus() == 200
+                || response.getStatus() == 404
+                || response.getStatus() == 202
+                || response.getStatus() == 201).count() < ack) {
             return new Response("504 Not Enough Replicas", Response.EMPTY);
         }
         return responses.stream().max((o1, o2) -> {
             Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
             Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
-            return  header1.compareTo(header2);
+            return header1.compareTo(header2);
         }).get();
     }
 
@@ -189,12 +191,15 @@ public class Server extends HttpServer {
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                     .get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS);
             Response response1 = new Response(String.valueOf(response.statusCode()), response.body());
-            if (response.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) != null) {
-                response1.addHeader(TIMESTAMP_MILLIS_HEADER +
-                        response.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase()).getFirst());
-            } else {
+            if (response.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) == null) {
                 response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
+            } else {
+                response1.addHeader(TIMESTAMP_MILLIS_HEADER
+                        + response.headers().map().get(
+                                TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase(Locale.ROOT)).getFirst()
+                );
             }
+
             return response1;
         } catch (ExecutionException e) {
             logger.error("Unexpected error", e);

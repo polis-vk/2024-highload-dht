@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.dariasupriadkina.sharding;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -46,7 +47,7 @@ public class ConsistentHashingShardingPolicy extends ShardingPolicy {
     // Not implemented
     @Override
     public List<String> getNodesById(String id, int nodeCount) {
-        return null;
+        return Collections.emptyList();
     }
 
 }

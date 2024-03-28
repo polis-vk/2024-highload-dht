@@ -2,9 +2,9 @@ package ru.vk.itmo.test.dariasupriadkina.dao;
 
 public class ExtendedBaseEntry<D> implements ExtendedEntry<D> {
 
-    private D key;
-    private D value;
-    private long timestampMillis;
+    private final D key;
+    private final D value;
+    private final long timestampMillis;
 
     public ExtendedBaseEntry(D key, D value, long timestamp) {
         this.key = key;

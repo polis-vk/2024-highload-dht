@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.dariasupriadkina.dao;
 
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;

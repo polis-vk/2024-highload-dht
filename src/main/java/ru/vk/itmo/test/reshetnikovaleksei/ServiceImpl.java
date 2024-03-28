@@ -3,10 +3,10 @@ package ru.vk.itmo.test.reshetnikovaleksei;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.reshetnikovaleksei.dao.Dao;
+import ru.vk.itmo.test.reshetnikovaleksei.dao.Entry;
+import ru.vk.itmo.test.reshetnikovaleksei.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -24,6 +24,7 @@ public class ServiceImpl implements Service {
     private HttpServerImpl server;
     private ExecutorService executorService;
     private RequestRouter requestRouter;
+    private boolean stopped;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -37,16 +38,21 @@ public class ServiceImpl implements Service {
         requestRouter = new RequestRouter(serviceConfig);
         server = new HttpServerImpl(serviceConfig, dao, executorService, requestRouter);
         server.start();
+        stopped = false;
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public synchronized CompletableFuture<Void> stop() throws IOException {
+        if (stopped) {
+            return CompletableFuture.completedFuture(null);
+        }
+
         internalStop();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -73,5 +79,7 @@ public class ServiceImpl implements Service {
             executorService.shutdownNow();
             Thread.currentThread().interrupt();
         }
+
+        stopped = true;
     }
 }

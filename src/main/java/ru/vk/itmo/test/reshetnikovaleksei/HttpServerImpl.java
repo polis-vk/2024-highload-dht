@@ -13,26 +13,36 @@ import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.reshetnikovaleksei.dao.BaseEntry;
+import ru.vk.itmo.test.reshetnikovaleksei.dao.Dao;
+import ru.vk.itmo.test.reshetnikovaleksei.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeoutException;
 
 public class HttpServerImpl extends HttpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+
+    public static final String TIMESTAMP_HEADER_NAME = "X-Request-Timestamp";
+    public static final String HTTP_TIMESTAMP_HEADER_NAME = "x-request-timestamp";
+    public static final String REDIRECTED_REQUEST_HEADER_NAME = "X-Redirected-Request";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
     private final RequestRouter requestRouter;
     private final String selfUrl;
-    private final AtomicBoolean isStopped;
+    private final int clusterSize;
 
     public HttpServerImpl(ServiceConfig config,
                           Dao<MemorySegment, Entry<MemorySegment>> dao,
@@ -43,7 +53,7 @@ public class HttpServerImpl extends HttpServer {
         this.executorService = executorService;
         this.requestRouter = requestRouter;
         this.selfUrl = config.selfUrl();
-        this.isStopped = new AtomicBoolean(false);
+        this.clusterSize = config.clusterUrls().size();
     }
 
     @Override
@@ -87,60 +97,98 @@ public class HttpServerImpl extends HttpServer {
     }
 
     @Path("/v0/entity")
-    public Response entity(Request request, @Param(value = "id") String id) {
+    public Response entity(Request request,
+                           @Param(value = "id") String id,
+                           @Param(value = "from") Integer from,
+                           @Param(value = "ack") Integer ack) {
         if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        String executorNode = requestRouter.getNodeByEntityId(id);
-        if (executorNode.equals(selfUrl)) {
-            return invokeLocal(request, id);
+        if (from == null) {
+            from = clusterSize;
         }
 
-        try {
-            return requestRouter.redirect(executorNode, request);
-        } catch (HttpTimeoutException e) {
-            LOGGER.error("timeout while invoking remote node");
-            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
-        } catch (IOException e) {
-            LOGGER.error("I/O exception while calling remote node");
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOGGER.error("Thread interrupted");
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
-    }
-
-    @Override
-    public synchronized void stop() {
-        if (isStopped.getAndSet(true)) {
-            return;
+        if (ack == null) {
+            ack = (from + 1) / 2;
         }
 
-        super.stop();
+        if (from < 0 || from > clusterSize || from < ack || ack <= 0) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (request.getHeader(REDIRECTED_REQUEST_HEADER_NAME) == null) {
+            List<String> nodes = requestRouter.getNodesByEntityId(id, from);
+            List<Response> responses = new ArrayList<>();
+            for (String node : nodes) {
+                if (node.equals(selfUrl)) {
+                    responses.add(invokeLocal(request, id));
+                    continue;
+                }
+
+                try {
+                    responses.add(requestRouter.redirect(node, request, id));
+                } catch (TimeoutException e) {
+                    LOGGER.error("timeout while invoking remote node");
+                    responses.add(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+                } catch (ExecutionException | IOException e) {
+                    LOGGER.error("I/O exception while calling remote node");
+                    responses.add(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    LOGGER.error("Thread interrupted");
+                    responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+            }
+
+            List<Response> positiveResponses = new ArrayList<>();
+            for (Response response : responses) {
+                if (response.getStatus() < 500) {
+                    positiveResponses.add(response);
+                }
+            }
+
+            if (positiveResponses.size() >= ack) {
+                if (request.getMethod() == Request.METHOD_GET) {
+                    positiveResponses.sort(Comparator.comparingLong(r ->
+                            Long.parseLong(r.getHeader(TIMESTAMP_HEADER_NAME + ": "))));
+                    return positiveResponses.getLast();
+                } else {
+                    return positiveResponses.getFirst();
+                }
+            }
+
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        }
+
+        return invokeLocal(request, id);
     }
 
     private Response invokeLocal(Request request, String id) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+                MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
                 Entry<MemorySegment> entry = dao.get(key);
-                if (entry == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                if (entry == null || entry.value() == null) {
+                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                    response.addHeader(TIMESTAMP_HEADER_NAME + ": " + (entry != null ? entry.timestamp() : 0));
+
+                    return response;
                 }
 
-                return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+                Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+                response.addHeader(TIMESTAMP_HEADER_NAME + ": " + entry.timestamp());
+                return response;
             }
             case Request.METHOD_PUT -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
                 MemorySegment value = MemorySegment.ofArray(request.getBody());
-                dao.upsert(new BaseEntry<>(key, value));
+                dao.upsert(new BaseEntry<>(key, value, System.currentTimeMillis()));
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
-                MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-                dao.upsert(new BaseEntry<>(key, null));
+                MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+                dao.upsert(new BaseEntry<>(key, null, System.currentTimeMillis()));
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
             default -> {

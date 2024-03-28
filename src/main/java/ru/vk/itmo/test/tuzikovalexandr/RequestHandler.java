@@ -1,6 +1,9 @@
 package ru.vk.itmo.test.tuzikovalexandr;
 
-import one.nio.http.*;
+import one.nio.http.Param;
+import one.nio.http.Request;
+import one.nio.http.Response;
+import ru.vk.itmo.test.tuzikovalexandr.Constants;
 import ru.vk.itmo.test.tuzikovalexandr.dao.BaseEntryWithTimestamp;
 import ru.vk.itmo.test.tuzikovalexandr.dao.Dao;
 import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
@@ -8,8 +11,6 @@ import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-
-import static ru.vk.itmo.test.tuzikovalexandr.Constants.HTTP_TIMESTAMP_HEADER;
 
 public class RequestHandler {
     private final Dao dao;
@@ -77,7 +78,7 @@ public class RequestHandler {
 
     private Response sendResponseWithTimestamp(String resultCode, byte[] body, long timestamp) {
         Response response = new Response(resultCode, body);
-        response.addHeader(HTTP_TIMESTAMP_HEADER + timestamp);
+        response.addHeader(Constants.HTTP_TIMESTAMP_HEADER + timestamp);
         return response;
     }
 

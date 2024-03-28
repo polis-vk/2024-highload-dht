@@ -10,6 +10,7 @@ import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.test.tuzikovalexandr.Constants;
 import ru.vk.itmo.test.tuzikovalexandr.dao.Dao;
 
 import java.io.IOException;
@@ -17,15 +18,18 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import static ru.vk.itmo.test.tuzikovalexandr.Constants.*;
 
 public class ServerImpl extends HttpServer {
 
@@ -64,7 +68,7 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response;
-        if (METHODS.contains(request.getMethod())) {
+        if (Constants.METHODS.contains(request.getMethod())) {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
@@ -75,7 +79,7 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            if (!request.getURI().startsWith("/v0/entity?id=") || !METHODS.contains(request.getMethod())) {
+            if (!request.getURI().startsWith("/v0/entity?id=") || !Constants.METHODS.contains(request.getMethod())) {
                 handleDefault(request, session);
                 return;
             }
@@ -108,7 +112,7 @@ public class ServerImpl extends HttpServer {
                 }
             });
         } catch (RejectedExecutionException e) {
-            session.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY));
+            session.sendResponse(new Response(Constants.TOO_MANY_REQUESTS, Response.EMPTY));
         }
     }
 
@@ -120,7 +124,7 @@ public class ServerImpl extends HttpServer {
         }
 
         try {
-            if (request.getHeader(HTTP_TERMINATION_HEADER) == null) {
+            if (request.getHeader(Constants.HTTP_TERMINATION_HEADER) == null) {
                 session.sendResponse(handleProxyRequest(request, session, paramId, from, ack));
             } else {
                 session.sendResponse(requestHandler.handle(request, paramId));
@@ -159,7 +163,7 @@ public class ServerImpl extends HttpServer {
                 .method(request.getMethodName(), request.getBody() == null
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                .setHeader(HTTP_TERMINATION_HEADER, "true")
+                .setHeader(Constants.HTTP_TERMINATION_HEADER, "true")
                 .build();
     }
 
@@ -167,16 +171,17 @@ public class ServerImpl extends HttpServer {
         try {
             HttpResponse<byte[]> httpResponse = httpClient
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+                    .get(Constants.REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
 
-            String statusCode = HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
+            String statusCode = Constants.HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
             if (statusCode == null) {
                 return new Response(Response.INTERNAL_ERROR, httpResponse.body());
             } else {
 
                 Response response = new Response(statusCode, httpResponse.body());
-                long timestamp = httpRequest.headers().firstValueAsLong(HTTP_TIMESTAMP_HEADER).orElse(0);
-                response.addHeader(NIO_TIMESTAMP_HEADER + timestamp);
+                long timestamp = httpRequest.headers()
+                        .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
+                response.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
                 return response;
             }
         } catch (InterruptedException e) {
@@ -202,7 +207,7 @@ public class ServerImpl extends HttpServer {
         List<String> nodeUrls = consistentHashing.getNodes(paramId, from);
 
         if (nodeUrls.size() < from) {
-            sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            sendResponse(session, new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
         }
 
         HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
@@ -226,7 +231,7 @@ public class ServerImpl extends HttpServer {
         if (successResponses.size() >= ack) {
             if (request.getMethod() == Request.METHOD_GET) {
                 successResponses.sort(Comparator.comparingLong(r -> {
-                            String timestamp = r.getHeader(NIO_TIMESTAMP_HEADER);
+                            String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
                             return timestamp == null ? 0 : Long.parseLong(timestamp);
                         }));
                 return successResponses.getLast();
@@ -234,7 +239,7 @@ public class ServerImpl extends HttpServer {
                 return successResponses.getFirst();
             }
         } else {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
     }
 }

@@ -2,10 +2,7 @@ package ru.vk.itmo.test.tuzikovalexandr;
 
 import one.nio.util.Hash;
 
-import java.util.List;
-import java.util.NavigableMap;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 
 public class ConsistentHashing {
     private final NavigableMap<Integer, String> circle;
@@ -37,7 +34,7 @@ public class ConsistentHashing {
 
     public List<String> getNodes(String key, int from) {
         if (circle.isEmpty()) {
-            return null;
+            return new ArrayList<>();
         }
 
         final int hash = getHash(key);

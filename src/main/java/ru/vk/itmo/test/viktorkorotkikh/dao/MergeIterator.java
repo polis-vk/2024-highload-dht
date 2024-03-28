@@ -1,14 +1,12 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.PriorityQueue;
 
-public final class MergeIterator implements Iterator<Entry<MemorySegment>> {
+public final class MergeIterator implements Iterator<TimestampedEntry<MemorySegment>> {
     private final PriorityQueue<LSMPointerIterator> lsmPointerIterators;
 
     public static MergeIteratorWithTombstoneFilter create(
@@ -109,16 +107,16 @@ public final class MergeIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public TimestampedEntry<MemorySegment> next() {
         LSMPointerIterator lsmPointerIterator = shiftIterators();
-        Entry<MemorySegment> next = lsmPointerIterator.next();
+        TimestampedEntry<MemorySegment> next = lsmPointerIterator.next();
         if (lsmPointerIterator.hasNext()) {
             lsmPointerIterators.add(lsmPointerIterator);
         }
         return next;
     }
 
-    public static final class MergeIteratorWithTombstoneFilter implements Iterator<Entry<MemorySegment>> {
+    public static final class MergeIteratorWithTombstoneFilter implements Iterator<TimestampedEntry<MemorySegment>> {
 
         private final MergeIterator mergeIterator;
         private boolean haveNext;
@@ -145,11 +143,11 @@ public final class MergeIterator implements Iterator<Entry<MemorySegment>> {
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public TimestampedEntry<MemorySegment> next() {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
-            Entry<MemorySegment> next = mergeIterator.next();
+            TimestampedEntry<MemorySegment> next = mergeIterator.next();
             haveNext = false;
             return next;
         }

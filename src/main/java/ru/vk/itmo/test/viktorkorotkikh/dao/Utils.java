@@ -11,8 +11,8 @@ public final class Utils {
 
     public static long getEntrySize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         }
-        return Long.BYTES + entry.key().byteSize() + Long.BYTES + entry.value().byteSize();
+        return Long.BYTES + entry.key().byteSize() + Long.BYTES + entry.value().byteSize() + Long.BYTES;
     }
 }

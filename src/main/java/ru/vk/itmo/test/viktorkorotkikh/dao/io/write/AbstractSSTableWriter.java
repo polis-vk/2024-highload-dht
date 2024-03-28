@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao.io.write;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.ByteArraySegment;
 import ru.vk.itmo.test.viktorkorotkikh.dao.sstable.SSTableUtils;
 
@@ -45,7 +45,7 @@ public abstract class AbstractSSTableWriter {
      */
     public void write(
             boolean isCompacted,
-            Iterator<? extends Entry<MemorySegment>> entries,
+            Iterator<? extends TimestampedEntry<MemorySegment>> entries,
             final Path baseDir,
             final int fileIndex
     ) throws IOException {
@@ -79,7 +79,7 @@ public abstract class AbstractSSTableWriter {
 
             while (entries.hasNext()) {
                 // Then write the entry
-                final Entry<MemorySegment> entry = entries.next();
+                final TimestampedEntry<MemorySegment> entry = entries.next();
                 hasNoTombstones &= entry.value() != null;
                 writeEntry(entry, data, index);
                 entriesSize++;
@@ -168,7 +168,7 @@ public abstract class AbstractSSTableWriter {
      * @throws IOException if an I/O error occurs during writing.
      */
     protected abstract void writeEntry(
-            final Entry<MemorySegment> entry,
+            final TimestampedEntry<MemorySegment> entry,
             final OutputStream os,
             final OutputStream indexStream
     ) throws IOException;

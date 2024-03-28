@@ -1,9 +1,8 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao.io.read;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMPointerIterator;
 import ru.vk.itmo.test.viktorkorotkikh.dao.MemorySegmentComparator;
+import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.Utils;
 
 import java.lang.foreign.MemorySegment;
@@ -61,16 +60,22 @@ public class BaseSSTableReader extends AbstractSSTableReader {
     }
 
     @Override
-    protected Entry<MemorySegment> getByIndex(long index) {
+    protected TimestampedEntry<MemorySegment> getByIndex(long index) {
         long keySize = mappedSSTable.get(ValueLayout.JAVA_LONG_UNALIGNED, index);
         MemorySegment savedKey = mappedSSTable.asSlice(index + Long.BYTES, keySize);
 
         long valueOffset = index + Long.BYTES + keySize;
         long valueSize = mappedSSTable.get(ValueLayout.JAVA_LONG_UNALIGNED, valueOffset);
+        long timestampOffset = valueOffset + Long.BYTES;
+        final MemorySegment value;
         if (valueSize == -1) {
-            return new BaseEntry<>(savedKey, null);
+            value = null;
+        } else {
+            value = mappedSSTable.asSlice(valueOffset + Long.BYTES, valueSize);
+            timestampOffset += valueSize;
         }
-        return new BaseEntry<>(savedKey, mappedSSTable.asSlice(valueOffset + Long.BYTES, valueSize));
+        long timestamp = mappedSSTable.get(ValueLayout.JAVA_LONG_UNALIGNED, timestampOffset);
+        return new TimestampedEntry<>(savedKey, value, timestamp);
     }
 
     private long getEntriesSize() {
@@ -176,9 +181,9 @@ public class BaseSSTableReader extends AbstractSSTableReader {
             long valueOffset = fromPosition + Long.BYTES + keySize;
             long valueSize = mappedSSTable.get(ValueLayout.JAVA_LONG_UNALIGNED, valueOffset);
             if (valueSize == -1) {
-                return Long.BYTES + keySize + Long.BYTES;
+                return Long.BYTES + keySize + Long.BYTES + Long.BYTES;
             }
-            return Long.BYTES + keySize + Long.BYTES + valueSize;
+            return Long.BYTES + keySize + Long.BYTES + valueSize + Long.BYTES;
         }
 
         @Override
@@ -192,11 +197,11 @@ public class BaseSSTableReader extends AbstractSSTableReader {
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public TimestampedEntry<MemorySegment> next() {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
-            Entry<MemorySegment> entry = getByIndex(fromPosition);
+            TimestampedEntry<MemorySegment> entry = getByIndex(fromPosition);
             fromPosition += Utils.getEntrySize(entry);
             return entry;
         }

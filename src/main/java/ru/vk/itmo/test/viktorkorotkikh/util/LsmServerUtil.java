@@ -73,14 +73,22 @@ public class LsmServerUtil {
         };
     }
 
-    private static Response mergePutResponses(Request originalRequest, List<HttpResponse<byte[]>> responses, int ack) {
+    private static Response mergePutResponses(
+            Request originalRequest,
+            List<HttpResponse<byte[]>> responses,
+            int ack
+    ) {
         if (hasNotEnoughReplicas(responses, ack)) {
             return LSMConstantResponse.notEnoughReplicas(originalRequest);
         }
         return LSMConstantResponse.created(originalRequest);
     }
 
-    private static Response mergeDeleteResponses(Request originalRequest, List<HttpResponse<byte[]>> responses, int ack) {
+    private static Response mergeDeleteResponses(
+            Request originalRequest,
+            List<HttpResponse<byte[]>> responses,
+            int ack
+    ) {
         if (hasNotEnoughReplicas(responses, ack)) {
             return LSMConstantResponse.notEnoughReplicas(originalRequest);
         }

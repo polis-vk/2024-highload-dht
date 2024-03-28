@@ -23,6 +23,7 @@ import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
 import ru.vk.itmo.test.viktorkorotkikh.http.OneNioHttpResponseWrapper;
 import ru.vk.itmo.test.viktorkorotkikh.http.ReplicaEmptyResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.LsmServerUtil;
+import ru.vk.itmo.test.viktorkorotkikh.util.RequestParameters;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -146,27 +147,27 @@ public class LSMServerImpl extends HttpServer {
 
         RequestParameters requestParameters;
         try {
-            requestParameters = getRequestParameters(request, session);
+            requestParameters = getRequestParameters(request);
         } catch (NumberFormatException e) {
             log.info("Bad request: invalid parameters");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
         // validate id parameter
-        if (requestParameters.id == null || requestParameters.id.isEmpty()) {
+        if (requestParameters.id() == null || requestParameters.id().isEmpty()) {
             log.info("Bad request: empty id parameter");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
-        Integer ack = requestParameters.ack;
-        Integer from = requestParameters.from;
+        Integer ack = requestParameters.ack();
+        Integer from = requestParameters.from();
         if (ack == null ^ from == null) {
             log.info("Bad request: one of the ack or from parameters is missing");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
 
-        if (ack == null && from == null) {
+        if (ack == null) {
             from = serviceConfig.clusterUrls().size();
             ack = quorum(serviceConfig.clusterUrls().size());
         }
@@ -179,13 +180,20 @@ public class LSMServerImpl extends HttpServer {
 
         final byte[] key = requestParameters.id().getBytes(StandardCharsets.UTF_8);
 
-        final List<String> replicas = getReplicasList(key, requestParameters.from());
+        final List<String> replicas = getReplicasList(key, from);
 
-        final Response response = getResponseFromReplicas(request, requestParameters.from(), replicas, key, requestParameters.id(), requestParameters.ack());
+        final Response response = getResponseFromReplicas(
+                request,
+                from,
+                replicas,
+                key,
+                requestParameters.id(),
+                ack
+        );
         session.sendResponse(response);
     }
 
-    private RequestParameters getRequestParameters(Request request, HttpSession session) throws IOException {
+    private RequestParameters getRequestParameters(Request request) {
         final Iterator<Map.Entry<String, String>> parametersIterator = request.getParameters().iterator();
         String id = null;
         Integer ack = null;
@@ -206,9 +214,6 @@ public class LSMServerImpl extends HttpServer {
         }
 
         return new RequestParameters(id, ack, from);
-    }
-
-    private record RequestParameters(String id, Integer ack, Integer from) {
     }
 
     private Response getResponseFromReplicas(Request request, Integer from, List<String> replicas, byte[] key, String id, Integer ack) {

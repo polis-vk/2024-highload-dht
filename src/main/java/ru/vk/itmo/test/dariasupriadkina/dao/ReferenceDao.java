@@ -22,7 +22,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * @author incubos
  */
-public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class ReferenceDao implements Dao<MemorySegment, ExtendedEntry<MemorySegment>> {
     private final Config config;
     private final Arena arena;
 
@@ -63,23 +63,22 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(
+    public Iterator<ExtendedEntry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
-        return new LiveFilteringIterator(
-                tableSet.get(
+        return tableSet.get(
                         from,
-                        to));
+                        to);
     }
 
     @Override
-    public Entry<MemorySegment> get(final MemorySegment key) {
+    public ExtendedEntry<MemorySegment> get(final MemorySegment key) {
         // Without lock, just snapshot of table set
         return tableSet.get(key);
     }
 
     @Override
-    public void upsert(final Entry<MemorySegment> entry) {
+    public void upsert(final ExtendedEntry<MemorySegment> entry) {
         final boolean autoFlush;
         lock.readLock().lock();
         try {

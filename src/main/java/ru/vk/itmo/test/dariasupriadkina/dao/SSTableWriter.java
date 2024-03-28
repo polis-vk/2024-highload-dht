@@ -40,7 +40,7 @@ final class SSTableWriter {
     void write(
             final Path baseDir,
             final int sequence,
-            final Iterator<Entry<MemorySegment>> entries) throws IOException {
+            final Iterator<ExtendedEntry<MemorySegment>> entries) throws IOException {
         // Write to temporary files
         final Path tempIndexName = SSTables.tempIndexName(baseDir, sequence);
         final Path tempDataName = SSTables.tempDataName(baseDir, sequence);
@@ -71,7 +71,7 @@ final class SSTableWriter {
                 writeLong(entryOffset, index);
 
                 // Then write the entry
-                final Entry<MemorySegment> entry = entries.next();
+                final ExtendedEntry<MemorySegment> entry = entries.next();
                 entryOffset += writeEntry(entry, data);
             }
         }
@@ -132,7 +132,7 @@ final class SSTableWriter {
      * @return written bytes
      */
     private long writeEntry(
-            final Entry<MemorySegment> entry,
+            final ExtendedEntry<MemorySegment> entry,
             final OutputStream os) throws IOException {
         final MemorySegment key = entry.key();
         final MemorySegment value = entry.value();
@@ -160,6 +160,10 @@ final class SSTableWriter {
             writeSegment(value, os);
             result += value.byteSize();
         }
+
+        // TimestampMillis
+        writeLong(entry.timestampMillis(), os);
+        result += Long.BYTES;
 
         return result;
     }

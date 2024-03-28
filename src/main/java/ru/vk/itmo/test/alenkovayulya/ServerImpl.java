@@ -3,37 +3,41 @@ package ru.vk.itmo.test.alenkovayulya;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.alenkovayulya.dao.BaseEntryWithTimestamp;
+import ru.vk.itmo.test.alenkovayulya.dao.Dao;
+import ru.vk.itmo.test.alenkovayulya.dao.EntryWithTimestamp;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
+import static ru.vk.itmo.test.alenkovayulya.ShardRouter.REDIRECT_HEADER;
+import static ru.vk.itmo.test.alenkovayulya.ShardRouter.TIMESTAMP_HEADER;
 import static ru.vk.itmo.test.alenkovayulya.ShardRouter.redirectRequest;
 
 public class ServerImpl extends HttpServer {
-    public static final String PATH = "/v0/entity";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerImpl.class);
-    private final Dao<MemorySegment, Entry<MemorySegment>> referenceDao;
+    private final Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> referenceDao;
     private final ExecutorService executorService;
     private final String url;
     private final ShardSelector shardSelector;
+    private static final int[] AVAILABLE_GOOD_RESPONSE_CODES = new int[] {200, 201, 202, 404};
 
     public ServerImpl(ServiceConfig serviceConfig,
-                      Dao<MemorySegment, Entry<MemorySegment>> referenceDao,
+                      Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> referenceDao,
                       ExecutorService executorService, ShardSelector shardSelector) throws IOException {
         super(createServerConfig(serviceConfig));
         this.referenceDao = referenceDao;
@@ -54,87 +58,199 @@ public class ServerImpl extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
-        executorService.execute(() -> {
-            try {
-                super.handleRequest(request, session);
-            } catch (Exception e) {
-                try {
-                    session.sendError(Response.BAD_REQUEST, e.getMessage());
-                } catch (IOException ex) {
-                    LOGGER.info("Exception during sending the response: ", ex);
-                    session.close();
-                }
-            }
-        });
-    }
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        String id = request.getParameter("id=");
+        if (isEmptyId(id)) {
+            sendEmptyResponse(Response.BAD_REQUEST, session);
+            return;
+        }
 
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response getEntity(@Param(value = "id", required = true) String id) {
-            if (isEmptyId(id)) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-            String ownerShardUrl = shardSelector.getOwnerShardUrl(id);
-            if (isRedirectNeeded(ownerShardUrl)) {
-                return redirectRequest("GET", id, ownerShardUrl, new byte[0]);
-            }
-            Entry<MemorySegment> value = referenceDao.get(
-                    convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)));
-
-            return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                    : Response.ok(value.value().toArray(ValueLayout.JAVA_BYTE));
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
-            if (isEmptyId(id)) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-            String ownerShardUrl = shardSelector.getOwnerShardUrl(id);
-            if (isRedirectNeeded(ownerShardUrl)) {
-                return redirectRequest("PUT", id, ownerShardUrl, request.getBody());
-            }
-            referenceDao.upsert(new BaseEntry<>(
-                    convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)),
-                    convertBytesToMemorySegment(request.getBody())));
-            return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteEntity(@Param(value = "id", required = true) String id) {
-            String ownerShardUrl = shardSelector.getOwnerShardUrl(id);
-            if (isRedirectNeeded(ownerShardUrl)) {
-                return redirectRequest("DELETE", id, ownerShardUrl, new byte[0]);
-            }
-            if (isEmptyId(id)) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-            referenceDao.upsert(new BaseEntry<>(
-                    convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)), null));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        switch (request.getMethodName()) {
-            case "GET", "PUT", "DELETE" -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        if (request.getHeader(REDIRECT_HEADER) != null) {
+            long timestamp = resolveTimestamp(request.getHeader(TIMESTAMP_HEADER));
+            Response response = handleInternalRequest(request, id, timestamp);
+            session.sendResponse(response);
+        } else {
+            handleAsLeader(request, session, id);
         }
     }
 
-    private boolean isRedirectNeeded(String ownerUrl) {
-        return !url.equals(ownerUrl);
+    private void handleAsLeader(Request request, HttpSession session, String id) {
+        String ackS = request.getParameter("ack=");
+        String fromS = request.getParameter("from=");
+
+        int from = isEmptyId(fromS)
+                ? shardSelector.getClusterSize() : Integer.parseInt(fromS);
+        int ack = isEmptyId(ackS)
+                ? quorum(from) : Integer.parseInt(ackS);
+
+        if (ack == 0 || ack > from) {
+            sendEmptyResponse(Response.BAD_REQUEST, session);
+        }
+
+        try {
+            executorService.execute(() -> {
+                try {
+                    collectResponses(request, session, id, from, ack);
+                } catch (Exception e) {
+                    try {
+                        session.sendError(Response.BAD_REQUEST, e.getMessage());
+                    } catch (IOException ex) {
+                        LOGGER.info("Exception during sending the response: ", ex);
+                        session.close();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            LOGGER.error("Request rejected by policy", e);
+            sendEmptyResponse(Response.SERVICE_UNAVAILABLE, session);
+        }
+
+    }
+
+    private void collectResponses(Request request,
+            HttpSession session,
+            String id,
+            int from,
+            int ack
+    ) throws IOException {
+        List<Response> responses = new ArrayList<>();
+        long timestamp = System.currentTimeMillis();
+        int firstOwnerShardIndex = shardSelector.getOwnerShardIndex(id);
+
+        for (int i = 0; i < from; i++) {
+            int shardIndex = (firstOwnerShardIndex + i) % shardSelector.getClusterSize();
+
+            if (isRedirectNeeded(shardIndex)) {
+                handleRedirect(request, timestamp, shardIndex, responses);
+            } else {
+                Response response = handleInternalRequest(request, id, timestamp);
+                responses.add(response);
+            }
+
+        }
+
+        checkReplicasResponsesNumber(request, session, responses, ack);
+    }
+
+    private void checkReplicasResponsesNumber(
+            Request request,
+            HttpSession session,
+            List<Response> responses,
+            int ack
+    ) throws IOException {
+        if (responses.size() >= ack) {
+            if (request.getMethod() == Request.METHOD_GET) {
+                session.sendResponse(getResponseWithMaxTimestamp(responses));
+            } else {
+                session.sendResponse(responses.getFirst());
+            }
+        } else {
+            sendEmptyResponse("504 Not Enough Replicas", session);
+        }
+    }
+
+    private void handleRedirect(Request request, long timestamp, int nodeIndex, List<Response> responses) {
+        Response response = redirectRequest(request.getMethodName(),
+                request.getParameter("id="),
+                shardSelector.getShardUrlByIndex(nodeIndex),
+                request.getBody() == null
+                        ? new byte[0] : request.getBody(), timestamp);
+        boolean correctRes = Arrays.stream(AVAILABLE_GOOD_RESPONSE_CODES)
+                .anyMatch(code -> code == response.getStatus());
+        if (correctRes) {
+            responses.add(response);
+        }
+    }
+
+    private Response handleInternalRequest(Request request, String id, long timestamp) {
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                EntryWithTimestamp<MemorySegment> entry = referenceDao.get(
+                        convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)));
+
+                if (entry == null) {
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                } else if (entry.value() == null) {
+                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                    response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
+                    return response;
+                } else {
+                    Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+                    response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
+                    return response;
+                }
+            }
+            case Request.METHOD_PUT -> {
+                referenceDao.upsert(new BaseEntryWithTimestamp<>(
+                        convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)),
+                        convertBytesToMemorySegment(request.getBody()), timestamp));
+
+                return new Response(Response.CREATED, Response.EMPTY);
+            }
+            case Request.METHOD_DELETE -> {
+                referenceDao.upsert(new BaseEntryWithTimestamp<>(
+                        convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)),
+                        null, timestamp));
+
+                return new Response(Response.ACCEPTED, Response.EMPTY);
+            }
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
+        }
+    }
+
+    private boolean isRedirectNeeded(int shardIndex) {
+        return !url.equals(shardSelector.getShardUrlByIndex(shardIndex));
     }
 
     private boolean isEmptyId(String id) {
-        return id.isEmpty() && id.isBlank();
+        return id == null || (id.isEmpty() && id.isBlank());
     }
 
     private MemorySegment convertBytesToMemorySegment(byte[] byteArray) {
         return MemorySegment.ofArray(byteArray);
+    }
+
+    private int quorum(int from) {
+        return from / 2 + 1;
+    }
+
+    private long resolveTimestamp(String timestampHeader) {
+        if (isEmptyId(timestampHeader)) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(timestampHeader);
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    private void sendEmptyResponse(String response, HttpSession session) {
+        var emptyRes = new Response(response, Response.EMPTY);
+        try {
+            session.sendResponse(emptyRes);
+        } catch (IOException e) {
+            LOGGER.info("Exception during sending the empty response: ", e);
+            session.close();
+        }
+    }
+
+    private Response getResponseWithMaxTimestamp(List<Response> responses) {
+        Response result = responses.getFirst();
+        long max = 0;
+        for (Response response : responses) {
+            String timestampHeader = response.getHeaders()[response.getHeaderCount() - 1];
+
+            long timestamp = resolveTimestamp(timestampHeader);
+            if (max < timestamp) {
+                max = timestamp;
+                result = response;
+            }
+        }
+
+        return result;
     }
 
 }

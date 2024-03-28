@@ -1,36 +1,108 @@
 package ru.vk.itmo.test.tyapuevdmitrij;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.tyapuevdmitrij.dao.DAOException;
 import ru.vk.itmo.test.tyapuevdmitrij.dao.MemorySegmentDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ServerImplementation extends HttpServer {
 
-    private final MemorySegmentDao memorySegmentDao;
+    private static final Logger logger = LoggerFactory.getLogger(ServerImplementation.class);
 
     private static final String ENTITY_PATH = "/v0/entity";
-    private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
 
-    public ServerImplementation(ServiceConfig config) throws IOException {
+    private static final String REQUEST_KEY = "id=";
+
+    private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
+
+    private static final int POOL_KEEP_ALIVE_SECONDS = 10;
+
+    private static final int THREAD_POOL_QUEUE_SIZE = 64;
+
+    private final MemorySegmentDao memorySegmentDao;
+
+    private final ExecutorService executor;
+
+    public ServerImplementation(ServiceConfig config, MemorySegmentDao memorySegmentDao) throws IOException {
         super(createServerConfig(config));
-        memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        this.memorySegmentDao = memorySegmentDao;
+        this.executor = new ThreadPoolExecutor(THREAD_POOL_SIZE,
+                THREAD_POOL_SIZE,
+                POOL_KEEP_ALIVE_SECONDS,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
+                new CustomThreadFactory("worker", true),
+                new ThreadPoolExecutor.AbortPolicy());
+        ((ThreadPoolExecutor) executor).prestartAllCoreThreads();
+    }
+
+    @Override
+    public synchronized void stop() {
+        super.stop();
+        executor.close();
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        try {
+            executor.execute(() -> {
+                try {
+                    if (!request.getPath().equals(ENTITY_PATH)) {
+                        handleDefault(request, session);
+                        return;
+                    }
+                    int requestMethod = request.getMethod();
+                    String id = request.getParameter(REQUEST_KEY);
+                    switch (requestMethod) {
+                        case Request.METHOD_GET -> session.sendResponse(get(id));
+                        case Request.METHOD_PUT -> session.sendResponse(put(id, request));
+                        case Request.METHOD_DELETE -> session.sendResponse(delete(id));
+                        default -> session.sendResponse(getUnsupportedMethodResponse());
+                    }
+                } catch (Exception e) {
+                    logger.error("Exception in request method", e);
+                    sendErrorResponse(session, Response.INTERNAL_ERROR);
+                }
+            });
+        } catch (RejectedExecutionException exception) {
+            logger.warn("ThreadPool queue overflow", exception);
+            sendErrorResponse(session, Response.SERVICE_UNAVAILABLE);
+        }
+
+    }
+
+    @Override
+    public void handleDefault(Request request, HttpSession session) throws IOException {
+        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        session.sendResponse(response);
+    }
+
+    private static void sendErrorResponse(HttpSession session, String error) {
+        try {
+            session.sendResponse(new Response(error, Response.EMPTY));
+        } catch (IOException ex) {
+            logger.error("can't send response", ex);
+            session.close();
+        }
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -43,14 +115,7 @@ public class ServerImplementation extends HttpServer {
         return serverConfig;
     }
 
-    @Path("/v0/status")
-    public Response status() {
-        return Response.ok("OK");
-    }
-
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
+    private Response get(String id) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -62,21 +127,21 @@ public class ServerImplementation extends HttpServer {
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) {
-        if (id == null || id.isEmpty()) {
+    private Response put(String id, Request request) {
+        if (id == null || id.isEmpty() || request.getBody() == null) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+        byte[] requestBody = request.getBody();
+        if (requestBody == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         Entry<MemorySegment> entry = new BaseEntry<>(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
-                MemorySegment.ofArray(request.getBody()));
+                MemorySegment.ofArray(requestBody));
         memorySegmentDao.upsert(entry);
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(ENTITY_PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
+    private Response delete(String id) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -85,25 +150,8 @@ public class ServerImplementation extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    public void closeDAO() {
-        try {
-            memorySegmentDao.close();
-        } catch (IOException e) {
-            throw new DAOException("can't close DAO", e);
-        }
-    }
-
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
-    }
-
-    @Path(ENTITY_PATH)
-    public Response unsupportedMethods() {
+    private Response getUnsupportedMethodResponse() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
-
 }
-
 

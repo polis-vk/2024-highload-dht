@@ -159,7 +159,6 @@ public class DiskStorage {
                     MemorySegment.copy(value, 0, fileSegment, dataOffset, value.byteSize());
                     dataOffset += value.byteSize();
                 }
-
                 fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, dataOffset, entry.timestamp());
                 dataOffset += Long.BYTES;
             }
@@ -235,7 +234,8 @@ public class DiskStorage {
     ) {
         long recordIndexFrom = from == null ? 0 : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, from));
         long recordIndexTo = to == null
-            ? MemorySegmentUtils.recordsCount(page) : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, to));
+            ? MemorySegmentUtils.recordsCount(page)
+            : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, to));
         long recordsCount = MemorySegmentUtils.recordsCount(page);
 
         return new Iterator<>() {

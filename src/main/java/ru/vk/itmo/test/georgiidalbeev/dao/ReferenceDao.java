@@ -1,9 +1,5 @@
 package ru.vk.itmo.test.georgiidalbeev.dao;
 
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -109,10 +105,10 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
         }
 
         if (entry.value() == null) {
-            return entry.key().byteSize();
+            return entry.key().byteSize() + Long.BYTES;
         }
 
-        return entry.key().byteSize() + entry.value().byteSize();
+        return entry.key().byteSize() + entry.value().byteSize() + Long.BYTES;
     }
 
     private void initiateFlush(final boolean auto) {

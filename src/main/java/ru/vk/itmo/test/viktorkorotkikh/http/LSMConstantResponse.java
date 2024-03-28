@@ -6,6 +6,7 @@ import one.nio.http.Response;
 public final class LSMConstantResponse {
     private static final String CONNECTION_CLOSE_HEADER = "Connection: close";
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     public static final Response BAD_REQUEST_CLOSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
     public static final Response CREATED_CLOSE = new Response(Response.CREATED, Response.EMPTY);
     public static final Response ACCEPTED_CLOSE = new Response(Response.ACCEPTED, Response.EMPTY);
@@ -20,6 +21,7 @@ public final class LSMConstantResponse {
 
     public static final Response GATEWAY_TIMEOUT_CLOSE =
             new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+    public static final Response NOT_ENOUGH_REPLICAS_CLOSE = new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
 
     private static final String CONNECTION_KEEP_ALIVE_HEADER = "Connection: Keep-Alive";
     public static final Response BAD_REQUEST_KEEP_ALIVE = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -36,6 +38,8 @@ public final class LSMConstantResponse {
             = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
     public static final Response GATEWAY_TIMEOUT_KEEP_ALIVE =
             new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+    public static final Response NOT_ENOUGH_REPLICAS_KEEP_ALIVE =
+            new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
 
     static {
         BAD_REQUEST_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
@@ -48,6 +52,7 @@ public final class LSMConstantResponse {
         ENTITY_TOO_LARGE_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
         SERVICE_UNAVAILABLE_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
         GATEWAY_TIMEOUT_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
+        NOT_ENOUGH_REPLICAS_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
 
         BAD_REQUEST_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         CREATED_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
@@ -59,6 +64,7 @@ public final class LSMConstantResponse {
         ENTITY_TOO_LARGE_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         SERVICE_UNAVAILABLE_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         GATEWAY_TIMEOUT_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
+        NOT_ENOUGH_REPLICAS_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
     }
 
     public static Response ok(final Request request) {
@@ -99,6 +105,10 @@ public final class LSMConstantResponse {
 
     public static Response gatewayTimeout(Request request) {
         return keepAlive(request) ? GATEWAY_TIMEOUT_KEEP_ALIVE : GATEWAY_TIMEOUT_CLOSE;
+    }
+
+    public static Response notEnoughReplicas(Request request) {
+        return keepAlive(request) ? NOT_ENOUGH_REPLICAS_KEEP_ALIVE : NOT_ENOUGH_REPLICAS_CLOSE;
     }
 
     public static boolean keepAlive(final Request request) {

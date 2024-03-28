@@ -6,7 +6,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-public abstract class LSMPointerIterator implements Iterator<Entry<MemorySegment>> {
+public abstract class LSMPointerIterator implements Iterator<TimestampedEntry<MemorySegment>> {
 
     public abstract int getPriority();
 
@@ -89,7 +89,7 @@ public abstract class LSMPointerIterator implements Iterator<Entry<MemorySegment
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public TimestampedEntry<MemorySegment> next() {
             throw new NoSuchElementException();
         }
     }

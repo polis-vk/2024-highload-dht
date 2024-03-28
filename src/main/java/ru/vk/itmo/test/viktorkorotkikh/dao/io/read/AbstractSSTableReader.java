@@ -2,6 +2,7 @@ package ru.vk.itmo.test.viktorkorotkikh.dao.io.read;
 
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMPointerIterator;
+import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -35,7 +36,7 @@ public abstract class AbstractSSTableReader {
      * @return entry
      * @throws IOException if an I/O error occurs.
      */
-    public Entry<MemorySegment> get(MemorySegment key) throws IOException {
+    public TimestampedEntry<MemorySegment> get(MemorySegment key) throws IOException {
         try {
             long entryOffset = getEntryOffset(key, SearchOption.EQ);
             if (entryOffset == -1) {
@@ -62,7 +63,7 @@ public abstract class AbstractSSTableReader {
      * @return entry
      * @throws IOException if an I/O error occurs.
      */
-    protected abstract Entry<MemorySegment> getByIndex(long index) throws IOException;
+    protected abstract TimestampedEntry<MemorySegment> getByIndex(long index) throws IOException;
 
     /**
      * Returns entry's index by key.

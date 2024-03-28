@@ -5,6 +5,7 @@ import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMPointerIterator;
 import ru.vk.itmo.test.viktorkorotkikh.dao.MemTable;
 import ru.vk.itmo.test.viktorkorotkikh.dao.MergeIterator;
+import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.read.AbstractSSTableReader;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.read.BaseSSTableReader;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.write.AbstractSSTableWriter;
@@ -229,7 +230,7 @@ public final class SSTable {
         }
     }
 
-    public Entry<MemorySegment> get(MemorySegment key) {
+    public TimestampedEntry<MemorySegment> get(MemorySegment key) {
         try {
             return reader.get(key);
         } catch (IOException e) {

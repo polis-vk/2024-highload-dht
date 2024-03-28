@@ -1,6 +1,7 @@
 package ru.vk.itmo.test.viktorkorotkikh.dao.io.write;
 
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -27,7 +28,7 @@ public final class BaseSSTableWriter extends AbstractSSTableWriter {
 
     @Override
     protected void writeEntry(
-            final Entry<MemorySegment> entry,
+            final TimestampedEntry<MemorySegment> entry,
             final OutputStream os,
             final OutputStream indexStream
     ) throws IOException {
@@ -57,6 +58,10 @@ public final class BaseSSTableWriter extends AbstractSSTableWriter {
             writeSegment(value, os);
             result += value.byteSize();
         }
+        // timestamp
+        writeLong(entry.timestamp(), os);
+        result += Long.BYTES;
+
         writeLong(entryOffset, indexStream);
         entryOffset += result;
     }

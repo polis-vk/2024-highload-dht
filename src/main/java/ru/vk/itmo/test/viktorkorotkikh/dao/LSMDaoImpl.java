@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class LSMDaoImpl implements Dao<MemorySegment, TimestampedEntry<MemorySegment>> {
 
     private volatile MemTable memTable;
 
@@ -60,7 +60,7 @@ public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+    public Iterator<TimestampedEntry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         return mergeIterator(from, to);
     }
 
@@ -74,22 +74,22 @@ public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> get(MemorySegment key) {
-        Entry<MemorySegment> fromMemTable = memTable.get(key);
+    public TimestampedEntry<MemorySegment> get(MemorySegment key) {
+        TimestampedEntry<MemorySegment> fromMemTable = memTable.get(key);
         if (fromMemTable != null) {
             return fromMemTable.value() == null ? null : fromMemTable;
         }
-        Entry<MemorySegment> fromFlushingMemTable = flushingMemTable.get(key);
+        TimestampedEntry<MemorySegment> fromFlushingMemTable = flushingMemTable.get(key);
         if (fromFlushingMemTable != null) {
             return fromFlushingMemTable.value() == null ? null : fromFlushingMemTable;
         }
         return getFromDisk(key);
     }
 
-    private Entry<MemorySegment> getFromDisk(MemorySegment key) {
+    private TimestampedEntry<MemorySegment> getFromDisk(MemorySegment key) {
         for (int i = ssTables.size() - 1; i >= 0; i--) { // reverse order because last sstable has the highest priority
             SSTable ssTable = ssTables.get(i);
-            Entry<MemorySegment> fromDisk = ssTable.get(key);
+            TimestampedEntry<MemorySegment> fromDisk = ssTable.get(key);
             if (fromDisk != null) {
                 return fromDisk.value() == null ? null : fromDisk;
             }
@@ -98,7 +98,7 @@ public class LSMDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public void upsert(Entry<MemorySegment> entry) {
+    public void upsert(TimestampedEntry<MemorySegment> entry) {
         upsertLock.readLock().lock();
         try {
             if (!memTable.upsert(entry)) { // no overflow

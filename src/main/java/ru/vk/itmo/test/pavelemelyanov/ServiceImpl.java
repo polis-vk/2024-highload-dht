@@ -23,7 +23,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        this.server = new MyServer(config, dao);
+        server = new MyServer(config, dao);
         server.start();
         return CompletableFuture.completedFuture(null);
     }

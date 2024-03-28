@@ -83,7 +83,7 @@ public class ServerImpl extends HttpServer {
             }
         } catch (Exception ex) {
             try {
-                String response = ex instanceof HttpException ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
+                String response = ex.getClass() == HttpException.class ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
                 session.sendError(response, null);
             } catch (IOException ioEx) {
                 log.error("Failed send error response to client.", ioEx);

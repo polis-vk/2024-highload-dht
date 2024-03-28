@@ -10,7 +10,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-
 public class RequestHandler {
     private final Dao<MemorySegment, TimestampEntry<MemorySegment>> dao;
 

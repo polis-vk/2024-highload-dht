@@ -241,10 +241,6 @@ public class MyServer extends HttpServer {
         this(config, dao, Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().availableProcessors());
     }
 
-//    private static HttpClient initializeClient(String url) {
-//        return HttpClient.newBuilder().connectTimeout(Duration.ofMillis(1000000))..build();
-//    }
-
     public MyServer(
             ServiceConfig config,
             ReferenceDao dao,

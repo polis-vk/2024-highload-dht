@@ -13,21 +13,21 @@ public final class Convertor {
         throw new UnsupportedOperationException("cannot be instantiated");
     }
 
-    public static byte[] addLongToArray(long l, byte[] given) {
-        int gLength = 0;
+    public static byte[] addLongToArray(long number, byte[] given) {
+        int givenLength = 0;
         if (given != null) {
-            gLength = given.length;
+            givenLength = given.length;
         }
-        byte[] result = new byte[Long.BYTES + gLength];
+        byte[] result = new byte[Long.BYTES + givenLength];
         for (int i = 0; i < Long.BYTES; ++i) {
-            result[i] = (byte)(l & 0xFF);
-            l >>= Byte.SIZE;
+            result[i] = (byte)(number & 0xFF);
+            number >>= Byte.SIZE;
         }
 
-        if (given != null) {
-            System.arraycopy(given, 0, result, 8, given.length);
-        } else {
+        if (given == null) {
             result[Long.BYTES - 1] = (byte)(result[Long.BYTES - 1] | 0x80);
+        } else {
+            System.arraycopy(given, 0, result, 8, given.length);
         }
 
         return result;

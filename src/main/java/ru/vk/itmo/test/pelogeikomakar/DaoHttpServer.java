@@ -107,16 +107,16 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             if (ack != null) {
                 try {
                     currAck = Integer.parseInt(ack);
-                } catch (NumberFormatException _) {
-                    log.warn("Can not parse number");
+                } catch (NumberFormatException e) {
+                    log.warn("Can not parse number", e);
                 }
             }
 
             if (from != null) {
                 try {
                     currFrom = Integer.parseInt(from);
-                } catch (NumberFormatException _) {
-                    log.warn("Can not parse number");
+                } catch (NumberFormatException e) {
+                    log.warn("Can not parse number", e);
                 }
             }
 
@@ -154,8 +154,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                 long curTime = -1;
                 try {
                     curTime = Long.parseLong(currResp.getHeader(TIME_HEADER));
-                } catch (NumberFormatException _) {
-                    log.warn("Can not parse number");
+                } catch (NumberFormatException e) {
+                    log.warn("Can not parse number", e);
                 }
 
                 if (oldestTime == -2 || oldestTime < curTime) {
@@ -216,7 +216,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                 }
                 return new Response(Response.CREATED, Response.EMPTY);
 
-
             case Request.METHOD_DELETE:
                 try {
                     dao.upsert(Convertor.requestToEntry(id, null, timeSt));
@@ -225,9 +224,10 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     return new Response(Response.CONFLICT, Response.EMPTY);
                 }
                 return new Response(Response.ACCEPTED, Response.EMPTY);
-        }
 
-        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            default:
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        }
     }
 
     private Response executeMethodRemote(String url, String id, Request request, long timeSt) {
@@ -238,7 +238,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         };
     }
-
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {

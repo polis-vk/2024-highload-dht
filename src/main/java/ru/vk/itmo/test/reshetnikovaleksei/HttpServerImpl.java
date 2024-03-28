@@ -118,28 +118,11 @@ public class HttpServerImpl extends HttpServer {
         }
 
         if (request.getHeader(REDIRECTED_REQUEST_HEADER_NAME) == null) {
-            List<String> nodes = requestRouter.getNodesByEntityId(id, from);
-            List<Response> responses = new ArrayList<>();
-            for (String node : nodes) {
-                if (node.equals(selfUrl)) {
-                    responses.add(invokeLocal(request, id));
-                    continue;
-                }
-
-                try {
-                    responses.add(requestRouter.redirect(node, request, id));
-                } catch (TimeoutException e) {
-                    LOGGER.error("timeout while invoking remote node");
-                    responses.add(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
-                } catch (ExecutionException | IOException e) {
-                    LOGGER.error("I/O exception while calling remote node");
-                    responses.add(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    LOGGER.error("Thread interrupted");
-                    responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-                }
-            }
+            List<Response> responses = sendRequestsAndGetResponses(
+                    request,
+                    id,
+                    requestRouter.getNodesByEntityId(id, from)
+            );
 
             List<Response> positiveResponses = new ArrayList<>();
             for (Response response : responses) {
@@ -195,6 +178,32 @@ public class HttpServerImpl extends HttpServer {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         }
+    }
+
+    private List<Response> sendRequestsAndGetResponses(Request request, String id, List<String> nodes) {
+        List<Response> responses = new ArrayList<>();
+        for (String node : nodes) {
+            if (node.equals(selfUrl)) {
+                responses.add(invokeLocal(request, id));
+                continue;
+            }
+
+            try {
+                responses.add(requestRouter.redirect(node, request, id));
+            } catch (TimeoutException e) {
+                LOGGER.error("timeout while invoking remote node");
+                responses.add(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            } catch (ExecutionException | IOException e) {
+                LOGGER.error("I/O exception while calling remote node");
+                responses.add(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOGGER.error("Thread interrupted");
+                responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+            }
+        }
+
+        return responses;
     }
 
     private void processIOException(Request request, HttpSession session, IOException e) {

@@ -35,7 +35,7 @@ public class ReferenceService implements Service {
 
     private final ServiceConfig config;
 
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private ReferenceDao dao;
     private ReferenceServer server;
     private boolean stopped;
     public ReferenceService(ServiceConfig config) {
@@ -81,7 +81,7 @@ public class ReferenceService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

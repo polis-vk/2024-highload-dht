@@ -16,7 +16,6 @@ import static ru.vk.itmo.test.tuzikovalexandr.Constants.BASE_URL;
 import static ru.vk.itmo.test.tuzikovalexandr.Constants.FLUSHING_THRESHOLD_BYTES;
 import static ru.vk.itmo.test.tuzikovalexandr.Constants.NUMBER_OF_VIRTUAL_NODES;
 
-
 public final class Server {
 
     private Server() {
@@ -50,3 +49,4 @@ public final class Server {
         }
     }
 }
+

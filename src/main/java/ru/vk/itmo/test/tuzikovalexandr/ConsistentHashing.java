@@ -6,10 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.SortedMap;
-import java.util.stream.Collectors;
 import java.util.TreeMap;
-
-
+import java.util.stream.Collectors;
 
 public class ConsistentHashing {
     private final NavigableMap<Integer, String> circle;

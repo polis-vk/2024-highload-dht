@@ -8,6 +8,7 @@ import ru.vk.itmo.test.osokindm.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.nio.charset.StandardCharsets;
 
 public class DaoWrapper {
 
@@ -18,24 +19,31 @@ public class DaoWrapper {
     }
 
     public Entry<MemorySegment> get(String id) {
-        MemorySegment key = Converter.getMemorySegment(id);
+        MemorySegment key = getMemorySegment(id);
         return storage.get(key);
     }
 
-    public Boolean delete(String id) {
-        MemorySegment key = Converter.getMemorySegment(id);
+    public void delete(String id) {
+        MemorySegment key = getMemorySegment(id);
         storage.upsert(new BaseEntry<>(key, null));
-        return true;
     }
 
-    public Boolean upsert(String id, Request request) {
-        MemorySegment key = Converter.getMemorySegment(id);
-        MemorySegment value = Converter.getMemorySegment(request.getBody());
+    public void upsert(String id, Request request) {
+        MemorySegment key = getMemorySegment(id);
+        MemorySegment value = getMemorySegment(request.getBody());
         storage.upsert(new BaseEntry<>(key, value));
-        return true;
     }
 
     public void stop() throws IOException {
         storage.close();
     }
+
+    private static MemorySegment getMemorySegment(byte[] data) {
+        return MemorySegment.ofArray(data);
+    }
+
+    private static MemorySegment getMemorySegment(String data) {
+        return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
+    }
+
 }

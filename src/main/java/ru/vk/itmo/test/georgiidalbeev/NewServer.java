@@ -85,8 +85,9 @@ public class NewServer extends HttpServer {
 
         String fromString = request.getParameter("from=");
         String ackString = request.getParameter("ack=");
-        int from = fromString == null || fromString.isEmpty() ?
-                serviceConfig.clusterUrls().size() : Integer.parseInt(fromString);
+        int from = fromString == null || fromString.isEmpty()
+                ? serviceConfig.clusterUrls().size()
+                : Integer.parseInt(fromString);
         int ack = ackString == null || ackString.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackString);
 
         if (ack == 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
@@ -169,8 +170,9 @@ public class NewServer extends HttpServer {
         int notFoundResponsesCount = 0;
         long maxTimestamp = Long.MIN_VALUE;
         for (Response response : responses) {
-            long timestamp = response.getHeader(HEADER_TIMESTAMP) == null ?
-                    -1 : Long.parseLong(response.getHeader(HEADER_TIMESTAMP));
+            long timestamp = response.getHeader(HEADER_TIMESTAMP) == null
+                    ? -1
+                    : Long.parseLong(response.getHeader(HEADER_TIMESTAMP));
             if (response.getStatus() == 404) {
                 notFoundResponsesCount++;
                 if (timestamp != -1 && maxTimestamp < timestamp) {
@@ -269,8 +271,9 @@ public class NewServer extends HttpServer {
         };
 
         Response responseProxied = new Response(responseCode, body);
-        long timestamp = response.headers().map().containsKey("x-timestamp") ?
-                Long.parseLong(response.headers().map().get("x-timestamp").getFirst()) : -1;
+        long timestamp = response.headers().map().containsKey("x-timestamp")
+                ? Long.parseLong(response.headers().map().get("x-timestamp").getFirst())
+                : -1;
         if (timestamp != -1) {
             responseProxied.addHeader(HEADER_TIMESTAMP + timestamp);
         }

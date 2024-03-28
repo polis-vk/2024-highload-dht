@@ -116,7 +116,12 @@ public class RequestHandler {
         return processDistributed(method, id, request, ack, from);
     }
 
-    private Response processDistributed(int method, String id, Request request, int ack, int from) throws InterruptedException {
+    private Response processDistributed(
+            int method,
+            String id,
+            Request request,
+            int ack,
+            int from) throws InterruptedException {
 
         int[] nodes = distributor.getNodesStartingWithKey(id, from);
         List<Response> responses = new ArrayList<>();

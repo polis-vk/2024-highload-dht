@@ -30,8 +30,7 @@ import static ru.vk.itmo.test.kovalevigor.dao.SSTableUtils.getIndexPath;
 
 public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implements
         DaoFileGet<MemorySegment, T>,
-        AutoCloseable
-{
+        AutoCloseable {
 
     public static final String SSTABLE_NAME = "sstable";
 
@@ -42,7 +41,7 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
     private final Set<SSTable> deadSSTables;
     private int totalSize;
 
-    public SSTableManager(final Path root) throws IOException {
+    protected SSTableManager(final Path root) throws IOException {
         this.root = root;
         this.arena = Arena.ofShared();
         this.ssTables = readTables();
@@ -98,11 +97,11 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
             final Path path,
             final String name
     ) throws IOException {
-        try (Arena arena = Arena.ofConfined(); SStorageDumper<T> dumper = getDumper(
+        try (Arena wArena = Arena.ofConfined(); SStorageDumper<T> dumper = getDumper(
                 getMapSize(map),
                 getDataPath(path, name),
                 getIndexPath(path, name),
-                arena
+                wArena
         )) {
             for (final T entry: map.values()) {
                 dumper.writeEntry(entry);
@@ -271,5 +270,6 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
     ) throws IOException;
 
     protected abstract T keyValueEntryTo(Entry<MemorySegment> entry);
+
     protected abstract Iterator<T> keyValueEntryTo(Iterator<Entry<MemorySegment>> entry);
 }

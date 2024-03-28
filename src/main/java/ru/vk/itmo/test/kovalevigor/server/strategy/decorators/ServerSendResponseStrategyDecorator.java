@@ -9,7 +9,6 @@ import java.io.IOException;
 
 public class ServerSendResponseStrategyDecorator extends ServerStrategyDecorator {
 
-
     public ServerSendResponseStrategyDecorator(ServerStrategy httpServer) {
         super(httpServer);
     }
@@ -17,12 +16,12 @@ public class ServerSendResponseStrategyDecorator extends ServerStrategyDecorator
     @Override
     public Response handleRequest(Request request, HttpSession session) throws IOException {
         Response response = super.handleRequest(request, session);
-        if (response != null) {
-            session.sendResponse(response);
-        } else if (Thread.currentThread().isInterrupted()) {
+        if (response == null && Thread.currentThread().isInterrupted()) {
             session.sendError(Response.INTERNAL_ERROR, "");
-        } else {
+        } else if (response == null) {
             session.sendError(Response.GATEWAY_TIMEOUT, "");
+        } else {
+            session.sendResponse(response);
         }
         return null;
     }

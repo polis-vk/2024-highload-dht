@@ -34,7 +34,7 @@ import java.util.logging.Logger;
 public class DaoImpl<T extends DaoEntry<MemorySegment>> implements Dao<MemorySegment, T> {
 
     private final SSTableManager<T> ssManager;
-    private final ConcurrentNavigableMap<MemorySegment, T> EMPTY_MAP =
+    private final ConcurrentNavigableMap<MemorySegment, T> emptyMap =
             new ConcurrentSkipListMap<>(SSTable.COMPARATOR);
     private ConcurrentNavigableMap<MemorySegment, T> flushedStorage;
     private ConcurrentNavigableMap<MemorySegment, T> currentStorage;
@@ -48,7 +48,7 @@ public class DaoImpl<T extends DaoEntry<MemorySegment>> implements Dao<MemorySeg
     public DaoImpl(final Config config, IOFunction<Path, SSTableManager<T>> tableManagerFunction) throws IOException {
         ssManager = tableManagerFunction.apply(config.basePath());
         currentStorage = new ConcurrentSkipListMap<>(SSTable.COMPARATOR);
-        flushedStorage = EMPTY_MAP;
+        flushedStorage = emptyMap;
         flushThresholdBytes = config.flushThresholdBytes();
         flushService = Executors.newSingleThreadExecutor();
         compactService = Executors.newSingleThreadExecutor();
@@ -188,7 +188,7 @@ public class DaoImpl<T extends DaoEntry<MemorySegment>> implements Dao<MemorySeg
                     if (name != null) {
                         ssManager.addSSTable(name);
                     }
-                    flushedStorage = EMPTY_MAP;
+                    flushedStorage = emptyMap;
                 } catch (IOException e) {
                     log(e);
                 } finally {

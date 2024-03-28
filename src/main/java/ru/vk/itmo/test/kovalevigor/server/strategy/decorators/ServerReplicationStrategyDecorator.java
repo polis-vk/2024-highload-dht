@@ -29,8 +29,6 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
         if (Headers.hasHeader(request, Headers.REPLICATION)) {
             return super.handleRequest(request, session);
         }
-        Response replicasResponse = null;
-        Headers.addHeader(request, Headers.REPLICATION, "");
         int ack = Parameters.getParameter(request, Parameters.ACK, Integer::parseInt, serviceInfo.getQuorum());
         int from = Parameters.getParameter(request, Parameters.FROM, Integer::parseInt, serviceInfo.getClusterSize());
         if (ack > from || ack == 0) {
@@ -43,6 +41,8 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
                 from
         );
 
+        Response replicasResponse = null;
+        Headers.addHeader(request, Headers.REPLICATION, "");
         int responseCount = 0;
         for (ServerStrategy strategy : strategies) {
             Response replicaResponse = strategy == this
@@ -53,6 +53,10 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
                 replicasResponse = mergeResponses(replicasResponse, replicaResponse);
             }
         }
+        return checkReplicaResponse(responseCount, ack, replicasResponse);
+    }
+
+    private static Response checkReplicaResponse(int responseCount, int ack, Response replicasResponse) {
         Response response;
         if (responseCount >= ack) {
             if (replicasResponse == null) {

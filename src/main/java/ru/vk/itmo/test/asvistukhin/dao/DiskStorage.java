@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.asvistukhin.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
@@ -50,12 +49,12 @@ public class DiskStorage {
         mapSSTableAfterFlush(storagePath, DATA_FILE_AFTER_COMPACTION, arena);
     }
 
-    public Iterator<Entry<MemorySegment>> range(
+    public Iterator<TimestampEntry<MemorySegment>> range(
             StorageState storageState,
             MemorySegment from,
             MemorySegment to
     ) {
-        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
+        List<Iterator<TimestampEntry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
         for (MemorySegment memorySegment : segmentList) {
             iterators.add(iterator(memorySegment, from, to));
         }
@@ -65,19 +64,19 @@ public class DiskStorage {
         }
         iterators.add(storageState.getActiveSSTable().get(from, to));
 
-        return new MergeIterator<>(iterators, Comparator.comparing(Entry::key, MemorySegmentUtils::compare)) {
+        return new MergeIterator<>(iterators, Comparator.comparing(TimestampEntry::key, MemorySegmentUtils::compare)) {
             @Override
-            protected boolean shouldSkip(Entry<MemorySegment> memorySegmentEntry) {
+            protected boolean shouldSkip(TimestampEntry<MemorySegment> memorySegmentEntry) {
                 return memorySegmentEntry.value() == null;
             }
         };
     }
 
-    public Iterator<Entry<MemorySegment>> rangeFromDisk(
+    public Iterator<TimestampEntry<MemorySegment>> rangeFromDisk(
             MemorySegment from,
             MemorySegment to
     ) {
-        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
+        List<Iterator<TimestampEntry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
         iterators.add(Collections.emptyIterator());
         for (MemorySegment memorySegment : segmentList) {
             iterators.add(iterator(memorySegment, from, to));
@@ -85,7 +84,7 @@ public class DiskStorage {
 
         return new MergeIterator<>(iterators, Comparator.comparing(Entry::key, MemorySegmentUtils::compare)) {
             @Override
-            protected boolean shouldSkip(Entry<MemorySegment> memorySegmentEntry) {
+            protected boolean shouldSkip(TimestampEntry<MemorySegment> memorySegmentEntry) {
                 return memorySegmentEntry.value() == null;
             }
         };
@@ -93,7 +92,7 @@ public class DiskStorage {
 
     public static String save(
             Path storagePath,
-            Iterable<Entry<MemorySegment>> iterable
+            Iterable<TimestampEntry<MemorySegment>> iterable
     ) throws IOException {
         final Path indexTmp = storagePath.resolve("index.tmp");
         final Path indexFile = storagePath.resolve("index.idx");
@@ -109,12 +108,13 @@ public class DiskStorage {
 
         long dataSize = 0;
         long count = 0;
-        for (Entry<MemorySegment> entry : iterable) {
+        for (TimestampEntry<MemorySegment> entry : iterable) {
             dataSize += entry.key().byteSize();
             MemorySegment value = entry.value();
             if (value != null) {
                 dataSize += value.byteSize();
             }
+            dataSize += Long.BYTES;
             count++;
         }
         long indexSize = count * 2 * Long.BYTES;
@@ -140,7 +140,7 @@ public class DiskStorage {
             // key0_Start = data start = end of index
             long dataOffset = indexSize;
             int indexOffset = 0;
-            for (Entry<MemorySegment> entry : iterable) {
+            for (TimestampEntry<MemorySegment> entry : iterable) {
                 fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
                 dataOffset += entry.key().byteSize();
                 indexOffset += Long.BYTES;
@@ -160,9 +160,9 @@ public class DiskStorage {
             }
 
             // data:
-            // |key0|value0|key1|value1|...
+            // |key0|value0|timestamp0|key1|value1|timestamp1...
             dataOffset = indexSize;
-            for (Entry<MemorySegment> entry : iterable) {
+            for (TimestampEntry<MemorySegment> entry : iterable) {
                 MemorySegment key = entry.key();
                 MemorySegment.copy(key, 0, fileSegment, dataOffset, key.byteSize());
                 dataOffset += key.byteSize();
@@ -172,6 +172,13 @@ public class DiskStorage {
                     MemorySegment.copy(value, 0, fileSegment, dataOffset, value.byteSize());
                     dataOffset += value.byteSize();
                 }
+
+                fileSegment.set(
+                    ValueLayout.JAVA_LONG_UNALIGNED,
+                    dataOffset,
+                    entry.timestamp()
+                );
+                dataOffset += Long.BYTES;
             }
         }
 
@@ -238,7 +245,11 @@ public class DiskStorage {
         }
     }
 
-    private static Iterator<Entry<MemorySegment>> iterator(MemorySegment page, MemorySegment from, MemorySegment to) {
+    private static Iterator<TimestampEntry<MemorySegment>> iterator(
+        MemorySegment page,
+        MemorySegment from,
+        MemorySegment to
+    ) {
         long recordIndexFrom = from == null ? 0 : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, from));
         long recordIndexTo = to == null ? MemorySegmentUtils.recordsCount(page)
                 : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, to));
@@ -253,7 +264,7 @@ public class DiskStorage {
             }
 
             @Override
-            public Entry<MemorySegment> next() {
+            public TimestampEntry<MemorySegment> next() {
                 if (!hasNext()) {
                     throw new NoSuchElementException();
                 }
@@ -263,13 +274,15 @@ public class DiskStorage {
                         MemorySegmentUtils.endOfKey(page, index)
                 );
                 long startOfValue = MemorySegmentUtils.startOfValue(page, index);
+                long endOfValue = MemorySegmentUtils.endOfValue(page, index, recordsCount);
                 MemorySegment value = startOfValue < 0 ? null : MemorySegmentUtils.slice(
                         page,
                         startOfValue,
-                        MemorySegmentUtils.endOfValue(page, index, recordsCount)
+                        endOfValue
                 );
+                long timestamp = page.get(ValueLayout.JAVA_LONG_UNALIGNED, endOfValue);
                 index++;
-                return new BaseEntry<>(key, value);
+                return new TimestampEntry<>(key, value, timestamp);
             }
         };
     }

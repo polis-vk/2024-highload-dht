@@ -7,16 +7,17 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
+import ru.vk.itmo.test.asvistukhin.dao.TimestampEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
@@ -80,9 +81,10 @@ public class ServiceImpl implements Service {
         }
 
         dao.upsert(
-            new BaseEntry<>(
+            new TimestampEntry<>(
                 MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
-                MemorySegment.ofArray(request.getBody())
+                MemorySegment.ofArray(request.getBody()),
+                Instant.now().toEpochMilli()
             )
         );
 
@@ -101,9 +103,10 @@ public class ServiceImpl implements Service {
         }
 
         dao.upsert(
-            new BaseEntry<>(
+            new TimestampEntry<>(
                 MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)),
-                null
+                null,
+                Instant.now().toEpochMilli()
             )
         );
 

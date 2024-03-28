@@ -216,7 +216,14 @@ public class LSMServerImpl extends HttpServer {
         return new RequestParameters(id, ack, from);
     }
 
-    private Response getResponseFromReplicas(Request request, Integer from, List<String> replicas, byte[] key, String id, Integer ack) {
+    private Response getResponseFromReplicas(
+            Request request,
+            Integer from,
+            List<String> replicas,
+            byte[] key,
+            String id,
+            Integer ack
+    ) {
         final List<HttpResponse<byte[]>> responses = new ArrayList<>(from);
         for (final String replicaUrl : replicas) {
             if (replicaUrl.equals(selfUrl)) {

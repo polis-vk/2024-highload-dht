@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.bandurinvladislav.dao;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.bandurinvladislav.dao.Entry;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -136,6 +136,7 @@ final class SSTableWriter {
             final OutputStream os) throws IOException {
         final MemorySegment key = entry.key();
         final MemorySegment value = entry.value();
+        final long timestamp = entry.timestamp();
         long result = 0L;
 
         // Key size
@@ -160,6 +161,9 @@ final class SSTableWriter {
             writeSegment(value, os);
             result += value.byteSize();
         }
+
+        writeLong(timestamp, os);
+        result += Long.BYTES;
 
         return result;
     }

@@ -10,10 +10,10 @@ import one.nio.net.ConnectionString;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.bandurinvladislav.config.DhtServerConfig;
+import ru.vk.itmo.test.bandurinvladislav.dao.BaseEntry;
+import ru.vk.itmo.test.bandurinvladislav.dao.Config;
+import ru.vk.itmo.test.bandurinvladislav.dao.Entry;
 import ru.vk.itmo.test.bandurinvladislav.dao.ReferenceDao;
 import ru.vk.itmo.test.bandurinvladislav.util.Constants;
 import ru.vk.itmo.test.bandurinvladislav.util.MemSegUtil;
@@ -23,8 +23,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.HashMap;
-import java.util.Map;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -64,14 +64,22 @@ public class Server extends HttpServer {
         if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
+        Response response;
+        if (result.value() == null) {
+            response = new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else {
+            response = Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
+        }
+        response.addHeader(Constants.HEADER_TIMESTAMP + result.timestamp());
+        return response;
     }
 
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
         dao.upsert(
                 new BaseEntry<>(
                         MemSegUtil.fromString(id),
-                        MemorySegment.ofArray(request.getBody())
+                        MemorySegment.ofArray(request.getBody()),
+                        System.currentTimeMillis()
                 )
         );
         return new Response(Response.CREATED, Response.EMPTY);
@@ -81,7 +89,8 @@ public class Server extends HttpServer {
         dao.upsert(
                 new BaseEntry<>(
                         MemSegUtil.fromString(id),
-                        null
+                        null,
+                        System.currentTimeMillis()
                 )
         );
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -120,21 +129,98 @@ public class Server extends HttpServer {
             return;
         }
 
+        switch (request.getMethod()) {
+            case Request.METHOD_CONNECT, Request.METHOD_OPTIONS,
+                    Request.METHOD_TRACE, Request.METHOD_HEAD,
+                    Request.METHOD_POST
+                    -> {
+                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                return;
+            }
+        }
+
         String key = request.getParameter(Constants.PARAMETER_ID);
-        if (StringUtil.isEmpty(key)) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        String ackParam = request.getParameter(Constants.PARAMETER_ACK);
+        String fromParam = request.getParameter(Constants.PARAMETER_FROM);
+        int ack, from;
+        try {
+            ack = ackParam == null ? serverConfig.clusterUrls.size() / 2 + 1 : Integer.parseInt(ackParam);
+            from = fromParam == null ? serverConfig.clusterUrls.size() : Integer.parseInt(fromParam);
+        } catch (NumberFormatException e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST,
+                    "Invalid parameters format".getBytes(StandardCharsets.UTF_8)));
             return;
         }
 
-        HttpClient client = getClientByKey(key);
-        if (client == null) {
-            invokeLocal(request, session, key);
-        } else {
-            invokeRemote(request, session, client);
+        Response validationResponse = validateParams(key, ack, from);
+        if (validationResponse != null) {
+            session.sendResponse(validationResponse);
         }
+
+        String sender = request.getHeader(Constants.HEADER_SENDER);
+        if (sender != null) {
+            session.sendResponse(invokeLocal(request, key));
+            return;
+        } else {
+            request.addHeader(Constants.HEADER_SENDER + serverConfig.clusterUrls);
+        }
+
+        List<HttpClient> clients = getClientsByKey(key, from);
+        List<Response> responses = new ArrayList<>(from);
+        for (HttpClient client : clients) {
+            Response response;
+            if (client == null) {
+                response = invokeLocal(request, key);
+            } else {
+                response = invokeRemote(request, client);
+            }
+            if (response.getStatus() < 300 || response.getStatus() == 404) {
+                responses.add(response);
+            }
+        }
+        if (responses.size() < ack) {
+            session.sendResponse(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+        }
+
+        session.sendResponse(successResponse(responses));
     }
 
-    private void invokeLocal(Request request, HttpSession session, String key) throws IOException {
+    @SuppressWarnings("OptionalGetWithoutIsPresent")
+    private Response successResponse(List<Response> responses) {
+        return responses.stream()
+                .max(Comparator.comparingLong(this::getTimestampHeader))
+                .get();
+    }
+
+    private Long getTimestampHeader(Response response) {
+        String header = response.getHeader(Constants.HEADER_TIMESTAMP);
+        return header == null ? -1 : Long.parseLong(header);
+    }
+
+    private Response validateParams(String key, int ack, int from) {
+        if (StringUtil.isEmpty(key)) {
+            return new Response(Response.BAD_REQUEST, "Id can't be empty".getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (ack <= 0 || from <= 0) {
+            return new Response(Response.BAD_REQUEST,
+                    "ack and from can't be negative".getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (from < ack) {
+            return new Response(Response.BAD_REQUEST,
+                    "from can't be less than ack".getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (from > serverConfig.clusterUrls.size()) {
+            return new Response(Response.BAD_REQUEST,
+                    "from can't be greater than nodes count".getBytes(StandardCharsets.UTF_8));
+        }
+
+        return null;
+    }
+
+    private Response invokeLocal(Request request, String key) {
         Response response;
         try {
             response = switch (request.getMethod()) {
@@ -148,10 +234,10 @@ public class Server extends HttpServer {
             response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
 
-        session.sendResponse(response);
+        return response;
     }
 
-    private void invokeRemote(Request request, HttpSession session, HttpClient client) throws IOException {
+    private Response invokeRemote(Request request, HttpClient client) {
         Response response;
         try {
             response = switch (request.getMethod()) {
@@ -162,24 +248,24 @@ public class Server extends HttpServer {
             logger.error("Internal error during request handling: " + e.getMessage());
             response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        session.sendResponse(response);
+        return response;
     }
 
-    private HttpClient getClientByKey(String key) {
-        String selectedNode = serverConfig.clusterUrls.getFirst();
-        int maxHash = Hash.murmur3(selectedNode + key);
+    private List<HttpClient> getClientsByKey(String key, int from) {
+        TreeMap<Integer, String> hashUrlSorted = new TreeMap<>();
 
-        for (int i = 1; i < serverConfig.clusterUrls.size(); i++) {
+        for (int i = 0; i < serverConfig.clusterUrls.size(); i++) {
             String currentNodeUrl = serverConfig.clusterUrls.get(i);
             int currentHash = Hash.murmur3(currentNodeUrl + key);
-
-            if (currentHash > maxHash) {
-                maxHash = currentHash;
-                selectedNode = currentNodeUrl;
-            }
+            hashUrlSorted.put(currentHash, currentNodeUrl);
         }
 
-        return clients.get(selectedNode);
+        return hashUrlSorted
+                .values()
+                .stream()
+                .limit(from)
+                .map(clients::get)
+                .toList();
     }
 
     @Override

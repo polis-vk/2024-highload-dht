@@ -7,7 +7,7 @@ import java.net.HttpURLConnection;
 import java.util.Map;
 import java.util.Set;
 
-public class HTTPUtils {
+public final class HttpUtils {
     public static final Set<Integer> METHODS = Set.of(
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
@@ -22,7 +22,7 @@ public class HTTPUtils {
     );
     public static final int NUMBER_OF_VIRTUAL_NODES = 5;
 
-    private HTTPUtils() {
+    private HttpUtils() {
 
     }
 }

@@ -10,7 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static ru.vk.itmo.test.pavelemelyanov.HTTPUtils.NUMBER_OF_VIRTUAL_NODES;
+import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.NUMBER_OF_VIRTUAL_NODES;
 
 public final class ServerStarter {
     private static final String URL = "http://localhost";

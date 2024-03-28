@@ -9,7 +9,7 @@ import ru.vk.itmo.test.pavelemelyanov.dao.ReferenceDao;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
-import static ru.vk.itmo.test.pavelemelyanov.HTTPUtils.NUMBER_OF_VIRTUAL_NODES;
+import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.NUMBER_OF_VIRTUAL_NODES;
 
 public class ServiceImpl implements Service {
     private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1024;

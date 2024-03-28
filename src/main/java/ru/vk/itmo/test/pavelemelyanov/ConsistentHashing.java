@@ -20,6 +20,7 @@ public class ConsistentHashing {
             }
         }
     }
+
     public void addNode(int numOfNode, String node) {
         int hash = getHash(node + numOfNode);
         virtualNodeMapping.put(hash, node);

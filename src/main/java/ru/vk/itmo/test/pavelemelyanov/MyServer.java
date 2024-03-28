@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.pavelemelyanov;
 
-import java.net.http.HttpClient;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -15,6 +14,7 @@ import ru.vk.itmo.test.pavelemelyanov.dao.Dao;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
@@ -30,12 +30,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static ru.vk.itmo.test.pavelemelyanov.HTTPUtils.HTTP_CODE;
-import static ru.vk.itmo.test.pavelemelyanov.HTTPUtils.METHODS;
-import static ru.vk.itmo.test.pavelemelyanov.HTTPUtils.REQUEST_TIMEOUT;
-import static ru.vk.itmo.test.pavelemelyanov.HeaderUtils.HTTP_TERMINATION_HEADER;
-import static ru.vk.itmo.test.pavelemelyanov.HeaderUtils.HTTP_TIMESTAMP_HEADER;
-import static ru.vk.itmo.test.pavelemelyanov.HeaderUtils.NIO_TIMESTAMP_HEADER;
+import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.METHODS;
 
 public class MyServer extends HttpServer {
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
@@ -123,7 +118,7 @@ public class MyServer extends HttpServer {
         }
 
         try {
-            if (request.getHeader(HTTP_TERMINATION_HEADER) == null) {
+            if (request.getHeader(HeaderUtils.HTTP_TERMINATION_HEADER) == null) {
                 session.sendResponse(handleProxyRequest(request, session, paramId, from, ack));
             } else {
                 session.sendResponse(requestHandler.handle(request, paramId));
@@ -162,7 +157,7 @@ public class MyServer extends HttpServer {
                 .method(request.getMethodName(), request.getBody() == null
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                .setHeader(HTTP_TERMINATION_HEADER, "true")
+                .setHeader(HeaderUtils.HTTP_TERMINATION_HEADER, "true")
                 .build();
     }
 
@@ -170,17 +165,17 @@ public class MyServer extends HttpServer {
         try {
             HttpResponse<byte[]> httpResponse = httpClient
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+                    .get(HttpUtils.REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
 
-            String statusCode = HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
+            String statusCode = HttpUtils.HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
             if (statusCode == null) {
                 return new Response(Response.INTERNAL_ERROR, httpResponse.body());
             } else {
 
                 Response response = new Response(statusCode, httpResponse.body());
                 long timestamp = httpRequest.headers()
-                        .firstValueAsLong(HTTP_TIMESTAMP_HEADER).orElse(0);
-                response.addHeader(NIO_TIMESTAMP_HEADER + timestamp);
+                        .firstValueAsLong(HeaderUtils.HTTP_TIMESTAMP_HEADER).orElse(0);
+                response.addHeader(HeaderUtils.NIO_TIMESTAMP_HEADER + timestamp);
                 return response;
             }
         } catch (InterruptedException e) {
@@ -230,7 +225,7 @@ public class MyServer extends HttpServer {
         if (successResponses.size() >= ack) {
             if (request.getMethod() == Request.METHOD_GET) {
                 successResponses.sort(Comparator.comparingLong(r -> {
-                    String timestamp = r.getHeader(NIO_TIMESTAMP_HEADER);
+                    String timestamp = r.getHeader(HeaderUtils.NIO_TIMESTAMP_HEADER);
                     return timestamp == null ? 0 : Long.parseLong(timestamp);
                 }));
                 return successResponses.getFirst();

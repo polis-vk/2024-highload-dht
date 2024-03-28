@@ -35,6 +35,7 @@ public class ServerImpl extends HttpServer {
     private final ExecutorService executorService;
     private final HttpClient httpClient;
     private final ConsistentHashing consistentHashing;
+    private final List<String> clusterUrls;
     private final RequestHandler requestHandler;
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
@@ -48,6 +49,7 @@ public class ServerImpl extends HttpServer {
         this.consistentHashing = consistentHashing;
         this.selfUrl = config.selfUrl();
         this.clusterSize = config.clusterUrls().size();
+        this.clusterUrls = config.clusterUrls();
         this.requestHandler = new RequestHandler(dao);
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(2)).build();
@@ -203,7 +205,7 @@ public class ServerImpl extends HttpServer {
     }
 
     private Response handleProxyRequest(Request request, HttpSession session, String paramId, int from, int ack) {
-        List<String> nodeUrls = consistentHashing.getNodes(paramId, from);
+        List<String> nodeUrls = consistentHashing.getNodes(paramId, clusterUrls, from);
 
         if (nodeUrls.size() < from) {
             sendResponse(session, new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));

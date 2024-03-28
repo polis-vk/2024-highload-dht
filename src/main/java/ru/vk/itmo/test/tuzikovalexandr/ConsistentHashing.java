@@ -4,6 +4,7 @@ import one.nio.util.Hash;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -46,6 +47,17 @@ public class ConsistentHashing {
         SortedMap<Integer, String> tailMap = circle.tailMap(hash);
         return (tailMap.isEmpty() ? circle : tailMap).values()
                 .stream().limit(from).collect(Collectors.toList());
+    }
+
+    List<String> getNodes(String key, List<String> clusterUrls, int from) {
+        Map<Integer, String> nodesHashes = new TreeMap<>();
+
+        for (String nodeUrl : clusterUrls) {
+            nodesHashes.put(Hash.murmur3(nodeUrl + key), nodeUrl);
+        }
+
+        return nodesHashes.values().stream().limit(from)
+                .collect(Collectors.toList());
     }
 
     private int getHash(String key) {

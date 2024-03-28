@@ -132,8 +132,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             // Redirected request
             try {
                 time = Long.parseLong(request.getHeader(TIME_HEADER));
-            } catch (NumberFormatException _) {
-                log.warn("Can not parse number");
+            } catch (NumberFormatException e) {
+                log.warn("Can not parse number", e);
             }
             subResponse = executeMethodLocal(id, request, time);
         }

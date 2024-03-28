@@ -5,6 +5,7 @@ import ru.vk.itmo.test.khadyrovalmasgali.server.DaoServer;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 public final class Main {
@@ -14,7 +15,7 @@ public final class Main {
                 8080,
                 selfUrl,
                 List.of(selfUrl),
-                Files.createTempDirectory(".")
+                Files.createDirectories(Path.of("./tmp"))
         ));
         server.start();
     }

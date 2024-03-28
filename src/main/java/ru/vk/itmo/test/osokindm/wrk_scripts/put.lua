@@ -1,5 +1,5 @@
 minId = 1
-maxId = 1000
+maxId = 100000000
 
 function getRandomId()
     return math.random(minId, maxId)

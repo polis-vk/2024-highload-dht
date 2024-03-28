@@ -89,7 +89,6 @@ public class DiskStorage {
     public static String save(Path storagePath, Iterable<TimestampEntry<MemorySegment>> iterable) throws IOException {
         final Path indexTmp = storagePath.resolve("index.tmp");
         final Path indexFile = storagePath.resolve("index.idx");
-
         try {
             Files.createFile(indexFile);
         } catch (FileAlreadyExistsException ignored) {
@@ -97,7 +96,6 @@ public class DiskStorage {
         }
         List<String> existedFiles = Files.readAllLines(indexFile, StandardCharsets.UTF_8);
         String newFileName = String.valueOf(existedFiles.size());
-
         long dataSize = 0;
         long count = 0;
         for (TimestampEntry<MemorySegment> entry : iterable) {
@@ -153,7 +151,6 @@ public class DiskStorage {
                 MemorySegment key = entry.key();
                 MemorySegment.copy(key, 0, fileSegment, dataOffset, key.byteSize());
                 dataOffset += key.byteSize();
-
                 MemorySegment value = entry.value();
                 if (value != null) {
                     MemorySegment.copy(value, 0, fileSegment, dataOffset, value.byteSize());
@@ -165,7 +162,6 @@ public class DiskStorage {
         }
 
         Files.move(indexFile, indexTmp, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-
         List<String> list = new ArrayList<>(existedFiles.size() + 1);
         list.addAll(existedFiles);
         list.add(newFileName);
@@ -176,7 +172,6 @@ public class DiskStorage {
             StandardOpenOption.CREATE,
             StandardOpenOption.TRUNCATE_EXISTING
         );
-
         Files.delete(indexTmp);
         return newFileName;
     }

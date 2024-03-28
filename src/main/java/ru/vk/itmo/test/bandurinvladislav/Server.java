@@ -139,7 +139,8 @@ public class Server extends HttpServer {
             return;
         }
 
-        int ack = getParameterAsInt(request.getParameter(Constants.PARAMETER_ACK), serverConfig.clusterUrls.size() / 2 + 1);
+        int ack = getParameterAsInt(request.getParameter(Constants.PARAMETER_ACK),
+                serverConfig.clusterUrls.size() / 2 + 1);
         int from = getParameterAsInt(request.getParameter(Constants.PARAMETER_FROM), serverConfig.clusterUrls.size());
         String key = request.getParameter(Constants.PARAMETER_ID);
 

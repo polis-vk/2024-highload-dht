@@ -40,7 +40,7 @@ final class SSTableWriter {
     void write(
             final Path baseDir,
             final int sequence,
-            final Iterator<Entry<MemorySegment>> entries) throws IOException {
+            final Iterator<EntryWithTimestamp<MemorySegment>> entries) throws IOException {
         // Write to temporary files
         final Path tempIndexName = SSTables.tempIndexName(baseDir, sequence);
         final Path tempDataName = SSTables.tempDataName(baseDir, sequence);
@@ -71,7 +71,7 @@ final class SSTableWriter {
                 writeLong(entryOffset, index);
 
                 // Then write the entry
-                final Entry<MemorySegment> entry = entries.next();
+                final EntryWithTimestamp<MemorySegment> entry = entries.next();
                 entryOffset += writeEntry(entry, data);
             }
         }
@@ -132,10 +132,11 @@ final class SSTableWriter {
      * @return written bytes
      */
     private long writeEntry(
-            final Entry<MemorySegment> entry,
+            final EntryWithTimestamp<MemorySegment> entry,
             final OutputStream os) throws IOException {
         final MemorySegment key = entry.key();
         final MemorySegment value = entry.value();
+        final long timestamp = entry.timestamp();
         long result = 0L;
 
         // Key size
@@ -151,6 +152,10 @@ final class SSTableWriter {
             // Tombstone
             writeLong(SSTables.TOMBSTONE_VALUE_LENGTH, os);
             result += Long.BYTES;
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         } else {
             // Value length
             writeLong(value.byteSize(), os);
@@ -159,6 +164,10 @@ final class SSTableWriter {
             // Value
             writeSegment(value, os);
             result += value.byteSize();
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         }
 
         return result;

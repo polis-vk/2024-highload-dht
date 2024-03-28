@@ -38,8 +38,8 @@ public class ExecutorServiceConfig {
 
     public static ExecutorServiceConfig defaultConfig() {
         return new ExecutorServiceConfig(
-                256, 16, 30,
-                new ArrayBlockingQueue<>(16),
+                32, 128, 30,
+                new ArrayBlockingQueue<>(128),
                 new ThreadPoolExecutor.AbortPolicy(),
                 "yulalenkExecutor");
     }

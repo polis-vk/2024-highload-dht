@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.alenkovayulya.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
@@ -54,7 +51,7 @@ final class SSTable {
         while (low <= high) {
             final long mid = (low + high) >>> 1;
             final long midEntryOffset = entryOffset(mid);
-            final long midKeyLength = getLength(midEntryOffset);
+            final long midKeyLength = getValue(midEntryOffset);
             final int compare =
                     MemorySegmentComparator.compare(
                             data,
@@ -82,13 +79,13 @@ final class SSTable {
                 entry * Long.BYTES);
     }
 
-    private long getLength(final long offset) {
+    private long getValue(final long offset) {
         return data.get(
                 ValueLayout.OfLong.JAVA_LONG_UNALIGNED,
                 offset);
     }
 
-    Iterator<Entry<MemorySegment>> get(
+    Iterator<EntryWithTimestamp<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
         assert from == null || to == null || MemorySegmentComparator.INSTANCE.compare(from, to) <= 0;
@@ -134,7 +131,7 @@ final class SSTable {
         return new SliceIterator(fromOffset, toOffset);
     }
 
-    Entry<MemorySegment> get(final MemorySegment key) {
+    EntryWithTimestamp<MemorySegment> get(final MemorySegment key) {
         final long entry = entryBinarySearch(key);
         if (entry < 0) {
             return null;
@@ -144,19 +141,23 @@ final class SSTable {
         long offset = entryOffset(entry);
         offset += Long.BYTES + key.byteSize();
         // Extract value length
-        final long valueLength = getLength(offset);
+        final long valueLength = getValue(offset);
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
             // Tombstone encountered
-            return new BaseEntry<>(key, null);
+            offset += Long.BYTES;
+            final long timestamp = getValue(offset);
+            return new BaseEntryWithTimestamp<>(key, null, timestamp);
         } else {
             // Get value
             offset += Long.BYTES;
             final MemorySegment value = data.asSlice(offset, valueLength);
-            return new BaseEntry<>(key, value);
+            offset += valueLength;
+            final long timestamp = getValue(offset);
+            return new BaseEntryWithTimestamp<>(key, value, timestamp);
         }
     }
 
-    private final class SliceIterator implements Iterator<Entry<MemorySegment>> {
+    private final class SliceIterator implements Iterator<EntryWithTimestamp<MemorySegment>> {
         private long offset;
         private final long toOffset;
 
@@ -173,13 +174,13 @@ final class SSTable {
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public EntryWithTimestamp<MemorySegment> next() {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
 
             // Read key length
-            final long keyLength = getLength(offset);
+            final long keyLength = getValue(offset);
             offset += Long.BYTES;
 
             // Read key
@@ -187,17 +188,21 @@ final class SSTable {
             offset += keyLength;
 
             // Read value length
-            final long valueLength = getLength(offset);
+            final long valueLength = getValue(offset);
             offset += Long.BYTES;
 
             // Read value
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
                 // Tombstone encountered
-                return new BaseEntry<>(key, null);
+                final long timestamp = getValue(offset);
+                offset += Long.BYTES;
+                return new BaseEntryWithTimestamp<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
-                return new BaseEntry<>(key, value);
+                final long timestamp = getValue(offset);
+                offset += Long.BYTES;
+                return new BaseEntryWithTimestamp<>(key, value, timestamp);
             }
         }
     }

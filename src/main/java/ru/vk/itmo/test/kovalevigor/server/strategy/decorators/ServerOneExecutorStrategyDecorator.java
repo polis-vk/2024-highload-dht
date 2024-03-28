@@ -1,17 +1,20 @@
-package ru.vk.itmo.test.kovalevigor.server;
+package ru.vk.itmo.test.kovalevigor.server.strategy.decorators;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.http.Response;
+import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
+import ru.vk.itmo.test.kovalevigor.server.util.ServerTask;
 
 import java.io.IOException;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static ru.vk.itmo.test.kovalevigor.server.ServerDaoStrategy.log;
-import static ru.vk.itmo.test.kovalevigor.server.ServerUtil.shutdownAndAwaitTermination;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
+import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.shutdownAndAwaitTermination;
 
 public class ServerOneExecutorStrategyDecorator extends ServerStrategyDecorator implements RejectedExecutionHandler {
     private final ThreadPoolExecutor executorService;
@@ -23,7 +26,7 @@ public class ServerOneExecutorStrategyDecorator extends ServerStrategyDecorator 
             long keepAliveTime, int queueCapacity
     ) {
         super(serverStrategy);
-        blockingQueue = new LinkedBlockingQueue<>(queueCapacity);
+        blockingQueue = new ArrayBlockingQueue<>(queueCapacity);
         executorService = new ThreadPoolExecutor(
                 corePoolSize,
                 maximumPoolSize,
@@ -42,8 +45,9 @@ public class ServerOneExecutorStrategyDecorator extends ServerStrategyDecorator 
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
+    public Response handleRequest(Request request, HttpSession session) {
         executorService.execute(new ServerTask(request, session, super::handleRequest));
+        return null;
     }
 
     @Override

@@ -1,15 +1,13 @@
-package ru.vk.itmo.test.kovalevigor.dao;
+package ru.vk.itmo.test.kovalevigor.dao.iterators;
 
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kovalevigor.dao.UtilsMemorySegment;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Collection;
 
-public class MergeEntryIterator extends MergeIterator<
-        Entry<MemorySegment>,
-        PriorityShiftedIterator<Entry<MemorySegment>>
-        > {
-    public MergeEntryIterator(Collection<? extends PriorityShiftedIterator<Entry<MemorySegment>>> collection) {
+public class MergeEntryIterator<T extends Entry<MemorySegment>> extends MergeIterator<T, PriorityShiftedIterator<T>> {
+    public MergeEntryIterator(Collection<PriorityShiftedIterator<T>> collection) {
         super(collection);
     }
 
@@ -21,14 +19,14 @@ public class MergeEntryIterator extends MergeIterator<
 
     @Override
     protected boolean checkEquals(
-            final PriorityShiftedIterator<Entry<MemorySegment>> lhs,
-            final PriorityShiftedIterator<Entry<MemorySegment>> rhs
+            final PriorityShiftedIterator<T> lhs,
+            final PriorityShiftedIterator<T> rhs
     ) {
         return UtilsMemorySegment.compareEntry(lhs.value, rhs.value) == 0;
     }
 
     private void checkAndSkip() {
-        PriorityShiftedIterator<Entry<MemorySegment>> next = queue.peek();
+        PriorityShiftedIterator<T> next = queue.peek();
         while (next != null && super.hasNext() && next.value.value() == null) {
             next();
             next = queue.peek();

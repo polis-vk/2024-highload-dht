@@ -10,8 +10,9 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
-import java.util.Map;
-import java.util.SortedMap;
+
+import static ru.vk.itmo.test.kovalevigor.dao.SSTableUtils.getDataPath;
+import static ru.vk.itmo.test.kovalevigor.dao.SSTableUtils.getIndexPath;
 
 public class SSTable implements DaoFileGet<MemorySegment, Entry<MemorySegment>> {
 
@@ -38,14 +39,6 @@ public class SSTable implements DaoFileGet<MemorySegment, Entry<MemorySegment>> 
             return null;
         }
         return new SSTable(indexPath, dataPath, arena);
-    }
-
-    public static Path getDataPath(final Path root, final String name) {
-        return root.resolve(name);
-    }
-
-    public static Path getIndexPath(final Path root, final String name) {
-        return root.resolve(name + "_index");
     }
 
     private static final class KeyEntry implements Entry<MemorySegment> {
@@ -88,35 +81,6 @@ public class SSTable implements DaoFileGet<MemorySegment, Entry<MemorySegment>> 
             endPos = -(endPos + 1);
         }
         return indexList.subList(startPos, endPos).iterator();
-    }
-
-    public static SizeInfo getMapSize(final SortedMap<MemorySegment, Entry<MemorySegment>> map) {
-        long keysSize = 0;
-        long valuesSize = 0;
-        for (Map.Entry<MemorySegment, Entry<MemorySegment>> entry : map.entrySet()) {
-            final MemorySegment value = entry.getValue().value();
-
-            keysSize += entry.getKey().byteSize();
-            valuesSize += value == null ? 0 : value.byteSize();
-        }
-        return new SizeInfo(map.size(), keysSize, valuesSize);
-    }
-
-    public static void write(
-            final SortedMap<MemorySegment, Entry<MemorySegment>> map,
-            final Path path,
-            final String name
-    ) throws IOException {
-        try (Arena arena = Arena.ofConfined(); SStorageDumper dumper = new SStorageDumper(
-                getMapSize(map),
-                getDataPath(path, name),
-                getIndexPath(path, name),
-                arena
-            )) {
-            for (final Entry<MemorySegment> entry: map.values()) {
-                dumper.writeEntry(entry);
-            }
-        }
     }
 
     public void move(

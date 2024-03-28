@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 public final class Settings {
     public static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1мб
     public static final int MAX_QUEUE_SIZE = 8192;
+    public static final String BASE_URL = "http://localhost:";
     public static final String VERSION_PREFIX = "/v0";
     public static final Set<Integer> SUPPORTED_METHODS = Set.of(
             Request.METHOD_GET,
@@ -18,6 +19,8 @@ public final class Settings {
             Request.METHOD_DELETE
     );
     public static final long MAX_PROCESSING_TIME_FOR_REQUEST = TimeUnit.SECONDS.toNanos(2);
+
+    public static final int CLUSTER_SIZE = 3;
 
     public static ThreadPoolExecutor getDefaultThreadPoolExecutor() {
         return new ThreadPoolExecutor(

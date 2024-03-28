@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.timofeevkirill.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
@@ -88,7 +85,7 @@ final class SSTable {
                 offset);
     }
 
-    Iterator<Entry<MemorySegment>> get(
+    Iterator<TimestampEntry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
         assert from == null || to == null || MemorySegmentComparator.INSTANCE.compare(from, to) <= 0;
@@ -134,7 +131,7 @@ final class SSTable {
         return new SliceIterator(fromOffset, toOffset);
     }
 
-    Entry<MemorySegment> get(final MemorySegment key) {
+    TimestampEntry<MemorySegment> get(final MemorySegment key) {
         final long entry = entryBinarySearch(key);
         if (entry < 0) {
             return null;
@@ -147,16 +144,18 @@ final class SSTable {
         final long valueLength = getLength(offset);
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
             // Tombstone encountered
-            return new BaseEntry<>(key, null);
+            return new BaseTimestampEntry<>(key, null, valueLength);
         } else {
             // Get value
             offset += Long.BYTES;
             final MemorySegment value = data.asSlice(offset, valueLength);
-            return new BaseEntry<>(key, value);
+            offset += valueLength;
+            final long timestamp = getLength(offset);
+            return new BaseTimestampEntry<>(key, value, timestamp);
         }
     }
 
-    private final class SliceIterator implements Iterator<Entry<MemorySegment>> {
+    private final class SliceIterator implements Iterator<TimestampEntry<MemorySegment>> {
         private long offset;
         private final long toOffset;
 
@@ -173,7 +172,7 @@ final class SSTable {
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public TimestampEntry<MemorySegment> next() {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
@@ -193,11 +192,13 @@ final class SSTable {
             // Read value
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
                 // Tombstone encountered
-                return new BaseEntry<>(key, null);
+                final long timestamp = getLength(offset);
+                return new BaseTimestampEntry<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
-                return new BaseEntry<>(key, value);
+                final long timestamp = getLength(offset);
+                return new BaseTimestampEntry<>(key, value, timestamp);
             }
         }
     }

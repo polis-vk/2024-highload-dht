@@ -2,7 +2,14 @@ package ru.vk.itmo.test.tuzikovalexandr;
 
 import one.nio.util.Hash;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.NavigableMap;
+import java.util.SortedMap;
+import java.util.stream.Collectors;
+import java.util.TreeMap;
+
+
 
 public class ConsistentHashing {
     private final NavigableMap<Integer, String> circle;
@@ -39,8 +46,8 @@ public class ConsistentHashing {
 
         final int hash = getHash(key);
         SortedMap<Integer, String> tailMap = circle.tailMap(hash);
-        return (tailMap.isEmpty() ? circle.values() : tailMap.values())
-                .stream().limit(from).toList();
+        return (tailMap.isEmpty() ? circle : tailMap).values()
+                .stream().limit(from).collect(Collectors.toList());
     }
 
     private int getHash(String key) {

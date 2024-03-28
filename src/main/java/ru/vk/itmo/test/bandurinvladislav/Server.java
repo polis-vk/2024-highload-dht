@@ -139,19 +139,9 @@ public class Server extends HttpServer {
             return;
         }
 
+        int ack = getParameterAsInt(request.getParameter(Constants.PARAMETER_ACK), serverConfig.clusterUrls.size() / 2 + 1);
+        int from = getParameterAsInt(request.getParameter(Constants.PARAMETER_FROM), serverConfig.clusterUrls.size());
         String key = request.getParameter(Constants.PARAMETER_ID);
-        String ackParam = request.getParameter(Constants.PARAMETER_ACK);
-        String fromParam = request.getParameter(Constants.PARAMETER_FROM);
-        int ack;
-        int from;
-        try {
-            ack = ackParam == null ? serverConfig.clusterUrls.size() / 2 + 1 : Integer.parseInt(ackParam);
-            from = fromParam == null ? serverConfig.clusterUrls.size() : Integer.parseInt(fromParam);
-        } catch (NumberFormatException e) {
-            session.sendResponse(new Response(Response.BAD_REQUEST,
-                    "Invalid parameters format".getBytes(StandardCharsets.UTF_8)));
-            return;
-        }
 
         Response validationResponse = validateParams(key, ack, from);
         if (validationResponse != null) {
@@ -184,6 +174,10 @@ public class Server extends HttpServer {
         }
 
         session.sendResponse(successResponse(responses));
+    }
+
+    private int getParameterAsInt(String parameter, int defaultValue) {
+        return parameter == null ? defaultValue : Integer.parseInt(parameter);
     }
 
     private boolean isMethodNotAllowed(Request request) {

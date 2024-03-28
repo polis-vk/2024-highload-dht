@@ -119,7 +119,7 @@ public class ServerImpl extends HttpServer {
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime,
                                    String paramId, int from, int ack) throws IOException {
-        if (System.currentTimeMillis() - processingStartTime > 500) {
+        if (System.currentTimeMillis() - processingStartTime > 350) {
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
@@ -235,9 +235,9 @@ public class ServerImpl extends HttpServer {
                             String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
                             return timestamp == null ? 0 : Long.parseLong(timestamp);
                         }));
-                return successResponses.getLast();
-            } else {
                 return successResponses.getFirst();
+            } else {
+                return successResponses.getLast();
             }
         } else {
             return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);

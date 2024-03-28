@@ -9,7 +9,9 @@ import java.util.Set;
 
 public final class HttpUtils {
     public static final Set<Integer> METHODS = Set.of(
-            Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
     );
     public static final int REQUEST_TIMEOUT = 300;
     public static final Map<Integer, String> HTTP_CODE = Map.of(

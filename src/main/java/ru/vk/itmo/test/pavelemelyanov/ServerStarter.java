@@ -36,7 +36,8 @@ public final class ServerStarter {
                     BASE_PORT + i,
                     clusterUrls.get(i),
                     clusterUrls,
-                    WORKING_DIR);
+                    WORKING_DIR
+            );
 
             ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, NUMBER_OF_VIRTUAL_NODES);
 

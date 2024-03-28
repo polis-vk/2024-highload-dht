@@ -31,8 +31,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.METHODS;
+import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.REQUEST_TIMEOUT;
 
 public class MyServer extends HttpServer {
+    private static final String V0_PATH = "/v0/entity";
+    private static final String ID_PARAM = "id=";
+    private static final String FROM_PARAM = "from=";
+    private static final String ACK_PARAM = "ack=";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private final ExecutorService workersPool;
@@ -61,35 +66,32 @@ public class MyServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response;
-        if (METHODS.contains(request.getMethod())) {
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } else {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        }
+        Response response = METHODS.contains(request.getMethod())
+                ? new Response(Response.BAD_REQUEST, Response.EMPTY)
+                : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         session.sendResponse(response);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            if (!request.getURI().startsWith("/v0/entity?id=") || !METHODS.contains(request.getMethod())) {
+            if (!request.getURI().startsWith(getPathWithIdParam()) || !METHODS.contains(request.getMethod())) {
                 handleDefault(request, session);
                 return;
             }
 
-            String paramId = request.getParameter("id=");
+            String paramId = request.getParameter(ID_PARAM);
 
             if (paramId == null || paramId.isBlank()) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
 
-            String fromStr = request.getParameter("from=");
-            String ackStr = request.getParameter("ack=");
+            String fromStr = request.getParameter(FROM_PARAM);
+            String ackStr = request.getParameter(ACK_PARAM);
 
-            int from = fromStr == null || fromStr.isEmpty() ? clusterSize : Integer.parseInt(fromStr);
-            int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
+            int from = fromStr == null || fromStr.isBlank() ? clusterSize : Integer.parseInt(fromStr);
+            int ack = ackStr == null || ackStr.isBlank() ? from / 2 + 1 : Integer.parseInt(ackStr);
 
             if (ack == 0 || from > clusterSize || ack > from) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -112,7 +114,7 @@ public class MyServer extends HttpServer {
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime,
                                    String paramId, int from, int ack) throws IOException {
-        if (System.currentTimeMillis() - processingStartTime > 350) {
+        if (System.currentTimeMillis() - processingStartTime > REQUEST_TIMEOUT) {
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
@@ -120,26 +122,23 @@ public class MyServer extends HttpServer {
         try {
             if (request.getHeader(HeaderUtils.HTTP_TERMINATION_HEADER) == null) {
                 session.sendResponse(handleProxyRequest(request, session, paramId, from, ack));
-            } else {
-                session.sendResponse(requestHandler.handle(request, paramId));
+                return;
             }
+            session.sendResponse(requestHandler.handle(request, paramId));
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            } else {
-                log.error("Exception during handleRequest: ", e);
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                return;
             }
+            log.error("Exception during handleRequest: ", e);
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }
 
     private Response sendException(Exception exception) {
-        String responseCode;
-        if (exception.getClass().equals(TimeoutException.class)) {
-            responseCode = Response.REQUEST_TIMEOUT;
-        } else {
-            responseCode = Response.INTERNAL_ERROR;
-        }
+        String responseCode = exception.getClass().equals(TimeoutException.class)
+                ? Response.REQUEST_TIMEOUT
+                : Response.INTERNAL_ERROR;
         return new Response(responseCode, Response.EMPTY);
     }
 
@@ -153,10 +152,11 @@ public class MyServer extends HttpServer {
     }
 
     private HttpRequest createProxyRequest(Request request, String nodeUrl, String params) {
-        return HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params))
-                .method(request.getMethodName(), request.getBody() == null
-                        ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+        var bodyPublisher = request.getBody() == null
+                ? HttpRequest.BodyPublishers.noBody()
+                : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
+        return HttpRequest.newBuilder(URI.create(nodeUrl + getPathWithIdParam() + params))
+                .method(request.getMethodName(), bodyPublisher)
                 .setHeader(HeaderUtils.HTTP_TERMINATION_HEADER, "true")
                 .build();
     }
@@ -170,14 +170,13 @@ public class MyServer extends HttpServer {
             String statusCode = HttpUtils.HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
             if (statusCode == null) {
                 return new Response(Response.INTERNAL_ERROR, httpResponse.body());
-            } else {
-
-                Response response = new Response(statusCode, httpResponse.body());
-                long timestamp = httpRequest.headers()
-                        .firstValueAsLong(HeaderUtils.HTTP_TIMESTAMP_HEADER).orElse(0);
-                response.addHeader(HeaderUtils.NIO_TIMESTAMP_HEADER + timestamp);
-                return response;
             }
+            var response = new Response(statusCode, httpResponse.body());
+            long timestamp = httpRequest.headers()
+                    .firstValueAsLong(HeaderUtils.HTTP_TIMESTAMP_HEADER)
+                    .orElse(0);
+            response.addHeader(HeaderUtils.NIO_TIMESTAMP_HEADER + timestamp);
+            return response;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return sendException(e);
@@ -232,9 +231,8 @@ public class MyServer extends HttpServer {
             } else {
                 return successResponses.getLast();
             }
-        } else {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
+        return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -246,5 +244,9 @@ public class MyServer extends HttpServer {
         serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
+    }
+
+    private static String getPathWithIdParam() {
+        return V0_PATH + "?" + ID_PARAM;
     }
 }

@@ -4,28 +4,25 @@ import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 import ru.vk.itmo.test.dariasupriadkina.sharding.ShardingPolicy;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -34,29 +31,35 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER;
+import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER;
+import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER_NORMAL;
+
 public class Server extends HttpServer {
 
     private static final Logger logger = LoggerFactory.getLogger(Server.class.getName());
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService workerExecutor;
     private final Set<Integer> permittedMethods =
             Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
     private final String selfUrl;
     private final ShardingPolicy shardingPolicy;
     private final HttpClient httpClient;
-    public static final String ENTRY_PREFIX = "/v0/entity";
-    public static final String ENTRY_PREFIX_WITH_ID_PARAM = ENTRY_PREFIX + "?id=";
-    private static final int REQUEST_TIMEOUT_SEC = 10;
+    private static final int REQUEST_TIMEOUT_SEC = 2;
+    private final List<String> clusterUrls;
+    private final Utils utils;
+    private final SelfRequestHandler selfHandler;
 
-    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
+    public Server(ServiceConfig config, Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao,
                   ThreadPoolExecutor workerExecutor, ThreadPoolExecutor nodeExecutor, ShardingPolicy shardingPolicy)
             throws IOException {
         super(createHttpServerConfig(config));
-        this.dao = dao;
         this.workerExecutor = workerExecutor;
         this.shardingPolicy = shardingPolicy;
         this.selfUrl = config.selfUrl();
+        this.clusterUrls = config.clusterUrls();
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
+        this.utils = new Utils(dao);
+        this.selfHandler = new SelfRequestHandler(dao, utils);
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
@@ -70,66 +73,6 @@ public class Server extends HttpServer {
         httpServerConfig.closeSessions = true;
 
         return httpServerConfig;
-    }
-
-    @Path("/health")
-    @RequestMethod(Request.METHOD_GET)
-    public Response health() {
-        return Response.ok(Response.OK);
-    }
-
-    @Path(ENTRY_PREFIX)
-    @RequestMethod(Request.METHOD_GET)
-    public Response getHandler(@Param(value = "id", required = true) String id, Request request) {
-        try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-            if (!shardingPolicy.getNodeById(id).equals(selfUrl)) {
-                return handleProxy(getRedirectedUrl(id), request);
-            }
-            Entry<MemorySegment> entry = getEntryById(id);
-            if (entry == null || entry.value() == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-            return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
-
-    @Path(ENTRY_PREFIX)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response putHandler(Request request, @Param(value = "id", required = true) String id) {
-        try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-            if (!shardingPolicy.getNodeById(id).equals(selfUrl)) {
-                return handleProxy(getRedirectedUrl(id), request);
-            }
-            dao.upsert(convertToEntry(id, request.getBody()));
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
-
-    @Path(ENTRY_PREFIX)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteHandler(@Param(value = "id", required = true) String id, Request request) {
-        try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-            if (!shardingPolicy.getNodeById(id).equals(selfUrl)) {
-                return handleProxy(getRedirectedUrl(id), request);
-            }
-            dao.upsert(convertToEntry(id, null));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (Exception e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
     }
 
     @Override
@@ -149,7 +92,26 @@ public class Server extends HttpServer {
         try {
             workerExecutor.execute(() -> {
                 try {
-                    super.handleRequest(request, session);
+                    if (!permittedMethods.contains(request.getMethod())) {
+                        handleDefault(request, session);
+                    }
+                    if (request.getHeader(FROM_HEADER) == null) {
+                        request.addHeader(FROM_HEADER + selfUrl);
+
+                        Map<String, Integer> ackFrom = getFromAndAck(request);
+                        int from = ackFrom.get("from");
+                        int ack = ackFrom.get("ack");
+
+                        session.sendResponse(mergeResponses(broadcast(
+                                shardingPolicy.getNodesById(utils.getIdParameter(request), from),
+                                request), ack, from));
+
+                    } else {
+                        Response resp = selfHandler.handleRequest(request);
+                        checkTimestampHeaderExistenceAndSet(resp);
+                        session.sendResponse(resp);
+                    }
+
                 } catch (Exception e) {
                     logger.error("Unexpected error", e);
                     try {
@@ -171,16 +133,69 @@ public class Server extends HttpServer {
         }
     }
 
+    private List<Response> broadcast(List<String> nodes, Request request) {
+        List<Response> responses = new ArrayList<>(nodes.size());
+        Response response;
+        if (nodes.contains(selfUrl)) {
+            response = selfHandler.handleRequest(request);
+            checkTimestampHeaderExistenceAndSet(response);
+            responses.add(response);
+            nodes.remove(selfUrl);
+        }
+
+        for (String node : nodes) {
+            response = handleProxy(utils.getEntryUrl(node, utils.getIdParameter(request)), request);
+            checkTimestampHeaderExistenceAndSet(response);
+            responses.add(response);
+        }
+        return responses;
+    }
+
+    private void checkTimestampHeaderExistenceAndSet(Response response) {
+        if (response.getHeader(TIMESTAMP_MILLIS_HEADER) == null) {
+            response.addHeader(
+                    TIMESTAMP_MILLIS_HEADER + "0"
+            );
+        }
+    }
+
+    private Response mergeResponses(List<Response> responses, int ack, int from) {
+        if (responses.stream().filter(response -> response.getStatus() == 400).count() == from ||
+                ack > from ||
+                from > clusterUrls.size() ||
+                ack <= 0) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+        if (responses.stream().filter(response -> response.getStatus() == 200 ||
+                response.getStatus() == 404 || response.getStatus() == 202 ||
+                response.getStatus() == 201).count() < ack) {
+            return new Response("504 Not Enough Replicas", Response.EMPTY);
+        }
+        return responses.stream().max((o1, o2) -> {
+            Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
+            Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
+            return  header1.compareTo(header2);
+        }).get();
+    }
+
     public Response handleProxy(String redirectedUrl, Request request) {
         try {
-            HttpResponse<byte[]> response = httpClient.sendAsync(HttpRequest.newBuilder()
-                    .uri(URI.create(redirectedUrl))
+            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(redirectedUrl))
+                    .header(FROM_HEADER, selfUrl)
                     .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
                             request.getBody() == null ? new byte[]{} : request.getBody())
-                    ).build(),
-                            HttpResponse.BodyHandlers.ofByteArray())
+                    ).build();
+            HttpResponse<byte[]> response = httpClient
+                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                     .get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS);
-            return new Response(String.valueOf(response.statusCode()), response.body());
+            Response response1 = new Response(String.valueOf(response.statusCode()), response.body());
+            if (response.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) != null) {
+                response1.addHeader(TIMESTAMP_MILLIS_HEADER +
+                        response.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase()).getFirst());
+            } else {
+                response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
+            }
+            return response1;
         } catch (ExecutionException e) {
             logger.error("Unexpected error", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -194,20 +209,10 @@ public class Server extends HttpServer {
         }
     }
 
-    private String getRedirectedUrl(String id) {
-        return shardingPolicy.getNodeById(id) + ENTRY_PREFIX_WITH_ID_PARAM + id;
-    }
+    private Map<String, Integer> getFromAndAck(Request request) {
+        int from = Integer.parseInt(request.getParameter("from=", String.valueOf(clusterUrls.size())));
+        int ack = Integer.parseInt(request.getParameter("ack=", String.valueOf(clusterUrls.size() / 2 + 1)));
 
-    private Entry<MemorySegment> convertToEntry(String id, byte[] body) {
-        return new BaseEntry<>(convertByteArrToMemorySegment(id.getBytes(StandardCharsets.UTF_8)),
-                convertByteArrToMemorySegment(body));
-    }
-
-    private MemorySegment convertByteArrToMemorySegment(byte[] bytes) {
-        return bytes == null ? null : MemorySegment.ofArray(bytes);
-    }
-
-    private Entry<MemorySegment> getEntryById(String id) {
-        return dao.get(convertByteArrToMemorySegment(id.getBytes(StandardCharsets.UTF_8)));
+        return Map.of("from", from, "ack", ack);
     }
 }

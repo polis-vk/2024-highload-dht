@@ -43,5 +43,11 @@ public class ConsistentHashingShardingPolicy extends ShardingPolicy {
         return circle.get(hash);
     }
 
+    // Not implemented
+    @Override
+    public List<String> getNodesById(String id, int nodeCount) {
+        return null;
+    }
+
 }
 

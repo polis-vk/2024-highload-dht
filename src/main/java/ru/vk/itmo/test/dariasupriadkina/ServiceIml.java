@@ -5,7 +5,7 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 import ru.vk.itmo.test.dariasupriadkina.dao.ReferenceDao;
 import ru.vk.itmo.test.dariasupriadkina.sharding.ShardingPolicy;
 import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ServiceIml implements Service {
 
     private Server server;
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
     private final Config daoConfig;
     private final ServiceConfig serviceConfig;
     private final WorkerConfig workerConfig;

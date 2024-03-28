@@ -25,10 +25,10 @@ public class RendezvousDistributor {
         return node;
     }
 
-    public int[] getQuorumNodes(String key, int quorumNumber) {
+    public int[] getNodesStartingWithKey(String key, int quantity) {
         int currNode = getNode(key); // Get start node.
-        int[] quorumNodes = new int[quorumNumber];
-        for (int i = 0; i < quorumNumber; i++) {
+        int[] quorumNodes = new int[quantity];
+        for (int i = 0; i < quantity; i++) {
             quorumNodes[i] = currNode;
             if (++currNode >= nodeCount) {
                 currNode = 0;

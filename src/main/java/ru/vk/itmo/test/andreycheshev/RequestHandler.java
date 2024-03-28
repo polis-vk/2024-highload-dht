@@ -49,6 +49,8 @@ public class RequestHandler {
     private static final int NOT_FOUND = 404;
     private static final int GONE = 410;
 
+    private static final int EMPTY_TIMESTAMP = -1;
+
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final HttpClient[] clusterConnections;
     private final RendezvousDistributor distributor;
@@ -63,7 +65,7 @@ public class RequestHandler {
         this.distributor = distributor;
     }
 
-    public Response handle(Request request) {
+    public Response handle(Request request) throws InterruptedException {
 
         // Checking the correctness.
         String path = request.getPath();
@@ -82,9 +84,10 @@ public class RequestHandler {
         }
 
         // A timestamp is an indication that the request
-        // came from the client directly or from the cluster node
+        // came from the client directly or from the cluster node.
         String timestamp = request.getHeader(TIMESTAMP_HEADER);
         if (timestamp != null) {
+            // The request came from a remote node.
             return processLocally(method,
                     id,
                     request,
@@ -92,7 +95,7 @@ public class RequestHandler {
             );
         }
 
-        // Get and check ack and from parameters.
+        // Get and check "ack" and "from" parameters.
         String ackParameter = request.getParameter(ACK_PARAMETER);
         String fromParameter = request.getParameter(FROM_PARAMETER);
 
@@ -105,25 +108,24 @@ public class RequestHandler {
                 ? Integer.parseInt(fromParameter)
                 : distributor.getNodeCount();
 
-        if (!checkReplicasParameters(ack, from)) {
+        if (!isReplicasParametersCorrect(ack, from)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
+        // Start processing on remote and local nodes.
         return processDistributed(method, id, request, ack, from);
     }
 
-    private Response processDistributed(
-            int method,
-            String id,
-            Request request,
-            int ack,
-            int from) {
+    private Response processDistributed(int method, String id, Request request, int ack, int from) throws InterruptedException {
 
-        int[] nodeCount = distributor.getQuorumNodes(id, from);
+        int[] nodes = distributor.getNodesStartingWithKey(id, from);
         List<Response> responses = new ArrayList<>();
 
-        long currTimestamp = System.currentTimeMillis();
-        for (int node : nodeCount) {
+        long currTimestamp = (method == Request.METHOD_GET)
+                ? EMPTY_TIMESTAMP
+                : System.currentTimeMillis();
+
+        for (int node : nodes) {
             try {
                 Response response = distributor.isOurNode(node)
                         ? processLocally(method, id, request, currTimestamp)
@@ -133,17 +135,21 @@ public class RequestHandler {
                     responses.add(response);
                 }
 
+                // For the GET method, we do not need to continue to request
+                // if we have already received the required number of successful responses
                 if (method == Request.METHOD_GET && responses.size() == ack) {
-                    return analyzeResponses(method, responses, ack);
+                    return analyzeResponses(method, responses);
                 }
             } catch (SocketTimeoutException e) {
-                LOGGER.error("Processing time exceeded on another node in the cluster", e);
-            } catch (InterruptedException | PoolException | HttpException | IOException e) {
-                LOGGER.error("Processing error on another node in the cluster", e);
+                LOGGER.error("Request processing time exceeded on another node", e);
+            } catch (PoolException | HttpException | IOException e) {
+                LOGGER.error("An error occurred when processing a request on another node", e);
             }
         }
 
-        return analyzeResponses(method, responses, ack);
+        return (responses.size() < ack)
+                ? new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY)
+                : analyzeResponses(method, responses);
     }
 
     private Response redirectRequest(
@@ -174,11 +180,7 @@ public class RequestHandler {
         };
     }
 
-    private Response analyzeResponses(int method, List<Response> responses, int ack) {
-        if (responses.size() < ack) {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-        }
-
+    private Response analyzeResponses(int method, List<Response> responses) {
         // The required number of successful responses has already been received here.
         switch (method) {
             case Request.METHOD_GET -> {
@@ -199,23 +201,13 @@ public class RequestHandler {
         }
     }
 
-    private boolean isRequestSucceeded(int method, int status) {
-        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE))
-                || (method == Request.METHOD_PUT && status == CREATED)
-                || (method == Request.METHOD_DELETE && status == ACCEPTED);
-    }
-
-    private boolean checkReplicasParameters(int ack, int from) {
-        return ack > 0 && ack <= from;
-    }
-
     private Response get(String id) {
         ClusterEntry<MemorySegment> entry = (ClusterEntry<MemorySegment>) dao.get(fromString(id));
 
         Response response;
         if (entry == null) {
             response = new Response(Response.NOT_FOUND, Response.EMPTY);
-            response.addHeader(TIMESTAMP_HEADER + -1);
+            response.addHeader(TIMESTAMP_HEADER + EMPTY_TIMESTAMP);
         } else {
             response = (entry.value() == null)
                     ? new Response(Response.GONE, Response.EMPTY)
@@ -246,6 +238,16 @@ public class RequestHandler {
         dao.upsert(entry);
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private static boolean isRequestSucceeded(int method, int status) {
+        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE))
+                || (method == Request.METHOD_PUT && status == CREATED)
+                || (method == Request.METHOD_DELETE && status == ACCEPTED);
+    }
+
+    private static boolean isReplicasParametersCorrect(int ack, int from) {
+        return ack > 0 && ack <= from;
     }
 
     private static MemorySegment fromString(String data) {

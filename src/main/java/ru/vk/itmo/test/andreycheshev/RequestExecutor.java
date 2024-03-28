@@ -17,8 +17,10 @@ import java.util.concurrent.TimeUnit;
 import static one.nio.http.Response.INTERNAL_ERROR;
 
 public class RequestExecutor {
-    private static final String TOO_MANY_REQUESTS = "429 Too many requests";
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
+
+    private static final String TOO_MANY_REQUESTS = "429 Too many requests";
+
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int MAX_CPU_THREADS_TIMES = 1;
     private static final int KEEPALIVE_MILLIS = 3000;
@@ -30,7 +32,6 @@ public class RequestExecutor {
 
     public RequestExecutor(RequestHandler requestHandler) {
         this.requestHandler = requestHandler;
-
         this.executor = new ThreadPoolExecutor(
                 CPU_THREADS_COUNT,
                 CPU_THREADS_COUNT * MAX_CPU_THREADS_TIMES,

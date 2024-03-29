@@ -4,16 +4,13 @@ import one.nio.http.Header;
 import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
-import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
@@ -27,6 +24,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -36,8 +34,6 @@ public class MyServer extends HttpServer {
     private static final String X_SENDER_NODE = "X-SenderNode";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final long DURATION = 1000L;
-
-    private static final int CONNECTION_TIMEOUT = 1000;
 
     private final MyServerDao dao;
     private final MyExecutor executor;
@@ -52,18 +48,6 @@ public class MyServer extends HttpServer {
             Request.METHOD_DELETE
     ));
 
-    private static HttpServerConfig generateServerConfig(ServiceConfig config) {
-        var serverConfig = new HttpServerConfig();
-        var acceptorsConfig = new AcceptorConfig();
-
-        acceptorsConfig.port = config.selfPort();
-        acceptorsConfig.reusePort = true;
-
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorsConfig};
-        serverConfig.closeSessions = true;
-        return serverConfig;
-    }
-
     public MyServer(ServiceConfig config, ReferenceDao dao) throws IOException {
         this(config, dao, Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().availableProcessors());
     }
@@ -74,7 +58,7 @@ public class MyServer extends HttpServer {
             int corePoolSize,
             int availableProcessors
     ) throws IOException {
-        super(generateServerConfig(config));
+        super(ServerUtil.generateServerConfig(config));
         this.rendezvousClustersManager = new RendezvousClusterManager(config);
         this.config = config;
         this.dao = new MyServerDao(dao);
@@ -84,21 +68,9 @@ public class MyServer extends HttpServer {
                 .filter(url -> !Objects.equals(url, config.selfUrl()))
                 .collect(Collectors.toMap(
                         s -> s,
-                        url -> {
-                            var client = new HttpClient(new ConnectionString(url));
-                            client.setConnectTimeout(CONNECTION_TIMEOUT);
-                            return client;
-                        },
+                        ServerUtil::createClient,
                         (c, c1) -> c)
                 );
-    }
-
-    private void sendEmpty(HttpSession session, String message) {
-        try {
-            session.sendResponse(new Response(message, Response.EMPTY));
-        } catch (IOException e) {
-            logger.info(e.getMessage());
-        }
     }
 
     @Override
@@ -108,21 +80,21 @@ public class MyServer extends HttpServer {
             executor.execute(() -> {
                 try {
                     if (System.currentTimeMillis() > exp) {
-                        sendEmpty(session, Response.SERVICE_UNAVAILABLE);
+                        ServerUtil.sendEmpty(session, logger, Response.SERVICE_UNAVAILABLE);
                     } else {
                         super.handleRequest(request, session);
                     }
                 } catch (IOException e) {
                     logger.info(e.getMessage());
-                    sendEmpty(session, Response.INTERNAL_ERROR);
+                    ServerUtil.sendEmpty(session, logger, Response.INTERNAL_ERROR);
                 } catch (Exception e) {
                     logger.info(e.getMessage());
-                    sendEmpty(session, Response.BAD_REQUEST);
+                    ServerUtil.sendEmpty(session, logger, Response.BAD_REQUEST);
                 }
             });
         } catch (RejectedExecutionException e) {
             logger.info(e.getMessage());
-            sendEmpty(session, "429 Too Many Requests");
+            ServerUtil.sendEmpty(session, logger, "429 Too Many Requests");
         }
     }
 
@@ -151,14 +123,6 @@ public class MyServer extends HttpServer {
             logger.info(e.getMessage());
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-    }
-
-    private static long headerTimestampToLong(Response r) {
-        String header = r.getHeader("X-TimeStamp: ");
-        if (header == null) {
-            return Long.MIN_VALUE;
-        }
-        return Long.parseLong(header);
     }
 
     private Response handleLocalRequest(
@@ -200,11 +164,9 @@ public class MyServer extends HttpServer {
 
         request.addHeader(String.join(": ",X_SENDER_NODE, config.selfUrl()));
         var responses = sortedNodes.stream()
-                .map(nodeNumber ->
-                        sendToAnotherNode(request, config.clusterUrls().get(nodeNumber), operation)
-                )
-                .filter(response ->
-                        response.getStatus() < 300 || (response.getStatus() == 404 && request.getMethod() == Request.METHOD_GET)
+                .map(nodeNumber -> sendToAnotherNode(request, config.clusterUrls().get(nodeNumber), operation))
+                .filter(
+                        r -> r.getStatus() < 300 || (r.getStatus() == 404 && request.getMethod() == Request.METHOD_GET)
                 )
                 .toList();
 
@@ -213,7 +175,7 @@ public class MyServer extends HttpServer {
         }
 
         return responses.stream()
-                .max(Comparator.comparingLong(MyServer::headerTimestampToLong))
+                .max(Comparator.comparingLong(ServerUtil::headerTimestampToLong))
                 .get();
     }
 
@@ -248,7 +210,7 @@ public class MyServer extends HttpServer {
             @Param(value = "id", required = true) String id,
             @Param(value = "from") Integer from,
             @Param(value = "ack") Integer ack,
-            @Header(value = X_SENDER_NODE) String xSenderNode,
+            @Header(value = X_SENDER_NODE) String senderNode,
             Request request
     ) {
         return handleLocalRequest(
@@ -256,8 +218,8 @@ public class MyServer extends HttpServer {
                 id,
                 from,
                 ack,
-                xSenderNode,
-                dao -> dao.getEntryFromDao(id)
+                senderNode,
+                d -> d.getEntryFromDao(id)
         );
     }
 
@@ -267,7 +229,7 @@ public class MyServer extends HttpServer {
             @Param(value = "id", required = true) String id,
             @Param(value = "from") Integer from,
             @Param(value = "ack") Integer ack,
-            @Header(value = X_SENDER_NODE) String xSenderNode,
+            @Header(value = X_SENDER_NODE) String senderNode,
             Request request
     ) {
         return handleLocalRequest(
@@ -275,8 +237,8 @@ public class MyServer extends HttpServer {
                 id,
                 from,
                 ack,
-                xSenderNode,
-                dao -> dao.deleteValueFromDao(id)
+                senderNode,
+                d -> d.deleteValueFromDao(id)
         );
     }
 
@@ -286,7 +248,7 @@ public class MyServer extends HttpServer {
             @Param(value = "id", required = true) String id,
             @Param(value = "from") Integer from,
             @Param(value = "ack") Integer ack,
-            @Header(value = X_SENDER_NODE) String xSenderNode,
+            @Header(value = X_SENDER_NODE) String senderNode,
             Request request
     ) {
         request.addHeader("Content-Length: " + request.getBody().length);
@@ -297,8 +259,8 @@ public class MyServer extends HttpServer {
                 id,
                 from,
                 ack,
-                xSenderNode,
-                dao -> dao.putEntryIntoDao(id, request)
+                senderNode,
+                d -> d.putEntryIntoDao(id, request)
         );
     }
 

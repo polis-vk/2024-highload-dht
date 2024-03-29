@@ -24,7 +24,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -58,7 +57,7 @@ public class MyServer extends HttpServer {
             int corePoolSize,
             int availableProcessors
     ) throws IOException {
-        super(ServerUtil.generateServerConfig(config));
+        super(MyServerUtil.generateServerConfig(config));
         this.rendezvousClustersManager = new RendezvousClusterManager(config);
         this.config = config;
         this.dao = new MyServerDao(dao);
@@ -68,7 +67,7 @@ public class MyServer extends HttpServer {
                 .filter(url -> !Objects.equals(url, config.selfUrl()))
                 .collect(Collectors.toMap(
                         s -> s,
-                        ServerUtil::createClient,
+                        MyServerUtil::createClient,
                         (c, c1) -> c)
                 );
     }
@@ -80,21 +79,21 @@ public class MyServer extends HttpServer {
             executor.execute(() -> {
                 try {
                     if (System.currentTimeMillis() > exp) {
-                        ServerUtil.sendEmpty(session, logger, Response.SERVICE_UNAVAILABLE);
+                        MyServerUtil.sendEmpty(session, logger, Response.SERVICE_UNAVAILABLE);
                     } else {
                         super.handleRequest(request, session);
                     }
                 } catch (IOException e) {
                     logger.info(e.getMessage());
-                    ServerUtil.sendEmpty(session, logger, Response.INTERNAL_ERROR);
+                    MyServerUtil.sendEmpty(session, logger, Response.INTERNAL_ERROR);
                 } catch (Exception e) {
                     logger.info(e.getMessage());
-                    ServerUtil.sendEmpty(session, logger, Response.BAD_REQUEST);
+                    MyServerUtil.sendEmpty(session, logger, Response.BAD_REQUEST);
                 }
             });
         } catch (RejectedExecutionException e) {
             logger.info(e.getMessage());
-            ServerUtil.sendEmpty(session, logger, "429 Too Many Requests");
+            MyServerUtil.sendEmpty(session, logger, "429 Too Many Requests");
         }
     }
 
@@ -128,15 +127,17 @@ public class MyServer extends HttpServer {
     private Response handleLocalRequest(
             Request request,
             String id,
-            Integer from,
-            Integer ack,
+            Integer fromParam,
+            Integer ackParam,
             String senderNode,
             Function<MyServerDao, Response> operation
     ) {
+        Integer from = fromParam;
         if (Objects.isNull(from)) {
             from = config.clusterUrls().size();
         }
 
+        Integer ack = ackParam;
         if (Objects.isNull(ack)) {
             ack = quorum(from);
         }
@@ -175,7 +176,7 @@ public class MyServer extends HttpServer {
         }
 
         return responses.stream()
-                .max(Comparator.comparingLong(ServerUtil::headerTimestampToLong))
+                .max(Comparator.comparingLong(MyServerUtil::headerTimestampToLong))
                 .get();
     }
 

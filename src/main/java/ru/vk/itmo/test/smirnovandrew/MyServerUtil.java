@@ -11,9 +11,10 @@ import ru.vk.itmo.ServiceConfig;
 import java.io.IOException;
 import java.util.logging.Logger;
 
-public class ServerUtil {
+public final class MyServerUtil {
     private static final int CONNECTION_TIMEOUT = 1000;
-    private ServerUtil() {
+
+    private MyServerUtil() {
     }
 
     public static HttpServerConfig generateServerConfig(ServiceConfig config) {

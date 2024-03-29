@@ -118,8 +118,8 @@ public class MyServer extends HttpServer {
             logger.info(e.getMessage());
             Thread.currentThread().interrupt();
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (HttpException | IOException | PoolException e) {
-            logger.info(e.getMessage());
+        } catch (HttpException | IOException | PoolException e1) {
+            logger.info(e1.getMessage());
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }

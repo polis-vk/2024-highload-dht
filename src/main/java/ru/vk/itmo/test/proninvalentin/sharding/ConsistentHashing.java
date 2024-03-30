@@ -10,12 +10,13 @@ import java.util.Map;
 
 public class ConsistentHashing implements ShardingAlgorithm {
     private final int[] hashes;
-    private final Map<Integer, String> virtualNodeMapping = new HashMap<>();
+    private final Map<Integer, String> hashToNodeUrl = new HashMap<>();
 
     public ConsistentHashing(ShardingConfig config) {
         List<String> clusterUrls = config.clusterUrls();
         int virtualNodesNumber = config.virtualNodesNumber();
         int hashesNumber = clusterUrls.size() * virtualNodesNumber;
+
         this.hashes = new int[hashesNumber];
         initVirtualNodes(clusterUrls, virtualNodesNumber);
     }
@@ -24,13 +25,24 @@ public class ConsistentHashing implements ShardingAlgorithm {
         for (int i = 0; i < clusterUrls.size(); i++) {
             String nodeUrl = clusterUrls.get(i);
             for (int j = 0; j < virtualNodesNumber; j++) {
-                String virtualNode = "[VN: " + (virtualNodesNumber * i + i) + "]" + nodeUrl;
-                int hash = hash(virtualNode);
+                String virtualNode = "[VN: " + (virtualNodesNumber * i + j) + "]" + nodeUrl;
+                int hash = generateUniqueHash(virtualNode);
                 hashes[i * virtualNodesNumber + j] = hash;
-                virtualNodeMapping.put(hash, nodeUrl);
+                hashToNodeUrl.put(hash, nodeUrl);
             }
         }
         Arrays.sort(hashes);
+    }
+
+    private int generateUniqueHash(String virtualNode) {
+        int hash = hash(virtualNode);
+        for (int i = 0; hashToNodeUrl.containsKey(hash) && i != Integer.MAX_VALUE; i++) {
+            hash = hash(virtualNode + i);
+        }
+        if (hashToNodeUrl.containsKey(hash)) {
+            throw new IllegalArgumentException("Can't generate unique hash for virtual node: " + virtualNode);
+        }
+        return hash;
     }
 
     @Override
@@ -38,13 +50,13 @@ public class ConsistentHashing implements ShardingAlgorithm {
         int hash = hash(key);
         int nodeIndex = Arrays.binarySearch(hashes, hash);
         if (nodeIndex >= 0) {
-            return virtualNodeMapping.get(hashes[nodeIndex]);
+            return hashToNodeUrl.get(hashes[nodeIndex]);
         }
         nodeIndex = -nodeIndex - 2;
         if (nodeIndex < 0) {
-            return virtualNodeMapping.get(hashes[hashes.length - 1]);
+            return hashToNodeUrl.get(hashes[hashes.length - 1]);
         }
-        return virtualNodeMapping.get(hashes[nodeIndex]);
+        return hashToNodeUrl.get(hashes[nodeIndex]);
     }
 
     private int hash(String key) {

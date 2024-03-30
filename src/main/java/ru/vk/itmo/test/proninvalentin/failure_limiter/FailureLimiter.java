@@ -51,7 +51,8 @@ public class FailureLimiter {
     }
 
     public boolean readyForRequests(String nodeUrl) {
-        return failuresPerNode.get(nodeToIndex.get(nodeUrl)) < maxFailureNumber;
+        Integer nodeIndex = nodeToIndex.get(nodeUrl);
+        return failuresPerNode.get(nodeIndex) < maxFailureNumber;
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
@@ -66,6 +67,7 @@ public class FailureLimiter {
                 () -> {
                     Integer nodeIndex = nodeToIndex.get(nodeUrl);
                     failuresPerNode.set(nodeIndex, 0);
+                    resettingNodes[nodeIndex].set(true);
                 },
                 resetDelay,
                 TimeUnit.MILLISECONDS

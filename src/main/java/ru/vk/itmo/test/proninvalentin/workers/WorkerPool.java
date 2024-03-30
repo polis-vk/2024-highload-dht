@@ -2,12 +2,8 @@ package ru.vk.itmo.test.proninvalentin.workers;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 public final class WorkerPool {
-    private static final int SOFT_SHUT_DOWN_TIME = 20;
-    private static final int HARD_SHUT_DOWN_TIME = 10;
-
     public final ExecutorService pool;
 
     public WorkerPool(WorkerPoolConfig config) {
@@ -16,21 +12,5 @@ public final class WorkerPool {
                 config.rejectedExecutionHandler);
         preStartedPool.prestartAllCoreThreads();
         pool = preStartedPool;
-    }
-
-    public void gracefulShutdown() {
-        pool.shutdown();
-        try {
-            pool.awaitTermination(SOFT_SHUT_DOWN_TIME, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        pool.shutdownNow();
-        try {
-            pool.awaitTermination(HARD_SHUT_DOWN_TIME, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }

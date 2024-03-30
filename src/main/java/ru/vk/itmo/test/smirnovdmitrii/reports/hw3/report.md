@@ -88,20 +88,23 @@ Latency Distribution (HdrHistogram - Recorded Latency)
 А что вообще изменилось. В cpu появилось плато, которое занимает 23 процента - пересылка ответа (выполнение локального ответа занимает около 1 процента).
 
 [Страничка для 1 ноды](https://disk.yandex.ru/d/lOXWN9RZ1_F0jg)
-[Страничка для 3 нод](https://disk.yandex.ru/d/9SUfhMG5AiW-iQ)
+
+[Страничка для 3 нод](https://disk.yandex.ru/d/vUmq8eU-VVrV3w)
 
 ### alloc
 
 В аллокациях появилось плато которое занимает 75 процентов - все на чтение ответа из пересылки (_здесь должен быть эмодзи клоуна_)
 
 [Страничка для 1 ноды](https://disk.yandex.ru/d/UPG1QMrugqvdzA)
-[Страничка для 3 нод](https://disk.yandex.ru/d/vUmq8eU-VVrV3w)
+
+[Страничка для 3 нод](https://disk.yandex.ru/d/UqV-V2bnm_S5jA)
 
 ### lock
 
 Если лок на `HttpSession` раньше занимал 7 процентов, то с тремя нодами он занимает 30 процентов.
 
 [Страница для 1 ноды](https://disk.yandex.ru/d/fMXh-jQOWk1taA)
+
 [Страница для 3 нод](https://disk.yandex.ru/d/FjroZlzZ0hWsbg)
 
 ## Профилирование (GET)
@@ -111,6 +114,7 @@ Latency Distribution (HdrHistogram - Recorded Latency)
 В cpu появилось плато 21 процентов на пересылку.
 
 [Страница для 1 ноды](https://disk.yandex.ru/d/xQV_ftJCG6cLpw)
+
 [Страница для 3 нод](https://disk.yandex.ru/d/9SUfhMG5AiW-iQ)
 
 ### alloc
@@ -118,6 +122,7 @@ Latency Distribution (HdrHistogram - Recorded Latency)
 Появилось alloc появился расход на пересылку в 27 процентов (До этого 97 процентов всех памяти занимали `MemorySegmentы` в бинарном поиске)
 
 [Страница для 1 ноды](https://disk.yandex.ru/d/9XypfNFB_xselw)
+
 [Страница для 3 нод](https://disk.yandex.ru/d/9NpC3Jy1KiwYaA)
 
 ### lock
@@ -125,6 +130,7 @@ Latency Distribution (HdrHistogram - Recorded Latency)
 `HttpSession` занимал по локам меньше процента, а теперь занимает 7 процентов.
 
 [Страница для 1 ноды](https://disk.yandex.ru/d/NDfXZBRuohjnAg)
+
 [Страница для 3 нод](https://disk.yandex.ru/d/ZlDAmrCJupOZyQ)
 
 ## Сравнение gc

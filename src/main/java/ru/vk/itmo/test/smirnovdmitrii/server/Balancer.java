@@ -35,10 +35,14 @@ public class Balancer {
         for (int i = 0; i < partitionMapping.length; i++) {
             int skip = random.nextInt(clusterUrlsSize - nodesDoneCount);
             int index = 0;
-            while (skip != 0) {
-                if (mappedCount[index] != vNodePerNode) {
+            while (true) {
+                while (mappedCount[index] == vNodePerNode) {
                     index = (index + 1) % mappedCount.length;
                 }
+                if (skip == 0) {
+                    break;
+                }
+                index = (index + 1) % mappedCount.length;
                 skip--;
             }
             mappedCount[index]++;

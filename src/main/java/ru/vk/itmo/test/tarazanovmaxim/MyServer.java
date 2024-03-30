@@ -25,8 +25,10 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -39,17 +41,21 @@ public class MyServer extends HttpServer {
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20;
     private static final long REQUEST_TTL = TimeUnit.SECONDS.toNanos(1000);
     private static final String PATH = "/v0/entity";
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    private static final String REDIRECT_HEADER = "Redirected: ";
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
     private final Map<String, HttpClient> httpClients = new HashMap<>();
-    private final Map<String, String> shardKeyMap = new HashMap<>();
+    //private final Map<String, String> shardKeyMap = new HashMap<>();
     private final ConsistentHashing shards;
-    private final String selfUrl;
+    private final int clusterSize;
+    //private final String selfUrl;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
-        selfUrl = config.selfUrl();
+        //selfUrl = config.selfUrl();
+        clusterSize = config.clusterUrls().size();
         shards = new ConsistentHashing();
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
 
@@ -106,16 +112,19 @@ public class MyServer extends HttpServer {
         dao.close();
     }
 
-    private boolean onAnotherServer(final String id) {
-        return !shards.getShardByKey(id).equals(selfUrl);
+    private int quorum(final int from) {
+        return from / 2 + 1;
     }
 
-    private Response shardLookup(final String id, final Request request) {
+    private boolean isParamsBad(String id, int ack, int from) {
+        return id == null || id.isEmpty() ||
+                from <= 0 || from > clusterSize ||
+                ack < quorum(from) || ack > from;
+    }
+
+    private Response shardLookup(final Request request, final String shard) {
         Response response;
         Request redirect = new Request(request);
-        String shard = shardKeyMap.computeIfAbsent(id, key -> {
-            return shards.getShardByKey(id);
-        });
         try {
             response = httpClients.get(shard).invoke(redirect, 500);
         } catch (Exception e) {
@@ -126,7 +135,41 @@ public class MyServer extends HttpServer {
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
-    public final Response get(@Param(value = "id", required = true) String id, Request request) {
+    public final Response get(@Param(value = "id", required = true) String id,
+                              @Param(value = "ack") String ack,
+                              @Param(value = "from") String from,
+                              Request request) {
+        int from_ = from == null ? clusterSize : Integer.parseInt(from);
+        int ack_ = ack == null ? quorum(from_) : Integer.parseInt(ack);
+        if (isParamsBad(id, ack_, from_)) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (request.getHeader(REDIRECT_HEADER) == null) {
+            request.addHeader(REDIRECT_HEADER + "true");
+            List<Response> responses = new ArrayList<>();
+            List<String> shardToRequest = shards.getNShardByKey(id, from_);
+            for (String sendTo : shardToRequest) {
+                Response answer = shardLookup(request, sendTo);
+                if (answer.getStatus() < 500) {
+                    responses.addLast(answer);
+                }
+            }
+
+            if (responses.size() < ack_) {
+                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            }
+            return responses.getFirst();
+        }
+        MemorySegment key = toMemorySegment(id);
+        Entry<MemorySegment> entry = dao.get(key);
+        if (entry == null) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
+
+        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+
+        /*
         MemorySegment key =
                 (id == null || id.isEmpty())
                 ? null
@@ -147,11 +190,48 @@ public class MyServer extends HttpServer {
         }
 
         return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+        */
     }
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
-    public final Response put(@Param(value = "id", required = true) String id, Request request) {
+    public final Response put(@Param(value = "id", required = true) String id,
+                              @Param(value = "ack") String ack,
+                              @Param(value = "from") String from,
+                              Request request) {
+        int from_ = from == null ? clusterSize : Integer.parseInt(from);
+        int ack_ = ack == null ? quorum(from_) : Integer.parseInt(ack);
+        if (isParamsBad(id, ack_, from_)) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (request.getHeader(REDIRECT_HEADER) == null) {
+            request.addHeader(REDIRECT_HEADER + "true");
+            List<Response> responses = new ArrayList<>();
+            List<String> shardToRequest = shards.getNShardByKey(id, from_);
+            for (String sendTo : shardToRequest) {
+                Response answer = shardLookup(request, sendTo);
+                if (answer.getStatus() < 500) {
+                    responses.addLast(answer);
+                }
+            }
+
+            if (responses.size() < ack_) {
+                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            }
+            return responses.getFirst();
+        }
+        MemorySegment key = toMemorySegment(id);
+        Entry<MemorySegment> entry = new BaseEntry<>(
+                key,
+                MemorySegment.ofArray(request.getBody())
+        );
+
+        dao.upsert(entry);
+
+        return new Response(Response.CREATED, Response.EMPTY);
+
+        /*
         MemorySegment key =
                 (id == null || id.isEmpty())
                 ? null
@@ -173,11 +253,44 @@ public class MyServer extends HttpServer {
         dao.upsert(entry);
 
         return new Response(Response.CREATED, Response.EMPTY);
+        */
     }
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public final Response delete(@Param(value = "id", required = true) String id, Request request) {
+    public final Response delete(@Param(value = "id", required = true) String id,
+                                 @Param(value = "ack") String ack,
+                                 @Param(value = "from") String from,
+                                 Request request) {
+        int from_ = from == null ? clusterSize : Integer.parseInt(from);
+        int ack_ = ack == null ? quorum(from_) : Integer.parseInt(ack);
+        if (isParamsBad(id, ack_, from_)) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        if (request.getHeader(REDIRECT_HEADER) == null) {
+            request.addHeader(REDIRECT_HEADER + "true");
+            List<Response> responses = new ArrayList<>();
+            List<String> shardToRequest = shards.getNShardByKey(id, from_);
+            for (String sendTo : shardToRequest) {
+                Response answer = shardLookup(request, sendTo);
+                if (answer.getStatus() < 500) {
+                    responses.addLast(answer);
+                }
+            }
+
+            if (responses.size() < ack_) {
+                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            }
+            return responses.getFirst();
+        }
+        MemorySegment key = toMemorySegment(id);
+        Entry<MemorySegment> entry = new BaseEntry<>(key, null);
+        dao.upsert(entry);
+
+        return new Response(Response.ACCEPTED, Response.EMPTY);
+
+        /*
         MemorySegment key =
                 (id == null || id.isEmpty())
                 ? null
@@ -194,6 +307,7 @@ public class MyServer extends HttpServer {
         dao.upsert(new BaseEntry<>(key, null));
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
+        */
     }
 
     @Path(PATH)

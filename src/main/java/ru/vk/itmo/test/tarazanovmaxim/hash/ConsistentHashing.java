@@ -1,6 +1,8 @@
 package ru.vk.itmo.test.tarazanovmaxim.hash;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -23,6 +25,14 @@ public class ConsistentHashing {
         }
 
         return ring.isEmpty() ? null : ring.get(ring.keySet().iterator().next());
+    }
+
+    public List<String> getNShardByKey(String key, int n) {
+        Set<String> shards = new HashSet<>();
+        for (int i = 0; shards.size() < n; ++i) {
+            shards.add(getShardByKey(key + i));
+        }
+        return List.copyOf(shards);
     }
 
     public void addShard(String newShard, Set<Integer> nodeHashes) {

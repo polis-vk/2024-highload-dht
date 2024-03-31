@@ -176,11 +176,6 @@ final class TableSet {
         return null;
     }
 
-/*    private static EntryWithTimestamp<MemorySegment> swallowTombstone(final EntryWithTimestamp<MemorySegment> entry) {
-        if (entry.value() == null) return new BaseEntryWithTimestamp<>(entry.key(), null, entry.timestamp());;
-        return new BaseEntryWithTimestamp<>(entry.key(), entry.value(), entry.timestamp());
-    }*/
-
     EntryWithTimestamp<MemorySegment> upsert(final EntryWithTimestamp<MemorySegment> entry) {
         return memTable.upsert(entry);
     }

@@ -61,11 +61,13 @@ public abstract class ReplicativeBaseSharder extends BaseSharder {
 
     @Override
     public Response makeDecision(List<Response> responses, int acknowledge, int method) {
-        return switch (method) {
+        Response basicResponse = switch (method) {
             case Request.METHOD_GET -> makeMethodDecision(responses, acknowledge, Set.of(200, 404), true);
             case Request.METHOD_PUT -> makeMethodDecision(responses, acknowledge, Set.of(201), false);
             case Request.METHOD_DELETE -> makeMethodDecision(responses, acknowledge, Set.of(202), false);
             default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         };
+        // To remove X-Timeout header for response for client
+        return handleProxiedResponse(basicResponse.getStatus(), basicResponse.getBody(), null);
     }
 }

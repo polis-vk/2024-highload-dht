@@ -37,7 +37,7 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         if (isServiceStopped.getAndSet(true)) {
             return CompletableFuture.completedFuture(null);
         }
@@ -49,6 +49,7 @@ public class ServiceImpl implements Service {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            executorService.shutdownNow();
         }
         dao.close();
         return CompletableFuture.completedFuture(null);

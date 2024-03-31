@@ -150,7 +150,7 @@ final class SSTable {
             return new BaseEntryWithTimestamp<>(key, null, timestamp);
         } else {
             // Get value
-           // offset += Long.BYTES;
+            offset += Long.BYTES;
             final MemorySegment value = data.asSlice(offset, valueLength);
 
             // Get timestamp

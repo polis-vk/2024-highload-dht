@@ -12,11 +12,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.timofeevkirill.dao.Dao;
+import ru.vk.itmo.test.timofeevkirill.dao.TimestampEntry;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
@@ -36,7 +40,7 @@ public class TimofeevServer extends HttpServer {
 
     public TimofeevServer(
             ServiceConfig serviceConfig,
-            Dao dao,
+            Dao<MemorySegment, TimestampEntry<MemorySegment>> dao,
             ThreadPoolExecutor threadPoolExecutor,
             TimofeevProxyService proxyService
     ) throws IOException {
@@ -129,7 +133,10 @@ public class TimofeevServer extends HttpServer {
         }
 
         boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
-        Map<String, Response> responses = proxyService.proxyRequests(request, nodeUrls, parameters.id);
+        Map<String, Response> responses;
+
+            responses = proxyService.proxyRequests(request, nodeUrls, parameters.id);
+
 
         if (isSelfProcessing) {
             responses.put(serviceConfig.selfUrl(), requestHandler.handle(request, parameters.id));

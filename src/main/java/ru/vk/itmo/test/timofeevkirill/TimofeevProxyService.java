@@ -18,6 +18,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import static ru.vk.itmo.test.timofeevkirill.TimofeevServer.PATH;
@@ -47,6 +49,63 @@ public class TimofeevProxyService {
         }
     }
 
+    public Map<String, Response> proxyAsyncRequests(Request request, List<String> nodeUrls, String id) throws InterruptedException, ExecutionException {
+        Map<String, CompletableFuture<Response>> futures = new HashMap<>(nodeUrls.size());
+
+        for (String url : nodeUrls) {
+            CompletableFuture<Response> future = proxyRequestAsync(request, url, id);
+            futures.put(url, future);
+        }
+
+        CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[nodeUrls.size()]));
+        allFutures.get();
+
+        Map<String, Response> responses = new HashMap<>();
+        for (Map.Entry<String, CompletableFuture<Response>> entry : futures.entrySet()) {
+            String url = entry.getKey();
+            CompletableFuture<Response> future = entry.getValue();
+            responses.put(url, future.join());
+        }
+
+        return responses;
+    }
+
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private CompletableFuture<Response> proxyRequestAsync(Request request, String proxiedNodeUrl, String id) {
+        byte[] body = request.getBody();
+        URI uri = URI.create(proxiedNodeUrl + PATH + "?id=" + id);
+
+        CompletableFuture<Response> future = new CompletableFuture<>();
+
+        httpClients.get(proxiedNodeUrl).sendAsync(
+                        HttpRequest.newBuilder()
+                                .uri(uri)
+                                .method(
+                                        request.getMethodName(),
+                                        body == null
+                                                ? HttpRequest.BodyPublishers.noBody()
+                                                : HttpRequest.BodyPublishers.ofByteArray(body)
+                                )
+                                .header(RequestData.SELF_PROCESS_HEADER, "")
+                                .build(),
+                        HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(httpResponse -> {
+                    Response response = new Response(proxyResponseCode(httpResponse), httpResponse.body());
+                    long timestamp = httpResponse.headers().firstValueAsLong(RequestData.NIO_TIMESTAMP_HEADER).orElse(0);
+                    response.addHeader(RequestData.NIO_TIMESTAMP_STRING_HEADER + timestamp);
+                    return response;
+                })
+                .exceptionally(ex -> {
+                    logger.error("Proxy request exception: ", ex);
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                })
+                .thenAccept(future::complete);
+
+        return future;
+    }
+
+    // use async method to wait responses parallel
+    @Deprecated
     public Map<String, Response> proxyRequests(Request request, List<String> nodeUrls, String id) throws IOException {
         Map<String, Response> responses = new HashMap<>(nodeUrls.size());
         for (String url : nodeUrls) {
@@ -57,7 +116,8 @@ public class TimofeevProxyService {
         return responses;
     }
 
-    public Response proxyRequest(Request request, String proxiedNodeUrl, String id) throws IOException {
+    @Deprecated
+    private Response proxyRequest(Request request, String proxiedNodeUrl, String id) throws IOException {
         byte[] body = request.getBody();
         URI uri = URI.create(proxiedNodeUrl + PATH + "?id=" + id);
         try {

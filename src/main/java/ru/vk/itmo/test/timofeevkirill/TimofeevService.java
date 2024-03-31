@@ -8,8 +8,10 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.timofeevkirill.dao.Dao;
 import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
+import ru.vk.itmo.test.timofeevkirill.dao.TimestampEntry;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -24,7 +26,7 @@ public class TimofeevService implements Service {
     private final Config daoConfig;
     private TimofeevServer server;
     private ThreadPoolExecutor threadPoolExecutor;
-    private Dao dao;
+    private Dao<MemorySegment, TimestampEntry<MemorySegment>> dao;
     private TimofeevProxyService proxyService;
 
     public TimofeevService(ServiceConfig serviceConfig) {

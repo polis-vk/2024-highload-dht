@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.stream.Collectors;
 
 public class HttpServerImpl extends HttpServer {
 
@@ -68,78 +69,76 @@ public class HttpServerImpl extends HttpServer {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
-            executorService.execute(() -> processRequest(request, session, id));
+            AllowedMethods method = getMethod(request.getMethod());
+            if (method == null) {
+                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                return;
+            }
+            executorService.execute(() -> {
+                try {
+                    processRequest(request, session, id, method);
+                } catch (Exception e) {
+                    logger.error("Unexpected error when processing request", e);
+                    sendError(session, e);
+                }
+            });
         } catch (RejectedExecutionException e) {
             logger.error("Request rejected", e);
             session.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY));
         }
     }
 
-    private void processRequest(Request request, HttpSession session, String id) {
-        try {
-            AllowedMethods method = getMethod(request.getMethod());
-            if (method == null) {
-                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                return;
-            }
+    private void processRequest(Request request, HttpSession session, String id, AllowedMethods method) throws IOException {
+        String isRedirected = request.getHeader(REDIRECTED_HEADER);
 
-            String isRedirected = request.getHeader(REDIRECTED_HEADER);
-
-            if (isRedirected != null) {
-                session.sendResponse(handleLocalRequest(request, id));
-                return;
-            }
-
-            String fromStr = request.getParameter("from=");
-            String ackStr = request.getParameter("ack=");
-            int from = fromStr == null || fromStr.isEmpty() ? nodes.size()
-                    : Integer.parseInt(fromStr);
-            int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
-            if (ack == 0 || ack > from || from > nodes.size()) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-
-            List<String> nodesHashes = getSortedNodes(id, from);
-            int success = 0;
-            Response[] responses = new Response[ack];
-
-
-            for (int i = 0; i < from; i++) {
-                if (success == ack) {
-                    break;
-                }
-                String node = nodesHashes.get(i);
-                try {
-                    if (node.equals(selfUrl)) {
-                        responses[success] = handleLocalRequest(request, id);
-                    } else {
-                        responses[success] = redirectRequest(method, id, node, request);
-                    }
-                    success++;
-                } catch (InterruptedException | IOException e) {
-                    logger.error("Error during sending request", e);
-                    Thread.currentThread().interrupt();
-                }
-
-            }
-            if (success < ack ) {
-                session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                return;
-            }
-
-            if (request.getMethod() == Request.METHOD_GET) {
-                Response response = validateGetRequests(ack, responses);
-                session.sendResponse(response);
-                return;
-            }
-            String responseStatusCode = getResponseByCode(responses[0].getStatus());
-            Response response = new Response(responseStatusCode, responses[0].getBody());
-            session.sendResponse(response);
-        } catch (Exception e) {
-            logger.error("Unexpected error when processing request", e);
-            sendError(session, e);
+        if (isRedirected != null) {
+            session.sendResponse(handleLocalRequest(request, id));
+            return;
         }
+
+        String fromStr = request.getParameter("from=");
+        String ackStr = request.getParameter("ack=");
+        int from = fromStr == null || fromStr.isEmpty() ? nodes.size() : Integer.parseInt(fromStr);
+        int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
+        if (ack == 0 || from == 0 || ack > from || from > nodes.size()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        List<String> nodesHashes = getSortedNodes(id, from);
+        int success = 0;
+        Response[] responses = new Response[ack];
+        request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
+        for (int i = 0; i < from; i++) {
+            if (success == ack) {
+                break;
+            }
+            String node = nodesHashes.get(i);
+            try {
+                if (node.equals(selfUrl)) {
+                    responses[success] = handleLocalRequest(request, id);
+                } else {
+                    responses[success] = redirectRequest(method, id, node, request);
+                }
+                success++;
+            } catch (InterruptedException | IOException e) {
+                logger.error("Error during sending request", e);
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (success < ack) {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            return;
+        }
+
+        if (request.getMethod() == Request.METHOD_GET) {
+            Response response = validateGetRequests(ack, responses);
+            session.sendResponse(response);
+            return;
+        }
+        String responseStatusCode = getResponseByCode(responses[0].getStatus());
+        Response response = new Response(responseStatusCode, responses[0].getBody());
+        session.sendResponse(response);
     }
 
     private Response validateGetRequests(int ack, Response[] responses) {
@@ -154,8 +153,6 @@ public class HttpServerImpl extends HttpServer {
                 notFound++;
                 if (timestamp != 0L && latestTimestamp < timestamp) {
                     latestTimestamp = timestamp;
-                   // latestResponse = response;
-                   // latestResponse.setBody(null);
                     isLatestFailed = true;
                 }
                 continue;
@@ -175,7 +172,6 @@ public class HttpServerImpl extends HttpServer {
         return response;
     }
 
-
     private void sendError(HttpSession session, Exception e) {
         try {
             String responseCode = e.getClass() == HttpException.class ? Response.BAD_REQUEST : Response.INTERNAL_ERROR;
@@ -192,9 +188,8 @@ public class HttpServerImpl extends HttpServer {
         for (String node : nodes) {
             nodesHashes.put(Hash.murmur3(node + key), node);
         }
-        return nodesHashes.values().stream().limit(from).toList();
+        return nodesHashes.values().stream().limit(from).collect(Collectors.toList());
     }
-
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
@@ -266,12 +261,11 @@ public class HttpServerImpl extends HttpServer {
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofByteArray(body))
                 .header(REDIRECTED_HEADER, "true")
-                .header("X-timestamp", String.valueOf(System.currentTimeMillis())
+                .header("X-timestamp", request.getHeader(TIMESTAMP_HEADER)
                 ).build(), HttpResponse.BodyHandlers.ofByteArray());
         Response result = new Response(getResponseByCode(response.statusCode()), response.body());
         Optional<String> respTimestamp = response.headers().firstValue("X-timestamp");
-        respTimestamp.ifPresent(s -> System.out.println("DBG: " + s.toString()));
-        respTimestamp.ifPresent(v-> result.addHeader(TIMESTAMP_HEADER + v));
+        respTimestamp.ifPresent(v -> result.addHeader(TIMESTAMP_HEADER + v));
         return result;
     }
 

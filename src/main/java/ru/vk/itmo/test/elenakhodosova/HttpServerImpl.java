@@ -74,9 +74,17 @@ public class HttpServerImpl extends HttpServer {
                 session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 return;
             }
+            String fromStr = request.getParameter("from=");
+            String ackStr = request.getParameter("ack=");
+            int from = fromStr == null || fromStr.isEmpty() ? nodes.size() : Integer.parseInt(fromStr);
+            int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
+            if (ack == 0 || from == 0 || ack > from || from > nodes.size()) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
             executorService.execute(() -> {
                 try {
-                    processRequest(request, session, id, method);
+                    processRequest(request, session, id, method, from, ack);
                 } catch (Exception e) {
                     logger.error("Unexpected error when processing request", e);
                     sendError(session, e);
@@ -88,7 +96,8 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private void processRequest(Request request, HttpSession session, String id, AllowedMethods method) throws IOException {
+    private void processRequest(Request request, HttpSession session, String id,
+                                AllowedMethods method, int from, int ack) throws IOException {
         String isRedirected = request.getHeader(REDIRECTED_HEADER);
 
         if (isRedirected != null) {
@@ -96,14 +105,6 @@ public class HttpServerImpl extends HttpServer {
             return;
         }
 
-        String fromStr = request.getParameter("from=");
-        String ackStr = request.getParameter("ack=");
-        int from = fromStr == null || fromStr.isEmpty() ? nodes.size() : Integer.parseInt(fromStr);
-        int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
-        if (ack == 0 || from == 0 || ack > from || from > nodes.size()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
 
         List<String> nodesHashes = getSortedNodes(id, from);
         int success = 0;

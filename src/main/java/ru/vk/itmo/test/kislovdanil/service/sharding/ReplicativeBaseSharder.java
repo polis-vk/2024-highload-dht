@@ -10,7 +10,6 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 public abstract class ReplicativeBaseSharder extends BaseSharder {
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private static final Comparator<Response> timestampComparator = new Comparator<>() {
 

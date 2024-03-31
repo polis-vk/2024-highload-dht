@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public abstract class BaseSharder implements Sharder {
+    protected static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+
     private static final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
     private final HttpClient client;
     protected static final String TIMESTAMP_HEADER = "X-Timestamp";
@@ -32,7 +34,9 @@ public abstract class BaseSharder implements Sharder {
             case 201 -> new Response(Response.CREATED, Response.EMPTY);
             case 202 -> new Response(Response.ACCEPTED, Response.EMPTY);
             case 404 -> new Response(Response.NOT_FOUND, Response.EMPTY);
+            case 405 -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             case 400 -> new Response(Response.BAD_REQUEST, Response.EMPTY);
+            case 504 -> new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
             default -> new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         };
         if (timestamp != null) {

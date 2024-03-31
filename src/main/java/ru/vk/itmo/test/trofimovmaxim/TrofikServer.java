@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.trofimovmaxim;
 
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -9,7 +8,6 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -26,7 +24,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 
 public class TrofikServer extends HttpServer {
@@ -34,15 +31,18 @@ public class TrofikServer extends HttpServer {
     private static final Response BAD_REQUEST = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private static final Response INTERNAL_ERROR = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     private static final Response TIMEOUT = new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
+    public static final String ENDPOINT_V0_ENTITY_PREFIX = "/v0/entity?id=";
     private ReferenceDao dao;
     private final ServiceConfig config;
     private final DaoOperationsExecutor executor;
     private HttpClient httpClient;
+    private final RendezvousBalancer balancer;
 
     public TrofikServer(ServiceConfig config) throws IOException {
         super(convertConfig(config));
         this.config = config;
         executor = new DaoOperationsExecutor();
+        balancer = new RendezvousBalancer(config.clusterUrls());
     }
 
     private static HttpServerConfig convertConfig(ServiceConfig config) {
@@ -65,7 +65,7 @@ public class TrofikServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         String key = request.getParameter("id=");
 
-        String clusterUrl = rendezvousGetCluster(key);
+        String clusterUrl = balancer.getCluster(key);
         if (clusterUrl == null) {
             session.sendResponse(BAD_REQUEST);
             return;
@@ -90,7 +90,7 @@ public class TrofikServer extends HttpServer {
 
     private void handleRemote(Request request, HttpSession session, String clusterUrl, String key) throws IOException {
         HttpRequest requestToCluster = HttpRequest.newBuilder(
-                URI.create(clusterUrl + "/v0/entity?id=" + key)
+                URI.create(clusterUrl + ENDPOINT_V0_ENTITY_PREFIX + key)
         ).method(
                 request.getMethodName(),
                 request.getMethod() == Request.METHOD_PUT
@@ -118,11 +118,7 @@ public class TrofikServer extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (Exception e) {
-            if (e instanceof HttpException) {
-                session.sendResponse(BAD_REQUEST);
-            } else {
-                session.sendResponse(INTERNAL_ERROR);
-            }
+            session.sendResponse(INTERNAL_ERROR);
         }
     }
 
@@ -161,29 +157,6 @@ public class TrofikServer extends HttpServer {
             case 408 -> Response.REQUEST_TIMEOUT;
             default -> Response.INTERNAL_ERROR;
         };
-    }
-
-    private String rendezvousGetCluster(String key) {
-        if (key == null || key.isEmpty()) {
-            return null;
-        }
-
-        int maxHash = Integer.MIN_VALUE;
-        int maxIndex = -1;
-
-        List<String> clusters = config.clusterUrls();
-        for (int i = 0; i < clusters.size(); ++i) {
-            int hash = Hash.murmur3(clusters.get(i) + key);
-            if (hash > maxHash) {
-                maxHash = hash;
-                maxIndex = i;
-            }
-        }
-
-        if (maxIndex == -1) {
-            return null;
-        }
-        return clusters.get(maxIndex);
     }
 
     private Entry<MemorySegment> entry(String key, byte[] value) {

@@ -8,6 +8,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class DaoOperationsExecutor {
+    private static final int TIMEOUT = 60;
     private static final RejectedExecutionHandler ABORT_POLICY = new ThreadPoolExecutor.AbortPolicy();
     private ExecutorService executorService;
 
@@ -27,7 +28,7 @@ public class DaoOperationsExecutor {
     public void stop() {
         executorService.shutdown();
         try {
-            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!executorService.awaitTermination(TIMEOUT, TimeUnit.SECONDS)) {
                 executorService.shutdownNow();
             }
         } catch (InterruptedException ex) {

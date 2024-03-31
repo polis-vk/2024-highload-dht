@@ -7,7 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -15,16 +14,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public final class RunServer {
+    private static final String URL_PREFIX = "http://localhost:";
+
     private RunServer() {
     }
 
     public static void main(String[] args) throws IOException {
-        Map<Integer, String> nodes = new HashMap<>();
-        int nodePort = 8080;
-        for (int i = 0; i < 3; i++) {
-            nodes.put(nodePort, "http://localhost:" + nodePort);
-            nodePort += 10;
-        }
+        Map<Integer, String> nodes = Map.of(
+                8080, URL_PREFIX + 8080,
+                8090, URL_PREFIX + 8090,
+                8100, URL_PREFIX + 8100
+        );
 
         List<String> clusterUrls = new ArrayList<>(nodes.values());
         List<ServiceConfig> clusterConfs = new ArrayList<>();

@@ -50,7 +50,6 @@ import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
-import static ru.vk.itmo.test.viktorkorotkikh.util.LsmServerUtil.timestampToHeader;
 
 public class LSMServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(LSMServerImpl.class);
@@ -141,7 +140,8 @@ public class LSMServerImpl extends HttpServer {
         if (request.getHeader(REPLICA_REQUEST_HEADER) != null) {
             final String id = request.getParameter("id=");
             final byte[] key = id.getBytes(StandardCharsets.UTF_8);
-            session.sendResponse(processLocal(request, key, id).getOriginal());
+            final long requestTimestamp = Instant.now().toEpochMilli();
+            session.sendResponse(processLocal(request, key, id, requestTimestamp).getOriginal());
             return;
         }
 
@@ -154,7 +154,8 @@ public class LSMServerImpl extends HttpServer {
             return;
         }
         // validate id parameter
-        if (requestParameters.id() == null || requestParameters.id().isEmpty()) {
+        final String id = requestParameters.id();
+        if (id == null || id.isEmpty()) {
             log.info("Bad request: empty id parameter");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
@@ -178,7 +179,7 @@ public class LSMServerImpl extends HttpServer {
             return;
         }
 
-        final byte[] key = requestParameters.id().getBytes(StandardCharsets.UTF_8);
+        final byte[] key = id.getBytes(StandardCharsets.UTF_8);
 
         final List<String> replicas = consistentHashingManager.getReplicasList(from, key);
 
@@ -187,13 +188,13 @@ public class LSMServerImpl extends HttpServer {
                 from,
                 replicas,
                 key,
-                requestParameters.id(),
+                id,
                 ack
         );
         session.sendResponse(response);
     }
 
-    private RequestParameters getRequestParameters(Request request) {
+    private static RequestParameters getRequestParameters(Request request) {
         final Iterator<Map.Entry<String, String>> parametersIterator = request.getParameters().iterator();
         String id = null;
         Integer ack = null;
@@ -225,11 +226,12 @@ public class LSMServerImpl extends HttpServer {
             Integer ack
     ) {
         final List<HttpResponse<byte[]>> responses = new ArrayList<>(from);
+        final long requestTimestamp = Instant.now().toEpochMilli();
         for (final String replicaUrl : replicas) {
             if (replicaUrl.equals(selfUrl)) {
-                responses.add(processLocal(request, key, id));
+                responses.add(processLocal(request, key, id, requestTimestamp));
             } else {
-                responses.add(processRemote(request, replicaUrl, id));
+                responses.add(processRemote(request, replicaUrl, id, requestTimestamp));
             }
         }
         return LsmServerUtil.mergeReplicasResponses(request, responses, ack);
@@ -238,20 +240,23 @@ public class LSMServerImpl extends HttpServer {
     private HttpResponse<byte[]> processRemote(
             final Request originalRequest,
             final String server,
-            final String id
+            final String id,
+            long requestTimestamp
     ) {
-        final HttpRequest request = createClusterRequest(originalRequest, server, id);
+        final HttpRequest request = createClusterRequest(originalRequest, server, id, requestTimestamp);
         return sendClusterRequest(request);
     }
 
     private static HttpRequest createClusterRequest(
             final Request originalRequest,
             final String server,
-            final String id
+            final String id,
+            long requestTimestamp
     ) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(server + ENTITY_V0_PATH_WITH_ID_PARAM + id))
-                .header(REPLICA_REQUEST_HEADER, "");
+                .header(REPLICA_REQUEST_HEADER, "")
+                .header(LsmServerUtil.TIMESTAMP_HEADER, String.valueOf(requestTimestamp));
         switch (originalRequest.getMethod()) {
             case METHOD_GET -> builder.GET();
             case METHOD_PUT -> {
@@ -290,11 +295,16 @@ public class LSMServerImpl extends HttpServer {
         }
     }
 
-    private OneNioHttpResponseWrapper processLocal(final Request request, final byte[] key, final String id) {
+    private OneNioHttpResponseWrapper processLocal(
+            final Request request,
+            final byte[] key,
+            final String id,
+            final long requestTimestamp
+    ) {
         Response response = switch (request.getMethod()) {
             case METHOD_GET -> handleGetEntity(request, key, id);
-            case METHOD_PUT -> handlePutEntity(request, key, id);
-            case METHOD_DELETE -> handleDeleteEntity(request, key, id);
+            case METHOD_PUT -> handlePutEntity(request, key, id, requestTimestamp);
+            case METHOD_DELETE -> handleDeleteEntity(request, key, id, requestTimestamp);
             default -> LSMConstantResponse.methodNotAllowed(request);
         };
         return new OneNioHttpResponseWrapper(response);
@@ -316,14 +326,23 @@ public class LSMServerImpl extends HttpServer {
         if (entry.value() == null) {
             log.info("Entity(id={}) was deleted", idString);
             Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-            response.addHeader(timestampToHeader(entry.timestamp()));
+            response.addHeader(LsmServerUtil.timestampToHeader(entry.timestamp()));
             return response;
         }
 
-        return new LSMServerResponseWithMemorySegment(Response.OK, entry.value(), timestampToHeader(entry.timestamp()));
+        return new LSMServerResponseWithMemorySegment(
+                Response.OK,
+                entry.value(),
+                LsmServerUtil.timestampToHeader(entry.timestamp())
+        );
     }
 
-    private Response handlePutEntity(final Request request, final byte[] id, final String idString) {
+    private Response handlePutEntity(
+            final Request request,
+            final byte[] id,
+            final String idString,
+            final long requestTimestamp
+    ) {
         if (request.getBody() == null) {
             log.info("PUT bad request: empty body");
             return LSMConstantResponse.badRequest(request);
@@ -332,7 +351,7 @@ public class LSMServerImpl extends HttpServer {
         TimestampedEntry<MemorySegment> newEntry = new TimestampedEntry<>(
                 fromByteArray(id),
                 MemorySegment.ofArray(request.getBody()),
-                Instant.now().toEpochMilli()
+                requestTimestamp
         );
         try {
             dao.upsert(newEntry);
@@ -349,11 +368,16 @@ public class LSMServerImpl extends HttpServer {
         return LSMConstantResponse.created(request);
     }
 
-    private Response handleDeleteEntity(final Request request, final byte[] id, final String idString) {
+    private Response handleDeleteEntity(
+            final Request request,
+            final byte[] id,
+            final String idString,
+            final long requestTimestamp
+    ) {
         final TimestampedEntry<MemorySegment> newEntry = new TimestampedEntry<>(
                 fromByteArray(id),
                 null,
-                Instant.now().toEpochMilli()
+                requestTimestamp
         );
         try {
             dao.upsert(newEntry);

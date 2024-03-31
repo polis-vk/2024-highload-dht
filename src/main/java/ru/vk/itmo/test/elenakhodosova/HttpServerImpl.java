@@ -105,7 +105,6 @@ public class HttpServerImpl extends HttpServer {
             return;
         }
 
-
         List<String> nodesHashes = getSortedNodes(id, from);
         int success = 0;
         Response[] responses = new Response[ack];

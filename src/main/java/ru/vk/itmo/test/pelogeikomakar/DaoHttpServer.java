@@ -8,29 +8,35 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.pelogeikomakar.dao.ReferenceDaoPel;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 public class DaoHttpServer extends one.nio.http.HttpServer {
 
+    private static final Logger log = LoggerFactory.getLogger(DaoHttpServer.class);
+
+    private final ExecutorService executorService;
+    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
-    private final Config daoConfig;
-    private ReferenceDaoPel dao;
 
-    public DaoHttpServer(ServiceConfig config, Config daoConfig) throws IOException {
+    public DaoHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao,
+                         ExecutorService executorService) throws IOException {
         super(createHttpServerConfig(config));
-        this.daoConfig = daoConfig;
+        this.dao = dao;
+        this.executorService = executorService;
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig config) {
@@ -44,17 +50,26 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         return serverConfig;
     }
 
+    public Dao<MemorySegment, Entry<MemorySegment>> getDao() {
+        return dao;
+    }
+
+    public ExecutorService getExecutorService() {
+        return executorService;
+    }
+
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response upsertDaoMethod(@Param(value = "id", required = true) String id, Request request) {
+    public Response upsertDaoMethod(@Param(value = "id", required = false) String id, Request request) {
 
-        if (id.isEmpty() || request.getBody() == null) {
+        if (id == null || id.isEmpty() || request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
             dao.upsert(requestToEntry(id, request.getBody()));
         } catch (IllegalStateException e) {
-            return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
+            log.error("Exception during upsert (key: {})", id, e);
+            return new Response(Response.CONFLICT, Response.EMPTY);
         }
 
         return new Response(Response.CREATED, Response.EMPTY);
@@ -62,8 +77,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response getDaoMethod(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response getDaoMethod(@Param(value = "id", required = false) String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -78,26 +93,42 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteDaoMethod(@Param(value = "id", required = true) String id) {
+    public Response deleteDaoMethod(@Param(value = "id", required = false) String id) {
 
-        if (id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        dao.upsert(requestToEntry(id, null));
+        try {
+            dao.upsert(requestToEntry(id, null));
+        } catch (IllegalStateException e) {
+            log.error("Exception during delete-upsert", e);
+            return new Response(Response.CONFLICT, Response.EMPTY);
+        }
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path("/v0/entity/flush")
-    @RequestMethod(Request.METHOD_GET)
-    public Response getCloseMethod() {
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            dao.flush();
-        } catch (IOException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            executorService.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (Exception e) {
+                    log.error("Exception during handleRequest", e);
+                    try {
+                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                    } catch (IOException ex) {
+                        log.error("IOException while sendResponse ExecServer", ex);
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.error("Exception during adding request to ExecServ queue", e);
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
@@ -122,26 +153,5 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
     private byte[] memorySegmentToBytes(MemorySegment segment) {
         return segment.toArray(ValueLayout.JAVA_BYTE);
-    }
-
-    @Override
-    public synchronized void start() {
-        try {
-            dao = new ReferenceDaoPel(daoConfig);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
-        super.start();
-    }
-
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 }

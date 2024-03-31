@@ -20,7 +20,7 @@ public class Hasher {
 
     public int digest(byte[] bytes) {
         final byte[] hash = messageDigest.get().digest(bytes);
-        return ByteBuffer.wrap(hash).getInt();
+        return Math.abs(ByteBuffer.wrap(hash).getInt());
     }
 
     public void close() {

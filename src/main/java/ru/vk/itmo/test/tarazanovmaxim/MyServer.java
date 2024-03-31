@@ -11,6 +11,7 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -74,10 +75,11 @@ public class MyServer extends HttpServer {
 
         int nodeCount = 1;
         HashSet<Integer> nodeSet = new HashSet<>(nodeCount);
-        Hasher hasher = new Hasher();
+        //Hasher hasher = new Hasher();
         for (String url : config.clusterUrls()) {
             for (int i = 0; i < nodeCount; ++i) {
-                nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
+                //nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
+                nodeSet.add(Hash.murmur3(url));
             }
             shards.addShard(url, nodeSet);
 
@@ -117,9 +119,8 @@ public class MyServer extends HttpServer {
     }
 
     private boolean isParamsBad(String id, int ack, int from) {
-        return id == null || id.isEmpty() ||
-                from <= 0 || from > clusterSize ||
-                ack < quorum(from) || ack > from;
+        return id == null || id.isEmpty() || ack <= 0 ||
+                from > clusterSize || ack > from;
     }
 
     private Response shardLookup(final Request request, final String shard) {
@@ -153,6 +154,9 @@ public class MyServer extends HttpServer {
                 Response answer = shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
+                    if (responses.size() == ack_) {
+                        return responses.getFirst();
+                    }
                 }
             }
 
@@ -208,11 +212,14 @@ public class MyServer extends HttpServer {
         if (request.getHeader(REDIRECT_HEADER) == null) {
             request.addHeader(REDIRECT_HEADER + "true");
             List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, from_);
+            List<String> shardToRequest = shards.getNShardByKey(id, ack_);
             for (String sendTo : shardToRequest) {
                 Response answer = shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
+                    if (responses.size() == ack_) {
+                        return responses.getFirst();
+                    }
                 }
             }
 
@@ -271,11 +278,14 @@ public class MyServer extends HttpServer {
         if (request.getHeader(REDIRECT_HEADER) == null) {
             request.addHeader(REDIRECT_HEADER + "true");
             List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, from_);
+            List<String> shardToRequest = shards.getNShardByKey(id, ack_);
             for (String sendTo : shardToRequest) {
                 Response answer = shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
+                    if (responses.size() == ack_) {
+                        return responses.getFirst();
+                    }
                 }
             }
 

@@ -37,7 +37,6 @@ public final class ShardRouter {
             Response shardResponse = new Response(getHttpResponseByCode(response.statusCode()), response.body());
             shardResponse.addHeader(response.headers().firstValue(TIMESTAMP_HEADER).orElse(""));
             return shardResponse;
-
         } catch (Exception e) {
             LOGGER.error("Error during sending request by router", e);
             Thread.currentThread().interrupt();

@@ -123,7 +123,7 @@ public class HttpServerImpl extends HttpServer {
                 }
 
             }
-            if (success < ack) {
+            if (success < ack ) {
                 session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 return;
             }
@@ -154,6 +154,8 @@ public class HttpServerImpl extends HttpServer {
                 notFound++;
                 if (timestamp != 0L && latestTimestamp < timestamp) {
                     latestTimestamp = timestamp;
+                   // latestResponse = response;
+                   // latestResponse.setBody(null);
                     isLatestFailed = true;
                 }
                 continue;
@@ -268,6 +270,7 @@ public class HttpServerImpl extends HttpServer {
                 ).build(), HttpResponse.BodyHandlers.ofByteArray());
         Response result = new Response(getResponseByCode(response.statusCode()), response.body());
         Optional<String> respTimestamp = response.headers().firstValue("X-timestamp");
+        respTimestamp.ifPresent(s -> System.out.println("DBG: " + s.toString()));
         respTimestamp.ifPresent(v-> result.addHeader(TIMESTAMP_HEADER + v));
         return result;
     }

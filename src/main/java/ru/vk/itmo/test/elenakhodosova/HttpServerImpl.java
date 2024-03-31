@@ -146,6 +146,7 @@ public class HttpServerImpl extends HttpServer {
         int notFound = 0;
         long latestTimestamp = 0L;
         Response latestResponse = null;
+        boolean isLatestFailed = false;
         for (Response response : responses) {
             long timestamp = response.getHeader(TIMESTAMP_HEADER) == null ? 0L
                     : Long.parseLong(response.getHeader(TIMESTAMP_HEADER));
@@ -153,17 +154,18 @@ public class HttpServerImpl extends HttpServer {
                 notFound++;
                 if (timestamp != 0L && latestTimestamp < timestamp) {
                     latestTimestamp = timestamp;
-                    latestResponse = response;
+                    isLatestFailed = true;
                 }
                 continue;
             }
+            isLatestFailed = false;
             if (timestamp > latestTimestamp) {
                 latestTimestamp = timestamp;
                 latestResponse = response;
             }
         }
         Response response;
-        if (notFound == ack || latestResponse == null) {
+        if (notFound == ack || isLatestFailed || latestResponse == null) {
             response = new Response(Response.NOT_FOUND, Response.EMPTY);
         } else {
             response = new Response(Response.OK, latestResponse.getBody());

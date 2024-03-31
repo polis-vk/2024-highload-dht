@@ -6,7 +6,9 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
@@ -25,6 +27,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -99,34 +102,31 @@ public class HttpServerImpl extends HttpServer {
     private void processRequest(Request request, HttpSession session, String id,
                                 AllowedMethods method, int from, int ack) throws IOException {
         String isRedirected = request.getHeader(REDIRECTED_HEADER);
-
         if (isRedirected != null) {
             session.sendResponse(handleLocalRequest(request, id));
             return;
         }
 
-        List<String> nodesHashes = getSortedNodes(id, from);
-        int success = 0;
-        Response[] responses = new Response[ack];
+        List<String> sortedNodes = getSortedNodes(id, from);
+        List<Response> responses = new ArrayList<>(ack);
         request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
         for (int i = 0; i < from; i++) {
-            if (success == ack) {
+            if (responses.size() == ack) {
                 break;
             }
-            String node = nodesHashes.get(i);
+            String node = sortedNodes.get(i);
             try {
                 if (node.equals(selfUrl)) {
-                    responses[success] = handleLocalRequest(request, id);
+                    responses.add(handleLocalRequest(request, id));
                 } else {
-                    responses[success] = redirectRequest(method, id, node, request);
+                    responses.add(redirectRequest(method, id, node, request));
                 }
-                success++;
             } catch (InterruptedException | IOException e) {
                 logger.error("Error during sending request", e);
                 Thread.currentThread().interrupt();
             }
         }
-        if (success < ack) {
+        if (responses.size() < ack) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
             return;
         }
@@ -136,12 +136,12 @@ public class HttpServerImpl extends HttpServer {
             session.sendResponse(response);
             return;
         }
-        String responseStatusCode = getResponseByCode(responses[0].getStatus());
-        Response response = new Response(responseStatusCode, responses[0].getBody());
+        String responseStatusCode = getResponseByCode(responses.getFirst().getStatus());
+        Response response = new Response(responseStatusCode, responses.getFirst().getBody());
         session.sendResponse(response);
     }
 
-    private Response validateGetRequests(int ack, Response[] responses) {
+    private Response validateGetRequests(int ack, List<Response> responses) {
         int notFound = 0;
         long latestTimestamp = 0L;
         Response latestResponse = null;
@@ -163,13 +163,10 @@ public class HttpServerImpl extends HttpServer {
                 latestResponse = response;
             }
         }
-        Response response;
         if (notFound == ack || isLatestFailed || latestResponse == null) {
-            response = new Response(Response.NOT_FOUND, Response.EMPTY);
-        } else {
-            response = new Response(Response.OK, latestResponse.getBody());
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        return response;
+        return new Response(Response.OK, latestResponse.getBody());
     }
 
     private void sendError(HttpSession session, Exception e) {
@@ -284,6 +281,18 @@ public class HttpServerImpl extends HttpServer {
             }
             default -> {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+        }
+    }
+
+    @Override
+    public synchronized void stop() {
+        super.stop();
+        for (SelectorThread selector : selectors) {
+            if (selector.selector.isOpen()) {
+                for (Session session : selector.selector) {
+                    session.close();
+                }
             }
         }
     }

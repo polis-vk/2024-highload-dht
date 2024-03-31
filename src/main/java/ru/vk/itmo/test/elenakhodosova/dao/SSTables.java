@@ -35,26 +35,26 @@ final class SSTables {
 
     static Path indexName(
             final Path baseDir,
-            final long timestamp) {
-        return baseDir.resolve(timestamp + INDEX_SUFFIX);
+            final int sequence) {
+        return baseDir.resolve(sequence + INDEX_SUFFIX);
     }
 
     static Path dataName(
             final Path baseDir,
-            final long timestamp) {
-        return baseDir.resolve(timestamp + DATA_SUFFIX);
+            final int sequence) {
+        return baseDir.resolve(sequence + DATA_SUFFIX);
     }
 
     static Path tempIndexName(
             final Path baseDir,
-            final long timestamp) {
-        return baseDir.resolve(timestamp + INDEX_SUFFIX + TEMP_SUFFIX);
+            final int sequence) {
+        return baseDir.resolve(sequence + INDEX_SUFFIX + TEMP_SUFFIX);
     }
 
     static Path tempDataName(
             final Path baseDir,
-            final long timestamp) {
-        return baseDir.resolve(timestamp + DATA_SUFFIX + TEMP_SUFFIX);
+            final int sequence) {
+        return baseDir.resolve(sequence + DATA_SUFFIX + TEMP_SUFFIX);
     }
 
     /**
@@ -76,15 +76,15 @@ final class SSTables {
                     return;
                 }
 
-                final long timestamp =
+                final int sequence =
                         // <N>.data -> N
-                        Long.parseLong(
+                        Integer.parseInt(
                                 fileName.substring(
                                         0,
                                         fileName.length() - DATA_SUFFIX.length()));
 
                 try {
-                    result.add(open(arena, baseDir, timestamp));
+                    result.add(open(arena, baseDir, sequence));
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -92,7 +92,7 @@ final class SSTables {
         }
 
         // Sort from freshest to oldest
-        result.sort((o1, o2) -> Long.compare(o2.timestamp, o1.timestamp));
+        result.sort((o1, o2) -> Integer.compare(o2.sequence, o1.sequence));
 
         return Collections.unmodifiableList(result);
     }
@@ -100,18 +100,18 @@ final class SSTables {
     static SSTable open(
             final Arena arena,
             final Path baseDir,
-            final long timestamp) throws IOException {
+            final int sequence) throws IOException {
         final MemorySegment index =
                 mapReadOnly(
                         arena,
-                        indexName(baseDir, timestamp));
+                        indexName(baseDir, sequence));
         final MemorySegment data =
                 mapReadOnly(
                         arena,
-                        dataName(baseDir, timestamp));
+                        dataName(baseDir, sequence));
 
         return new SSTable(
-                timestamp,
+                sequence,
                 index,
                 data);
     }
@@ -133,10 +133,10 @@ final class SSTables {
 
     static void remove(
             final Path baseDir,
-            final long timestamp) throws IOException {
+            final int sequence) throws IOException {
         // First delete data file to make SSTable invisible
-        Files.delete(dataName(baseDir, timestamp));
-        Files.delete(indexName(baseDir, timestamp));
+        Files.delete(dataName(baseDir, sequence));
+        Files.delete(indexName(baseDir, sequence));
     }
 
     static void promote(

@@ -180,7 +180,7 @@ public class LSMServerImpl extends HttpServer {
 
         final byte[] key = requestParameters.id().getBytes(StandardCharsets.UTF_8);
 
-        final List<String> replicas = getReplicasList(key, from);
+        final List<String> replicas = consistentHashingManager.getReplicasList(from, key);
 
         final Response response = getResponseFromReplicas(
                 request,
@@ -233,23 +233,6 @@ public class LSMServerImpl extends HttpServer {
             }
         }
         return LsmServerUtil.mergeReplicasResponses(request, responses, ack);
-    }
-
-    private List<String> getReplicasList(byte[] key, Integer from) {
-        final String server = consistentHashingManager.getServerByKey(key);
-        final List<String> replicas = new ArrayList<>(from);
-        replicas.add(server);
-        int i = 0;
-        int serverIndex = 0;
-        while (serverIndex < serviceConfig.clusterUrls().size() && i < from - 1) {
-            final String replica = serviceConfig.clusterUrls().get(serverIndex);
-            if (!replica.equals(server)) {
-                replicas.add(replica);
-                i++;
-            }
-            serverIndex++;
-        }
-        return replicas;
     }
 
     private HttpResponse<byte[]> processRemote(

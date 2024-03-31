@@ -133,10 +133,13 @@ public class TimofeevServer extends HttpServer {
         }
 
         boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
-        Map<String, Response> responses;
+        Map<String, Response> responses = new HashMap<>();
 
-            responses = proxyService.proxyRequests(request, nodeUrls, parameters.id);
-
+        try {
+            responses = proxyService.proxyAsyncRequests(request, nodeUrls, parameters.id);
+        } catch (InterruptedException | ExecutionException e) {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        }
 
         if (isSelfProcessing) {
             responses.put(serviceConfig.selfUrl(), requestHandler.handle(request, parameters.id));

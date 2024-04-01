@@ -37,7 +37,6 @@ public class MyServer extends HttpServer {
     private static long DURATION = 1000L;
 
     private static final String ID = "id=";
-    private static final long DURATION = 1000L;
 
     private static final long RESPONSE_WAIT = 10;
 

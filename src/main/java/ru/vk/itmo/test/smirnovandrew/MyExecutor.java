@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.smirnovandrew;
 
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +24,7 @@ public class MyExecutor extends ThreadPoolExecutor {
         );
     }
 
-    private static class MyStack<E> extends LinkedBlockingDeque<E> implements BlockingQueue<E> {
+    private static class MyStack<E> extends LinkedBlockingDeque<E> {
 
         public MyStack(int capacity) {
             super(capacity);

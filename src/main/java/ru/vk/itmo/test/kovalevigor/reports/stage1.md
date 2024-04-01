@@ -37,28 +37,28 @@ Macbook Pro M1 16GB после перезапуска
 #### PUT-запросы
 Изначально мы прощупываем точку разладки для **PUT** запросов
 
-[1](html/put_lower_wrk.txt),
-[2](html/put_upper_wrk.txt),
-[3](html/put_middle_1.txt),
-[4](html/put_middle_2.txt),
-[5](html/put_middle_3.txt),
-[6](html/put_middle_4.txt)
+[1](html/stage1/put_lower_wrk.txt),
+[2](html/stage1/put_upper_wrk.txt),
+[3](html/stage1/put_middle_1.txt),
+[4](html/stage1/put_middle_2.txt),
+[5](html/stage1/put_middle_3.txt),
+[6](html/stage1/put_middle_4.txt)
 
 Можно обратить внимание, что flamegraph'ы при этом не сильно отличаются
 
-[1](html/put_lower_cpu.html),
-[2](html/put_upper_cpu.html)
+[1](html/stage1/put_lower_cpu.html),
+[2](html/stage1/put_upper_cpu.html)
 
 Видимо, это просто может сказать нам о некоем пределе нашей производительности
 
 В итоге остановился на 13000 RPS, т.к. там есть более ощутимый скачок, чем на 11500
 
-[300 секунд по 13000 RPS на пустую базу](html/put_request_wrk.txt)
+[300 секунд по 13000 RPS на пустую базу](html/stage1/put_request_wrk.txt)
 
-Если посмотреть на [аллокации](html/put_request_alloc.html),
+Если посмотреть на [аллокации](html/stage1/put_request_alloc.html),
 то наше DAO почти ничего не аллоцирует, все уходит на сервер
 
-На [cpu](html/put_request_cpu.html), т.к. мы вынесли flush в отдельный поток (самая левая гора),
+На [cpu](html/stage1/put_request_cpu.html), т.к. мы вынесли flush в отдельный поток (самая левая гора),
 то он незаметно, что он как либо блокирует, сохранение наших записей.
 
 Однако, можно заметить, что 30% от времени отправки ответа занимает помещенеие entity в мапу
@@ -75,29 +75,29 @@ Macbook Pro M1 16GB после перезапуска
 
 *Как можно заметить после первой же нагрузки, что происходит огромная просадка на существенной части запросов*
 
-*[wrk](html/get_many_misses_wrk.txt)* 
+*[wrk](html/stage1/get_many_misses_wrk.txt)* 
 
 *И это оказывается фейком, потому что одновременно с запросами работал optimizer*
 
 Из-за того, что **PUT** запросы создают записи в слишком большом диапазоне у нас много 400.
 Однако, давайте и тут найдем точку разладки
 
-[7000rps](html/get_7000_wrk.txt),
-[8000rps](html/get_8000_wrk.txt),
-[9000rps](html/get_9000_wrk.txt)
-[10000rps](html/get_10000_wrk.txt)
+[7000rps](html/stage1/get_7000_wrk.txt),
+[8000rps](html/stage1/get_8000_wrk.txt),
+[9000rps](html/stage1/get_9000_wrk.txt)
+[10000rps](html/stage1/get_10000_wrk.txt)
 
 Возьмем 8000, т.к. на мой взгляд наиболее оптимальное падение производительности
 
-[300 секунд по 8000 RPS](html/get_misses_request_wrk.txt)
+[300 секунд по 8000 RPS](html/stage1/get_misses_request_wrk.txt)
 
-Как мы видим из [cpu](html/get_misses_request_cpu.html) огромное количество времени уходит на бинарный поиск
+Как мы видим из [cpu](html/stage1/get_misses_request_cpu.html) огромное количество времени уходит на бинарный поиск
 
 *Вероятнее всего, это связано с запросами к несуществующим ключам,
 т.к. для для проверки нам будет необходимо обойти все таблицы
 *(20 по 45MB)**
 
-Также можно заметить,что теперь у нас присутсвует огромное количество [аллокаций](html/get_misses_request_alloc.html)
+Также можно заметить,что теперь у нас присутсвует огромное количество [аллокаций](html/stage1/get_misses_request_alloc.html)
 для бинарного поиска
 
 Также из интересного можно заметить, что столбик с созданием итератора занимает `3%`,
@@ -108,16 +108,16 @@ Macbook Pro M1 16GB после перезапуска
 
 Так 400 будет намного-намного меньше)
 
-[10000_wrk](html/get_n_10000_wrk.txt),
-[11000_wrk](html/get_n_11000_wrk.txt),
-[13000_wrk](html/get_n_13000_wrk.txt),
-[15000_wrk](html/get_n_15000_wrk.txt)
+[10000_wrk](html/stage1/get_n_10000_wrk.txt),
+[11000_wrk](html/stage1/get_n_11000_wrk.txt),
+[13000_wrk](html/stage1/get_n_13000_wrk.txt),
+[15000_wrk](html/stage1/get_n_15000_wrk.txt)
 
 Как мы видим, примерно 25% - это промахи. Возьмем 10000 RPS
 
-[300 секунд по 10000 RPS](html/get_n_request_wrk.txt)
+[300 секунд по 10000 RPS](html/stage1/get_n_request_wrk.txt)
 
-[cpu](html/get_n_request_cpu.html)
+[cpu](html/stage1/get_n_request_cpu.html)
 Как мы видим время поиска на диске сократилось в процентном соотношении, т.е. 
 мы стали чаще попадать в память.
 
@@ -127,7 +127,7 @@ Macbook Pro M1 16GB после перезапуска
 
 Однако, проблема с поиском никуда не делась. Что впринципе видно из графиков
 
-[Аллокации](html/get_n_request_alloc.html) также демонстрируют нам, что искать мы стали существенно меньше, 
+[Аллокации](html/stage1/get_n_request_alloc.html) также демонстрируют нам, что искать мы стали существенно меньше, 
 т.к. теперь столбик `nio` хотя бы различим 
 #### Other
 
@@ -196,6 +196,6 @@ B+-tree - круто, блюм-фитр - респект
 
 Хотя при этом время ответа значительно увеличилось. Возможно, комп уже загадился, либо я что-то не понял
 
-PUT: [wrk](html/put_without_gen_wrk.txt), [alloc](html/put_without_gen_alloc.html), [cpu](html/put_without_gen_cpu.html)
+PUT: [wrk](html/stage1/put_without_gen_wrk.txt), [alloc](html/stage1/put_without_gen_alloc.html), [cpu](html/stage1/put_without_gen_cpu.html)
 GET: [wrk](html/Fget_without_gen_wrk.txt), [alloc](html%2Fget_without_gen_alloc.html), [cpu](html%2Fget_without_gen_cpu.html)
 

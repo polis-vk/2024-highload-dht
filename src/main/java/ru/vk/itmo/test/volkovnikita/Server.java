@@ -10,7 +10,7 @@ import java.util.List;
 
 public final class Server {
 
-    public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024L;
+    public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
 
     private Server() {
 

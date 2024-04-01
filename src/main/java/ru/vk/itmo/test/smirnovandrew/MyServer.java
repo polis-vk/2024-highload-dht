@@ -34,6 +34,7 @@ import java.util.logging.Logger;
 public class MyServer extends HttpServer {
 
     private static final String ROOT = "/v0/entity";
+    private static long DURATION = 1000L;
 
     private static final String ID = "id=";
     private static final long DURATION = 1000L;

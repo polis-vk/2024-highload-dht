@@ -24,7 +24,7 @@ import java.util.List;
 
 public class DaoServer extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 65536;
-    private static final String endpoint = "/v0/entity";
+    private static final String ENDPOINT = "/v0/entity";
     private final ServiceConfig config;
     private MemorySegmentDao dao;
 
@@ -63,7 +63,7 @@ public class DaoServer extends HttpServer {
         server.start();
     }
 
-    @Path(endpoint)
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id", required = true) String id) {
         if (id.isBlank()) {
@@ -76,7 +76,7 @@ public class DaoServer extends HttpServer {
                 : Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(endpoint)
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
         if (id.isBlank() || request.getBody() == null) {
@@ -88,7 +88,7 @@ public class DaoServer extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(endpoint)
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
         if (id.isBlank()) {
@@ -102,7 +102,7 @@ public class DaoServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        if (request.getPath().equals(endpoint)) {
+        if (request.getPath().equals(ENDPOINT)) {
             session.sendError(Response.METHOD_NOT_ALLOWED, "Request must be: get, put, delete");
         } else {
             session.sendError(Response.BAD_REQUEST, "Incorrect request");

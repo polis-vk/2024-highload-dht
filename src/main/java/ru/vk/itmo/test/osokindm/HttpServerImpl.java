@@ -10,7 +10,6 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
@@ -18,10 +17,8 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -34,8 +31,8 @@ public class HttpServerImpl extends HttpServer {
     private final ExecutorService requestWorkers;
     private final DaoWrapper daoWrapper;
 
-    public HttpServerImpl(ServiceConfig config, DaoWrapper daoWrapper) throws IOException {
-        super(createServerConfig(config));
+    public HttpServerImpl(int port, DaoWrapper daoWrapper) throws IOException {
+        super(createServerConfig(port));
         this.daoWrapper = daoWrapper;
         // maximumPoolSize > availableProcessors, which may lead to increased context switching
         // corePoolSize and maximumPoolSize will be configured later with using wrk and profiler
@@ -45,17 +42,18 @@ public class HttpServerImpl extends HttpServer {
                 KEEP_ALIVE_TIME,
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(600),
-                new ThreadPoolExecutor.DiscardOldestPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
     @Override
     public synchronized void stop() {
+        super.stop();
         try {
-            daoWrapper.stop();
             requestWorkers.shutdown();
             if (!requestWorkers.awaitTermination(KEEP_ALIVE_TIME, TimeUnit.SECONDS)) {
                 requestWorkers.shutdownNow();
             }
+            daoWrapper.stop();
         } catch (IOException e) {
             LOGGER.error("Error occurred while closing database");
         } catch (InterruptedException e) {
@@ -63,7 +61,6 @@ public class HttpServerImpl extends HttpServer {
             requestWorkers.shutdownNow();
             Thread.currentThread().interrupt();
         }
-        super.stop();
     }
 
     @Path(DEFAULT_PATH)
@@ -74,27 +71,21 @@ public class HttpServerImpl extends HttpServer {
 
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                return executeRequest("GET", () -> {
                     Entry<MemorySegment> result = daoWrapper.get(id);
                     if (result != null && result.value() != null) {
                         return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
                     }
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
-                });
             }
 
             case Request.METHOD_PUT -> {
-                return executeRequest("PUT", () -> {
                     daoWrapper.upsert(id, request);
                     return new Response(Response.CREATED, Response.EMPTY);
-                });
             }
 
             case Request.METHOD_DELETE -> {
-                return executeRequest("DELETE", () -> {
                     daoWrapper.delete(id);
                     return new Response(Response.ACCEPTED, Response.EMPTY);
-                });
             }
 
             default -> {
@@ -106,7 +97,7 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         String id = request.getParameter(ID_REQUEST);
-        if (id != null && id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             try {
                 handleDefault(request, session);
             } catch (IOException e) {
@@ -114,10 +105,37 @@ public class HttpServerImpl extends HttpServer {
             }
         } else {
             try {
-                super.handleRequest(request, session);
+                handleAsync(session, () -> {
+                    try {
+                        super.handleRequest(request, session);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
+        }
+    }
+
+    private void handleAsync(HttpSession session, Runnable runnable) throws IOException {
+        try {
+            requestWorkers.execute(() -> {
+                try {
+                    runnable.run();
+                } catch (Exception e) {
+                    LOGGER.error("Exception during handleRequest", e);
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, null);
+                    } catch (IOException ex) {
+                        LOGGER.error("Exception while sending close connection", e);
+                        session.scheduleClose();
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            LOGGER.info("Task has been rejected", e);
+            session.sendError(Response.SERVICE_UNAVAILABLE, null);
         }
     }
 
@@ -132,28 +150,15 @@ public class HttpServerImpl extends HttpServer {
 
     }
 
-    private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
+    private static HttpServerConfig createServerConfig(int port) {
         HttpServerConfig serverConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = serviceConfig.selfPort();
+        acceptorConfig.port = port;
         acceptorConfig.reusePort = true;
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
-    }
-
-    private Response executeRequest(String method, Callable<Response> request) {
-        Future<Response> response = requestWorkers.submit(request);
-        try {
-            return response.get();
-        } catch (InterruptedException e) {
-            LOGGER.error(method + "operation was interrupted");
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException e) {
-            LOGGER.error("Error occurred while executing" + method);
-        }
-        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
 
 }

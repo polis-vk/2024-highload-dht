@@ -26,7 +26,7 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> start() throws IOException {
         try {
             daoWrapper = new DaoWrapper(new Config(config.workingDir(), MEMORY_LIMIT_BYTES));
-            server = new HttpServerImpl(config, daoWrapper);
+            server = new HttpServerImpl(config.selfPort(), daoWrapper);
             server.start();
         } catch (IOException e) {
             logger.error("Error occurred while starting the server");

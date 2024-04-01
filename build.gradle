@@ -67,8 +67,3 @@ compileJava {
 compileTestJava {
     options.compilerArgs += ["--enable-preview"]
 }
-
-run {
-    jvmArgs += ["--enable-preview"]
-    mainClassName="ru.vk.itmo.test.smirnovandrew.Main"
-}

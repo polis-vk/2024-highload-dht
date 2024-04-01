@@ -23,7 +23,7 @@ import java.nio.file.Files;
 import java.util.List;
 
 public class DaoServer extends HttpServer {
-    private static final int FLUSH_THRESHOLD_BYTES = 1028;
+    private static final int FLUSH_THRESHOLD_BYTES = 8224;
     private final String ENDPOINT = "/v0/entity";
     private final ServiceConfig config;
     private MemorySegmentDao dao;
@@ -51,10 +51,14 @@ public class DaoServer extends HttpServer {
     }
 
     public static void main(String[] args) throws IOException {
+        java.nio.file.Path databasePath = java.nio.file.Path.of("db");
+        if (!Files.exists(databasePath)) {
+            Files.createDirectory(databasePath);
+        }
         DaoServer server = new DaoServer(new ServiceConfig(
                 8081, "http://localhost",
                 List.of("http://localhost"),
-                Files.createTempDirectory(".")
+                databasePath
         ));
         server.start();
     }

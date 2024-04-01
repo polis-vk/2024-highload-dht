@@ -170,6 +170,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     // Not enough data to flush
                     return;
                 }
+                memTableSize.set(0);
 
                 nextState = prevState.beforeFlush();
 

@@ -226,7 +226,6 @@ public final class DiskStorage {
         return value & ~(1L << 63);
     }
 
-
     public static long sizeOf(final Entry<MemorySegment> entry) {
         return entry == null ? 0 : sizeOf(entry.key()) + sizeOf(entry.value());
     }

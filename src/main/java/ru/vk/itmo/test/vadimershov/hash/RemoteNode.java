@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.vadimershov.DaoResponse;
 import ru.vk.itmo.test.vadimershov.Pair;
-import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
 import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
 
@@ -47,12 +46,10 @@ public class RemoteNode extends VirtualNode {
             logger.error("Can't get with key={} in remote node url={}", key, this.url(), e);
             throw new DaoException("Can't get value from remote node", e);
         }
-//        checkCodeInRemoteResp(this.url(), response);
         Long timestamp = getTimestamp(response);
         if (response.getStatus() == 404) {
             return new Pair<>(null, Objects.requireNonNullElse(timestamp, 0L));
         }
-        logger.info("remote " + timestamp);
         return new Pair<>(response.getBody(), timestamp);
     }
 

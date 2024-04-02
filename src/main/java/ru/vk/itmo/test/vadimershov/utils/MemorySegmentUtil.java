@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.vadimershov.utils;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.vadimershov.dao.TimestampBaseEntry;
 import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 

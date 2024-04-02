@@ -57,7 +57,6 @@ public class ShardingDao {
                 entityQueue.add(node.get(key));
             } catch (DaoException | RemoteServiceException e) {
                 logger.error("Exception with remote node in from param", e);
-//                throw new FailedSharding();
             }
         }
         if (entityQueue.size() < ack) {
@@ -84,7 +83,6 @@ public class ShardingDao {
         long timestamp = System.currentTimeMillis();
         for (var node : vNodes) {
             try {
-                logger.info("" + timestamp);
                 node.upsert(key, value, timestamp);
                 correctSave++;
             } catch (Exception e) {

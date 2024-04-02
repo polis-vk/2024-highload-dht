@@ -8,7 +8,12 @@ import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 import ru.vk.itmo.test.vadimershov.exceptions.FailedSharding;
 
 import java.lang.foreign.MemorySegment;
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 public class ConsistentHashing {
 
@@ -48,18 +53,6 @@ public class ConsistentHashing {
 
     public VirtualNode getLocalNode() {
         return this.localNode;
-    }
-
-    public VirtualNode findVNode(String key) {
-        Integer hashKey = Hash.murmur3(key);
-        SortedMap<Integer, VirtualNode> tailMap = ring.tailMap(hashKey);
-        Integer nodeHashVal;
-        if (tailMap.isEmpty()) {
-            nodeHashVal = ring.firstKey();
-        } else {
-            nodeHashVal = tailMap.firstKey();
-        }
-        return ring.get(nodeHashVal);
     }
 
     public Collection<VirtualNode> findVNodes(String key, int count) {

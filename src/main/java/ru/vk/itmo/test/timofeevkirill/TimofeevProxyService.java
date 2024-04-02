@@ -108,9 +108,12 @@ public class TimofeevProxyService {
     }
 
     /**
-     * @deprecated use async method to wait responses parallel instead {@link #proxyAsyncRequests(Request, List, String)}.
+     * Method collects all responses from proxyRequest synchronously.
+     *
+     * @deprecated use async method to wait responses parallel instead
+     * {@link #proxyAsyncRequests(Request, List, String)}.
      */
-    @Deprecated
+    @Deprecated(forRemoval = true)
     public Map<String, Response> proxyRequests(Request request, List<String> nodeUrls, String id) throws IOException {
         Map<String, Response> responses = new HashMap<>(nodeUrls.size());
         for (String url : nodeUrls) {
@@ -122,9 +125,11 @@ public class TimofeevProxyService {
     }
 
     /**
+     * Method uses sync approach to send request.
+     *
      * @deprecated use to support {@link #proxyRequests(Request, List, String)}.
      */
-    @Deprecated
+    @Deprecated(forRemoval = true)
     private Response proxyRequest(Request request, String proxiedNodeUrl, String id) throws IOException {
         byte[] body = request.getBody();
         URI uri = URI.create(proxiedNodeUrl + PATH + "?id=" + id);

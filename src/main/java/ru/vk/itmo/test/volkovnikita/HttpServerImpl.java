@@ -50,12 +50,12 @@ public class HttpServerImpl extends HttpServer {
     private final List<String> nodes;
     private final String selfUrl;
 
-    private enum methods {
+    private enum Methods {
 
         GET(1), PUT(5), DELETE(6);
         private final Integer code;
 
-        methods(Integer code) {
+        Methods(Integer code) {
             this.code = code;
         }
 
@@ -141,7 +141,7 @@ public class HttpServerImpl extends HttpServer {
                 return;
             }
 
-            methods method = getMethod(request.getMethod());
+            Methods method = getMethod(request.getMethod());
             if (method == null) {
                 session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 return;
@@ -161,7 +161,7 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private void processRequest(Request request, HttpSession session, String id, methods method, int from, int ack) {
+    private void processRequest(Request request, HttpSession session, String id, Methods method, int from, int ack) {
         try {
             process(request, session, id, method.name(), from, ack);
         } catch (Exception e) {
@@ -331,8 +331,8 @@ public class HttpServerImpl extends HttpServer {
         };
     }
 
-    private methods getMethod(int methodCode) {
-        for (methods method : methods.values()) {
+    private Methods getMethod(int methodCode) {
+        for (Methods method : Methods.values()) {
             if (method.getCode() == methodCode) {
                 return method;
             }

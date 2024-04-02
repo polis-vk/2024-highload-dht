@@ -55,7 +55,7 @@ public class ShardingDao {
 
         Collection<VirtualNode> virtualNodes = consistentHashing.findVNodes(key, correctFrom);
         PriorityQueue<Pair<byte[], Long>> entityQueue =
-                new PriorityQueue<>(from, (e1, e2) -> -e1.second().compareTo(e2.second()));
+                new PriorityQueue<>(correctFrom, (e1, e2) -> -e1.second().compareTo(e2.second()));
         for (var node : virtualNodes) {
             try {
                 entityQueue.add(node.get(key));

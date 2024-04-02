@@ -9,19 +9,21 @@ public class ParametersParser {
         this.distributor = distributor;
     }
 
-    public void parseAckFrom(String ackParameter, String fromParameter) {
+    public void parseAckFrom(String ackParameter, String fromParameter) throws IllegalArgumentException {
         if (ackParameter != null && fromParameter != null) {
             try {
                 ack = Integer.parseInt(ackParameter);
                 from = Integer.parseInt(fromParameter);
             } catch (Exception e) {
                 setDefault();
+                return;
             }
         } else {
             setDefault();
+            return;
         }
 
-        if (!isReplicasParametersCorrect(ack, from)) {
+        if (ack > 0 && ack <= from) {
             throw new IllegalArgumentException();
         }
     }
@@ -37,9 +39,5 @@ public class ParametersParser {
 
     public int getFrom() {
         return from;
-    }
-
-    private static boolean isReplicasParametersCorrect(int ack, int from) {
-        return ack > 0 && ack <= from;
     }
 }

@@ -44,13 +44,10 @@ public class State {
         this.diskStorage = diskStorage;
     }
 
-    public void putInMemory(Entry<MemorySegment> entry, Long ttl) {
-        MemorySegment expiration = null;
-        if (ttl != null) {
-            long[] ar = {System.currentTimeMillis() + ttl};
-            expiration = MemorySegment.ofArray(ar);
-        }
-        EntryExtended<MemorySegment> entryExtended = new EntryExtended<>(entry.key(), entry.value(), expiration);
+    public void putInMemory(Entry<MemorySegment> entry, Long timestamp, Long ttl) {
+        MemorySegment createdTime = longToMS(timestamp);
+        MemorySegment expiration = ttl == null ? null : longToMS(timestamp + ttl);
+        EntryExtended<MemorySegment> entryExtended = new EntryExtended<>(entry.key(), entry.value(), createdTime, expiration);
         EntryExtended<MemorySegment> previousEntry = storage.put(entryExtended.key(), entryExtended);
 
         if (previousEntry != null) {
@@ -69,7 +66,8 @@ public class State {
     private static long getSize(EntryExtended<MemorySegment> entry) {
         long valueSize = entry.value() == null ? 0 : entry.value().byteSize();
         long expirationSize = entry.expiration() == null ? 0 : entry.expiration().byteSize();
-        return Long.BYTES + entry.key().byteSize() + Long.BYTES + valueSize + Long.BYTES + expirationSize;
+        return Long.BYTES + entry.key().byteSize() + Long.BYTES + valueSize + Long.BYTES + entry.timestamp().byteSize()
+                + Long.BYTES + expirationSize;
     }
 
     @CanIgnoreReturnValue
@@ -109,12 +107,14 @@ public class State {
     public Entry<MemorySegment> get(MemorySegment key, Comparator<MemorySegment> comparator) {
         EntryExtended<MemorySegment> entry = storage.get(key);
         if (isValidEntry(entry)) {
-            return entry.value() == null ? null : entry;
+            return entry;
+//            return entry.value() == null ? null : entry;
         }
 
         entry = flushingStorage.get(key);
         if (isValidEntry(entry)) {
-            return entry.value() == null ? null : entry;
+            return entry;
+//            return entry.value() == null ? null : entry;
         }
 
         Iterator<EntryExtended<MemorySegment>> iterator = diskStorage.range(Collections.emptyIterator(), key, null);
@@ -132,6 +132,11 @@ public class State {
     private boolean isValidEntry(EntryExtended<MemorySegment> entry) {
         return entry != null && (entry.expiration() == null
                 || entry.expiration().toArray(ValueLayout.JAVA_LONG_UNALIGNED)[0] > System.currentTimeMillis());
+    }
+
+    private MemorySegment longToMS(Long value) {
+        long[] ar = {value};
+        return MemorySegment.ofArray(ar);
     }
 
     protected Iterator<EntryExtended<MemorySegment>> getInMemory(

@@ -67,7 +67,7 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
 
         lock.readLock().lock();
         try {
-            state.putInMemory(entry, ttl);
+            state.putInMemory(entry, System.currentTimeMillis(), ttl);
         } finally {
             lock.readLock().unlock();
         }

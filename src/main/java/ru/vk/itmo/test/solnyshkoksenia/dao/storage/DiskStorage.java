@@ -73,20 +73,28 @@ public class DiskStorage {
 
         final long currentTime = System.currentTimeMillis();
 
-        Entry<Long> sizes = new BaseEntry<>(0L, 0L);
+        long dataSize = 0L;
+        long count = 0L;
         for (EntryExtended<MemorySegment> entry : iterable) {
             MemorySegment expiration = entry.expiration();
             if (expiration == null || utils.checkTTL(expiration, currentTime)) {
-                sizes = utils.countEntrySize(entry, sizes);
+                dataSize += entry.key().byteSize();
+                MemorySegment value = entry.value();
+                if (value != null) {
+                    dataSize += value.byteSize();
+                }
+                dataSize += entry.timestamp().byteSize();
+                if (expiration != null) {
+                    dataSize += expiration.byteSize();
+                }
+                count++;
             }
         }
-        long dataSize = sizes.key();
-        long count = sizes.value();
 
         if (count == 0) {
             return;
         }
-        long indexSize = count * 3 * Long.BYTES;
+        long indexSize = count * 4 * Long.BYTES;
 
         try (
                 FileChannel fileChannel = FileChannel.open(
@@ -152,13 +160,14 @@ public class DiskStorage {
         long dataSize = 0;
         long indexSize = 0;
         while (iterator.hasNext()) {
-            indexSize += Long.BYTES * 3;
+            indexSize += Long.BYTES * 4;
             EntryExtended<MemorySegment> entry = iterator.next();
             dataSize += entry.key().byteSize();
             MemorySegment value = entry.value();
             if (value != null) {
                 dataSize += value.byteSize();
             }
+            dataSize += entry.timestamp().byteSize();
             MemorySegment expiration = entry.expiration();
             if (expiration != null) {
                 dataSize += expiration.byteSize();
@@ -254,19 +263,26 @@ public class DiskStorage {
                 if (!hasNext()) {
                     throw new NoSuchElementException();
                 }
+
                 MemorySegment key = utils.slice(page, utils.startOfKey(page, index), utils.endOfKey(page, index));
+
                 long startOfValue = utils.startOfValue(page, index);
                 MemorySegment value =
                         startOfValue < 0
                                 ? null
                                 : utils.slice(page, startOfValue, utils.endOfValue(page, index));
+
+                MemorySegment timestamp = utils.slice(page, utils.startOfTimestamp(page, index),
+                        utils.endOfTimestamp(page, index));
+
                 long startOfExp = utils.startOfExpiration(page, index);
                 MemorySegment expiration =
                         startOfExp < 0
                                 ? null
                                 : utils.slice(page, startOfExp, utils.endOfExpiration(page, index, recordsCount));
+
                 index++;
-                return new EntryExtended<>(key, value, expiration);
+                return new EntryExtended<>(key, value, timestamp, expiration);
             }
         };
     }

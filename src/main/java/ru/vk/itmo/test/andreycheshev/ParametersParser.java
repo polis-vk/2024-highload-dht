@@ -22,8 +22,7 @@ public class ParametersParser {
             setDefault();
             return;
         }
-
-        if (ack > 0 && ack <= from) {
+        if (ack <= 0 || ack > from) {
             throw new IllegalArgumentException();
         }
     }

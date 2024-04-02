@@ -88,13 +88,18 @@ public class RequestHandler {
         String timestamp = request.getHeader(TIMESTAMP_HEADER);
         if (timestamp != null) {
             // The request came from a remote node.
-            return processLocally(method,
-                    id,
-                    request,
-                    Long.parseLong(timestamp)
-            );
+            try {
+                return processLocally(method,
+                        id,
+                        request,
+                        Long.parseLong(timestamp)
+                );
+            } catch (NumberFormatException e) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
         }
 
+        // Get and check "ack" and "from" parameters.
         ParametersParser parser= new ParametersParser(distributor);
         try {
             parser.parseAckFrom(
@@ -134,7 +139,7 @@ public class RequestHandler {
                 }
 
                 // For the GET method, we do not need to continue to request
-                // if we have already received the required number of successful responses
+                // if we have already received the required number of successful responses.
                 if (method == Request.METHOD_GET && areEnoughSuccessfulResponses(responses, ack)) {
                     return analyzeResponses(method, responses);
                 }
@@ -145,7 +150,7 @@ public class RequestHandler {
             }
         }
 
-        return areEnoughSuccessfulResponses(responses, ack)
+        return !areEnoughSuccessfulResponses(responses, ack)
                 ? new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY)
                 : analyzeResponses(method, responses);
     }
@@ -157,7 +162,7 @@ public class RequestHandler {
     }
 
     private static boolean areEnoughSuccessfulResponses(List<Response> responses, int ack) {
-        return responses.size() == ack;
+        return responses.size() >= ack;
     }
 
     private Response redirectRequest(

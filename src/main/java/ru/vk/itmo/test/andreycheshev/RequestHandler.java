@@ -95,25 +95,18 @@ public class RequestHandler {
             );
         }
 
-        // Get and check "ack" and "from" parameters.
-        String ackParameter = request.getParameter(ACK_PARAMETER);
-        String fromParameter = request.getParameter(FROM_PARAMETER);
-
-        boolean shouldProcessWithParameters = (ackParameter != null && fromParameter != null);
-
-        int ack = shouldProcessWithParameters
-                ? Integer.parseInt(ackParameter)
-                : distributor.getQuorumNumber();
-        int from = shouldProcessWithParameters
-                ? Integer.parseInt(fromParameter)
-                : distributor.getNodeCount();
-
-        if (!isReplicasParametersCorrect(ack, from)) {
+        ParametersParser parser= new ParametersParser(distributor);
+        try {
+            parser.parseAckFrom(
+                    request.getParameter(ACK_PARAMETER),
+                    request.getParameter(FROM_PARAMETER)
+            );
+        } catch (IllegalArgumentException e) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         // Start processing on remote and local nodes.
-        return processDistributed(method, id, request, ack, from);
+        return processDistributed(method, id, request, parser.getAck(), parser.getFrom());
     }
 
     private Response processDistributed(
@@ -142,7 +135,7 @@ public class RequestHandler {
 
                 // For the GET method, we do not need to continue to request
                 // if we have already received the required number of successful responses
-                if (method == Request.METHOD_GET && responses.size() == ack) {
+                if (method == Request.METHOD_GET && areEnoughSuccessfulResponses(responses, ack)) {
                     return analyzeResponses(method, responses);
                 }
             } catch (SocketTimeoutException e) {
@@ -152,9 +145,19 @@ public class RequestHandler {
             }
         }
 
-        return (responses.size() < ack)
+        return areEnoughSuccessfulResponses(responses, ack)
                 ? new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY)
                 : analyzeResponses(method, responses);
+    }
+
+    private static boolean isRequestSucceeded(int method, int status) {
+        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE))
+                || (method == Request.METHOD_PUT && status == CREATED)
+                || (method == Request.METHOD_DELETE && status == ACCEPTED);
+    }
+
+    private static boolean areEnoughSuccessfulResponses(List<Response> responses, int ack) {
+        return responses.size() == ack;
     }
 
     private Response redirectRequest(
@@ -243,16 +246,6 @@ public class RequestHandler {
         dao.upsert(entry);
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private static boolean isRequestSucceeded(int method, int status) {
-        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE))
-                || (method == Request.METHOD_PUT && status == CREATED)
-                || (method == Request.METHOD_DELETE && status == ACCEPTED);
-    }
-
-    private static boolean isReplicasParametersCorrect(int ack, int from) {
-        return ack > 0 && ack <= from;
     }
 
     private static MemorySegment fromString(String data) {

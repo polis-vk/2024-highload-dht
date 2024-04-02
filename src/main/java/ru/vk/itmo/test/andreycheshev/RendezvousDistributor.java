@@ -25,7 +25,10 @@ public class RendezvousDistributor {
     }
 
     public ArrayList<Integer> getQuorumNodes(String stringKey, int quorumNumber) {
-        PriorityQueue<HashPair> queue = new PriorityQueue<>(quorumNumber, Comparator.comparingInt(HashPair::getHash));
+        PriorityQueue<HashPair> queue = new PriorityQueue<>(
+                quorumNumber,
+                Comparator.comparingInt(HashPair::getHash).reversed()
+        );
         int key = Hash.murmur3(stringKey);
         for (int i = 0; i < quorumNumber; i++) {
             queue.add(new HashPair(hashCode(key + i), i));

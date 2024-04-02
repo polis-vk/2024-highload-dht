@@ -21,7 +21,7 @@ public final class Main {
         );
         String localhost = "http://localhost";
         var ports = List.of(8080, 8081, 8082);
-        var hosts = new ArrayList<>();
+        var hosts = new ArrayList<String>();
         for (int port: ports) {
             hosts.add(String.format("%s:%d", localhost, port));
         }

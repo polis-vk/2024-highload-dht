@@ -2,6 +2,8 @@ package ru.vk.itmo.test.vadimershov.utils;
 
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.vadimershov.dao.TimestampBaseEntry;
+import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 
 import javax.annotation.Nonnull;
 import java.lang.foreign.MemorySegment;
@@ -17,12 +19,12 @@ public final class MemorySegmentUtil {
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    public static Entry<MemorySegment> toDeletedEntity(@Nonnull String key) {
-        return new BaseEntry<>(toMemorySegment(key), null);
+    public static TimestampEntry<MemorySegment> toDeletedEntity(@Nonnull String key, @Nonnull Long timestamp) {
+        return new TimestampBaseEntry<>(toMemorySegment(key), null, timestamp);
     }
 
-    public static Entry<MemorySegment> toEntity(@Nonnull String key, @Nonnull byte[] value) {
-        return new BaseEntry<>(toMemorySegment(key), MemorySegment.ofArray(value));
+    public static TimestampEntry<MemorySegment> toEntity(@Nonnull String key, @Nonnull byte[] value, @Nonnull Long timestamp) {
+        return new TimestampBaseEntry<>(toMemorySegment(key), MemorySegment.ofArray(value), timestamp);
     }
 
     public static byte[] toByteArray(@Nonnull MemorySegment data) {

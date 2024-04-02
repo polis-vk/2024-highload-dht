@@ -1,16 +1,14 @@
 package ru.vk.itmo.test.vadimershov;
 
-import one.nio.http.HttpException;
-import one.nio.http.Response;
-import one.nio.pool.PoolException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.vadimershov.dao.ReferenceDao;
+import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
+import ru.vk.itmo.test.vadimershov.exceptions.FailedSharding;
 import ru.vk.itmo.test.vadimershov.exceptions.NotFoundException;
 import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
 import ru.vk.itmo.test.vadimershov.hash.ConsistentHashing;
@@ -19,109 +17,111 @@ import ru.vk.itmo.test.vadimershov.hash.VirtualNode;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
-
-import static java.lang.StringTemplate.STR;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toByteArray;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toDeletedEntity;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toEntity;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toMemorySegment;
+import java.util.Collection;
+import java.util.PriorityQueue;
 
 public class ShardingDao {
 
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    public static final String ENTITY_URI = "/v0/entity?id=";
 
-    private final String selfUrl;
-    private final Dao<MemorySegment, Entry<MemorySegment>> localDao;
+    private final int nodeCount;
+    private final int nodeQuorum;
+
+    private final Dao<MemorySegment, TimestampEntry<MemorySegment>> localDao;
     private final ConsistentHashing consistentHashing;
 
     public ShardingDao(ServiceConfig serviceConfig, Config daoConfig) throws IOException {
-        this.selfUrl = serviceConfig.selfUrl();
+        this.nodeCount = serviceConfig.clusterUrls().size();
+        this.nodeQuorum = (serviceConfig.clusterUrls().size() / 2) + 1;
         this.localDao = new ReferenceDao(daoConfig);
-        this.consistentHashing = new ConsistentHashing(serviceConfig.clusterUrls());
+        this.consistentHashing = new ConsistentHashing(serviceConfig.selfUrl(), serviceConfig.clusterUrls(), this.localDao);
     }
 
-    public byte[] get(String key) throws NotFoundException, DaoException, RemoteServiceException {
-        VirtualNode virtualNode = consistentHashing.findVNode(key);
-        if (virtualNode.url().equals(selfUrl)) {
-            Entry<MemorySegment> entry;
-            try {
-                entry = localDao.get(toMemorySegment(key));
-            } catch (Exception e) {
-                logger.error("Can't get value by key={}", key, e);
-                throw new DaoException("Can't get value from local dao", e);
-            }
-            if (entry == null) {
-                throw new NotFoundException();
-            }
-            return toByteArray(entry.value());
-        }
-
-        Response response;
-        try {
-            response = virtualNode.httpClient().get(ENTITY_URI + key);
-        } catch (InterruptedException e) {
-            logger.error("Can't get with key={} in remote node url={}", key, virtualNode.url(), e);
-            Thread.currentThread().interrupt();
-            throw new DaoException("Can't get value from remote node", e);
-        } catch (PoolException | IOException | HttpException e) {
-            logger.error("Can't get with key={} in remote node url={}", key, virtualNode.url(), e);
-            throw new DaoException("Can't get value from remote node", e);
-        }
-        checkCodeInRemoteResp(virtualNode.url(), response);
-        return response.getBody();
+    public Pair<byte[], Long> get(String key) throws NotFoundException, DaoException, RemoteServiceException {
+        return consistentHashing.getLocalNode().get(key);
     }
 
-    public void upsert(String key, byte[] value) throws DaoException, RemoteServiceException {
-        VirtualNode virtualNode = consistentHashing.findVNode(key);
-        if (virtualNode.url().equals(selfUrl)) {
+    public Pair<byte[], Long> get(
+            String key,
+            Integer ack,
+            Integer from
+    ) throws NotFoundException, DaoException, RemoteServiceException, FailedSharding {
+        ack = validate(ack, nodeQuorum);
+        from = validate(from, nodeCount);
+
+        Collection<VirtualNode> vNodes = consistentHashing.findVNodes(key, from);
+        PriorityQueue<Pair<byte[], Long>> entityQueue =
+                new PriorityQueue<>(from, (e1, e2) -> - e1.second().compareTo(e2.second()));
+        for (var node : vNodes) {
             try {
-                localDao.upsert(toEntity(key, value));
-                return;
-            } catch (Exception e) {
-                logger.error("Can't upsert value by key={}", key, e);
-                throw new DaoException("Can't upsert value in local dao", e);
+                entityQueue.add(node.get(key));
+            } catch (DaoException | RemoteServiceException e) {
+                logger.error("Exception with remote node in from param", e);
+//                throw new FailedSharding();
             }
         }
-
-        Response response;
-        try {
-            response = virtualNode.httpClient().put(ENTITY_URI + key, value);
-        } catch (InterruptedException e) {
-            logger.error("InterruptedException upsert by key={} in remote node url={}", key, virtualNode.url(), e);
-            Thread.currentThread().interrupt();
-            throw new DaoException("Can't upsert value in remote node", e);
-        } catch (PoolException | IOException | HttpException e) {
-            logger.error("Exception upsert by key={} in service url={}", key, virtualNode.url(), e);
-            throw new DaoException("Can't upsert value in remote node", e);
+        if (entityQueue.size() < ack) {
+            throw new FailedSharding();
         }
-        checkCodeInRemoteResp(virtualNode.url(), response);
+        return entityQueue.poll();
     }
 
-    public void delete(String key) throws DaoException, RemoteServiceException {
-        VirtualNode virtualNode = consistentHashing.findVNode(key);
-        if (virtualNode.url().equals(selfUrl)) {
+    public void upsert(String key, byte[] value, Long timestamp) throws DaoException, RemoteServiceException, FailedSharding {
+        consistentHashing.getLocalNode().upsert(key, value, timestamp);
+    }
+
+    public void upsert(
+            String key,
+            byte[] value,
+            Integer ack,
+            Integer from
+    ) throws DaoException, RemoteServiceException {
+        ack = validate(ack, nodeQuorum);
+        from = validate(from, nodeCount);
+
+        Collection<VirtualNode> vNodes = consistentHashing.findVNodes(key, from);
+        int correctSave = 0;
+        long timestamp = System.currentTimeMillis();
+        for (var node : vNodes) {
             try {
-                localDao.upsert(toDeletedEntity(key));
-                return;
+                logger.info("" + timestamp);
+                node.upsert(key, value, timestamp);
+                correctSave++;
             } catch (Exception e) {
-                logger.error("Can't delete by key={}", key, e);
-                throw new DaoException("Can't delete value in local dao", e);
+                logger.error("Exception with remote node in from param", e);
             }
         }
-
-        Response response;
-        try {
-            response = virtualNode.httpClient().delete(ENTITY_URI + key);
-        } catch (InterruptedException e) {
-            logger.error("InterruptedException delete by key={} in service url={}", key, virtualNode.url(), e);
-            Thread.currentThread().interrupt();
-            throw new DaoException("Can't delete value in remote node", e);
-        } catch (PoolException | IOException | HttpException e) {
-            logger.error("Exception delete by key={} in service url={}", key, virtualNode.url(), e);
-            throw new DaoException("Can't delete value in remote node", e);
+        if (correctSave < ack) {
+            throw new FailedSharding();
         }
-        checkCodeInRemoteResp(virtualNode.url(), response);
+    }
+
+    public void delete(String key, Long timestamp) throws DaoException, RemoteServiceException {
+        consistentHashing.getLocalNode().delete(key, timestamp);
+    }
+
+    public void delete(
+            String key,
+            Integer ack,
+            Integer from
+    ) throws DaoException, RemoteServiceException, FailedSharding {
+        ack = validate(ack, nodeQuorum);
+        from = validate(from, nodeCount);
+
+        Collection<VirtualNode> vNodes = consistentHashing.findVNodes(key, from);
+        int correctSave = 0;
+        long timestamp = System.currentTimeMillis();
+        for (var node : vNodes) {
+            try {
+                node.delete(key, timestamp);
+                correctSave++;
+            } catch (Exception e) {
+                logger.error("Exception with remote node in from param", e);
+            }
+        }
+        if (correctSave < ack) {
+            throw new FailedSharding();
+        }
     }
 
     public void close() {
@@ -133,16 +133,13 @@ public class ShardingDao {
         this.consistentHashing.close();
     }
 
-    private void checkCodeInRemoteResp(String url, Response response) throws RemoteServiceException {
-        switch (response.getStatus()) {
-            case 200, 201, 202 -> { /* correct http code */ }
-            case 400 -> throw new RemoteServiceException(DaoResponse.BAD_REQUEST, url);
-            case 404 -> throw new RemoteServiceException(DaoResponse.NOT_FOUND, url);
-            case 405 -> throw new RemoteServiceException(DaoResponse.METHOD_NOT_ALLOWED, url);
-            case 429 -> throw new RemoteServiceException(DaoResponse.TOO_MANY_REQUESTS, url);
-            case 503 -> throw new RemoteServiceException(DaoResponse.SERVICE_UNAVAILABLE, url);
-            default -> throw new RemoteServiceException(DaoResponse.INTERNAL_ERROR, url);
+    private int validate(Integer value, Integer defaultValue) {
+        value = value == null ? defaultValue : value;
+
+        if (value > nodeCount  || value <= 0 ) {
+            throw new FailedSharding(DaoResponse.BAD_REQUEST);
         }
+        return value;
     }
 
 }

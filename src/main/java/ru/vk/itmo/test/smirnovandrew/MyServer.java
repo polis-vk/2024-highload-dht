@@ -38,7 +38,7 @@ public class MyServer extends HttpServer {
 
     private static final String ID = "id=";
 
-    private static final long RESPONSE_WAIT = 10;
+    private static final long RESPONSE_WAIT = 1;
 
     private final ReferenceDao dao;
 

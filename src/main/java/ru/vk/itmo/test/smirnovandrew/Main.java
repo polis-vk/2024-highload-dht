@@ -18,22 +18,28 @@ public final class Main {
                         2 * 1024 * 1024
                 )
         );
-        ServiceConfig serviceConfig = new ServiceConfig(
-                8080,
-                "http://localhost",
-                List.of("http://localhost"),
-                data
-        );
-        MyServer myServer;
+        String localhost = "http://localhost";
+        var ports = List.of(8080, 8081, 8082);
+        var hosts = ports.stream().map(port -> String.format("%s:%d", localhost, port)).toList();
 
-        if (Objects.isNull(args) || args.length < 2) {
-            myServer = new MyServer(serviceConfig, dao);
-        } else {
-            int corePoolSize = Integer.parseInt(args[0]);
-            int availableProcessors = Integer.parseInt(args[1]);
-            myServer = new MyServer(serviceConfig, dao, corePoolSize, availableProcessors);
+        for (int port: ports) {
+            ServiceConfig serviceConfig = new ServiceConfig(
+                    port,
+                    localhost,
+                    hosts,
+                    data
+            );
+
+            MyServer myServer;
+            if (Objects.isNull(args) || args.length < 2) {
+                myServer = new MyServer(serviceConfig, dao);
+            } else {
+                int corePoolSize = Integer.parseInt(args[0]);
+                int availableProcessors = Integer.parseInt(args[1]);
+                myServer = new MyServer(serviceConfig, dao, corePoolSize, availableProcessors);
+            }
+            myServer.start();
         }
-        myServer.start();
     }
 
     private Main() {

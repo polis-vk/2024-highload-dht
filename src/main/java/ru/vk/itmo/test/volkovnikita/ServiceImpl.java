@@ -4,7 +4,7 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.volkovnikita.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -15,10 +15,10 @@ public class ServiceImpl implements Service {
 
     public static final long FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024L;
     private ExecutorService executorService;
-    private volatile boolean isStopped;
     private HttpServerImpl server;
     private final ServiceConfig config;
     private ReferenceDao dao;
+    private volatile boolean isStopped = false;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -47,13 +47,14 @@ public class ServiceImpl implements Service {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            executorService.shutdownNow();
         }
         isStopped = true;
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

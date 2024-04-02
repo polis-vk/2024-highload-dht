@@ -13,24 +13,25 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
 import java.util.Set;
 
 public class RequestHandler {
-    private static final Set<Integer> availableMethods = new HashSet<>(3);
+    private static final Set<Integer> AVAILABLE_METHODS;
+
+    static {
+        AVAILABLE_METHODS = Set.of(
+                Request.METHOD_GET,
+                Request.METHOD_PUT,
+                Request.METHOD_DELETE
+        ); // Immutable set.
+    }
+
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String ID_PARAMETER = "id=";
 
+    private final RendezvousDistributor distributor;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final HttpClient[] clusterConnections;
-
-    private final RendezvousDistributor distributor;
-
-    static {
-        availableMethods.add(Request.METHOD_GET);
-        availableMethods.add(Request.METHOD_PUT);
-        availableMethods.add(Request.METHOD_DELETE);
-    }
 
     public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao,
                           HttpClient[] clusterConnections,
@@ -54,7 +55,7 @@ public class RequestHandler {
         }
 
         int method = request.getMethod();
-        if (!availableMethods.contains(method)) {
+        if (!AVAILABLE_METHODS.contains(method)) {
             return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
 
@@ -62,15 +63,7 @@ public class RequestHandler {
         if (currNodeNumber >= 0) {
             // Redirect request, processing on another node.
             HttpClient client = clusterConnections[currNodeNumber];
-            Request remoteRequest = client.createRequest(method, request.getURI());
-
-            byte[] body = request.getBody();
-            if (body != null) {
-                remoteRequest.addHeader("Content-Length: " + body.length);
-                remoteRequest.setBody(body);
-            }
-
-            return client.invoke(remoteRequest);
+            return client.invoke(request);
         }
 
         // Processing locally.

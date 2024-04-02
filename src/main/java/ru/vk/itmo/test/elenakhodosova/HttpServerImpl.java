@@ -46,7 +46,7 @@ public class HttpServerImpl extends HttpServer {
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String TIMESTAMP_HEADER = "X-timestamp: ";
     private static final String REDIRECTED_HEADER = "X-redirected";
-    private final static int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executorService;
     private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
 

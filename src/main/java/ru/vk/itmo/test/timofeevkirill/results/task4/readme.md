@@ -63,23 +63,22 @@ See cpu flag issue, fixed from v3.0 async-profiler (https://github.com/async-pro
 
 CPU
 ![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task4/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task4/asprof/put/cpu/png/h_p115_000rps.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task4/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task4/asprof/put/cpu/png/h_p115_000rps_cut.png)
 
-
-Рассчет хэша происходит 2 раза - проверка на необходимость проксирования запроса (532 сэмпла, 0.58%) + на само проксирование (126 сэмплов, 0.14).
-Второй раз более оптимизирован, поэтому не сильно жалко пожертвовать процессорное время воимя инкапсуляции логики проксирующего сервиса.
+Обработка основного запроса с параметрами (processFirstRequest) - 4238 сэмплов, 7.65%
+Обработка запроса репликой - 778 сэмплов, 1.40%
+nio отправка ответа - 1360 сэмплов, 2.45%
 
 ALLOC
 ![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task4/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task4/asprof/put/alloc/png/h_p115_000rps.png)
 
-Значительные затраты ресурсов на обработку запросов через HttpClient - отправка запросов, управление соединениями, работа с ответами.
-В общем 42000 сэмплов, 52.47% на прокирование запроса.
-
-Для разгрузки воркеров и повышения производительности системы можно перейти к асинхронному взаимодействию с HttpClient.
+На обработку основного запроса с параметрами (processFirstRequest) уходит 10,551 сэмплов (21.46%) - на получение ноды
+по хэшу (600 сэмплов, 1.22%), URI.create (829 сэмплов, 1.69%), 3.71% на создания, не считая sendAsync, (5147 сэмплов, 10.47%) на sendAsync.
+CompletableFuture.allOf() - 117 сэмплов, 0.24%
 
 LOCK
 ![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task4/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task4/asprof/put/lock/png/h_p115_000rps.png)
-43% сэмплов блокировок из-за SelectorManager'а внутри http клиента - при регистрации асинхронных эвентов через метод register.
-Этот метод использует блокировку для атомарной проверки состояния SelectorManager'а и регистрации нового ивента.
+Не заметил особой разницы, SelectorManager'а никуда не делся.
 
 ## GET Research
 ### 25 thds - предыдущая точка разладки
@@ -132,6 +131,8 @@ CPU
  99.999%   52.06ms
 100.000%   54.46ms
 ```
+
+В целом изменения такие же как и на put флейм графе.
 
 CPU
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task4/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task4/asprof/get/cpu/png/h_async_g50_000rps.png)

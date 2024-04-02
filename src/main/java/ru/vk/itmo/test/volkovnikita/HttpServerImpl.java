@@ -35,7 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.stream.Collectors;
 
-import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.TOO_LITTLE_REPLICAS;
+import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.NOT_ENOUGH_REPLICAS;
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.TOO_MANY_REQUESTS;
 import static ru.vk.itmo.test.volkovnikita.util.Settings.REDIRECTED_HEADER;
 import static ru.vk.itmo.test.volkovnikita.util.Settings.TIMESTAMP_HEADER;
@@ -181,7 +181,7 @@ public class HttpServerImpl extends HttpServer {
         List<Response> responses = collectResponses(request, sortedNodes, method, id, ack);
 
         if (responses.size() < ack) {
-            session.sendResponse(new Response(TOO_LITTLE_REPLICAS.toString(), Response.EMPTY));
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS.toString(), Response.EMPTY));
             return;
         }
 

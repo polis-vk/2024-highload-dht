@@ -3,7 +3,7 @@ package ru.vk.itmo.test.volkovnikita.util;
 public enum CustomHttpStatus {
 
     TOO_MANY_REQUESTS(429, "Too Many Requests"),
-    TOO_LITTLE_REPLICAS(504, "Service Unavailable");
+    NOT_ENOUGH_REPLICAS(504, "Not Enough Replicas");
 
     private final int value;
     private final String reasonPhrase;

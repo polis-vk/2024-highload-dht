@@ -27,12 +27,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.stream.Collectors;
 
@@ -44,6 +46,7 @@ public class HttpServerImpl extends HttpServer {
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String TIMESTAMP_HEADER = "X-timestamp: ";
     private static final String REDIRECTED_HEADER = "X-redirected";
+    private final static int THREADS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executorService;
     private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
 
@@ -61,7 +64,11 @@ public class HttpServerImpl extends HttpServer {
         this.executorService = executorService;
         this.selfUrl = config.selfUrl();
         this.nodes = config.clusterUrls();
-        this.client = HttpClient.newHttpClient();
+        this.client = HttpClient.newBuilder()
+                        .executor(Executors.newFixedThreadPool(THREADS))
+                        .connectTimeout(Duration.ofMillis(500))
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .build();
     }
 
     @Override

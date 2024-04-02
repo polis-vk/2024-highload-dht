@@ -111,11 +111,11 @@ public class RequestHandler {
             int ack,
             int from) throws InterruptedException {
 
-        int[] nodeCount = distributor.getQuorumNodes(id, from);
+        ArrayList<Integer> nodes = distributor.getQuorumNodes(id, from);
         List<Response> responses = new ArrayList<>();
 
         long currTimestamp = System.currentTimeMillis();
-        for (int node : nodeCount) {
+        for (int node : nodes) {
             try {
                 Response response = distributor.isOurNode(node)
                         ? processLocally(method, id, request, currTimestamp)

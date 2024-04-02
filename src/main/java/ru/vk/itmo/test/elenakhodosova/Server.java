@@ -27,7 +27,7 @@ public final class Server {
     private Server() {
 
     }
-//todo
+
     public static void main(String[] args) throws IOException {
         List<ServiceConfig> nodesConfigs = new ArrayList<>(NODES_COUNT);
         ExecutorService executorService = ExecutorServiceConfig.newExecutorService();

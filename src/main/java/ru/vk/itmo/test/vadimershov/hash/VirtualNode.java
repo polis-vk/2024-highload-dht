@@ -9,7 +9,7 @@ public abstract class VirtualNode {
     private final String url;
     private final int replicaIndex;
 
-    public VirtualNode(String url, int replicaIndex) {
+    protected VirtualNode(String url, int replicaIndex) {
         this.url = url;
         this.replicaIndex = replicaIndex;
     }

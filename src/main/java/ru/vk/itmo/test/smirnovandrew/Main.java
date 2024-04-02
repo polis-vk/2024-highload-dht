@@ -6,6 +6,7 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -20,11 +21,10 @@ public final class Main {
         );
         String localhost = "http://localhost";
         var ports = List.of(8080, 8081, 8082);
-        var hosts = ports.stream()
-                .map(
-                        port -> String.format("%s:%d", localhost, port)
-                )
-                .toList();
+        var hosts = new ArrayList<>();
+        for (int port: ports) {
+            hosts.add(String.format("%s:%d", localhost, port));
+        }
 
         for (int port: ports) {
             ServiceConfig serviceConfig = new ServiceConfig(

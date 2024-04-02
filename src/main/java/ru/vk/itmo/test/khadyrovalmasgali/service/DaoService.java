@@ -25,7 +25,6 @@ public class DaoService implements Service {
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
-        server.shutdown();
         server.stop();
         return CompletableFuture.completedFuture(null);
     }

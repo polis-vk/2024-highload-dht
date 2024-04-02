@@ -30,13 +30,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ReferenceService implements Service {
 
     private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
-    private static final int THREADS = Runtime.getRuntime().availableProcessors();
-    private static final int QUEUE_SIZE = 1024;
 
     private static final String LOCALHOST_PREFIX = "http://localhost:";
 
     private final ServiceConfig config;
-    private ExecutorService executor;
 
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ReferenceServer server;
@@ -48,15 +45,7 @@ public class ReferenceService implements Service {
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
-        ArrayBlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_SIZE);
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(THREADS, THREADS,
-            1000, TimeUnit.SECONDS,
-            queue,
-            new CustomThreadFactory("worker", true),
-            new ThreadPoolExecutor.AbortPolicy());
-        executor.prestartAllCoreThreads();
-        this.executor = executor;
-        server = new ReferenceServer(config, executor, dao);
+        server = new ReferenceServer(config, dao);
         server.start();
         stopped = false;
         return CompletableFuture.completedFuture(null);
@@ -69,7 +58,7 @@ public class ReferenceService implements Service {
         }
         try {
             server.stop();
-            shutdownAndAwaitTermination(executor);
+
         } finally {
             dao.close();
         }
@@ -77,7 +66,7 @@ public class ReferenceService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private static void shutdownAndAwaitTermination(ExecutorService pool) {
+    public static void shutdownAndAwaitTermination(ExecutorService pool) {
         pool.shutdown();
         try {
             if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
@@ -118,9 +107,9 @@ public class ReferenceService implements Service {
             Path path = Paths.get("tmp/db/" + port);
             Files.createDirectories(path);
             ServiceConfig serviceConfig = new ServiceConfig(port,
-                url,
-                clusterUrls,
-                path);
+                    url,
+                    clusterUrls,
+                    path);
             clusterConfs.add(serviceConfig);
         }
 

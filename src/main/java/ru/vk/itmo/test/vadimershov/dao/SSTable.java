@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.vadimershov.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Collections;
@@ -148,10 +145,10 @@ final class SSTable {
         long offset = entryOffset(entry);
         offset += Long.BYTES + key.byteSize();
 
-
         // Extract value length
         final long valueLength = getLength(offset);
         offset += Long.BYTES;
+
         if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
             // Tombstone encountered
             return new TimestampBaseEntry<>(key, null, getTimestamp(offset));

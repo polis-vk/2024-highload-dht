@@ -21,7 +21,11 @@ public final class MemorySegmentUtil {
         return new TimestampBaseEntry<>(toMemorySegment(key), null, timestamp);
     }
 
-    public static TimestampEntry<MemorySegment> toEntity(@Nonnull String key, @Nonnull byte[] value, @Nonnull Long timestamp) {
+    public static TimestampEntry<MemorySegment> toEntity(
+            @Nonnull String key,
+            @Nonnull byte[] value,
+            @Nonnull Long timestamp
+    ) {
         return new TimestampBaseEntry<>(toMemorySegment(key), MemorySegment.ofArray(value), timestamp);
     }
 

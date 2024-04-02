@@ -23,8 +23,11 @@ public abstract class VirtualNode {
     }
 
     public abstract void close();
+
     public abstract Pair<byte[], Long> get(String key) throws NotFoundException, DaoException, RemoteServiceException;
+
     public abstract void upsert(String key, byte[] value, Long timestamp) throws DaoException, RemoteServiceException;
+
     public abstract void delete(String key, Long timestamp) throws DaoException, RemoteServiceException;
 
 }

@@ -34,7 +34,11 @@ public class ShardingDao {
         this.nodeCount = serviceConfig.clusterUrls().size();
         this.nodeQuorum = (serviceConfig.clusterUrls().size() / 2) + 1;
         this.localDao = new ReferenceDao(daoConfig);
-        this.consistentHashing = new ConsistentHashing(serviceConfig.selfUrl(), serviceConfig.clusterUrls(), this.localDao);
+        this.consistentHashing = new ConsistentHashing(
+                serviceConfig.selfUrl(),
+                serviceConfig.clusterUrls(),
+                this.localDao
+        );
     }
 
     public Pair<byte[], Long> get(String key) throws NotFoundException, DaoException, RemoteServiceException {
@@ -46,26 +50,30 @@ public class ShardingDao {
             Integer ack,
             Integer from
     ) throws NotFoundException, DaoException, RemoteServiceException, FailedSharding {
-        ack = validate(ack, nodeQuorum);
-        from = validate(from, nodeCount);
+        int correctAck = validate(ack, nodeQuorum);
+        int correctFrom = validate(from, nodeCount);
 
-        Collection<VirtualNode> vNodes = consistentHashing.findVNodes(key, from);
+        Collection<VirtualNode> virtualNodes = consistentHashing.findVNodes(key, correctFrom);
         PriorityQueue<Pair<byte[], Long>> entityQueue =
-                new PriorityQueue<>(from, (e1, e2) -> - e1.second().compareTo(e2.second()));
-        for (var node : vNodes) {
+                new PriorityQueue<>(from, (e1, e2) -> -e1.second().compareTo(e2.second()));
+        for (var node : virtualNodes) {
             try {
                 entityQueue.add(node.get(key));
             } catch (DaoException | RemoteServiceException e) {
-                logger.error("Exception with remote node in from param", e);
+                logger.error("Exception with remote node in from", e);
             }
         }
-        if (entityQueue.size() < ack) {
+        if (entityQueue.size() < correctAck) {
             throw new FailedSharding();
         }
         return entityQueue.poll();
     }
 
-    public void upsert(String key, byte[] value, Long timestamp) throws DaoException, RemoteServiceException, FailedSharding {
+    public void upsert(
+            String key,
+            byte[] value,
+            Long timestamp
+    ) throws DaoException, RemoteServiceException, FailedSharding {
         consistentHashing.getLocalNode().upsert(key, value, timestamp);
     }
 
@@ -75,21 +83,21 @@ public class ShardingDao {
             Integer ack,
             Integer from
     ) throws DaoException, RemoteServiceException {
-        ack = validate(ack, nodeQuorum);
-        from = validate(from, nodeCount);
+        int correctAck = validate(ack, nodeQuorum);
+        int correctFrom = validate(from, nodeCount);
 
-        Collection<VirtualNode> vNodes = consistentHashing.findVNodes(key, from);
+        Collection<VirtualNode> virtualNodes = consistentHashing.findVNodes(key, correctFrom);
         int correctSave = 0;
         long timestamp = System.currentTimeMillis();
-        for (var node : vNodes) {
+        for (var node : virtualNodes) {
             try {
                 node.upsert(key, value, timestamp);
                 correctSave++;
             } catch (Exception e) {
-                logger.error("Exception with remote node in from param", e);
+                logger.error("Exception with remote node in from", e);
             }
         }
-        if (correctSave < ack) {
+        if (correctSave < correctAck) {
             throw new FailedSharding();
         }
     }
@@ -103,13 +111,13 @@ public class ShardingDao {
             Integer ack,
             Integer from
     ) throws DaoException, RemoteServiceException, FailedSharding {
-        ack = validate(ack, nodeQuorum);
-        from = validate(from, nodeCount);
+        int correctAck = validate(ack, nodeQuorum);
+        int correctFrom = validate(from, nodeCount);
 
-        Collection<VirtualNode> vNodes = consistentHashing.findVNodes(key, from);
+        Collection<VirtualNode> virtualNodes = consistentHashing.findVNodes(key, correctFrom);
         int correctSave = 0;
         long timestamp = System.currentTimeMillis();
-        for (var node : vNodes) {
+        for (var node : virtualNodes) {
             try {
                 node.delete(key, timestamp);
                 correctSave++;
@@ -117,7 +125,7 @@ public class ShardingDao {
                 logger.error("Exception with remote node in from param", e);
             }
         }
-        if (correctSave < ack) {
+        if (correctSave < correctAck) {
             throw new FailedSharding();
         }
     }
@@ -132,12 +140,12 @@ public class ShardingDao {
     }
 
     private int validate(Integer value, Integer defaultValue) {
-        value = value == null ? defaultValue : value;
+        int correctValue = value == null ? defaultValue : value;
 
-        if (value > nodeCount  || value <= 0 ) {
+        if (correctValue > nodeCount || correctValue <= 0) {
             throw new FailedSharding(DaoResponse.BAD_REQUEST);
         }
-        return value;
+        return correctValue;
     }
 
 }

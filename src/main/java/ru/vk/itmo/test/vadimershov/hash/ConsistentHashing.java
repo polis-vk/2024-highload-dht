@@ -56,12 +56,13 @@ public class ConsistentHashing {
     }
 
     public Collection<VirtualNode> findVNodes(String key, int count) {
+        int currentCount = count;
         Integer hashKey = Hash.murmur3(key);
         HashMap<String, VirtualNode> selectedNodes = new HashMap<>();
 
         SortedMap<Integer, VirtualNode> sliceMap = ring.tailMap(hashKey);
         for (VirtualNode node : sliceMap.values()) {
-            if (count == 0) {
+            if (currentCount == 0) {
                 return selectedNodes.values();
             }
 
@@ -69,12 +70,12 @@ public class ConsistentHashing {
                 continue;
             }
             selectedNodes.put(node.url(), node);
-            count--;
+            currentCount--;
         }
 
         sliceMap = ring.headMap(hashKey);
         for (VirtualNode node : sliceMap.values()) {
-            if (count == 0) {
+            if (currentCount == 0) {
                 return selectedNodes.values();
             }
 
@@ -82,7 +83,7 @@ public class ConsistentHashing {
                 continue;
             }
             selectedNodes.put(node.url(), node);
-            count--;
+            currentCount--;
         }
         throw new FailedSharding();
     }

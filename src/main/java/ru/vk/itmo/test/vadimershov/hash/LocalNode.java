@@ -10,7 +10,10 @@ import ru.vk.itmo.test.vadimershov.exceptions.NotFoundException;
 
 import java.lang.foreign.MemorySegment;
 
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.*;
+import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toByteArray;
+import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toDeletedEntity;
+import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toEntity;
+import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toMemorySegment;
 
 public class LocalNode extends VirtualNode {
 

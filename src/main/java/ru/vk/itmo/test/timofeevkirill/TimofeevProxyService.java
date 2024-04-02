@@ -49,7 +49,8 @@ public class TimofeevProxyService {
         }
     }
 
-    public Map<String, Response> proxyAsyncRequests(Request request, List<String> nodeUrls, String id) throws InterruptedException, ExecutionException {
+    public Map<String, Response> proxyAsyncRequests(Request request, List<String> nodeUrls, String id)
+            throws InterruptedException, ExecutionException {
         Map<String, CompletableFuture<Response>> futures = new HashMap<>(nodeUrls.size());
 
         for (String url : nodeUrls) {
@@ -57,7 +58,8 @@ public class TimofeevProxyService {
             futures.put(url, future);
         }
 
-        CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[nodeUrls.size()]));
+        CompletableFuture<Void> allFutures =
+                CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[nodeUrls.size()]));
         allFutures.get();
 
         Map<String, Response> responses = new HashMap<>();
@@ -91,7 +93,8 @@ public class TimofeevProxyService {
                         HttpResponse.BodyHandlers.ofByteArray())
                 .thenApply(httpResponse -> {
                     Response response = new Response(proxyResponseCode(httpResponse), httpResponse.body());
-                    long timestamp = httpResponse.headers().firstValueAsLong(RequestData.NIO_TIMESTAMP_HEADER).orElse(0);
+                    long timestamp =
+                            httpResponse.headers().firstValueAsLong(RequestData.NIO_TIMESTAMP_HEADER).orElse(0);
                     response.addHeader(RequestData.NIO_TIMESTAMP_STRING_HEADER + timestamp);
                     return response;
                 })
@@ -104,7 +107,9 @@ public class TimofeevProxyService {
         return future;
     }
 
-    // use async method to wait responses parallel
+    /**
+     * @deprecated use async method to wait responses parallel instead {@link #proxyAsyncRequests(Request, List, String)}.
+     */
     @Deprecated
     public Map<String, Response> proxyRequests(Request request, List<String> nodeUrls, String id) throws IOException {
         Map<String, Response> responses = new HashMap<>(nodeUrls.size());
@@ -116,6 +121,9 @@ public class TimofeevProxyService {
         return responses;
     }
 
+    /**
+     * @deprecated use to support {@link #proxyRequests(Request, List, String)}.
+     */
     @Deprecated
     private Response proxyRequest(Request request, String proxiedNodeUrl, String id) throws IOException {
         byte[] body = request.getBody();

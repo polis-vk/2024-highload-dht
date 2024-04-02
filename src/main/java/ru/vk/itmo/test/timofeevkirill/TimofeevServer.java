@@ -137,7 +137,10 @@ public class TimofeevServer extends HttpServer {
 
         try {
             responses = proxyService.proxyAsyncRequests(request, nodeUrls, parameters.id);
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        } catch (ExecutionException e) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
         }
 

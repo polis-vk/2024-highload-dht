@@ -32,7 +32,6 @@ public class ServerImpl extends HttpServer {
         Request.METHOD_PUT,
         Request.METHOD_DELETE
     );
-    public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
     private static final String HTTP_SERVICE_NOT_AVAILABLE = "503";
     private static final String NOT_ENOUGH_REPLICAS_RESPONSE = "504 Not Enough Replicas";
     private static final int QUEUE_CAPACITY = 3000;

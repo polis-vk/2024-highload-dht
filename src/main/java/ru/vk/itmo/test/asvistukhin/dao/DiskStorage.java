@@ -140,6 +140,7 @@ public class DiskStorage {
                     fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
                     dataOffset += value.byteSize();
                 }
+                dataOffset += Long.BYTES;
                 indexOffset += Long.BYTES;
             }
 

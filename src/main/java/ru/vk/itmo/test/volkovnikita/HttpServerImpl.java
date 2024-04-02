@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.stream.Collectors;
 
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.TOO_LITTLE_REPLICAS;
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.TOO_MANY_REQUESTS;
@@ -49,12 +50,12 @@ public class HttpServerImpl extends HttpServer {
     private final List<String> nodes;
     private final String selfUrl;
 
-    private enum METHODS {
+    private enum methods {
 
         GET(1), PUT(5), DELETE(6);
         private final Integer code;
 
-        METHODS(Integer code) {
+        methods(Integer code) {
             this.code = code;
         }
 
@@ -82,7 +83,6 @@ public class HttpServerImpl extends HttpServer {
         httpServerConfig.closeSessions = true;
         return httpServerConfig;
     }
-
 
     public Response getEntry(String id) {
         try {
@@ -141,7 +141,7 @@ public class HttpServerImpl extends HttpServer {
                 return;
             }
 
-            METHODS method = getMethod(request.getMethod());
+            methods method = getMethod(request.getMethod());
             if (method == null) {
                 session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 return;
@@ -161,7 +161,7 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private void processRequest(Request request, HttpSession session, String id, METHODS method, int from, int ack) {
+    private void processRequest(Request request, HttpSession session, String id, methods method, int from, int ack) {
         try {
             process(request, session, id, method.name(), from, ack);
         } catch (Exception e) {
@@ -205,7 +205,9 @@ public class HttpServerImpl extends HttpServer {
         for (String node : nodes) {
             if (responses.size() == requiredAcks) break;
             try {
-                responses.add(node.equals(selfUrl) ? handleLocalRequest(request, id) : redirectRequest(method, id, node, request));
+                responses.add(node.equals(selfUrl)
+                        ? handleLocalRequest(request, id)
+                        : redirectRequest(method, id, node, request));
             } catch (InterruptedException | IOException e) {
                 log.error("Error sending request", e);
                 Thread.currentThread().interrupt();
@@ -252,7 +254,6 @@ public class HttpServerImpl extends HttpServer {
         return new Response(Response.OK, latestResponse.getBody());
     }
 
-
     private Response redirectRequest(String method, String id, String clusterUrl, Request request)
             throws InterruptedException, IOException {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -262,7 +263,8 @@ public class HttpServerImpl extends HttpServer {
                 .header(REDIRECTED_HEADER, "true")
                 .header("X-timestamp", Optional.ofNullable(request.getHeader(TIMESTAMP_HEADER)).orElse(""));
 
-        HttpResponse<byte[]> httpResponse = client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<byte[]> httpResponse =
+                client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
         Response response = new Response(getProxyResponse(httpResponse.statusCode()), httpResponse.body());
 
         httpResponse.headers().firstValue("X-timestamp")
@@ -297,7 +299,7 @@ public class HttpServerImpl extends HttpServer {
         return nodes.stream()
                 .sorted(Comparator.comparingInt(node -> Hash.murmur3(node + key)))
                 .limit(from)
-                .toList();
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -329,9 +331,8 @@ public class HttpServerImpl extends HttpServer {
         };
     }
 
-
-    private METHODS getMethod(int methodCode) {
-        for (METHODS method : METHODS.values()) {
+    private methods getMethod(int methodCode) {
+        for (methods method : methods.values()) {
             if (method.getCode() == methodCode) {
                 return method;
             }

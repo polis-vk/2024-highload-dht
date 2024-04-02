@@ -18,7 +18,7 @@ public class ServiceImpl implements Service {
     private HttpServerImpl server;
     private final ServiceConfig config;
     private ReferenceDao dao;
-    private volatile boolean isStopped = false;
+    private volatile boolean isStopped;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;

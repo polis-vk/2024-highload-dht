@@ -18,12 +18,11 @@ public class ParametersParser {
                 setDefault();
                 return;
             }
+            if (ack <= 0 || ack > from) {
+                throw new IllegalArgumentException();
+            }
         } else {
             setDefault();
-            return;
-        }
-        if (ack <= 0 || ack > from) {
-            throw new IllegalArgumentException();
         }
     }
 

@@ -20,7 +20,9 @@ public final class Main {
         );
         String localhost = "http://localhost";
         var ports = List.of(8080, 8081, 8082);
-        var hosts = ports.stream().map(port -> String.format("%s:%d", localhost, port)).toList();
+        var hosts = ports.stream()
+                .map(port -> String.format("%s:%d", localhost, port))
+                .toList();
 
         for (int port: ports) {
             ServiceConfig serviceConfig = new ServiceConfig(

@@ -219,7 +219,7 @@ public class ServerImplementation extends HttpServer {
     }
 
     private int getCustomHashCode(String key, int nodeNumber) {
-        return (murmur3(key + nodeNumber) % 101);
+        return murmur3(key + nodeNumber);
     }
 
     private int getValueFromRequest(Request request, String parameter, int defaultValue) {

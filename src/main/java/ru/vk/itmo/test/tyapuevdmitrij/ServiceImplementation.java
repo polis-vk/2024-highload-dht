@@ -66,8 +66,8 @@ public class ServiceImplementation implements ru.vk.itmo.Service {
         Path[] paths = new Path[ports.length];
         List<String> cluster = new ArrayList<>(ports.length);
         for (int i = 0; i < ports.length; i++) {
-            ports[i] = i + 12353;
-            paths[i] = new File("/home/dmitrij/Документы/JavaProjects/DaoServerData/" + ports[i] + '/')
+            ports[i] = i + 8080;
+            paths[i] = new File("/home/dmitrij/Documents/javaProjects/DaoServerData/" + ports[i] + '/')
                     .toPath();
             if (!Files.exists(paths[i])) {
                 Files.createDirectory(paths[i]);

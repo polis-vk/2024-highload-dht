@@ -64,6 +64,9 @@ public final class Convertor {
 
     public static long longOfString(String inputString, long defaultValue, Logger log) {
         long result = defaultValue;
+        if (inputString == null) {
+            return result;
+        }
         try {
             result = Long.parseLong(inputString);
         } catch (NumberFormatException e) {

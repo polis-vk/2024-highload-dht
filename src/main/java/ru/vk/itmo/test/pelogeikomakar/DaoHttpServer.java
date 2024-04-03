@@ -101,6 +101,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
         if (request.getHeader(INTERNAL_RQ_HEADER) == null) {
             // Request from outside
+            System.out.println("request from outside");
             int currAck = defaultAck;
             int currFrom = defaultFrom;
 
@@ -125,7 +126,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             time = Convertor.longOfString(request.getHeader(TIME_HEADER), time, log);
             subResponse = executeMethodLocal(id, request, time);
         }
-
+        System.out.println("return request");
         return subResponse;
     }
 
@@ -140,11 +141,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             if (GOOD_STATUSES.contains(status)) {
                 succeededReq++;
                 long curTime = -1;
-                try {
-                    curTime = Long.parseLong(currResp.getHeader(TIME_HEADER));
-                } catch (NumberFormatException e) {
-                    log.warn("Can not parse number", e);
-                }
+                curTime = Convertor.longOfString(currResp.getHeader(TIME_HEADER), curTime, log);
 
                 if (oldestTime == -2 || oldestTime < curTime) {
                     oldestTime = curTime;
@@ -202,7 +199,9 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     log.error("Exception during upsert (key: {})", id, e);
                     return new Response(Response.CONFLICT, Response.EMPTY);
                 }
-                return new Response(Response.CREATED, Response.EMPTY);
+                Response putResp =  new Response(Response.CREATED, Response.EMPTY);
+                putResp.addHeader(TIME_HEADER + ' ' + timeSt);
+                return putResp;
 
             case Request.METHOD_DELETE:
                 try {
@@ -211,7 +210,9 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     log.error("Exception during delete-upsert", e);
                     return new Response(Response.CONFLICT, Response.EMPTY);
                 }
-                return new Response(Response.ACCEPTED, Response.EMPTY);
+                Response deleteResp =  new Response(Response.ACCEPTED, Response.EMPTY);
+                deleteResp.addHeader(TIME_HEADER + ' ' + timeSt);
+                return deleteResp;
 
             default:
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);

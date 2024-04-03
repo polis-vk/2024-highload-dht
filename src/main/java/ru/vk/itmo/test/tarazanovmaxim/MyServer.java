@@ -214,12 +214,11 @@ public class MyServer extends HttpServer {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
-                    if (responses.size() == ackV) {
-                        return responses.getFirst();
-                    }
                 }
             }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return responses.size() >= ackV 
+                ? responses.getFirst() 
+                : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
         return responseLocal(request, id);
     }
@@ -244,12 +243,11 @@ public class MyServer extends HttpServer {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
-                    if (responses.size() == ackV) {
-                        return responses.getFirst();
-                    }
                 }
             }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return responses.size() >= ackV 
+                ? responses.getFirst() 
+                : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
         return responseLocal(request, id);
     }

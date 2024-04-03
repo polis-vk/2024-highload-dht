@@ -7,8 +7,8 @@ import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.trofimovmaxim.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class TrofikService implements Service {

@@ -3,6 +3,7 @@ package ru.vk.itmo.test.trofimovmaxim;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.ConnectException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,7 +22,8 @@ public final class RunServer {
     private RunServer() {
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException,
+            InterruptedException, ExecutionException, TimeoutException {
         //port -> url
         Map<Integer, String> nodes = new HashMap<>();
         int nodePort = 8080;
@@ -46,12 +48,7 @@ public final class RunServer {
 
         for (ServiceConfig serviceConfig : clusterConfs) {
             TrofikService instance = new TrofikService(serviceConfig);
-            try {
-                instance.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                Thread.currentThread().interrupt();
-                throw new ConnectException();
-            }
+            instance.start().get(1, TimeUnit.SECONDS);
         }
     }
 }

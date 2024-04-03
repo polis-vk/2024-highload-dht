@@ -1,7 +1,12 @@
 package ru.vk.itmo.test.trofimovmaxim;
 
 import one.nio.async.CustomThreadFactory;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
@@ -48,7 +53,6 @@ public class TrofikServer extends HttpServer {
         super(createServerConfigWithPort(config.selfPort()));
         this.dao = dao;
         this.config = config;
-
 
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(THREADS))

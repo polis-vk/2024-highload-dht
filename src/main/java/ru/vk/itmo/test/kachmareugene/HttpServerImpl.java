@@ -146,7 +146,6 @@ public class HttpServerImpl extends HttpServer {
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
                 } catch (IOException e) {
-                    e.printStackTrace(System.err);
                     errorAccept(session, e, Response.CONFLICT);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -207,7 +206,7 @@ public class HttpServerImpl extends HttpServer {
         }
         return false;
     }
-    int t = 0;
+
     private void responseSafeAdd(
             String slaveUrl,
             List<Response> responses,

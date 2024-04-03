@@ -3,8 +3,6 @@ package ru.vk.itmo.test.trofimovmaxim;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.ConnectException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;

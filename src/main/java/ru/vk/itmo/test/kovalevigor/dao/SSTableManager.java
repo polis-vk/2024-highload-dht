@@ -142,7 +142,6 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
         T value = null;
         for (final SSTable ssTable : ssTables) {
             value = keyValueEntryTo(ssTable.get(key));
-            System.out.println(ssTable.get(key));
             if (value != null) {
                 if (value.value() == null) {
                     value = null;

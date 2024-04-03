@@ -215,7 +215,7 @@ public class MyServer extends HttpServer {
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
                 }
-                if (responses.size() >= ackV) {
+                if (responses.size() == ackV) {
                     return responses.getFirst();
                 }
             }
@@ -245,7 +245,7 @@ public class MyServer extends HttpServer {
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
                 }
-                if (responses.size() >= ackV) {
+                if (responses.size() == ackV) {
                     return responses.getFirst();
                 }
             }

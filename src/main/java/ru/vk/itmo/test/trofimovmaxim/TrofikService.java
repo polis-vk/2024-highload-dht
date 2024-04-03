@@ -20,6 +20,7 @@ public class TrofikService implements Service {
     private ReferenceDao dao;
     private TrofikServer server;
     private boolean stopped;
+
     public TrofikService(ServiceConfig config) {
         this.config = config;
     }
@@ -53,9 +54,6 @@ public class TrofikService implements Service {
         try {
             if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                    System.err.println("Pool did not terminate");
-                }
             }
         } catch (InterruptedException ex) {
             pool.shutdownNow();

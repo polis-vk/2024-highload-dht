@@ -3,6 +3,7 @@ package ru.vk.itmo.test.trofimovmaxim;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -48,7 +49,8 @@ public final class RunServer {
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt();
+                throw new ConnectException();
             }
         }
     }

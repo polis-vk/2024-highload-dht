@@ -46,6 +46,9 @@ public class SSTimeTableManager extends SSTableManager<TimeEntry<MemorySegment>>
 
     @Override
     protected TimeEntry<MemorySegment> keyValueEntryTo(Entry<MemorySegment> entry) {
+        if (entry == null) {
+            return null;
+        }
         return new MSegmentTimeEntry(
                 entry.key(),
                 entry.value().asSlice(TIME_LAYOUT.byteSize()),

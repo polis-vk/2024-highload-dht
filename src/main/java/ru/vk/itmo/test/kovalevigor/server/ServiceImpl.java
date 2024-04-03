@@ -11,7 +11,6 @@ import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerOneExecutorS
 import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerReplicationStrategyDecorator;
 import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerRequestValidationStrategyDecorator;
 import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerSendResponseStrategyDecorator;
-import ru.vk.itmo.test.kovalevigor.server.strategy.decorators.ServerShardingStrategyDecorator;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -43,13 +42,14 @@ public class ServiceImpl implements Service {
                 new ServerOneExecutorStrategyDecorator(
                         new ServerRequestValidationStrategyDecorator(
                             new ServerSendResponseStrategyDecorator(
-                                new ServerShardingStrategyDecorator(
+//                                new ServerShardingStrategyDecorator(
                                         new ServerReplicationStrategyDecorator(
                                             new ServerDaoStrategy(config),
                                             fullServiceInfo
-                                        ),
-                                        fullServiceInfo
-                                )
+                                        )
+//                                    ,
+//                                        fullServiceInfo
+//                                )
                             )
                         ),
                         config.corePoolSize, config.maximumPoolSize,

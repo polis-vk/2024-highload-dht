@@ -25,7 +25,7 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
     @Override
     public Response handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            Response response = remoteClient.invoke(new Request(request), REMOTE_TIMEOUT);
+            Response response = remoteClient.invoke(request, REMOTE_TIMEOUT);
             return new Response(response);
         } catch (HttpException | PoolException | ConnectException e) {
             log.severe("Exception while redirection");

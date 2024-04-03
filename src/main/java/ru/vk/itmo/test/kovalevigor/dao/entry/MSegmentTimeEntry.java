@@ -19,6 +19,7 @@ public class MSegmentTimeEntry extends BaseDaoEntry<MemorySegment> implements Ti
 
     @Override
     public long valueSize() {
-        return TIMESTAMP_LAYOUT.byteSize() + value().byteSize();
+        return TIMESTAMP_LAYOUT.byteSize() +
+                (value() == null ? 0 : value().byteSize());
     }
 }

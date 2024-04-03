@@ -10,7 +10,8 @@ function init(args)
 end
 
 function request()
-     key = math.random(1750000)
+     key = math.random(500000)
+--     key = 0
 
      return wrk.format("GET", "/v0/entity?id=k" .. key)
  end

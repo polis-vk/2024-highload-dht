@@ -118,8 +118,8 @@ public class MyServer extends HttpServer {
     }
 
     private boolean isParamsBad(String id, int ack, int from) {
-        return id == null || id.isEmpty() || ack <= 0 ||
-                from > clusterSize || ack > from;
+        return id == null || id.isEmpty() || ack <= 0
+                || from > clusterSize || ack > from;
     }
 
     private Response shardLookup(final Request request, final String shard) {
@@ -170,23 +170,23 @@ public class MyServer extends HttpServer {
                               @Param(value = "ack") String ack,
                               @Param(value = "from") String from,
                               Request request) {
-        int from_ = from == null ? clusterSize : Integer.parseInt(from);
-        int ack_ = ack == null ? quorum(from_) : Integer.parseInt(ack);
-        if (isParamsBad(id, ack_, from_)) {
+        int fromV = from == null ? clusterSize : Integer.parseInt(from);
+        int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
+        if (isParamsBad(id, ackV, fromV)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         if (request.getHeader(REDIRECT_HEADER) == null) {
             request.addHeader(REDIRECT_HEADER + "true");
             List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, from_);
+            List<String> shardToRequest = shards.getNShardByKey(id, fromV);
             for (String sendTo : shardToRequest) {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
                 }
             }
-            if (responses.size() >= ack_) {
+            if (responses.size() >= ackV) {
                 return getGoodGet(responses);
             }
             return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
@@ -200,21 +200,21 @@ public class MyServer extends HttpServer {
                               @Param(value = "ack") String ack,
                               @Param(value = "from") String from,
                               Request request) {
-        int from_ = from == null ? clusterSize : Integer.parseInt(from);
-        int ack_ = ack == null ? quorum(from_) : Integer.parseInt(ack);
-        if (isParamsBad(id, ack_, from_)) {
+        int fromV = from == null ? clusterSize : Integer.parseInt(from);
+        int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
+        if (isParamsBad(id, ackV, fromV)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         if (request.getHeader(REDIRECT_HEADER) == null) {
             request.addHeader(REDIRECT_HEADER + "true");
             List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, ack_);
+            List<String> shardToRequest = shards.getNShardByKey(id, ackV);
             for (String sendTo : shardToRequest) {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
-                    if (responses.size() == ack_) {
+                    if (responses.size() == ackV) {
                         return responses.getFirst();
                     }
                 }
@@ -230,21 +230,21 @@ public class MyServer extends HttpServer {
                                  @Param(value = "ack") String ack,
                                  @Param(value = "from") String from,
                                  Request request) {
-        int from_ = from == null ? clusterSize : Integer.parseInt(from);
-        int ack_ = ack == null ? quorum(from_) : Integer.parseInt(ack);
-        if (isParamsBad(id, ack_, from_)) {
+        int fromV = from == null ? clusterSize : Integer.parseInt(from);
+        int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
+        if (isParamsBad(id, ackV, fromV)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         if (request.getHeader(REDIRECT_HEADER) == null) {
             request.addHeader(STR."\{REDIRECT_HEADER}true");
             List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, ack_);
+            List<String> shardToRequest = shards.getNShardByKey(id, ackV);
             for (String sendTo : shardToRequest) {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
-                    if (responses.size() == ack_) {
+                    if (responses.size() == ackV) {
                         return responses.getFirst();
                     }
                 }
@@ -278,7 +278,8 @@ public class MyServer extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
-                    logger.error("IOException in handleRequest->executorService.execute(): " + e + " M" + request.getMethod());
+                    logger.error("IOException in handleRequest->executorService.execute(): "
+                            + e + " M" + request.getMethod());
                     sendResponse(
                         new Response(
                             e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,

@@ -20,8 +20,8 @@ public class Hasher {
     public int digest(byte[] bytes) {
         final byte[] hash = messageDigest.get().digest(bytes);
         int value = 0;
-        for (byte byte_ : hash) {
-            value = (value << 1) + (byte_ & 255);
+        for (byte b : hash) {
+            value = (value << 1) + (b & 255);
         }
         return value;
     }

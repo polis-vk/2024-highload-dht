@@ -53,12 +53,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         this.clusterUrls = config.clusterUrls();
         this.selfUrl = config.selfUrl();
         this.clients = new ConcurrentHashMap<>();
-        for (String url : this.clusterUrls) {
-            if (!url.equals(selfUrl)) {
-                this.clients.put(url, new HttpClient(new ConnectionString(url),
-                        INTERNAL_RQ_HEADER + ' ' + selfUrl));
-            }
-        }
 
         defaultFrom = this.clusterUrls.size();
         defaultAck = defaultFrom / 2 + 1;
@@ -101,17 +95,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
         if (request.getHeader(INTERNAL_RQ_HEADER) == null) {
             // Request from outside
-            System.out.println("request from outside");
-            int currAck = defaultAck;
-            int currFrom = defaultFrom;
-
-            if (ack != null) {
-                currAck = Convertor.intOfString(ack, defaultAck, log);
-            }
-
-            if (from != null) {
-                currFrom = Convertor.intOfString(from, defaultFrom, log);
-            }
+            int currAck = Convertor.intOfString(ack, defaultAck, log);
+            int currFrom = Convertor.intOfString(from, defaultFrom, log);
 
             if (currFrom > clusterUrls.size() || currAck > currFrom || currAck < 1) {
                 log.error("BAD ack or from parameter: [ack: {}, from: {}]", currAck, currFrom);
@@ -126,7 +111,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             time = Convertor.longOfString(request.getHeader(TIME_HEADER), time, log);
             subResponse = executeMethodLocal(id, request, time);
         }
-        System.out.println("return request");
         return subResponse;
     }
 
@@ -199,6 +183,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     log.error("Exception during upsert (key: {})", id, e);
                     return new Response(Response.CONFLICT, Response.EMPTY);
                 }
+
                 Response putResp =  new Response(Response.CREATED, Response.EMPTY);
                 putResp.addHeader(TIME_HEADER + ' ' + timeSt);
                 return putResp;
@@ -210,6 +195,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     log.error("Exception during delete-upsert", e);
                     return new Response(Response.CONFLICT, Response.EMPTY);
                 }
+
                 Response deleteResp =  new Response(Response.ACCEPTED, Response.EMPTY);
                 deleteResp.addHeader(TIME_HEADER + ' ' + timeSt);
                 return deleteResp;
@@ -286,7 +272,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     }
 
     private Response getDataFromServer(String serverUrl, String key) {
-        Response result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        Response result = null;
 
         try {
             result = clients.get(serverUrl).get(requestForKey(key));
@@ -297,12 +283,16 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             Thread.currentThread().interrupt();
         }
 
+        if (result == null) {
+            result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        }
+
         return result;
 
     }
 
     private Response putDataToServer(String serverUrl, String key, byte[] value, long timeSt) {
-        Response result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        Response result = null;
         try {
             result = clients.get(serverUrl).put(requestForKey(key), value, TIME_HEADER + ' ' + timeSt);
 
@@ -313,11 +303,15 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         log.error("Error in PUT internal request", e);
         Thread.currentThread().interrupt();
         }
+
+        if (result == null) {
+             result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        }
         return result;
     }
 
     private Response deleteDataFromServer(String serverUrl, String key, long timeSt) {
-        Response result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        Response result = null;
 
         try {
             result = clients.get(serverUrl).delete(requestForKey(key), TIME_HEADER + ' ' + timeSt);
@@ -328,12 +322,25 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             Thread.currentThread().interrupt();
         }
 
+        if (result == null) {
+            result = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        }
+
         return result;
 
     }
 
     private String requestForKey(String key) {
         return "/v0/entity?id=" + key;
+    }
+
+    public void startHttpClients() {
+        for (String url : this.clusterUrls) {
+            if (!url.equals(selfUrl)) {
+                this.clients.put(url, new HttpClient(new ConnectionString(url),
+                        INTERNAL_RQ_HEADER + ' ' + selfUrl));
+            }
+        }
     }
 
     public void stopHttpClients() {

@@ -36,6 +36,7 @@ public class ServiceImpl implements Service {
         isStopped.set(false);
         Dao<MemorySegment, Entry<MemorySegment>> dao = new ReferenceDaoPel(daoConfig);
         server = new DaoHttpServer(serviceConfig, dao, ExecutorServiceFactory.newExecutorService());
+        server.startHttpClients();
         server.start();
         return CompletableFuture.completedFuture(null);
     }

@@ -77,6 +77,9 @@ public final class Convertor {
 
     public static int intOfString(String inputString, int defaultValue, Logger log) {
         int result = defaultValue;
+        if (inputString == null) {
+            return result;
+        }
         try {
             result = Integer.parseInt(inputString);
         } catch (NumberFormatException e) {

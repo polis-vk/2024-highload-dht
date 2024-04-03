@@ -22,8 +22,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class Server {
-    private static final Random RANDOM = new Random();
-    private static final int ENTRIES_IN_DB = 500_000;
+    //private static final Random RANDOM = new Random();
+    //private static final int ENTRIES_IN_DB = 500_000;
     private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
     private static final int BASE_PORT = 8080;
     private static final int NODES = 3;
@@ -66,9 +66,10 @@ public final class Server {
 
         }
 
-        fillClusterNodesWithMultipleFlush(daoCluster, clusterUrls);
+        //fillClusterNodesWithMultipleFlush(daoCluster, clusterUrls);
     }
 
+    /*
     private static int[] getRandomArray() {
         int[] entries = new int[ENTRIES_IN_DB];
         for (int i = 0; i < ENTRIES_IN_DB; i++) {
@@ -87,9 +88,6 @@ public final class Server {
         return entries;
     }
 
-    /**
-     * Fills all nodes in cluster with multiple sstables.
-     */
     private static void fillClusterNodesWithMultipleFlush(
             Dao[] daoCluster,
             List<String> clusterUrls
@@ -143,5 +141,7 @@ public final class Server {
     private static Entry<MemorySegment> entry(MemorySegment key, MemorySegment value) {
         return new BaseEntry<>(key, value);
     }
+
+     */
 
 }

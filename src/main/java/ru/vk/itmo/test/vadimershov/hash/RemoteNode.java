@@ -30,7 +30,9 @@ public class RemoteNode extends VirtualNode {
 
     @Override
     public void close() {
-        this.httpClient.close();
+        if (!this.httpClient.isClosed()) {
+            this.httpClient.close();
+        }
     }
 
     @Override

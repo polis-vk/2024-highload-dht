@@ -166,7 +166,9 @@ final class TableSet {
         // At last check SSTables from freshest to oldest
         for (final SSTable ssTable : ssTables) {
             result = ssTable.get(key);
-            return result;
+            if (result != null) {
+                return result;
+            }
         }
 
         // Nothing found

@@ -10,8 +10,8 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
-    private static final long FLUSH_THRESHOLD_BYTES = 128 * 1024 * 1024 / 3;
-    private Server server;
+    private static final long FLUSH_THRESHOLD_BYTES = 128 * 1024 * 1024 / 3 * 8;
+    private ServerFull server;
     public final DaoServerConfig config;
 
     public ServiceImpl(ServiceConfig config) {
@@ -20,7 +20,14 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        server = new Server(config);
+        server = new ServerBasedOnStrategy(
+                config,
+                new ServerOneExecutorStrategyDecorator(
+                        new ServerDaoStrategy(config),
+                        config.corePoolSize, config.maximumPoolSize,
+                        config.keepAliveTime, config.queueCapacity
+                )
+        );
         return CompletableFuture.runAsync(server::start);
     }
 

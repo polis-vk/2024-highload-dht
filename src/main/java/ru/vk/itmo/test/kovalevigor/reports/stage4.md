@@ -47,8 +47,10 @@
 
 17500rps, 5 min: [alloc](html%2Fstage4%2Freplica_put_stable_alloc.html), [cpu](html%2Fstage4%2Freplica_put_stable_cpu.html), [lock](html%2Fstage4%2Freplica_put_stable_lock.html), [wrk](html%2Fstage4%2Freplica_put_stable_wrk.txt)
 
-### GET
+## Выводы
 
+Как мы видим ничего сильно не поменялось, кроме RPS
 
-
-
+Он стал значительно ниже из-за большего число обращений к соседним нодам.
+Как мы видим локи висят на добавление в очередь, т.к. основная работа - это ожидание ответа от ноды соседа.
+Из-за чего повисают все воркеры (локальные и удаленные запросы не разнесены по разным воркерам)

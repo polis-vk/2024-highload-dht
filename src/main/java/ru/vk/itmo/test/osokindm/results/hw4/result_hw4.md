@@ -262,16 +262,28 @@ Transfer/sec:     78.39KB
 **Профилирование**
 
 1. CPU
+
+Был проведен тест двух случаев: в первом случае ключи, по которым производился поиск были преимущественно добавлены в бд, во втором случае преимущественно отсутствовали.
+В первом случае локальная обработка запрос с дальнейшим поиском по БД заняла всего 4.5%
 <details>
 <summary>Флеймграф</summary>
 <img alt="put" src="../hw4/profiler/profile_cpu_get.png">
 </details>
 
+Во втором - 87%
+<details>
+<summary>Флеймграф</summary>
+<img alt="put" src="../hw4/profiler/profile_cpu_get2.png">
+</details>
+
+Если же сравнивать первый флеймграф с ситуацией в PUT, то можно заметить, что в случае с PUT больше процессорного времени уходит на чтение сессии one/nio/net/Session.read с дальнейшей обработкой системных вызовов (5% против 1.74% у GET)
 2. Alloc
 <details>
 <summary>Флеймграф</summary>
 <img alt="put" src="../hw4/profiler/profile_alloc_get.png">
 </details>
+
+Нет существенных отличий от PUT
 
 3. Lock 
 
@@ -279,3 +291,9 @@ Transfer/sec:     78.39KB
 <summary>Флеймграф</summary>
 <img alt="put" src="../hw4/profiler/profile_lock_get.png">
 </details>
+
+ Блокировок больше, чем при PUT. Добавился ReentrantLock, который составляет 13% локов и обеспечивает процесс one/nio/http/HttpSession.processRead
+ 
+**Вывод**
+
+С добавлением репликации пропускная способность PUT упала почти в 4 раза, а GET - в 1.6 раз. 

@@ -184,7 +184,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     return new Response(Response.CONFLICT, Response.EMPTY);
                 }
 
-                Response putResp =  new Response(Response.CREATED, Response.EMPTY);
+                Response putResp = new Response(Response.CREATED, Response.EMPTY);
                 putResp.addHeader(TIME_HEADER + ' ' + timeSt);
                 return putResp;
 
@@ -196,7 +196,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     return new Response(Response.CONFLICT, Response.EMPTY);
                 }
 
-                Response deleteResp =  new Response(Response.ACCEPTED, Response.EMPTY);
+                Response deleteResp = new Response(Response.ACCEPTED, Response.EMPTY);
                 deleteResp.addHeader(TIME_HEADER + ' ' + timeSt);
                 return deleteResp;
 

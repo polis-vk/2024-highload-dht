@@ -3,11 +3,7 @@ package ru.vk.itmo.test.khadyrovalmasgali.dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -98,14 +94,14 @@ final class TableSet {
                 newSsTables);
     }
 
-    Iterator<Entry<MemorySegment>> get(
+    Iterator<TimestampEntry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
         final List<WeightedPeekingEntryIterator> iterators =
                 new ArrayList<>(2 + ssTables.size());
 
         // MemTable goes first
-        final Iterator<Entry<MemorySegment>> memTableIterator =
+        final Iterator<TimestampEntry<MemorySegment>> memTableIterator =
                 memTable.get(from, to);
         if (memTableIterator.hasNext()) {
             iterators.add(
@@ -116,7 +112,7 @@ final class TableSet {
 
         // Then goes flushing
         if (flushingTable != null) {
-            final Iterator<Entry<MemorySegment>> flushingIterator =
+            final Iterator<TimestampEntry<MemorySegment>> flushingIterator =
                     flushingTable.get(from, to);
             if (flushingIterator.hasNext()) {
                 iterators.add(
@@ -129,7 +125,7 @@ final class TableSet {
         // Then go all the SSTables
         for (int i = 0; i < ssTables.size(); i++) {
             final SSTable ssTable = ssTables.get(i);
-            final Iterator<Entry<MemorySegment>> ssTableIterator =
+            final Iterator<TimestampEntry<MemorySegment>> ssTableIterator =
                     ssTable.get(from, to);
             if (ssTableIterator.hasNext()) {
                 iterators.add(
@@ -146,11 +142,11 @@ final class TableSet {
         };
     }
 
-    Entry<MemorySegment> get(final MemorySegment key) {
+    TimestampEntry<MemorySegment> get(final MemorySegment key) {
         // Slightly optimized version not to pollute the heap
 
         // First check MemTable
-        Entry<MemorySegment> result = memTable.get(key);
+        TimestampEntry<MemorySegment> result = memTable.get(key);
         if (result != null) {
             // Transform tombstone
             return swallowTombstone(result);
@@ -178,21 +174,21 @@ final class TableSet {
         return null;
     }
 
-    private static Entry<MemorySegment> swallowTombstone(final Entry<MemorySegment> entry) {
+    private static TimestampEntry<MemorySegment> swallowTombstone(final TimestampEntry<MemorySegment> entry) {
         return entry.value() == null ? null : entry;
     }
 
-    Entry<MemorySegment> upsert(final Entry<MemorySegment> entry) {
+    TimestampEntry<MemorySegment> upsert(final TimestampEntry<MemorySegment> entry) {
         return memTable.upsert(entry);
     }
 
-    Iterator<Entry<MemorySegment>> allSSTableEntries() {
+    Iterator<TimestampEntry<MemorySegment>> allSSTableEntries() {
         final List<WeightedPeekingEntryIterator> iterators =
                 new ArrayList<>(ssTables.size());
 
         for (int i = 0; i < ssTables.size(); i++) {
             final SSTable ssTable = ssTables.get(i);
-            final Iterator<Entry<MemorySegment>> ssTableIterator =
+            final Iterator<TimestampEntry<MemorySegment>> ssTableIterator =
                     ssTable.get(null, null);
             iterators.add(
                     new WeightedPeekingEntryIterator(

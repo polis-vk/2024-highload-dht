@@ -103,22 +103,7 @@ public class DaoServer extends HttpServer {
         }
 
         if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
-            executorService.execute(() -> {
-                try {
-                    HandleResult local = local(request, id);
-                    Response response = new Response(String.valueOf(local.status()), local.data());
-                    response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
-                    session.sendResponse(response);
-                } catch (Exception e) {
-                    log.error("Exception during handleRequest", e);
-                    try {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                    } catch (IOException ex) {
-                        log.error("Exception while sending close connection", e);
-                        session.scheduleClose();
-                    }
-                }
-            });
+            processLocal(request, session, id);
             return;
         }
 
@@ -142,6 +127,25 @@ public class DaoServer extends HttpServer {
         }
     }
 
+    private void processLocal(Request request, HttpSession session, String id) {
+        executorService.execute(() -> {
+            try {
+                HandleResult local = local(request, id);
+                Response response = new Response(String.valueOf(local.status()), local.data());
+                response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
+                session.sendResponse(response);
+            } catch (Exception e) {
+                log.error("Exception during handleRequest", e);
+                try {
+                    session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                } catch (IOException ex) {
+                    log.error("Exception while sending close connection", e);
+                    session.scheduleClose();
+                }
+            }
+        });
+    }
+
     private HandleResult remote(Request request, Node node) {
         try {
             HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(node.getUrl() + request.getURI()))
@@ -157,16 +161,7 @@ public class DaoServer extends HttpServer {
             HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
             Optional<String> string = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
             long timestamp;
-            if (string.isPresent()) {
-                try {
-                    timestamp = Long.parseLong(string.get());
-                } catch (Exception e) {
-                    log.error("timestamp parse error");
-                    timestamp = 0;
-                }
-            } else {
-                timestamp = 0;
-            }
+            timestamp = string.map(Long::parseLong).orElse(0L);
             return new HandleResult(httpResponse.statusCode(), httpResponse.body(), timestamp);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -304,6 +299,6 @@ public class DaoServer extends HttpServer {
     }
 
     private interface ERunnable {
-        HandleResult run() throws Exception;
+        HandleResult run() throws IOException;
     }
 }

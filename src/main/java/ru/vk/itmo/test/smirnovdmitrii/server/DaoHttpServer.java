@@ -135,10 +135,6 @@ public class DaoHttpServer extends HttpServer {
                 return;
             }
             final String redirectHeader = request.getHeader(RedirectService.REDIRECT_HEADER_NAME);
-            logger.info(selfUrl);
-            for (final String header: request.getHeaders()) {
-                logger.info(header);
-            }
             if (redirectHeader != null && redirectHeader.equals("true")) {
                 final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
                 final MemorySegment key = MemorySegment.ofArray(keyBytes);

@@ -6,7 +6,6 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +29,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class DaoServer extends HttpServer {
 
@@ -118,19 +122,9 @@ public class DaoServer extends HttpServer {
             return;
         }
 
-        int ack, from;
-        try {
-            ack = getParam(request, "ack=", config.clusterUrls().size() / 2 + 1);
-        } catch (IllegalArgumentException e) {
-            session.sendError(Response.BAD_REQUEST, null);
-            return;
-        }
-        try {
-            from = getParam(request, "from=", config.clusterUrls().size());
-        } catch (IllegalArgumentException e) {
-            session.sendError(Response.BAD_REQUEST, null);
-            return;
-        }
+        int ack = getParam(request, "ack=", config.clusterUrls().size() / 2 + 1);
+        int from = getParam(request, "from=", config.clusterUrls().size());
+
         if (from <= 0 || from > config.clusterUrls().size() || ack > from || ack <= 0) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
@@ -146,8 +140,6 @@ public class DaoServer extends HttpServer {
                 handleAsync(mergeResult, i, () -> local(request, id));
             }
         }
-
-
     }
 
     private HandleResult remote(Request request, Node node) {
@@ -168,7 +160,7 @@ public class DaoServer extends HttpServer {
             if (string.isPresent()) {
                 try {
                     timestamp = Long.parseLong(string.get());
-                } catch (Exception e ){
+                } catch (Exception e) {
                     log.error("timestamp parse error");
                     timestamp = 0;
                 }

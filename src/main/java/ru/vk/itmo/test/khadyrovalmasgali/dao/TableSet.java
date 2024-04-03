@@ -3,7 +3,11 @@ package ru.vk.itmo.test.khadyrovalmasgali.dao;
 import ru.vk.itmo.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -149,7 +153,8 @@ final class TableSet {
         TimestampEntry<MemorySegment> result = memTable.get(key);
         if (result != null) {
             // Transform tombstone
-            return swallowTombstone(result);
+//            return swallowTombstone(result);
+            return result;
         }
 
         // Then check flushing
@@ -157,7 +162,8 @@ final class TableSet {
             result = flushingTable.get(key);
             if (result != null) {
                 // Transform tombstone
-                return swallowTombstone(result);
+//                return swallowTombstone(result);
+                return result;
             }
         }
 
@@ -166,17 +172,19 @@ final class TableSet {
             result = ssTable.get(key);
             if (result != null) {
                 // Transform tombstone
-                return swallowTombstone(result);
+//                return swallowTombstone(result);
+                return result;
             }
+            return result;
         }
 
         // Nothing found
         return null;
     }
 
-    private static TimestampEntry<MemorySegment> swallowTombstone(final TimestampEntry<MemorySegment> entry) {
-        return entry.value() == null ? null : entry;
-    }
+//    private static TimestampEntry<MemorySegment> swallowTombstone(final TimestampEntry<MemorySegment> entry) {
+//        return entry.value() == null ? null : entry;
+//    }
 
     TimestampEntry<MemorySegment> upsert(final TimestampEntry<MemorySegment> entry) {
         return memTable.upsert(entry);

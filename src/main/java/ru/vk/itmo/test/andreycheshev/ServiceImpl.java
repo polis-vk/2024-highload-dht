@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    private static final int THRESHOLD_BYTES = 1024 * 128; // 128 kb
+    private static final int THRESHOLD_BYTES = 1024 * 1024;
     private static final int CLUSTER_NODE_RESPONSE_TIMEOUT_MILLIS = 1000;
 
     private final HttpServerConfig serverConfig;

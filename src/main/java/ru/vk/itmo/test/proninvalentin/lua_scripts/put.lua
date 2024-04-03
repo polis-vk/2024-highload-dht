@@ -1,9 +1,10 @@
-id = 0
+id = 1234567
 
 function request()
-    body = string.rep("random_value", 100)
     method = "PUT"
+    path = "/v0/entity?id=" .. tostring(id)
+    body = tostring(id)
+    --body = string.rep(tostring(counter), 1)
     id = id + 1
-    path = "/v0/entity?id=" .. id
     return wrk.format(method, path, headers, body)
 end

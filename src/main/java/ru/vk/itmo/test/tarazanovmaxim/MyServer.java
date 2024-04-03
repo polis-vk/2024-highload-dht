@@ -215,10 +215,11 @@ public class MyServer extends HttpServer {
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
                 }
+                if (responses.size() >= ackV) {
+                    return responses.getFirst();
+                }
             }
-            return responses.size() >= ackV 
-                ? responses.getFirst() 
-                : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
         return responseLocal(request, id);
     }
@@ -244,10 +245,11 @@ public class MyServer extends HttpServer {
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
                 }
+                if (responses.size() >= ackV) {
+                    return responses.getFirst();
+                }
             }
-            return responses.size() >= ackV 
-                ? responses.getFirst() 
-                : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
         return responseLocal(request, id);
     }

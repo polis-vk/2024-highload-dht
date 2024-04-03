@@ -237,7 +237,7 @@ public class MyServer extends HttpServer {
         }
 
         if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(STR."\{REDIRECT_HEADER}true");
+            request.addHeader(REDIRECT_HEADER + "true");
             List<Response> responses = new ArrayList<>();
             List<String> shardToRequest = shards.getNShardByKey(id, ackV);
             for (String sendTo : shardToRequest) {

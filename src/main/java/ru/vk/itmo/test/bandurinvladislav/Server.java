@@ -17,15 +17,13 @@ import ru.vk.itmo.test.bandurinvladislav.dao.Entry;
 import ru.vk.itmo.test.bandurinvladislav.dao.ReferenceDao;
 import ru.vk.itmo.test.bandurinvladislav.util.Constants;
 import ru.vk.itmo.test.bandurinvladislav.util.MemSegUtil;
-import ru.vk.itmo.test.bandurinvladislav.util.StringUtil;
+import ru.vk.itmo.test.bandurinvladislav.util.NetworkUtil;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -134,17 +132,18 @@ public class Server extends HttpServer {
             return;
         }
 
-        if (isMethodNotAllowed(request)) {
+        if (NetworkUtil.isMethodNotAllowed(request)) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
             return;
         }
 
-        int ack = getParameterAsInt(request.getParameter(Constants.PARAMETER_ACK),
+        int ack = NetworkUtil.getParameterAsInt(request.getParameter(Constants.PARAMETER_ACK),
                 serverConfig.clusterUrls.size() / 2 + 1);
-        int from = getParameterAsInt(request.getParameter(Constants.PARAMETER_FROM), serverConfig.clusterUrls.size());
+        int from = NetworkUtil.getParameterAsInt(
+                request.getParameter(Constants.PARAMETER_FROM), serverConfig.clusterUrls.size());
         String key = request.getParameter(Constants.PARAMETER_ID);
 
-        Response validationResponse = validateParams(key, ack, from);
+        Response validationResponse = NetworkUtil.validateParams(key, ack, from, serverConfig.clusterUrls.size());
         if (validationResponse != null) {
             session.sendResponse(validationResponse);
             return;
@@ -175,55 +174,7 @@ public class Server extends HttpServer {
             session.sendResponse(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
         }
 
-        session.sendResponse(successResponse(responses));
-    }
-
-    private int getParameterAsInt(String parameter, int defaultValue) {
-        return parameter == null ? defaultValue : Integer.parseInt(parameter);
-    }
-
-    private boolean isMethodNotAllowed(Request request) {
-        return switch (request.getMethod()) {
-            case Request.METHOD_CONNECT, Request.METHOD_OPTIONS,
-                    Request.METHOD_TRACE, Request.METHOD_HEAD,
-                    Request.METHOD_POST -> true;
-            default -> false;
-        };
-    }
-
-    @SuppressWarnings("OptionalGetWithoutIsPresent")
-    private Response successResponse(List<Response> responses) {
-        return responses.stream()
-                .max(Comparator.comparingLong(this::getTimestampHeader))
-                .get();
-    }
-
-    private Long getTimestampHeader(Response response) {
-        String header = response.getHeader(Constants.HEADER_TIMESTAMP);
-        return header == null ? -1 : Long.parseLong(header);
-    }
-
-    private Response validateParams(String key, int ack, int from) {
-        if (StringUtil.isEmpty(key)) {
-            return new Response(Response.BAD_REQUEST, "Id can't be empty".getBytes(StandardCharsets.UTF_8));
-        }
-
-        if (ack <= 0 || from <= 0) {
-            return new Response(Response.BAD_REQUEST,
-                    "ack and from can't be negative".getBytes(StandardCharsets.UTF_8));
-        }
-
-        if (from < ack) {
-            return new Response(Response.BAD_REQUEST,
-                    "from can't be less than ack".getBytes(StandardCharsets.UTF_8));
-        }
-
-        if (from > serverConfig.clusterUrls.size()) {
-            return new Response(Response.BAD_REQUEST,
-                    "from can't be greater than nodes count".getBytes(StandardCharsets.UTF_8));
-        }
-
-        return null;
+        session.sendResponse(NetworkUtil.successResponse(responses));
     }
 
     private Response invokeLocal(Request request, String key) {

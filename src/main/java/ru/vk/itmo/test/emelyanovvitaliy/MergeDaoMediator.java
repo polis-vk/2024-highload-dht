@@ -198,9 +198,9 @@ public class MergeDaoMediator extends DaoMediator {
     private int getFirstMediatorIndex(String key) {
         int maxHash = Integer.MIN_VALUE;
         int choosen = 0;
+        int keyHash = Math.abs(Hash.murmur3(key));
         for (int i = 0; i < mediatorsHashes.length; i++) {
             // cantor pairing function works nicely only with non-negatives
-            int keyHash = Math.abs(Hash.murmur3(key));
             int totalHash = (mediatorsHashes[i] + keyHash) * (mediatorsHashes[i] + keyHash + 1) / 2 + keyHash;
             if (totalHash > maxHash) {
                 maxHash = totalHash;

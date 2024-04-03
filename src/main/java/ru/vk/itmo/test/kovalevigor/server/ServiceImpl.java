@@ -42,14 +42,10 @@ public class ServiceImpl implements Service {
                 new ServerOneExecutorStrategyDecorator(
                         new ServerRequestValidationStrategyDecorator(
                             new ServerSendResponseStrategyDecorator(
-//                                new ServerShardingStrategyDecorator(
-                                        new ServerReplicationStrategyDecorator(
-                                            new ServerDaoStrategy(config),
-                                            fullServiceInfo
-                                        )
-//                                    ,
-//                                        fullServiceInfo
-//                                )
+                                    new ServerReplicationStrategyDecorator(
+                                        new ServerDaoStrategy(config),
+                                        fullServiceInfo
+                                    )
                             )
                         ),
                         config.corePoolSize, config.maximumPoolSize,

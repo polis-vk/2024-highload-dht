@@ -1,8 +1,5 @@
-local lol = 0
-
 function request()
-     key = lol
-     lol = lol + 1
+     key = math.random(1750000)
      value = ""
      for i = 1, math.random(1, 100) do
         value = value .. math.random(1, 100000)

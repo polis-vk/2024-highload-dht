@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.tarazanovmaxim.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.List;
@@ -14,7 +12,7 @@ import java.util.Queue;
  *
  * @author incubos
  */
-final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
+final class MergingEntryIterator implements Iterator<TimestampEntry<MemorySegment>> {
     private final Queue<WeightedPeekingEntryIterator> iterators;
 
     MergingEntryIterator(final List<WeightedPeekingEntryIterator> iterators) {
@@ -29,13 +27,13 @@ final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public TimestampEntry<MemorySegment> next() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
 
         final WeightedPeekingEntryIterator top = iterators.remove();
-        final Entry<MemorySegment> result = top.next();
+        final TimestampEntry<MemorySegment> result = top.next();
 
         if (top.hasNext()) {
             // Not exhausted
@@ -51,7 +49,7 @@ final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
             }
 
             // Skip entries with the same key
-            final Entry<MemorySegment> entry = iterator.peek();
+            final TimestampEntry<MemorySegment> entry = iterator.peek();
             if (MemorySegmentComparator.INSTANCE.compare(result.key(), entry.key()) != 0) {
                 // Reached another key
                 break;

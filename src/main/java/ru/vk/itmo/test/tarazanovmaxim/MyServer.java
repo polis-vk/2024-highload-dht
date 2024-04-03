@@ -15,18 +15,19 @@ import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.tarazanovmaxim.dao.ReferenceDao;
+import ru.vk.itmo.test.tarazanovmaxim.dao.TimestampBaseEntry;
+import ru.vk.itmo.test.tarazanovmaxim.dao.TimestampEntry;
 import ru.vk.itmo.test.tarazanovmaxim.hash.ConsistentHashing;
-import ru.vk.itmo.test.tarazanovmaxim.hash.Hasher;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,24 +41,24 @@ import java.util.concurrent.TimeUnit;
 public class MyServer extends HttpServer {
 
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20;
-    private static final long REQUEST_TTL = TimeUnit.SECONDS.toNanos(1000);
+    private static final long REQUEST_TTL = TimeUnit.SECONDS.toNanos(1000000);
     private static final String PATH = "/v0/entity";
+    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String REDIRECT_HEADER = "Redirected: ";
+    private static final String TIMESTAMP_HEADER = "Timestamp: ";
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
     private final Map<String, HttpClient> httpClients = new HashMap<>();
-    //private final Map<String, String> shardKeyMap = new HashMap<>();
-    private final ConsistentHashing shards;
+    private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
-    //private final String selfUrl;
+    private final String selfUrl;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
-        //selfUrl = config.selfUrl();
+        selfUrl = config.selfUrl();
         clusterSize = config.clusterUrls().size();
-        shards = new ConsistentHashing();
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
 
         int corePoolSize = Runtime.getRuntime().availableProcessors() / 2 + 1;
@@ -75,10 +76,8 @@ public class MyServer extends HttpServer {
 
         int nodeCount = 1;
         HashSet<Integer> nodeSet = new HashSet<>(nodeCount);
-        //Hasher hasher = new Hasher();
         for (String url : config.clusterUrls()) {
             for (int i = 0; i < nodeCount; ++i) {
-                //nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
                 nodeSet.add(Hash.murmur3(url));
             }
             shards.addShard(url, nodeSet);
@@ -125,13 +124,44 @@ public class MyServer extends HttpServer {
 
     private Response shardLookup(final Request request, final String shard) {
         Response response;
-        Request redirect = new Request(request);
         try {
-            response = httpClients.get(shard).invoke(redirect, 500);
+            response = httpClients.get(shard).invoke(request, 500);
         } catch (Exception e) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
-        return new Response(response.getHeaders()[0], response.getBody());
+        return response;
+    }
+
+    private Response getGoodGet(List<Response> responses) {
+        List<Response> responses200 = new ArrayList<>();
+        for (final var resp : responses) {
+            if (resp.getStatus() == 200) {
+                responses200.addLast(resp);
+            }
+        }
+
+        if (responses200.isEmpty()) {
+            return responses.getFirst();
+        }
+
+        Response tombstone = Collections.min(
+                responses,
+                Comparator.comparingLong(
+                        response -> Long.parseLong(response.getHeader(TIMESTAMP_HEADER))
+                )
+        );
+
+        Response latest200 = Collections.max(
+                responses200,
+                Comparator.comparingLong(
+                        response -> Long.parseLong(response.getHeader(TIMESTAMP_HEADER))
+                )
+        );
+
+        long tsTombstone = -Long.parseLong(tombstone.getHeader(TIMESTAMP_HEADER));
+        long tsLatest200 = Long.parseLong(latest200.getHeader(TIMESTAMP_HEADER));
+
+        return tsTombstone > tsLatest200 ? tombstone : latest200;
     }
 
     @Path(PATH)
@@ -151,50 +181,17 @@ public class MyServer extends HttpServer {
             List<Response> responses = new ArrayList<>();
             List<String> shardToRequest = shards.getNShardByKey(id, from_);
             for (String sendTo : shardToRequest) {
-                Response answer = shardLookup(request, sendTo);
+                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
-                    if (responses.size() == ack_) {
-                        return responses.getFirst();
-                    }
                 }
             }
-
-            if (responses.size() < ack_) {
-                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            if (responses.size() >= ack_) {
+                return getGoodGet(responses);
             }
-            return responses.getFirst();
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
-        MemorySegment key = toMemorySegment(id);
-        Entry<MemorySegment> entry = dao.get(key);
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-
-        /*
-        MemorySegment key =
-                (id == null || id.isEmpty())
-                ? null
-                : toMemorySegment(id);
-
-        if (key == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        if (onAnotherServer(id)) {
-            return shardLookup(id, request);
-        }
-
-        Entry<MemorySegment> entry = dao.get(key);
-
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-        */
+        return responseLocal(request, id);
     }
 
     @Path(PATH)
@@ -214,7 +211,7 @@ public class MyServer extends HttpServer {
             List<Response> responses = new ArrayList<>();
             List<String> shardToRequest = shards.getNShardByKey(id, ack_);
             for (String sendTo : shardToRequest) {
-                Response answer = shardLookup(request, sendTo);
+                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
                     if (responses.size() == ack_) {
@@ -222,45 +219,9 @@ public class MyServer extends HttpServer {
                     }
                 }
             }
-
-            if (responses.size() < ack_) {
-                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            }
-            return responses.getFirst();
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
-        MemorySegment key = toMemorySegment(id);
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                key,
-                MemorySegment.ofArray(request.getBody())
-        );
-
-        dao.upsert(entry);
-
-        return new Response(Response.CREATED, Response.EMPTY);
-
-        /*
-        MemorySegment key =
-                (id == null || id.isEmpty())
-                ? null
-                : toMemorySegment(id);
-
-        if (key == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        if (onAnotherServer(id)) {
-            return shardLookup(id, request);
-        }
-
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                key,
-                MemorySegment.ofArray(request.getBody())
-        );
-
-        dao.upsert(entry);
-
-        return new Response(Response.CREATED, Response.EMPTY);
-        */
+        return responseLocal(request, id);
     }
 
     @Path(PATH)
@@ -276,11 +237,11 @@ public class MyServer extends HttpServer {
         }
 
         if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(REDIRECT_HEADER + "true");
+            request.addHeader(STR."\{REDIRECT_HEADER}true");
             List<Response> responses = new ArrayList<>();
             List<String> shardToRequest = shards.getNShardByKey(id, ack_);
             for (String sendTo : shardToRequest) {
-                Response answer = shardLookup(request, sendTo);
+                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
                 if (answer.getStatus() < 500) {
                     responses.addLast(answer);
                     if (responses.size() == ack_) {
@@ -288,36 +249,9 @@ public class MyServer extends HttpServer {
                     }
                 }
             }
-
-            if (responses.size() < ack_) {
-                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            }
-            return responses.getFirst();
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
-        MemorySegment key = toMemorySegment(id);
-        Entry<MemorySegment> entry = new BaseEntry<>(key, null);
-        dao.upsert(entry);
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-
-        /*
-        MemorySegment key =
-                (id == null || id.isEmpty())
-                ? null
-                : toMemorySegment(id);
-
-        if (key == null) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        if (onAnotherServer(id)) {
-            return shardLookup(id, request);
-        }
-
-        dao.upsert(new BaseEntry<>(key, null));
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-        */
+        return responseLocal(request, id);
     }
 
     @Path(PATH)
@@ -344,7 +278,7 @@ public class MyServer extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
-                    logger.error("IOException in handleRequest->executorService.execute()");
+                    logger.error("IOException in handleRequest->executorService.execute(): " + e + " M" + request.getMethod());
                     sendResponse(
                         new Response(
                             e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
@@ -356,7 +290,7 @@ public class MyServer extends HttpServer {
             });
         } catch (RejectedExecutionException e) {
             logger.error("RejectedExecutionException in handleRequest: " + request + session);
-            sendResponse(new Response("429 Too Many Requests", Response.EMPTY), session);
+            sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY), session);
         }
     }
 
@@ -365,6 +299,45 @@ public class MyServer extends HttpServer {
             session.sendResponse(response);
         } catch (IOException e) {
             logger.error("IOException in sendResponse: " + response + session);
+        }
+    }
+
+    private Response responseLocal(Request request, String id) {
+        String timestampFromHeader = request.getHeader(TIMESTAMP_HEADER);
+        long timestamp = timestampFromHeader == null ? System.currentTimeMillis() : Long.parseLong(timestampFromHeader);
+        MemorySegment key = toMemorySegment(id);
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                TimestampEntry<MemorySegment> entry = dao.get(key);
+                if (entry == null) {
+                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                    response.addHeader(TIMESTAMP_HEADER + timestamp);
+                    return response;
+                }
+
+                Response response = (entry.value() == null)
+                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                        : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
+                response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+                return response;
+            }
+            case Request.METHOD_PUT -> {
+                TimestampEntry<MemorySegment> entry = new TimestampBaseEntry<>(
+                        key,
+                        MemorySegment.ofArray(request.getBody()),
+                        timestamp
+                );
+                dao.upsert(entry);
+                return new Response(Response.CREATED, Response.EMPTY);
+            }
+            case Request.METHOD_DELETE -> {
+                TimestampEntry<MemorySegment> entry = new TimestampBaseEntry<>(key, null, -timestamp);
+                dao.upsert(entry);
+                return new Response(Response.ACCEPTED, Response.EMPTY);
+            }
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
         }
     }
 }

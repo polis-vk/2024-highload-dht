@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
-import ch.qos.logback.core.encoder.JsonEscapeUtil;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -138,6 +137,7 @@ public class Server extends HttpServer {
     }
 
     private List<Response> broadcast(List<String> nodes, Request request, int ack) {
+        int internalAck = ack;
         List<Response> responses = new ArrayList<>(ack);
         Response response;
         if (nodes.contains(selfUrl)) {
@@ -145,7 +145,7 @@ public class Server extends HttpServer {
             checkTimestampHeaderExistenceAndSet(response);
             responses.add(response);
             nodes.remove(selfUrl);
-            if (--ack == 0) {
+            if (--internalAck == 0) {
                 return responses;
             }
         }
@@ -155,7 +155,7 @@ public class Server extends HttpServer {
             if (response.getStatus() < 500) {
                 checkTimestampHeaderExistenceAndSet(response);
                 responses.add(response);
-                if (--ack == 0) {
+                if (--internalAck == 0) {
                     return responses;
                 }
             }

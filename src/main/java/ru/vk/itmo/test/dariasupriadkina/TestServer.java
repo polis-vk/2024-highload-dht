@@ -2,7 +2,6 @@ package ru.vk.itmo.test.dariasupriadkina;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.test.dariasupriadkina.sharding.ConsistentHashingShardingPolicy;
 import ru.vk.itmo.test.dariasupriadkina.sharding.RendezvousHashing;
 import ru.vk.itmo.test.dariasupriadkina.sharding.ShardingPolicy;
 import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;

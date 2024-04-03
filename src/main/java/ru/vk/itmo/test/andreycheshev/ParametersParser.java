@@ -10,7 +10,9 @@ public class ParametersParser {
     }
 
     public void parseAckFrom(String ackParameter, String fromParameter) throws IllegalArgumentException {
-        if (ackParameter != null && fromParameter != null) {
+        if (ackParameter == null || fromParameter == null) {
+            setDefault();
+        } else {
             try {
                 ack = Integer.parseInt(ackParameter);
                 from = Integer.parseInt(fromParameter);
@@ -21,8 +23,6 @@ public class ParametersParser {
             if (ack <= 0 || ack > from) {
                 throw new IllegalArgumentException();
             }
-        } else {
-            setDefault();
         }
     }
 

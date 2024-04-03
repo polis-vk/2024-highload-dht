@@ -41,7 +41,6 @@ public class RequestHandler {
     private static final String FROM_PARAMETER = "from=";
 
     public static final String TIMESTAMP_HEADER = "Timestamp: ";
-    private static final String CONTENT_LENGTH_HEADER = "Content-Length: ";
 
     private static final int OK = 200;
     private static final int CREATED = 201;
@@ -100,7 +99,7 @@ public class RequestHandler {
         }
 
         // Get and check "ack" and "from" parameters.
-        ParametersParser parser= new ParametersParser(distributor);
+        ParametersParser parser = new ParametersParser(distributor);
         try {
             parser.parseAckFrom(
                     request.getParameter(ACK_PARAMETER),
@@ -121,7 +120,7 @@ public class RequestHandler {
             int ack,
             int from) throws InterruptedException {
 
-        ArrayList<Integer> nodes = distributor.getQuorumNodes(id, from);
+        List<Integer> nodes = distributor.getQuorumNodes(id, from);
         List<Response> responses = new ArrayList<>();
 
         long currTimestamp = (method == Request.METHOD_GET)
@@ -132,7 +131,7 @@ public class RequestHandler {
             try {
                 Response response = distributor.isOurNode(node)
                         ? processLocally(method, id, request, currTimestamp)
-                        : redirectRequest(method, node, request, currTimestamp);
+                        : redirectRequest(node, request, currTimestamp);
 
                 if (isRequestSucceeded(method, response.getStatus())) {
                     responses.add(response);
@@ -166,23 +165,13 @@ public class RequestHandler {
     }
 
     private Response redirectRequest(
-            int method,
             int nodeNumber,
             Request request,
             long timestamp) throws HttpException, IOException, PoolException, InterruptedException {
 
         HttpClient client = clusterConnections[nodeNumber];
-        Request remoteRequest = client.createRequest(method, request.getURI());
-
-        byte[] body = request.getBody();
-        if (body != null) {
-            remoteRequest.addHeader(CONTENT_LENGTH_HEADER + body.length);
-            remoteRequest.setBody(body);
-        }
-
-        remoteRequest.addHeader(TIMESTAMP_HEADER + timestamp);
-
-        return client.invoke(remoteRequest);
+        request.addHeader(TIMESTAMP_HEADER + timestamp);
+        return client.invoke(request);
     }
 
     private Response processLocally(int method, String id, Request request, long timestamp) {

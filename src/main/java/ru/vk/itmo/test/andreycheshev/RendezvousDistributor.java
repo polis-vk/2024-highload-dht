@@ -4,6 +4,7 @@ import one.nio.util.Hash;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.PriorityQueue;
 import java.util.stream.Collectors;
 
@@ -24,7 +25,7 @@ public class RendezvousDistributor {
         return x;
     }
 
-    public ArrayList<Integer> getQuorumNodes(String stringKey, int quorumNumber) {
+    public List<Integer> getQuorumNodes(String stringKey, int quorumNumber) {
         PriorityQueue<HashPair> queue = new PriorityQueue<>(
                 quorumNumber,
                 Comparator.comparingInt(HashPair::getHash).reversed()

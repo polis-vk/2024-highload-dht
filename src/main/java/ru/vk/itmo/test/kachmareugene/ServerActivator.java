@@ -1,9 +1,14 @@
 package ru.vk.itmo.test.kachmareugene;
 
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.test.dariasupriadkina.TestServer;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -18,7 +23,6 @@ public final class ServerActivator {
     public static void main(String[] args) throws IOException {
         String host1 = "http://localhost:8080/";
         String host2 = "http://localhost:8081/";
-
         ServiceConfig config1 = new ServiceConfig(
                 8080, host1,
                 List.of(host1, host2),

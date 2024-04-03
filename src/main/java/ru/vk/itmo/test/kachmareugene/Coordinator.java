@@ -74,7 +74,6 @@ public class Coordinator {
         }
         byte[] clearedBody = Arrays.copyOfRange(maximalResponse.getBody(),
                 Long.BYTES, maximalResponse.getBody().length);
-
         return new Response(maximalResponse.getHeaders()[0], clearedBody);
     }
 

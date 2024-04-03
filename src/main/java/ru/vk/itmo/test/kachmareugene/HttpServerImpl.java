@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -107,7 +108,7 @@ public class HttpServerImpl extends HttpServer {
         System.arraycopy(time, 0, responseBody, 0, time.length);
         System.arraycopy(value, 0, responseBody, time.length, value.length);
 
-        return new Response("200", responseBody);
+        return new Response(Response.OK, responseBody);
     }
 
     public Response putOrEmplaceEntry(String key, Request request, long timestamp) {
@@ -145,6 +146,7 @@ public class HttpServerImpl extends HttpServer {
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
                 } catch (IOException e) {
+                    e.printStackTrace(System.err);
                     errorAccept(session, e, Response.CONFLICT);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -188,8 +190,7 @@ public class HttpServerImpl extends HttpServer {
             responseSafeAdd(slaveUrl, responses, req);
         }
 
-        session.sendResponse(
-                coordinator.resolve(responses, request.getMethod()));
+        session.sendResponse(coordinator.resolve(responses, request.getMethod()));
     }
 
     private static boolean checkRequest(Request request, HttpSession session) throws IOException {
@@ -206,7 +207,7 @@ public class HttpServerImpl extends HttpServer {
         }
         return false;
     }
-
+    int t = 0;
     private void responseSafeAdd(
             String slaveUrl,
             List<Response> responses,
@@ -215,8 +216,13 @@ public class HttpServerImpl extends HttpServer {
             IOException,
             HttpException {
         try {
-            responses.add(clientMap.get(slaveUrl).invoke(req, 100));
-        } catch (PoolException e) {
+            if (slaveUrl.equals(selfNodeURL)) {
+                responses.add(handleToDaoOperations(req,
+                        System.currentTimeMillis()));
+            } else {
+                responses.add(clientMap.get(slaveUrl).invoke(req, 100));
+            }
+        } catch (PoolException | SocketTimeoutException e) {
             responses.add(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         }
     }
@@ -237,7 +243,7 @@ public class HttpServerImpl extends HttpServer {
             case Request.METHOD_GET -> getEntry(key);
             case Request.METHOD_PUT -> putOrEmplaceEntry(key, request, timestamp);
             case Request.METHOD_DELETE -> delete(key, timestamp);
-            default -> new Response(Response.METHOD_NOT_ALLOWED);
+            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         };
     }
 

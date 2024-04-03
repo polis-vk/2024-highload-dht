@@ -2,7 +2,6 @@ package ru.vk.itmo.test.pavelemelyanov;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.test.pavelemelyanov.dao.Dao;
 import ru.vk.itmo.test.pavelemelyanov.dao.ReferenceDao;
 
 import java.io.IOException;
@@ -14,23 +13,22 @@ import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.NUMBER_OF_VIRTUAL_NODES;
 
 public final class ServerStarter {
     private static final String URL = "http://localhost";
-    private static final Path WORKING_DIR = Path.of("./data1/");
+    private static final Path WORKING_DIR = Path.of("./data2/");
     public static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
     private static final int BASE_PORT = 8080;
+    private static final int CLUSTER_SIZE = 3;
 
     public static void main(String[] args) throws IOException {
-        int clusterSize = 3;
-
         List<String> clusterUrls = new ArrayList<>();
-        for (int i = 0; i < clusterSize; i++) {
+        for (int i = 0; i < CLUSTER_SIZE; i++) {
             int tempPortValue = BASE_PORT + i;
             clusterUrls.add(URL + ":" + tempPortValue);
         }
 
         ExecutorServiceWrapper worker = new ExecutorServiceWrapper();
 
-        for (int i = 0; i < clusterSize; i++) {
-            Dao dao = new ReferenceDao(new Config(WORKING_DIR, FLUSHING_THRESHOLD_BYTES));
+        for (int i = 0; i < CLUSTER_SIZE; i++) {
+            var dao = new ReferenceDao(new Config(WORKING_DIR, FLUSHING_THRESHOLD_BYTES));
 
             ServiceConfig serviceConfig = new ServiceConfig(
                     BASE_PORT + i,

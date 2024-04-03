@@ -228,9 +228,8 @@ public class MyServer extends HttpServer {
                     return timestamp == null ? 0 : Long.parseLong(timestamp);
                 }));
                 return successResponses.getFirst();
-            } else {
-                return successResponses.getLast();
             }
+            return successResponses.getLast();
         }
         return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
     }

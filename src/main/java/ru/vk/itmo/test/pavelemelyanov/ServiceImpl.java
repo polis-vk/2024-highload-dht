@@ -28,7 +28,7 @@ public class ServiceImpl implements Service {
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         worker = new ExecutorServiceWrapper();
-        ConsistentHashing consistentHashing = new ConsistentHashing(config.clusterUrls(), NUMBER_OF_VIRTUAL_NODES);
+        var consistentHashing = new ConsistentHashing(config.clusterUrls(), NUMBER_OF_VIRTUAL_NODES);
         server = new MyServer(config, dao, worker, consistentHashing);
         server.start();
         isClosed = false;

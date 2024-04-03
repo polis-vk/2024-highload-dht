@@ -46,24 +46,6 @@ dependencies {
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.1'
 }
 
-tasks.register('startServer', JavaExec) {
-    mainClass = "ru.vk.itmo.test.kovalevigor.MainServer"
-    jvmArgs("--enable-preview")
-    maxHeapSize = "128m"
-    classpath = sourceSets.main.runtimeClasspath
-    standardOutput = System.out
-    errorOutput = System.err
-}
-
-tasks.register('startCluster', JavaExec) {
-    mainClass = "ru.vk.itmo.test.kovalevigor.ClusterServer"
-    jvmArgs("--enable-preview")
-    maxHeapSize = "128m"
-    classpath = sourceSets.main.runtimeClasspath
-    standardOutput = System.out
-    errorOutput = System.err
-}
-
 test {
     maxHeapSize = "128m"
     useJUnitPlatform()

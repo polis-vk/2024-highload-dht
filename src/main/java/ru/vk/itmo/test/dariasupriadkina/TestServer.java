@@ -3,6 +3,7 @@ package ru.vk.itmo.test.dariasupriadkina;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.dariasupriadkina.sharding.ConsistentHashingShardingPolicy;
+import ru.vk.itmo.test.dariasupriadkina.sharding.RendezvousHashing;
 import ru.vk.itmo.test.dariasupriadkina.sharding.ShardingPolicy;
 import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
 
@@ -22,7 +23,6 @@ public final class TestServer {
 
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_SIZE = 1024;
-    private static final int NUMBER_OF_REPLICAS = 100;
     private static final String LOCALHOST_PREFIX = "http://localhost:";
     private static final int NODE_AMOUNT = 3;
 
@@ -51,15 +51,16 @@ public final class TestServer {
                     path);
             clusterConfs.add(serviceConfig);
         }
-        ShardingPolicy shardingPolicy = new ConsistentHashingShardingPolicy(
-                clusterUrls, NUMBER_OF_REPLICAS
+        ShardingPolicy shardingPolicy = new RendezvousHashing(
+                clusterUrls
         );
 
         for (ServiceConfig serviceConfig : clusterConfs) {
             ServiceIml serviceIml = new ServiceIml(serviceConfig, new Config(serviceConfig.workingDir(),
-                    1024 * 1024), new WorkerConfig(THREADS, THREADS, QUEUE_SIZE, 30),
+                    1024 * 1024),
+                    new WorkerConfig(THREADS, THREADS, QUEUE_SIZE, 30),
                     shardingPolicy);
-            serviceIml.start().get(1, TimeUnit.SECONDS);
+            serviceIml.start().get(2, TimeUnit.SECONDS);
         }
     }
 }

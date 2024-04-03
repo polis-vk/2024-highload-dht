@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
+import ch.qos.logback.core.encoder.JsonEscapeUtil;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -103,9 +104,11 @@ public class Server extends HttpServer {
                         int from = ackFrom.get("from");
                         int ack = ackFrom.get("ack");
 
-                        session.sendResponse(mergeResponses(broadcast(
-                                shardingPolicy.getNodesById(utils.getIdParameter(request), from),
-                                request), ack, from));
+                        Response response = mergeResponses(broadcast(
+                                        shardingPolicy.getNodesById(utils.getIdParameter(request), from), request, ack),
+                                ack, from);
+
+                        session.sendResponse(response);
 
                     } else {
                         Response resp = selfHandler.handleRequest(request);
@@ -134,20 +137,28 @@ public class Server extends HttpServer {
         }
     }
 
-    private List<Response> broadcast(List<String> nodes, Request request) {
-        List<Response> responses = new ArrayList<>(nodes.size());
+    private List<Response> broadcast(List<String> nodes, Request request, int ack) {
+        List<Response> responses = new ArrayList<>(ack);
         Response response;
         if (nodes.contains(selfUrl)) {
             response = selfHandler.handleRequest(request);
             checkTimestampHeaderExistenceAndSet(response);
             responses.add(response);
             nodes.remove(selfUrl);
+            if (--ack == 0) {
+                return responses;
+            }
         }
 
         for (String node : nodes) {
             response = handleProxy(utils.getEntryUrl(node, utils.getIdParameter(request)), request);
-            checkTimestampHeaderExistenceAndSet(response);
-            responses.add(response);
+            if (response.getStatus() < 500) {
+                checkTimestampHeaderExistenceAndSet(response);
+                responses.add(response);
+                if (--ack == 0) {
+                    return responses;
+                }
+            }
         }
         return responses;
     }

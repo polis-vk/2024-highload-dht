@@ -3,8 +3,8 @@ package ru.vk.itmo.test.viktorkorotkikh.util;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMConstantResponse;
+import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
 
-import java.net.http.HttpResponse;
 import java.util.List;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
@@ -25,7 +25,7 @@ public class LsmServerUtil {
 
     public static Response mergeReplicasResponses(
             final Request originalRequest,
-            final List<HttpResponse<byte[]>> responses,
+            final List<NodeResponse> responses,
             final int ack
     ) {
         switch (originalRequest.getMethod()) {
@@ -42,11 +42,11 @@ public class LsmServerUtil {
         }
     }
 
-    private static Response mergeGetResponses(Request originalRequest, List<HttpResponse<byte[]>> responses, int ack) {
+    private static Response mergeGetResponses(Request originalRequest, List<NodeResponse> responses, int ack) {
         long maxTimestamp = -1;
-        HttpResponse<byte[]> lastValue = null;
+        NodeResponse lastValue = null;
         int successfulResponses = 0;
-        for (HttpResponse<byte[]> response : responses) {
+        for (NodeResponse response : responses) {
             final long valueTimestamp = getTimestamp(response);
             if (valueTimestamp > maxTimestamp) {
                 maxTimestamp = valueTimestamp;
@@ -75,7 +75,7 @@ public class LsmServerUtil {
 
     private static Response mergePutResponses(
             Request originalRequest,
-            List<HttpResponse<byte[]>> responses,
+            List<NodeResponse> responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -86,7 +86,7 @@ public class LsmServerUtil {
 
     private static Response mergeDeleteResponses(
             Request originalRequest,
-            List<HttpResponse<byte[]>> responses,
+            List<NodeResponse> responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -95,9 +95,9 @@ public class LsmServerUtil {
         return LSMConstantResponse.accepted(originalRequest);
     }
 
-    private static boolean hasNotEnoughReplicas(List<HttpResponse<byte[]>> responses, int ack) {
+    private static boolean hasNotEnoughReplicas(List<NodeResponse> responses, int ack) {
         int successfulResponses = 0;
-        for (HttpResponse<byte[]> response : responses) {
+        for (NodeResponse response : responses) {
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 successfulResponses++;
             }
@@ -105,11 +105,11 @@ public class LsmServerUtil {
         return successfulResponses < ack;
     }
 
-    private static long getTimestamp(final HttpResponse<byte[]> response) {
-        List<String> timestamps = response.headers().allValues(TIMESTAMP_HEADER);
-        if (timestamps.isEmpty()) {
+    private static long getTimestamp(final NodeResponse response) {
+        String timestamp = response.getHeader(TIMESTAMP_HEADER);
+        if (timestamp == null) {
             return -1;
         }
-        return Long.parseLong(timestamps.getFirst());
+        return Long.parseLong(timestamp);
     }
 }

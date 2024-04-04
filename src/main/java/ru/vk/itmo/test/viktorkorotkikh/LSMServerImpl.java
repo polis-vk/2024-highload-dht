@@ -17,10 +17,12 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
+import ru.vk.itmo.test.viktorkorotkikh.http.HttpResponseNodeResponse;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMConstantResponse;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
-import ru.vk.itmo.test.viktorkorotkikh.http.OneNioHttpResponseWrapper;
+import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
+import ru.vk.itmo.test.viktorkorotkikh.http.OneNioNodeResponse;
 import ru.vk.itmo.test.viktorkorotkikh.http.ReplicaEmptyResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.LsmServerUtil;
 import ru.vk.itmo.test.viktorkorotkikh.util.RequestParameters;
@@ -225,7 +227,7 @@ public class LSMServerImpl extends HttpServer {
             String id,
             Integer ack
     ) {
-        final List<HttpResponse<byte[]>> responses = new ArrayList<>(from);
+        final List<NodeResponse> responses = new ArrayList<>(from);
         final long requestTimestamp = Instant.now().toEpochMilli();
         for (final String replicaUrl : replicas) {
             if (replicaUrl.equals(selfUrl)) {
@@ -237,7 +239,7 @@ public class LSMServerImpl extends HttpServer {
         return LsmServerUtil.mergeReplicasResponses(request, responses, ack);
     }
 
-    private HttpResponse<byte[]> processRemote(
+    private NodeResponse processRemote(
             final Request originalRequest,
             final String server,
             final String id,
@@ -272,13 +274,15 @@ public class LSMServerImpl extends HttpServer {
         return builder.build();
     }
 
-    private HttpResponse<byte[]> sendClusterRequest(
+    private NodeResponse sendClusterRequest(
             final HttpRequest request
     ) {
         try {
-            return clusterClient
-                    .sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(CLUSTER_REQUEST_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS);
+            return new HttpResponseNodeResponse(
+                    clusterClient
+                            .sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                            .get(CLUSTER_REQUEST_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)
+            );
         } catch (InterruptedException e) {
             final String clusterUrl = request.uri().toString();
             Thread.currentThread().interrupt();
@@ -295,7 +299,7 @@ public class LSMServerImpl extends HttpServer {
         }
     }
 
-    private OneNioHttpResponseWrapper processLocal(
+    private OneNioNodeResponse processLocal(
             final Request request,
             final byte[] key,
             final String id,
@@ -307,7 +311,7 @@ public class LSMServerImpl extends HttpServer {
             case METHOD_DELETE -> handleDeleteEntity(request, key, id, requestTimestamp);
             default -> LSMConstantResponse.methodNotAllowed(request);
         };
-        return new OneNioHttpResponseWrapper(response);
+        return new OneNioNodeResponse(response);
     }
 
     private Response handleGetEntity(final Request request, final byte[] id, final String idString) {

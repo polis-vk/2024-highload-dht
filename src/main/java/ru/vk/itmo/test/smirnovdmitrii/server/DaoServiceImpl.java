@@ -83,7 +83,9 @@ public class DaoServiceImpl implements Service {
         // virtual threads
         serverConfig.useVirtualThreads = useVirtualThreads;
 
+        serverConfig.clusterUrls = config.clusterUrls();
         serverConfig.workingDir = config.workingDir();
+        serverConfig.selfUrl = config.selfUrl();
         return serverConfig;
     }
 

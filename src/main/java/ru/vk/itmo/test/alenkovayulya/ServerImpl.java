@@ -21,21 +21,25 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
-import java.util.function.Supplier;
+
+import static ru.vk.itmo.test.alenkovayulya.ShardRouter.redirectRequest;
 
 public class ServerImpl extends HttpServer {
-
-    private static final Logger logger = LoggerFactory.getLogger(ServerImpl.class);
-
+    public static final String PATH = "/v0/entity";
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServerImpl.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> referenceDao;
     private final ExecutorService executorService;
+    private final String url;
+    private final ShardSelector shardSelector;
 
     public ServerImpl(ServiceConfig serviceConfig,
                       Dao<MemorySegment, Entry<MemorySegment>> referenceDao,
-                      ExecutorService executorService) throws IOException {
+                      ExecutorService executorService, ShardSelector shardSelector) throws IOException {
         super(createServerConfig(serviceConfig));
         this.referenceDao = referenceDao;
         this.executorService = executorService;
+        this.url = serviceConfig.selfUrl();
+        this.shardSelector = shardSelector;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -58,53 +62,59 @@ public class ServerImpl extends HttpServer {
                 try {
                     session.sendError(Response.BAD_REQUEST, e.getMessage());
                 } catch (IOException ex) {
-                    logger.info("Exception during sending the response: ", ex);
+                    LOGGER.info("Exception during sending the response: ", ex);
                     session.close();
                 }
             }
         });
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
-        return handleException(() -> {
             if (isEmptyId(id)) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            String ownerShardUrl = shardSelector.getOwnerShardUrl(id);
+            if (isRedirectNeeded(ownerShardUrl)) {
+                return redirectRequest("GET", id, ownerShardUrl, new byte[0]);
             }
             Entry<MemorySegment> value = referenceDao.get(
                     convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)));
 
             return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY)
                     : Response.ok(value.value().toArray(ValueLayout.JAVA_BYTE));
-        });
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntity(@Param(value = "id", required = true) String id, Request request) {
-        return handleException(() -> {
             if (isEmptyId(id)) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            String ownerShardUrl = shardSelector.getOwnerShardUrl(id);
+            if (isRedirectNeeded(ownerShardUrl)) {
+                return redirectRequest("PUT", id, ownerShardUrl, request.getBody());
             }
             referenceDao.upsert(new BaseEntry<>(
                     convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)),
                     convertBytesToMemorySegment(request.getBody())));
             return new Response(Response.CREATED, Response.EMPTY);
-        });
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(@Param(value = "id", required = true) String id) {
-        return handleException(() -> {
+            String ownerShardUrl = shardSelector.getOwnerShardUrl(id);
+            if (isRedirectNeeded(ownerShardUrl)) {
+                return redirectRequest("DELETE", id, ownerShardUrl, new byte[0]);
+            }
             if (isEmptyId(id)) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
             referenceDao.upsert(new BaseEntry<>(
                     convertBytesToMemorySegment(id.getBytes(StandardCharsets.UTF_8)), null));
             return new Response(Response.ACCEPTED, Response.EMPTY);
-        });
     }
 
     @Override
@@ -115,6 +125,10 @@ public class ServerImpl extends HttpServer {
         }
     }
 
+    private boolean isRedirectNeeded(String ownerUrl) {
+        return !url.equals(ownerUrl);
+    }
+
     private boolean isEmptyId(String id) {
         return id.isEmpty() && id.isBlank();
     }
@@ -123,11 +137,4 @@ public class ServerImpl extends HttpServer {
         return MemorySegment.ofArray(byteArray);
     }
 
-    private Response handleException(Supplier<Response> runnable) {
-        try {
-            return runnable.get();
-        } catch (Exception exception) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
 }

@@ -115,10 +115,7 @@ public class StorageServer extends HttpServer {
             executor.execute(() -> {
                 try {
                     int partition = selectPartition(id);
-
-                    List<Response> responses = new ArrayList<>();
-                    pickResponses(request, id, from, partition, responses);
-                    compareReplicasResponses(request, session, responses, ack);
+                    pickResponses(request, session, id, ack, from, partition);
                 } catch (IOException e) {
                     log.error("Exception during handleRequest: ", e);
                     sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
@@ -135,12 +132,15 @@ public class StorageServer extends HttpServer {
 
     private void pickResponses(
             Request request,
+            HttpSession session,
             String id,
+            int ack,
             int from,
-            int partition,
-            List<Response> responses
+            int partition
     ) throws IOException, InterruptedException {
         long timestamp = System.currentTimeMillis();
+        List<Response> responses = new ArrayList<>();
+        int httpMethod = request.getMethod();
 
         for (int i = 0; i < from; i++) {
             int nodeIndex = (partition + i) % clusterUrls.size();
@@ -151,24 +151,39 @@ public class StorageServer extends HttpServer {
             } else {
                 remote(request, timestamp, nodeIndex, responses);
             }
+
+            boolean enough = compareReplicasResponses(httpMethod, session, responses, ack);
+            if (enough) {
+                if (httpMethod == Request.METHOD_GET) {
+                    return;
+                }
+            }
+        }
+
+        if (responses.size() < ack) {
+            sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
         }
     }
 
-    private void compareReplicasResponses(
-            Request request,
+    private boolean compareReplicasResponses(
+            int httpMethod,
             HttpSession session,
             List<Response> responses,
             int ack
     ) throws IOException {
-        if (responses.size() >= ack) {
-            if (request.getMethod() == Request.METHOD_PUT || request.getMethod() == Request.METHOD_DELETE) {
+        boolean enough = responses.size() >= ack;
+
+        if (enough) {
+            if (httpMethod == Request.METHOD_PUT || httpMethod == Request.METHOD_DELETE) {
                 session.sendResponse(responses.getFirst());
+                return true;
             } else {
                 session.sendResponse(findLastWriteResponse(responses));
+                return true;
             }
-        } else {
-            sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
         }
+
+        return false;
     }
 
     private Response findLastWriteResponse(List<Response> responses) {

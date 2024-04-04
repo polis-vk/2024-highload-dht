@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
-import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -24,9 +23,11 @@ import java.util.concurrent.TimeUnit;
 public final class Server {
     private static final Random RANDOM = new Random();
     private static final int ENTRIES_IN_DB = 500_000;
-    private static final long FLUSH_THRESHOLD_BYTES = 4_194_30400L;
+    private static final long FLUSH_THRESHOLD_BYTES = 4_194_3040L;
     private static final int BASE_PORT = 8080;
     private static final int NODES = 3;
+    private static final int POOL_SIZE = 20;
+    private static final int QUEUE_CAPACITY = 256;
 
     private Server() {
 
@@ -55,11 +56,11 @@ public final class Server {
                     new NotOnlyInMemoryDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
             daoCluster[i] = dao;
             ExecutorService executor = new ThreadPoolExecutor(
-                    20,
-                    20,
+                    POOL_SIZE,
+                    POOL_SIZE,
                     0L,
                     TimeUnit.MILLISECONDS,
-                    new ArrayBlockingQueue<>(256)
+                    new ArrayBlockingQueue<>(QUEUE_CAPACITY)
             );
             StorageServer server = new StorageServer(config, dao, executor);
             server.start();

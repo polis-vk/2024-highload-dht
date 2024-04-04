@@ -153,10 +153,8 @@ public class StorageServer extends HttpServer {
             }
 
             boolean enough = compareReplicasResponses(httpMethod, session, responses, ack);
-            if (enough) {
-                if (httpMethod == Request.METHOD_GET) {
+            if (enough && httpMethod == Request.METHOD_GET) {
                     return;
-                }
             }
         }
 

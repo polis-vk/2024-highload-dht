@@ -88,9 +88,7 @@ public final class Server {
         return entries;
     }
 
-    private static void fillClusterNodesWithMultipleFlush(
-            Dao[] daoCluster
-    ) throws IOException {
+    private static void fillClusterNodesWithMultipleFlush(Dao... daoCluster) throws IOException {
         final int sstables = 100; //how many sstables dao must create
         final int flushEntries = ENTRIES_IN_DB / sstables; //how many entries in one sstable
         final int[] entries = getRandomArray();

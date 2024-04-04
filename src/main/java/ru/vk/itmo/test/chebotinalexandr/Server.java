@@ -22,9 +22,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class Server {
-    //private static final Random RANDOM = new Random();
-    //private static final int ENTRIES_IN_DB = 500_000;
-    private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
+    private static final Random RANDOM = new Random();
+    private static final int ENTRIES_IN_DB = 500_000;
+    private static final long FLUSH_THRESHOLD_BYTES = 4_194_30400L;
     private static final int BASE_PORT = 8080;
     private static final int NODES = 3;
 
@@ -66,10 +66,9 @@ public final class Server {
 
         }
 
-        //fillClusterNodesWithMultipleFlush(daoCluster, clusterUrls);
+        fillClusterNodesWithMultipleFlush(daoCluster);
     }
 
-    /*
     private static int[] getRandomArray() {
         int[] entries = new int[ENTRIES_IN_DB];
         for (int i = 0; i < ENTRIES_IN_DB; i++) {
@@ -89,45 +88,29 @@ public final class Server {
     }
 
     private static void fillClusterNodesWithMultipleFlush(
-            Dao[] daoCluster,
-            List<String> clusterUrls
+            Dao[] daoCluster
     ) throws IOException {
         final int sstables = 100; //how many sstables dao must create
         final int flushEntries = ENTRIES_IN_DB / sstables; //how many entries in one sstable
-        final int[] entriesCountInEachNode = new int[NODES];
         final int[] entries = getRandomArray();
 
+        //only for GET tests with from = 3
+        int count = 0;
         for (int entry : entries) {
-            //select node
-            int partition = selectNode(("k" + entry), clusterUrls);
+            //upsert entry
+            for (int node = 0; node < NODES; node++) {
+                daoCluster[node].upsert(entry(keyAt(entry), valueAt(entry)));
+            }
+            count++;
 
-            //upsert entry in selected node and increment entry counter
-            daoCluster[partition].upsert(entry(keyAt(entry), valueAt(entry)));
-            entriesCountInEachNode[partition]++;
-
-            //check entry counters for ability to flush
-            for (int j = 0; j < entriesCountInEachNode.length; j++) {
-                if (entriesCountInEachNode[j] % flushEntries == 0) {
-                    daoCluster[j].flush();
+            //flush nodes
+            if (count == flushEntries) {
+                for (Dao dao : daoCluster) {
+                    dao.flush();
                 }
+                count = 0;
             }
         }
-    }
-
-    private static int selectNode(String id, List<String> clusterUrls) {
-        Long maxHash = Long.MIN_VALUE;
-        int partition = -1;
-
-        for (int i = 0; i < clusterUrls.size(); i++) {
-            String url = clusterUrls.get(i);
-            long nodeHash = Hash.murmur3(url + id);
-            if (nodeHash > maxHash) {
-                maxHash = nodeHash;
-                partition = i;
-            }
-        }
-
-        return partition;
     }
 
     private static MemorySegment keyAt(int index) {
@@ -141,7 +124,5 @@ public final class Server {
     private static Entry<MemorySegment> entry(MemorySegment key, MemorySegment value) {
         return new BaseEntry<>(key, value);
     }
-
-     */
 
 }

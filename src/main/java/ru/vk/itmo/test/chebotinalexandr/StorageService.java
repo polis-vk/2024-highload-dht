@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -37,7 +38,8 @@ public class StorageService implements Service {
                 POOL_SIZE,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+                new ArrayBlockingQueue<>(QUEUE_CAPACITY),
+                new CustomThreadFactory("worker")
         );
 
         this.server = new StorageServer(config, dao, executor);
@@ -67,7 +69,7 @@ public class StorageService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 4)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

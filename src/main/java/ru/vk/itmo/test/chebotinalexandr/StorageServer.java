@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -17,33 +18,43 @@ import ru.vk.itmo.dao.TimestampEntry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class StorageServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(StorageServer.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private final ExecutorService executor;
+    private final ExecutorService serverExecutor;
+    private final ExecutorService storageExecutor;
     private final List<String> clusterUrls;
     private final String selfUrl;
     private final HttpClient httpClient;
-    private AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicBoolean closed = new AtomicBoolean();
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String TIMESTAMP_HEADER = "X-Timestamp";
     private static final String INTERNAL_HEADER = "X-Internal";
+    private static final Set<Integer> allowedMethods = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
     public StorageServer(
             ServiceConfig config,
@@ -51,7 +62,15 @@ public class StorageServer extends HttpServer {
     ) throws IOException {
         super(createConfig(config));
         this.dao = dao;
-        this.executor = executor;
+        this.serverExecutor = executor;
+        this.storageExecutor = new ThreadPoolExecutor(
+                16,
+                16,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(128),
+                new CustomThreadFactory("dao")
+        );
         this.clusterUrls = config.clusterUrls();
         this.selfUrl = config.selfUrl();
         this.httpClient = HttpClient.newHttpClient();
@@ -84,6 +103,11 @@ public class StorageServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (!allowedMethods.contains(request.getMethod())) {
+            sendEmptyBodyResponse(Response.METHOD_NOT_ALLOWED, session);
+            return;
+        }
+
         String id = request.getParameter("id=");
         if (id == null || id.isBlank()) {
             sendEmptyBodyResponse(Response.BAD_REQUEST, session);
@@ -112,7 +136,7 @@ public class StorageServer extends HttpServer {
         }
 
         try {
-            executor.execute(() -> {
+            serverExecutor.execute(() -> {
                 try {
                     int partition = selectPartition(id);
                     pickResponses(request, session, id, ack, from, partition);
@@ -139,27 +163,60 @@ public class StorageServer extends HttpServer {
             int partition
     ) throws IOException, InterruptedException {
         long timestamp = System.currentTimeMillis();
-        List<Response> responses = new ArrayList<>();
+        List<CompletableFuture<Response>> completableFutureResponses = new CopyOnWriteArrayList<>();
         int httpMethod = request.getMethod();
 
+        //get completableFutures from nodes
         for (int i = 0; i < from; i++) {
             int nodeIndex = (partition + i) % clusterUrls.size();
 
+            CompletableFuture<Response> responseCompletableFuture;
             if (isCurrentPartition(nodeIndex)) {
-                Response response = handleRequest(request, id, timestamp);
-                responses.add(response);
+                responseCompletableFuture = handleRequestAsync(request, id, timestamp);
             } else {
-                remote(request, timestamp, nodeIndex, responses);
+                responseCompletableFuture = remote(request, timestamp, nodeIndex);
             }
-
-            boolean enough = compareReplicasResponses(httpMethod, session, responses, ack);
-            if (enough && httpMethod == Request.METHOD_GET) {
-                    return;
-            }
+            completableFutureResponses.add(responseCompletableFuture);
         }
 
-        if (responses.size() < ack) {
-            sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
+        //callback
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        AtomicBoolean enough = new AtomicBoolean(false);
+        AtomicInteger handled = new AtomicInteger(0);
+        for (CompletableFuture<Response> completableFuture : completableFutureResponses) {
+            completableFuture.whenCompleteAsync((response, throwable) -> {
+                //return if response has been already sent before
+                if (enough.get()) {
+                    return;
+                    //todo try to cancel other tasks
+                }
+
+                handled.incrementAndGet();
+
+                if (throwable != null) {
+                    response = new Response(Response.INTERNAL_ERROR);
+                }
+
+                if ((response.getStatus() == 201)
+                        || (response.getStatus() == 200)
+                        || (response.getStatus() == 404)
+                        || (response.getStatus() == 202)) {
+                    responses.add(response);
+                }
+
+                //compare responses and send
+                try {
+                    enough.set(compareReplicasResponses(httpMethod, session, responses, ack));
+                } catch (IOException e) {
+                    //fixme add log
+                    throw new RuntimeException(e);
+                }
+
+                //when all future tasks done
+                if (handled.get() == from && responses.size() < ack) {
+                    sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
+                }
+            }, serverExecutor).exceptionally((_) -> new Response(Response.INTERNAL_ERROR)); //fixme add log
         }
     }
 
@@ -174,11 +231,10 @@ public class StorageServer extends HttpServer {
         if (enough) {
             if (httpMethod == Request.METHOD_PUT || httpMethod == Request.METHOD_DELETE) {
                 session.sendResponse(responses.getFirst());
-                return true;
             } else {
                 session.sendResponse(findLastWriteResponse(responses));
-                return true;
             }
+            return true;
         }
 
         return false;
@@ -211,35 +267,19 @@ public class StorageServer extends HttpServer {
         return 0L;
     }
 
-    private void remote(
-            Request request,
-            long timestamp,
-            int nodeIndex,
-            List<Response> responses
-    ) throws IOException, InterruptedException {
-        try {
-            Response response = routeRequest(nodeIndex, request, timestamp);
-            if ((response.getStatus() == 201)
-                    || (response.getStatus() == 200)
-                    || (response.getStatus() == 404)
-                    || (response.getStatus() == 202)) {
-                responses.add(response);
-            }
-        } catch (ConnectException e) {
-            //do not add to response list
-            log.info("Can't connect to node " + nodeIndex);
-        }
+    private CompletableFuture<Response> remote(Request request, long timestamp, int nodeIndex) {
+        return routeRequest(nodeIndex, request, timestamp);
     }
 
     private int quorum(int from) {
         return from / 2 + 1;
     }
 
-    private Response routeRequest(
+    private CompletableFuture<Response> routeRequest(
             int partition,
             Request request,
             long timestamp
-    ) throws IOException, InterruptedException {
+    ) {
         String partitionUrl = getPartitionUrl(partition) + request.getURI();
 
         HttpRequest newRequest = HttpRequest.newBuilder()
@@ -254,8 +294,9 @@ public class StorageServer extends HttpServer {
                 )
                 .build();
 
-        HttpResponse<byte[]> response = httpClient.send(newRequest, HttpResponse.BodyHandlers.ofByteArray());
-        return extractResponseFromNode(response);
+        CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture =
+                httpClient.sendAsync(newRequest, HttpResponse.BodyHandlers.ofByteArray());
+        return responseCompletableFuture.thenApplyAsync(this::extractResponseFromNode, serverExecutor);
     }
 
     private Response extractResponseFromNode(HttpResponse<byte[]> response) {
@@ -297,6 +338,10 @@ public class StorageServer extends HttpServer {
 
     private String getPartitionUrl(int partition) {
         return clusterUrls.get(partition);
+    }
+
+    private CompletableFuture<Response> handleRequestAsync(Request request, String id, long timestamp) {
+        return CompletableFuture.supplyAsync(() -> handleRequest(request, id, timestamp), storageExecutor);
     }
 
     private Response handleRequest(Request request, String id, long timestamp) {

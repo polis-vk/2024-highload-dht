@@ -13,19 +13,22 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
 import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
+import ru.vk.itmo.test.nikitaprokopev.exceptions.NotEnoughReplicasException;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class MyServer extends HttpServer {
@@ -130,21 +133,26 @@ public class MyServer extends HttpServer {
         List<String> targetNodes = getNodesSortedByRendezvousHashing(key, serviceConfig, from);
         List<HttpRequest> httpRequests =
                 requestHandler.createRequests(request, key, targetNodes, serviceConfig);
-        List<Response> responses = getResponses(request, ack, httpRequests);
-        if (responses.isEmpty() || responses.size() < ack) {
-            sendResponseWithEmptyBody(session, CustomResponseCodes.RESPONSE_NOT_ENOUGH_REPLICAS.getCode());
-            return;
-        }
-        try {
-            if (request.getMethod() != Request.METHOD_GET) {
-                session.sendResponse(responses.getFirst());
-                return;
-            }
+        CompletableFuture<List<Response>> responses = getResponses(request, ack, httpRequests);
+        responses = responses.whenComplete(
+                (list, throwable) -> {
+                    if (throwable != null || list == null || list.size() < ack) {
+                        sendResponseWithEmptyBody(session, CustomResponseCodes.RESPONSE_NOT_ENOUGH_REPLICAS.getCode());
+                        return;
+                    }
+                    try {
+                        if (request.getMethod() != Request.METHOD_GET) {
+                            session.sendResponse(list.getFirst());
+                            return;
+                        }
 
-            mergeGetResponses(session, responses);
-        } catch (IOException e) {
-            logIOExceptionAndCloseSession(session, e);
-        }
+                        mergeGetResponses(session, list);
+                    } catch (IOException e) {
+                        logIOExceptionAndCloseSession(session, e);
+                    }
+                }
+        );
+        chechFuture(responses);
     }
 
     private void mergeGetResponses(HttpSession session, List<Response> responses) throws IOException {
@@ -175,36 +183,45 @@ public class MyServer extends HttpServer {
         sendResponseWithEmptyBody(session, Response.NOT_FOUND);
     }
 
-    private List<Response> getResponses(
+    private CompletableFuture<List<Response>> getResponses(
             Request request,
             int ack,
             List<HttpRequest> requests
     ) {
-        List<Response> responses = new ArrayList<>();
-        // stop if ack responses are received or too many errors
-        int successCounter = ack;
-        int acceptableErrors = requests.size() - ack + 1;
+        final CompletableFuture<List<Response>> result = new CompletableFuture<>();
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        AtomicInteger successCounter = new AtomicInteger(ack);
+        AtomicInteger acceptableErrors = new AtomicInteger(requests.size() - ack + 1);
         for (HttpRequest httpRequest : requests) {
-            Response response;
+            CompletableFuture<Response> cfResponse;
             if (httpRequest == null) {
-                response = handleInternalRequest(request);
+                cfResponse = getInternalResponse(request);
             } else {
-                response = proxyRequest(httpRequest);
+                cfResponse = proxyRequest(httpRequest);
             }
-            if (response == null) {
-                --acceptableErrors;
-                if (acceptableErrors == 0) {
-                    break;
-                }
-                continue;
-            }
-            responses.add(response);
-            --successCounter;
-            if (successCounter == 0) {
-                break;
-            }
+            cfResponse = cfResponse.whenComplete(
+                    (response, _) -> {
+                        if (response == null) {
+                            if (acceptableErrors.decrementAndGet() == 0) {
+                                result.completeExceptionally(new NotEnoughReplicasException());
+                            }
+                            return;
+                        }
+                        responses.add(response);
+                        if (successCounter.decrementAndGet() == 0) {
+                            result.complete(responses);
+                        }
+                    }
+            );
+            chechFuture(cfResponse);
         }
-        return responses;
+        return result;
+    }
+
+    private CompletableFuture<Response> getInternalResponse(Request request) {
+        final CompletableFuture<Response> cfResponse = new CompletableFuture<>();
+        workerPool.execute(() -> cfResponse.complete(handleInternalRequest(request)));
+        return cfResponse;
     }
 
     private Response handleInternalRequest(Request request) {
@@ -222,17 +239,28 @@ public class MyServer extends HttpServer {
         return response;
     }
 
-    private Response proxyRequest(HttpRequest httpRequest) {
-        try {
-            HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-            return proxyResponse(response, response.body());
-        } catch (InterruptedException e) {
-            log.error("Exception while sending request", e);
-            Thread.currentThread().interrupt();
-            return null;
-        } catch (Exception e) {
-            log.info("Exception while sending request to another node", e);
-            return null;
+    private CompletableFuture<Response> proxyRequest(HttpRequest httpRequest) {
+        final CompletableFuture<Response> cfResponse = new CompletableFuture<>();
+        CompletableFuture<HttpResponse<byte[]>> response =
+                httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                        .whenComplete(
+                                (httpResponse, throwable) -> {
+                                    if (throwable != null) {
+                                        cfResponse.completeExceptionally(new IllegalArgumentException());
+                                        return;
+                                    }
+                                    cfResponse.complete(
+                                            proxyResponse(httpResponse)
+                                    );
+                                }
+                        );
+        chechFuture(response);
+        return cfResponse;
+    }
+
+    private void chechFuture(CompletableFuture<?> cf) {
+        if (cf == null) {
+            log.error("Error while working with CompletableFuture");
         }
     }
 
@@ -262,7 +290,7 @@ public class MyServer extends HttpServer {
         session.scheduleClose();
     }
 
-    private Response proxyResponse(HttpResponse<byte[]> response, byte[] body) {
+    private Response proxyResponse(HttpResponse<byte[]> response) {
         String responseCode = switch (response.statusCode()) {
             case 200 -> Response.OK;
             case 201 -> Response.CREATED;
@@ -272,7 +300,7 @@ public class MyServer extends HttpServer {
             default -> Response.INTERNAL_ERROR;
         };
 
-        Response responseProxied = new Response(responseCode, body);
+        Response responseProxied = new Response(responseCode, response.body());
         long timestamp = response.headers().map().containsKey("x-timestamp")
                 ? Long.parseLong(response.headers().map().get("x-timestamp").getFirst())
                 : -1;

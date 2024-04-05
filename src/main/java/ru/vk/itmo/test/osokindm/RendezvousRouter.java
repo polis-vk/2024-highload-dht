@@ -12,12 +12,8 @@ public class RendezvousRouter {
     public RendezvousRouter(List<String> nodeUrls) {
         nodes = new ArrayList<>();
         for (int i = 0; i < nodeUrls.size(); i++) {
-            addNode(new Node(nodeUrls.get(i), i));
+            nodes.add(new Node(nodeUrls.get(i), i));
         }
-    }
-
-    public void addNode(Node node) {
-        nodes.add(node);
     }
 
     public Node getNode(String key) {

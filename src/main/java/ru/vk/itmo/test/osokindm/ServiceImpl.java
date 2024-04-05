@@ -17,7 +17,6 @@ import ru.vk.itmo.test.ServiceFactory;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -28,7 +27,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class ServiceImpl implements Service {
@@ -89,24 +87,24 @@ public class ServiceImpl implements Service {
             return new Response(Response.SERVICE_UNAVAILABLE, "Node is unavailable".getBytes(StandardCharsets.UTF_8));
         }
 
-        if (!node.address.equals(config.selfUrl())) {
-            return forwardRequestToNode(request, node);
+        if (node.address.equals(config.selfUrl())) {
+            return handleRequestLocally(request, id);
         }
 
-        return handleRequestLocally(request, id);
+        return forwardRequestToNode(request, node);
     }
 
     private Response forwardRequestToNode(Request request, Node node) {
         try {
             LOGGER.debug("Request has been forwarded to {}", node.address);
             return makeProxyRequest(request, node.address);
-        } catch (TimeoutException e) {
+        } catch (TimeoutException | IOException e) {
             node.captureError();
             LOGGER.error(node + " not responding", e);
-            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         } catch (ExecutionException e) {
             LOGGER.error(node + " not responding", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -137,7 +135,7 @@ public class ServiceImpl implements Service {
     }
 
     private Response makeProxyRequest(Request request, String nodeAddress)
-            throws ExecutionException, InterruptedException, TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException, IOException {
         byte[] body = request.getBody();
         if (body == null) {
             body = Response.EMPTY;
@@ -147,21 +145,8 @@ public class ServiceImpl implements Service {
                 .method(request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
-        return client
-                .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .thenApply(ServiceImpl::processedResponse)
-                .get(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-    }
-
-    private static Response processedResponse(HttpResponse<byte[]> response) {
-        return switch (response.statusCode()) {
-            case HttpURLConnection.HTTP_OK -> new Response(Response.OK, response.body());
-            case HttpURLConnection.HTTP_CREATED -> new Response(Response.CREATED, Response.EMPTY);
-            case HttpURLConnection.HTTP_BAD_METHOD -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            case HttpURLConnection.HTTP_NOT_FOUND -> new Response(Response.NOT_FOUND, Response.EMPTY);
-            case HttpURLConnection.HTTP_ACCEPTED -> new Response(Response.ACCEPTED, Response.EMPTY);
-            default -> new Response(String.valueOf(response.statusCode()), Response.EMPTY);
-        };
+        HttpResponse<byte[]> httpResponse = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+        return new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
     }
 
     private static HttpServerConfig createServerConfig(int port) {

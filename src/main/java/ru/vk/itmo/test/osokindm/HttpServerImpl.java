@@ -88,7 +88,7 @@ public class HttpServerImpl extends HttpServer {
                     try {
                         session.sendError(Response.INTERNAL_ERROR, null);
                     } catch (IOException ex) {
-                        LOGGER.error("Exception while sending close connection", e);
+                        LOGGER.debug("Exception while sending close connection", e);
                         session.scheduleClose();
                     }
                 }

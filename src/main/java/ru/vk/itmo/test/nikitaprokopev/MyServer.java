@@ -200,7 +200,7 @@ public class MyServer extends HttpServer {
                 cfResponse = proxyRequest(httpRequest);
             }
             cfResponse = cfResponse.whenComplete(
-                    (response, _) -> {
+                    (response, throwable) -> {
                         if (response == null) {
                             if (acceptableErrors.decrementAndGet() == 0) {
                                 result.completeExceptionally(new NotEnoughReplicasException());

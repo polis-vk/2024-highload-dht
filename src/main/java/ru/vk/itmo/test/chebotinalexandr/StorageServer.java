@@ -174,13 +174,13 @@ public class StorageServer extends HttpServer {
             if (isCurrentPartition(nodeIndex)) {
                 responseCompletableFuture = handleRequestAsync(request, id, timestamp);
             } else {
-                responseCompletableFuture = remote(request, timestamp, nodeIndex);
+                responseCompletableFuture = proxyRequest(request, nodeIndex, timestamp);
             }
             completableFutureResponses.add(responseCompletableFuture);
         }
 
         //callback
-        List<Response> responses = new CopyOnWriteArrayList<>();
+        List<Response> readyResponses = new CopyOnWriteArrayList<>();
         AtomicBoolean enough = new AtomicBoolean(false);
         AtomicInteger handled = new AtomicInteger(0);
         for (CompletableFuture<Response> completableFuture : completableFutureResponses) {
@@ -188,36 +188,42 @@ public class StorageServer extends HttpServer {
                 //return if response has been already sent before
                 if (enough.get()) {
                     return;
-                    //todo try to cancel other tasks
                 }
 
                 handled.incrementAndGet();
-
                 if (throwable != null) {
                     response = new Response(Response.INTERNAL_ERROR);
                 }
-
-                if ((response.getStatus() == 201)
-                        || (response.getStatus() == 200)
-                        || (response.getStatus() == 404)
-                        || (response.getStatus() == 202)) {
-                    responses.add(response);
+                if (responseStatusIsValid(response)) {
+                    readyResponses.add(response);
                 }
 
-                //compare responses and send
+                //compare readyResponses and send
                 try {
-                    enough.set(compareReplicasResponses(httpMethod, session, responses, ack));
+                    enough.set(compareReplicasResponses(httpMethod, session, readyResponses, ack));
                 } catch (IOException e) {
-                    //fixme add log
-                    throw new RuntimeException(e);
+                    log.error("Exception during send win response: ", e);
+                    sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
+                    session.close();
                 }
 
                 //when all future tasks done
-                if (handled.get() == from && responses.size() < ack) {
+                if (handled.get() == from && readyResponses.size() < ack) {
                     sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
                 }
-            }, serverExecutor).exceptionally((_) -> new Response(Response.INTERNAL_ERROR)); //fixme add log
+            }, serverExecutor).exceptionally((throwable) -> {
+                log.error("exception during handle async", throwable);
+                return new Response(Response.INTERNAL_ERROR);
+            }
+            ); //fixme add log
         }
+    }
+
+    private boolean responseStatusIsValid(Response response) {
+        return (response.getStatus() == 201)
+                || (response.getStatus() == 200)
+                || (response.getStatus() == 404)
+                || (response.getStatus() == 202);
     }
 
     private boolean compareReplicasResponses(
@@ -267,17 +273,13 @@ public class StorageServer extends HttpServer {
         return 0L;
     }
 
-    private CompletableFuture<Response> remote(Request request, long timestamp, int nodeIndex) {
-        return routeRequest(nodeIndex, request, timestamp);
-    }
-
     private int quorum(int from) {
         return from / 2 + 1;
     }
 
-    private CompletableFuture<Response> routeRequest(
-            int partition,
+    private CompletableFuture<Response> proxyRequest(
             Request request,
+            int partition,
             long timestamp
     ) {
         String partitionUrl = getPartitionUrl(partition) + request.getURI();

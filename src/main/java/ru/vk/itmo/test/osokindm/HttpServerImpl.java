@@ -36,6 +36,7 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        super.stop();
         try {
             requestWorkers.shutdown();
             if (!requestWorkers.awaitTermination(KEEP_ALIVE_TIME, TimeUnit.SECONDS)) {
@@ -46,7 +47,6 @@ public class HttpServerImpl extends HttpServer {
             requestWorkers.shutdownNow();
             Thread.currentThread().interrupt();
         }
-        super.stop();
     }
 
     @Override

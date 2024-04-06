@@ -190,17 +190,19 @@ public class StorageServer extends HttpServer {
             int httpMethod
     ) {
         List<Response> readyResponses = new CopyOnWriteArrayList<>();
-        AtomicBoolean enough = new AtomicBoolean(false);
-        AtomicInteger handled = new AtomicInteger(0);
+        AtomicBoolean enough = new AtomicBoolean();
+        AtomicInteger handled = new AtomicInteger();
         for (CompletableFuture<Response> completableFuture : completableFutureResponses) {
             completableFuture.whenCompleteAsync((response, throwable) -> {
                 if (enough.get()) {
                     return;
                 }
                 handled.incrementAndGet();
+
                 if (throwable != null) {
                     response = new Response(Response.INTERNAL_ERROR);
                 }
+
                 if (responseStatusIsValid(response)) {
                     readyResponses.add(response);
                 }
@@ -210,14 +212,13 @@ public class StorageServer extends HttpServer {
                     enough.set(compareReplicasResponses(httpMethod, session, readyResponses, ack));
                 } catch (IOException e) {
                     log.error("Exception during send win response: ", e);
-                    sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
-                    session.close();
+                    emptyBodyResponseAndCloseSession(Response.INTERNAL_ERROR, session);
                 }
+
                 if (handled.get() == from && readyResponses.size() < ack) {
                     sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
                 }
             }, serverExecutor).exceptionally((throwable) -> {
-                log.error("exception during handle async", throwable);
                 return new Response(Response.INTERNAL_ERROR);
             }
             );
@@ -404,6 +405,16 @@ public class StorageServer extends HttpServer {
         } catch (IOException e) {
             log.error("Exception during send empty response ", e);
         }
+    }
+
+    private static void emptyBodyResponseAndCloseSession(String responseCode, HttpSession session) {
+        Response emptyBodyResponse = new Response(responseCode, Response.EMPTY);
+        try {
+            session.sendResponse(emptyBodyResponse);
+        } catch (IOException e) {
+            log.error("Exception during send empty response ", e);
+        }
+        session.close();
     }
 
     private static MemorySegment fromString(String data) {

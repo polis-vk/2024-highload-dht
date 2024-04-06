@@ -215,7 +215,7 @@ public class StorageServer extends HttpServer {
                 log.error("exception during handle async", throwable);
                 return new Response(Response.INTERNAL_ERROR);
             }
-            ); //fixme add log
+            );
         }
     }
 

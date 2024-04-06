@@ -22,20 +22,33 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class MyServer extends HttpServer {
-    private final Logger log = LoggerFactory.getLogger(MyServer.class);
     private static final String BASE_PATH = "/v0/entity";
+    private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
+    private final Logger log = LoggerFactory.getLogger(MyServer.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public MyServer(ServiceConfig serviceConfig, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    private final ThreadPoolExecutor workerPool;
+
+    public MyServer(
+            ServiceConfig serviceConfig,
+            Dao<MemorySegment, Entry<MemorySegment>> dao,
+            ThreadPoolExecutor workerPool
+    ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
+        this.workerPool = workerPool;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
+        httpServerConfig.selectors = 4;
         AcceptorConfig acceptorConfig = new AcceptorConfig();
+        acceptorConfig.threads = 4;
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
@@ -103,15 +116,8 @@ public class MyServer extends HttpServer {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
-    private MemorySegment toMemorySegment(String s) {
-        return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private byte[] toByteArray(MemorySegment ms) {
-        return ms.toArray(ValueLayout.JAVA_BYTE);
-    }
-
     // For other requests - 400 Bad Request
+
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -120,8 +126,29 @@ public class MyServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        long createdAt = System.currentTimeMillis();
         try {
-            super.handleRequest(request, session);
+            workerPool.execute(
+                    () -> {
+                        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
+                            try {
+                                session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+                                return;
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        }
+
+                        try {
+                            super.handleRequest(request, session);
+                        } catch (Exception e) {
+                            handleRequestException(session, e);
+                        }
+                    }
+            );
+        } catch (RejectedExecutionException e) {
+            log.error("Workers pool queue overflow", e);
+            session.sendError(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), null);
         } catch (Exception e) {
             handleRequestException(session, e);
         }
@@ -136,7 +163,16 @@ public class MyServer extends HttpServer {
             }
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
+            log.error("Exception while sending close connection", e);
+            session.scheduleClose();
         }
+    }
+
+    private MemorySegment toMemorySegment(String s) {
+        return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private byte[] toByteArray(MemorySegment ms) {
+        return ms.toArray(ValueLayout.JAVA_BYTE);
     }
 }

@@ -209,10 +209,11 @@ public class HttpServerImpl extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         int method = request.getMethod();
 
-        session.sendResponse(new Response(switch(method) {
-            case Request.METHOD_PUT
-                    | Request.METHOD_GET
-                    | Request.METHOD_DELETE -> Response.BAD_REQUEST;
+        session.sendResponse(new Response(
+                switch (method) {
+                    case Request.METHOD_PUT
+                        | Request.METHOD_GET
+                        | Request.METHOD_DELETE -> Response.BAD_REQUEST;
 
             default -> Response.METHOD_NOT_ALLOWED;
         }, Response.EMPTY));

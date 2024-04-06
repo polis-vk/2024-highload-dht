@@ -179,15 +179,12 @@ public class StorageServer extends HttpServer {
             completableFutureResponses.add(responseCompletableFuture);
         }
 
-        callback(session, ack, from, completableFutureResponses, httpMethod);
+        callback(session, ack, from, httpMethod, completableFutureResponses);
     }
 
     private void callback(
-            HttpSession session,
-            int ack,
-            int from,
-            List<CompletableFuture<Response>> completableFutureResponses,
-            int httpMethod
+            HttpSession session, int ack, int from, int httpMethod,
+            List<CompletableFuture<Response>> completableFutureResponses
     ) {
         List<Response> readyResponses = new CopyOnWriteArrayList<>();
         AtomicBoolean enough = new AtomicBoolean();
@@ -218,8 +215,7 @@ public class StorageServer extends HttpServer {
                 if (handled.get() == from && readyResponses.size() < ack) {
                     sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
                 }
-            }, serverExecutor).exceptionally((throwable) -> new Response(Response.INTERNAL_ERROR)
-            );
+            }, serverExecutor).exceptionally((throwable) -> new Response(Response.INTERNAL_ERROR));
         }
     }
 

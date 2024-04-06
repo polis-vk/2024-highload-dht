@@ -81,7 +81,7 @@ latency довольно сильно увеличивается после пр
 ### Тест GET
 wrk:
 ```wrk
-./wrk -d 240 -t 1 -c 1 -R 3000 -L -s /Users/sandrew2003/IdeaProjects/highload/2024-highload-dht/src/main/java/ru/vk/itmo/test/smirnovandrew/lua/get.lua http://localhost:8080
+./wrk -d 240 -t 1 -c 1 -R 3000 -L -s C:\JavaProjects\2024-highload-dht\src\main\java\ru\vk\itmo\test\smirnovandrew\lua\get.lua http://localhost:8080
 ```
 asprof:
 ```asprof

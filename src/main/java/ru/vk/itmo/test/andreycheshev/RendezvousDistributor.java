@@ -9,11 +9,11 @@ import java.util.PriorityQueue;
 import java.util.stream.Collectors;
 
 public class RendezvousDistributor {
-    private final int nodeCount;
+    private final List<String> clusterUrls;
     private final int thisNodeNumber;
 
-    public RendezvousDistributor(int nodeCount, int thisNodeNumber) {
-        this.nodeCount = nodeCount;
+    public RendezvousDistributor(List<String> clusterUrls, int thisNodeNumber) {
+        this.clusterUrls = clusterUrls;
         this.thisNodeNumber = thisNodeNumber;
     }
 
@@ -37,12 +37,16 @@ public class RendezvousDistributor {
         return queue.stream().map(HashPair::getIndex).collect(Collectors.toCollection(ArrayList::new));
     }
 
+    public String getNodeUrlByIndex(int index) {
+        return clusterUrls.get(index);
+    }
+
     public int getNodeCount() {
-        return nodeCount;
+        return clusterUrls.size();
     }
 
     public int getQuorumNumber() {
-        return nodeCount / 2 + 1;
+        return clusterUrls.size() / 2 + 1;
     }
 
     public boolean isOurNode(int node) {

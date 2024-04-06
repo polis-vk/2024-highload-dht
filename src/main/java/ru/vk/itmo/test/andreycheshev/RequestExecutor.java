@@ -14,8 +14,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static one.nio.http.Response.INTERNAL_ERROR;
-
 public class RequestExecutor {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
 
@@ -56,30 +54,19 @@ public class RequestExecutor {
                     response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
                 } else {
                     try {
-                        response = requestHandler.handle(request);
+                        requestHandler.handle(request, session);
+                        return;
                     } catch (Exception ex) {
                         LOGGER.error("Internal error of the DAO operation", ex);
-                        response = new Response(INTERNAL_ERROR, Response.EMPTY);
+                        response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                     }
                 }
 
-                sendResponse(response, session);
+                HttpUtils.sendResponse(response, session);
             });
         } catch (RejectedExecutionException e) { // Queue overflow.
             LOGGER.error("Work queue overflow: task cannot be processed", e);
-            sendResponse(
-                    new Response(TOO_MANY_REQUESTS, Response.EMPTY),
-                    session
-            );
-        }
-    }
-
-    private void sendResponse(Response response, HttpSession session) {
-        try {
-            session.sendResponse(response);
-        } catch (IOException e) {
-            LOGGER.error("Error when sending a response to the client", e);
-            throw new UncheckedIOException(e);
+            HttpUtils.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY), session);
         }
     }
 

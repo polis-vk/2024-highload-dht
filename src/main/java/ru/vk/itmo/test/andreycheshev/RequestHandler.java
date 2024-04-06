@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.pool.PoolException;
@@ -15,14 +15,21 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.net.SocketTimeoutException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
-public class RequestHandler {
+public class RequestHandler implements Sender {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
-    private static final TimestampComparator timestampComparator = new TimestampComparator();
     private static final Set<Integer> AVAILABLE_METHODS;
 
     static {
@@ -33,53 +40,57 @@ public class RequestHandler {
         ); // Immutable set.
     }
 
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String REQUEST_PATH = "/v0/entity";
 
     private static final String ID_PARAMETER = "id=";
     private static final String ACK_PARAMETER = "ack=";
     private static final String FROM_PARAMETER = "from=";
 
-    public static final String TIMESTAMP_HEADER = "Timestamp: ";
-
-    private static final int OK = 200;
-    private static final int CREATED = 201;
-    private static final int ACCEPTED = 202;
-    private static final int NOT_FOUND = 404;
-    private static final int GONE = 410;
+    public static final String TIMESTAMP_HEADER = "X-Timestamp";
 
     private static final int EMPTY_TIMESTAMP = -1;
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private final HttpClient[] clusterConnections;
     private final RendezvousDistributor distributor;
+
+    private final Executor remoteCallExecutor = Executors.newFixedThreadPool(6);
+    private final Executor senderExecutor = Executors.newFixedThreadPool(6);
+    private final Executor localExecutor = Executors.newFixedThreadPool(6);
+
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .executor(remoteCallExecutor)
+            .connectTimeout(Duration.ofMillis(400))
+            .version(HttpClient.Version.HTTP_1_1)
+            .build();
+
 
     public RequestHandler(
             Dao<MemorySegment, Entry<MemorySegment>> dao,
-            HttpClient[] clusterConnections,
             RendezvousDistributor distributor) {
 
         this.dao = dao;
-        this.clusterConnections = clusterConnections;
         this.distributor = distributor;
     }
 
-    public Response handle(Request request) throws InterruptedException {
+    public void handle(Request request, HttpSession session) throws InterruptedException, IOException {
 
         // Checking the correctness.
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            HttpUtils.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            HttpUtils.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
         int method = request.getMethod();
         if (!AVAILABLE_METHODS.contains(method)) {
-            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            HttpUtils.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY), session);
+            return;
         }
 
         // A timestamp is an indication that the request
@@ -88,13 +99,10 @@ public class RequestHandler {
         if (timestamp != null) {
             // The request came from a remote node.
             try {
-                return processLocally(method,
-                        id,
-                        request,
-                        Long.parseLong(timestamp)
-                );
+                processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
             } catch (NumberFormatException e) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                HttpUtils.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+                return;
             }
         }
 
@@ -106,41 +114,37 @@ public class RequestHandler {
                     request.getParameter(FROM_PARAMETER)
             );
         } catch (IllegalArgumentException e) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            HttpUtils.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
         // Start processing on remote and local nodes.
-        return processDistributed(method, id, request, parser.getAck(), parser.getFrom());
+        processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
     }
 
-    private Response processDistributed(
+    private void processDistributed(
             int method,
             String id,
             Request request,
             int ack,
-            int from) throws InterruptedException {
+            int from,
+            HttpSession session) {
 
-        List<Integer> nodes = distributor.getQuorumNodes(id, from);
-        List<Response> responses = new ArrayList<>();
+        List<Integer> nodesIndices = distributor.getQuorumNodes(id, from);
 
-        long currTimestamp = (method == Request.METHOD_GET)
+        long timestamp = (method == Request.METHOD_GET)
                 ? EMPTY_TIMESTAMP
                 : System.currentTimeMillis();
 
-        for (int node : nodes) {
+        ResponseCollector collector = new ResponseCollector(session, method, ack, from);
+
+        for (int nodeIndex : nodesIndices) {
+            String node = distributor.getNodeUrlByIndex(nodeIndex);
             try {
-                Response response = distributor.isOurNode(node)
-                        ? processLocally(method, id, request, currTimestamp)
-                        : redirectRequest(node, request, currTimestamp);
-
-                if (isRequestSucceeded(method, response.getStatus())) {
-                    responses.add(response);
-                }
-
-                // For the GET method, we do not need to continue to request
-                // if we have already received the required number of successful responses.
-                if (method == Request.METHOD_GET && areEnoughSuccessfulResponses(responses, ack)) {
-                    return analyzeResponses(method, responses);
+                if (distributor.isOurNode(nodeIndex)) {
+                    processLocally(method, id, request, timestamp, collector);
+                } else {
+                    processRemotely(node, request, timestamp, collector);
                 }
             } catch (SocketTimeoutException e) {
                 LOGGER.error("Request processing time exceeded on another node", e);
@@ -149,78 +153,126 @@ public class RequestHandler {
             }
         }
 
-        return !areEnoughSuccessfulResponses(responses, ack)
-                ? new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY)
-                : analyzeResponses(method, responses);
+        collector.trySendResponse();
     }
 
-    private static boolean isRequestSucceeded(int method, int status) {
-        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE))
-                || (method == Request.METHOD_PUT && status == CREATED)
-                || (method == Request.METHOD_DELETE && status == ACCEPTED);
-    }
-
-    private static boolean areEnoughSuccessfulResponses(List<Response> responses, int ack) {
-        return responses.size() >= ack;
-    }
-
-    private Response redirectRequest(
-            int nodeNumber,
+    private void processLocallyToSend(
+            int method,
+            String id,
             Request request,
-            long timestamp) throws HttpException, IOException, PoolException, InterruptedException {
+            long timestamp,
+            HttpSession session) {
 
-        HttpClient client = clusterConnections[nodeNumber];
-        request.addHeader(TIMESTAMP_HEADER + timestamp);
-        return client.invoke(request);
+        getLocalFuture(method, id, request, timestamp)
+                .thenAcceptAsync(
+                        elements -> HttpUtils.sendResponse(
+                                HttpUtils.getOneNioResponse(method, elements),
+                                session
+                        ),
+                        senderExecutor
+                );
     }
 
-    private Response processLocally(int method, String id, Request request, long timestamp) {
-        return switch (method) {
-            case Request.METHOD_GET -> get(id);
-            case Request.METHOD_PUT -> put(id, request.getBody(), timestamp);
-            default -> delete(id, timestamp);
-        };
+
+    private void processLocally(
+            int method,
+            String id,
+            Request request,
+            long timestamp,
+            ResponseCollector collector
+    ) {
+        getLocalFuture(method, id, request, timestamp)
+                .thenApplyAsync(collector::add,
+                        remoteCallExecutor
+                ).thenAcceptAsync(
+                        condition -> {
+                            if (condition) {
+                                collector.trySendResponse();
+                            }
+                        },
+                        senderExecutor
+                );
     }
 
-    private Response analyzeResponses(int method, List<Response> responses) {
-        // The required number of successful responses has already been received here.
-        switch (method) {
-            case Request.METHOD_GET -> {
-                responses.sort(timestampComparator);
-
-                Response response = responses.getFirst();
-
-                return (response.getStatus() == GONE)
-                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                        : response;
-            }
-            case Request.METHOD_PUT -> {
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            default -> { // For delete method.
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-        }
+    private CompletableFuture<ResponseElements> getLocalFuture(
+            int method,
+            String id,
+            Request request,
+            long timestamp) {
+        return CompletableFuture
+                .supplyAsync(
+                        () -> switch (method) {
+                            case Request.METHOD_GET -> get(id);
+                            case Request.METHOD_PUT -> put(id, request.getBody(), timestamp);
+                            default -> delete(id, timestamp);
+                        },
+                        localExecutor
+                );
     }
 
-    private Response get(String id) {
+    private void processRemotely(
+            String node,
+            Request request,
+            long timestamp,
+            ResponseCollector collector)
+            throws HttpException, IOException, PoolException {
+
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(node + request.getURI()))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .header(TIMESTAMP_HEADER, String.valueOf(timestamp))
+                .timeout(Duration.ofMillis(500))
+                .build();
+
+        httpClient
+                .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApplyAsync(
+                        httpResponse -> { // java.net response
+                            Optional<String> optTimestamp = httpResponse.headers().firstValue(TIMESTAMP_HEADER);
+                            long responseTimestamp = optTimestamp.isPresent()
+                                    ? Long.parseLong(optTimestamp.get())
+                                    : EMPTY_TIMESTAMP;
+
+                            return collector.add(
+                                    new ResponseElements(
+                                            httpResponse.statusCode(),
+                                            httpResponse.body(),
+                                            responseTimestamp
+                                    )
+                            );
+                        },
+                        remoteCallExecutor
+                ).thenAcceptAsync(
+                        condition -> {
+                            if (condition) {
+                                collector.trySendResponse();
+                            }
+                        },
+                        senderExecutor
+                );
+    }
+
+    private ResponseElements get(String id) {
         ClusterEntry<MemorySegment> entry = (ClusterEntry<MemorySegment>) dao.get(fromString(id));
 
-        Response response;
+        ResponseElements response;
         if (entry == null) {
-            response = new Response(Response.NOT_FOUND, Response.EMPTY);
-            response.addHeader(TIMESTAMP_HEADER + EMPTY_TIMESTAMP);
+            response = new ResponseElements(404, Response.EMPTY, -1);
         } else {
+            long timestamp = entry.timestamp();
             response = (entry.value() == null)
-                    ? new Response(Response.GONE, Response.EMPTY)
-                    : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
-            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+                    ? new ResponseElements(410, Response.EMPTY, timestamp)
+                    : new ResponseElements(200, entry.value().toArray(ValueLayout.JAVA_BYTE), timestamp);
         }
 
         return response;
     }
 
-    private Response put(String id, byte[] body, long timestamp) {
+    private ResponseElements put(String id, byte[] body, long timestamp) {
         Entry<MemorySegment> entry = new ClusterEntry<>(
                 fromString(id),
                 MemorySegment.ofArray(body),
@@ -228,10 +280,10 @@ public class RequestHandler {
         );
         dao.upsert(entry);
 
-        return new Response(Response.CREATED, Response.EMPTY);
+        return new ResponseElements(201, Response.EMPTY, -1);
     }
 
-    private Response delete(String id, long timestamp) {
+    private ResponseElements delete(String id, long timestamp) {
         Entry<MemorySegment> entry = new ClusterEntry<>(
                 fromString(id),
                 null,
@@ -239,10 +291,15 @@ public class RequestHandler {
         );
         dao.upsert(entry);
 
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+        return new ResponseElements(202, Response.EMPTY, -1);
     }
 
     private static MemorySegment fromString(String data) {
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public void send() {
+
     }
 }

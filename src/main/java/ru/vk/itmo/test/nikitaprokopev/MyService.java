@@ -12,6 +12,7 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -21,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class MyService implements Service {
     private final Logger log = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024; // 1 MB
-    private static final int MAX_QUEUE_LENGTH = 500;
+    private static final int MAX_QUEUE_LENGTH = 1000;
     private static final int MAX_THREADS = 8;
     private static final int KEEP_ALIVE_TIME = 10;
     private static final int AWAIT_TERMINATION_TIMEOUT = 30;
@@ -29,25 +30,38 @@ public class MyService implements Service {
     private MyServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ThreadPoolExecutor workerPool;
+    private HttpClient[] httpClients;
 
     public MyService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
     }
 
     @Override
-    public CompletableFuture<Void> start() throws IOException {
+    public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES));
         workerPool = createPool();
-        server = new MyServer(serviceConfig, dao, workerPool);
+        httpClients = new HttpClient[serviceConfig.clusterUrls().size() - 1];
+        for (int i = 0; i < serviceConfig.clusterUrls().size() - 1; i++) {
+            httpClients[i] = HttpClient.newHttpClient();
+        }
+        int nodeId = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
+        if (nodeId == -1) {
+            log.error("Node id not found in cluster urls");
+            return CompletableFuture.completedFuture(null);
+        }
+        server = new MyServer(serviceConfig, dao, workerPool, httpClients, nodeId);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         server.stop();
-        dao.close();
         shutdownAndAwaitTermination(workerPool);
+        for (HttpClient httpClient : httpClients) {
+            httpClient.close();
+        }
+        dao.close();
         return CompletableFuture.completedFuture(null);
     }
 

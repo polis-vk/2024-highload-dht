@@ -32,6 +32,7 @@ public class DaoHttpServer extends HttpServer {
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String SERVER_STOP_PATH = "/stop";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
     private static final String TIMESTAMP_HEADER_NAME = "X-KEY-TS: ";
     private final ExecutorService workerPool;
@@ -210,7 +211,7 @@ public class DaoHttpServer extends HttpServer {
         if (success >= ack) {
             return response;
         } else {
-            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
     }
 
@@ -239,7 +240,7 @@ public class DaoHttpServer extends HttpServer {
         if (success >= ack) {
             return response;
         } else {
-            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
     }
 

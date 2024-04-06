@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,12 +42,15 @@ public class RedirectService {
             logger.trace("sending redirect to node {}", url);
             final Request redirectRequest = client.createRequest(
                     request.getMethod(),
-                    request.getURI(),
-                    Arrays.copyOf(request.getHeaders(), request.getHeaderCount())
+                    request.getURI()
             );
             final byte[] body = request.getBody();
             if (body != null) {
                 redirectRequest.setBody(body);
+            }
+            final String[] headers = request.getHeaders();
+            for (int i = 0; i < request.getHeaderCount(); i++) {
+                redirectRequest.addHeader(headers[i]);
             }
             redirectRequest.addHeader(REDIRECT_HEADER);
             return client.invoke(redirectRequest, REDIRECT_TIMEOUT);

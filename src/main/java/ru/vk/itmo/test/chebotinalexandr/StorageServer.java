@@ -194,11 +194,9 @@ public class StorageServer extends HttpServer {
         AtomicInteger handled = new AtomicInteger(0);
         for (CompletableFuture<Response> completableFuture : completableFutureResponses) {
             completableFuture.whenCompleteAsync((response, throwable) -> {
-                //return if response has been already sent before
                 if (enough.get()) {
                     return;
                 }
-
                 handled.incrementAndGet();
                 if (throwable != null) {
                     response = new Response(Response.INTERNAL_ERROR);
@@ -207,7 +205,7 @@ public class StorageServer extends HttpServer {
                     readyResponses.add(response);
                 }
 
-                //compare readyResponses and send
+                //try to send win response
                 try {
                     enough.set(compareReplicasResponses(httpMethod, session, readyResponses, ack));
                 } catch (IOException e) {
@@ -215,8 +213,6 @@ public class StorageServer extends HttpServer {
                     sendEmptyBodyResponse(Response.INTERNAL_ERROR, session);
                     session.close();
                 }
-
-                //when all future tasks done
                 if (handled.get() == from && readyResponses.size() < ack) {
                     sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
                 }

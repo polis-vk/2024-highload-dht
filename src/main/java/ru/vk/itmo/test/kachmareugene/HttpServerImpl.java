@@ -38,7 +38,10 @@ public class HttpServerImpl extends HttpServer {
 
     private static final int CORE_POOL = 4;
     private static final int MAX_POOL = 8;
-    private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(256);
+    private static final int INITIAL_ARRAY_CAPACITY = 256;
+    private static final String COMMON_HTTP_PATH = "/v0/entity";
+    public static final int DEFAULT_TIMEOUT = 100;
+    private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(INITIAL_ARRAY_CAPACITY);
     private final ExecutorService executorService =
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
                         10L, TimeUnit.MILLISECONDS,
@@ -110,31 +113,23 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    @Path(value = "/v0/entity")
+    @Path(value = COMMON_HTTP_PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntry(
             @Param("id") String key) {
-
-        if (key == null || key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
 
         Entry<MemorySegment> result = daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
         if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
+        return Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(value = "/v0/entity")
+    @Path(value = COMMON_HTTP_PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response putOrEmplaceEntry(
             @Param("id") String key,
             Request request) {
-
-        if (key == null || key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
 
         daoImpl.upsert(
                 new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
@@ -142,12 +137,9 @@ public class HttpServerImpl extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(value = "/v0/entity")
+    @Path(value = COMMON_HTTP_PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param("id") String key) {
-        if (key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         daoImpl.upsert(
                 new BaseEntry<>(
                     MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
@@ -160,12 +152,18 @@ public class HttpServerImpl extends HttpServer {
         try {
             executorService.execute(() -> {
                 try {
+                    String key = request.getParameter("id=");
+                    if (key == null || key.isEmpty()) {
+                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        return;
+                    }
+
                     String urlToSend = partitionTable.getCorrectURL(request);
 
                     if (urlToSend.equals(selfNodeURL)) {
                         super.handleRequest(request, session);
                     } else {
-                        session.sendResponse(clientMap.get(urlToSend).invoke(request, 100));
+                        session.sendResponse(clientMap.get(urlToSend).invoke(request, DEFAULT_TIMEOUT));
                     }
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
@@ -174,7 +172,7 @@ public class HttpServerImpl extends HttpServer {
                     errorAccept(session, e, Response.CONFLICT);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    errorAccept(session, e, Response.CONFLICT);
+                    errorAccept(session, e, Response.SERVICE_UNAVAILABLE);
                 } catch (HttpException e) {
                     errorAccept(session, e, Response.NOT_ACCEPTABLE);
                 } catch (PoolException e) {
@@ -197,16 +195,14 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         int method = request.getMethod();
-        Response response;
-        if (method == Request.METHOD_PUT
-                || method == Request.METHOD_DELETE
-                || method == Request.METHOD_GET) {
 
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } else {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        }
-        session.sendResponse(response);
+        session.sendResponse(new Response(switch (method) {
+            case Request.METHOD_PUT |
+                    Request.METHOD_GET |
+                    Request.METHOD_DELETE -> Response.BAD_REQUEST;
+
+            default -> Response.METHOD_NOT_ALLOWED;
+        }, Response.EMPTY));
     }
 
     @Override

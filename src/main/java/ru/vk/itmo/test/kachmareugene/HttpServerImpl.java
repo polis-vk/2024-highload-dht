@@ -21,11 +21,22 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class HttpServerImpl extends HttpServer {
 
-    private static final Response NOT_FOUND =
-             new Response(Response.NOT_FOUND, Response.EMPTY);
+    private static final int CORE_POOL = 4;
+    private static final int MAX_POOL = 8;
+    private final BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(50);
+    private final ExecutorService executorService =
+            new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
+                        10L, TimeUnit.MILLISECONDS,
+                                    queue);
     private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
     Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
     private final ServiceConfig serviceConfig;
@@ -57,10 +68,30 @@ public class HttpServerImpl extends HttpServer {
         super.start();
     }
 
+    private static void closeExecutorService(ExecutorService exec) {
+        if (exec == null) {
+            return;
+        }
+
+        exec.shutdownNow();
+        while (!exec.isTerminated()) {
+            try {
+                if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
+                    exec.shutdownNow();
+                }
+
+            } catch (InterruptedException e) {
+                exec.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
     @Override
     public synchronized void stop() {
         super.stop();
         try {
+            closeExecutorService(executorService);
             daoImpl.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -73,13 +104,13 @@ public class HttpServerImpl extends HttpServer {
             @Param("id") String key) {
 
         if (key == null || key.isEmpty()) {
-            return BAD;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<MemorySegment> result = daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
 
         if (result == null) {
-            return NOT_FOUND;
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
     }
@@ -114,9 +145,26 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            super.handleRequest(request, session);
-        } catch (RuntimeException e) {
-            session.sendError(Response.BAD_REQUEST, e.toString());
+
+            executorService.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (RuntimeException e) {
+                    errorAccept(session, e, Response.BAD_REQUEST);
+                } catch (IOException e) {
+                    errorAccept(session, e, Response.CONFLICT);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendError(Response.CONFLICT, e.toString());
+        }
+    }
+
+    private void errorAccept(HttpSession session, Exception e, String message) {
+        try {
+            session.sendError(message, e.toString());
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
         }
     }
 

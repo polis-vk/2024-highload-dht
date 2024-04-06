@@ -5,7 +5,6 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -15,9 +14,7 @@ public class ServiceImpl implements Service {
 
     private final Config daoConfig;
     private final ServiceConfig config;
-    private ReferenceDao dao;
     private HttpServer server;
-
     private boolean isRun;
 
     public ServiceImpl(ServiceConfig config) throws IOException {
@@ -31,8 +28,7 @@ public class ServiceImpl implements Service {
         if (isRun) {
             return CompletableFuture.completedFuture(null);
         }
-        dao = new ReferenceDao(daoConfig);
-        server = new DaoHttpServer(config, dao);
+        server = new DaoHttpServer(config, daoConfig);
         server.start();
         isRun = true;
         return CompletableFuture.completedFuture(null);
@@ -44,12 +40,11 @@ public class ServiceImpl implements Service {
             return CompletableFuture.completedFuture(null);
         }
         server.stop();
-        dao.close();
         isRun = false;
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

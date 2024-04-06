@@ -152,8 +152,8 @@ class ShardingTest extends TestBase {
         final byte[] value = randomValue();
 
         // Insert
-        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(0).upsert(key, value).statusCode());
-        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(1).upsert(key, value).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(0).upsert(key, value, 1, 1).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(1).upsert(key, value, 1, 1).statusCode());
 
         // Stop all
         for (ServiceInfo serviceInfo : serviceInfos) {
@@ -165,7 +165,7 @@ class ShardingTest extends TestBase {
         for (ServiceInfo serviceInfo : serviceInfos) {
             serviceInfo.start();
 
-            HttpResponse<byte[]> response = serviceInfo.get(key);
+            HttpResponse<byte[]> response = serviceInfo.get(key, 1, 1);
             if (response.statusCode() == HttpURLConnection.HTTP_OK && Arrays.equals(value, response.body())) {
                 successCount++;
             }

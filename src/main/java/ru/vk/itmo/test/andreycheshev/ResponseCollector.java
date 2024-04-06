@@ -43,8 +43,7 @@ public class ResponseCollector {
     }
 
     private boolean isReadySendResponse() {
-        return ((method == Request.METHOD_GET && collector.size() == ack)
-                || ack == from);
+        return method == Request.METHOD_GET && collector.size() == ack || ack == from;
     }
 
     public void trySendResponse() {
@@ -53,13 +52,13 @@ public class ResponseCollector {
         }
 
         if (isReadySendResponse()) {
-            HttpUtils.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
-        } else {
             ResponseElements responseElements = collector.poll();
             HttpUtils.sendResponse(
                     HttpUtils.getOneNioResponse(method, responseElements),
                     session
             );
+        } else {
+            HttpUtils.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
         }
     }
 }

@@ -59,7 +59,7 @@ public class RequestHandler implements Sender {
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .executor(remoteCallExecutor)
-            .connectTimeout(Duration.ofMillis(400))
+            .connectTimeout(Duration.ofMillis(500))
             .version(HttpClient.Version.HTTP_1_1)
             .build();
 
@@ -142,9 +142,9 @@ public class RequestHandler implements Sender {
             String node = distributor.getNodeUrlByIndex(nodeIndex);
             try {
                 if (distributor.isOurNode(nodeIndex)) {
-                    processLocally(method, id, request, timestamp, collector);
+                    processLocallyToCollect(method, id, request, timestamp, collector);
                 } else {
-                    processRemotely(node, request, timestamp, collector);
+                    processRemotelyToCollect(node, request, timestamp, collector);
                 }
             } catch (SocketTimeoutException e) {
                 LOGGER.error("Request processing time exceeded on another node", e);
@@ -174,7 +174,7 @@ public class RequestHandler implements Sender {
     }
 
 
-    private void processLocally(
+    private void processLocallyToCollect(
             int method,
             String id,
             Request request,
@@ -182,7 +182,8 @@ public class RequestHandler implements Sender {
             ResponseCollector collector
     ) {
         getLocalFuture(method, id, request, timestamp)
-                .thenApplyAsync(collector::add,
+                .thenApplyAsync(
+                        collector::add,
                         remoteCallExecutor
                 ).thenAcceptAsync(
                         condition -> {
@@ -199,18 +200,17 @@ public class RequestHandler implements Sender {
             String id,
             Request request,
             long timestamp) {
-        return CompletableFuture
-                .supplyAsync(
-                        () -> switch (method) {
-                            case Request.METHOD_GET -> get(id);
-                            case Request.METHOD_PUT -> put(id, request.getBody(), timestamp);
-                            default -> delete(id, timestamp);
-                        },
-                        localExecutor
-                );
+        return CompletableFuture.supplyAsync(
+                () -> switch (method) {
+                    case Request.METHOD_GET -> get(id);
+                    case Request.METHOD_PUT -> put(id, request.getBody(), timestamp);
+                    default -> delete(id, timestamp);
+                },
+                localExecutor
+        );
     }
 
-    private void processRemotely(
+    private void processRemotelyToCollect(
             String node,
             Request request,
             long timestamp,

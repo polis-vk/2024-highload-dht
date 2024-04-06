@@ -13,7 +13,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    public static final int FLUSH_THRESHOLD_BYTES = 1024 * 1023;
+    public static final int FLUSH_THRESHOLD_BYTES = 1024 * 1024;
     private Server server;
     private final ServiceConfig serviceConfig;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -37,12 +37,11 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
             return new ServiceImpl(config);
         }
     }
-
 }

@@ -9,4 +9,8 @@ import java.nio.file.Path;
 public class DaoServerConfig extends HttpServerConfig {
     public Path basePath;
     public long flushThresholdBytes;
+    public int corePoolSize = 2;
+    public int maximumPoolSize = 20;
+    public long keepAliveTime = 100;
+    public int queueCapacity = 1000;
 }

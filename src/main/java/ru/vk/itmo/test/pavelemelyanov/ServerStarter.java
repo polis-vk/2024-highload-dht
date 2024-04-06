@@ -9,19 +9,23 @@ import java.nio.file.Path;
 import java.util.List;
 
 public final class ServerStarter {
+    private static final Path WORKING_DIR = Path.of("./data1/");
+    private static final String URL = "http://localhost";
+    private static final int FLUSH_THRESHOLD_BYTES = 2 * 1024 * 1024;
+
     public static void main(String[] args) throws IOException {
         ReferenceDao dao = new ReferenceDao(
                 new Config(
-                        Path.of("./data1/"),
-                        2 * 1024 * 1024
+                        WORKING_DIR,
+                        FLUSH_THRESHOLD_BYTES
                 )
         );
         MyServer server = new MyServer(
                 new ServiceConfig(
                         8080,
-                        "http://localhost",
-                        List.of("http://localhost"),
-                        Path.of("./data1/")
+                        URL,
+                        List.of(URL),
+                        WORKING_DIR
                 ),
                 dao
         );

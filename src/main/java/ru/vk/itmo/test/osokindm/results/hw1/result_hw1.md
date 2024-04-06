@@ -57,11 +57,11 @@ Transfer/sec:    506.97KB
 Можно считать, что нагрузка является допустимой и проведена ниже точки разладки. 
 Низкое Latency при столь высоком rps достигается за счет того, что все Page object свободно вмещаеются в оперативной памяти и, как следствие, у нас нет медленных запросов к диску
 
-[Flamegraph CPU](profiler/profile_get_8000.svg)
+[Flamegraph CPU](./profile_get_8000.svg)
 Большую часть процессорного времени (>43%) занимает работа с MemorySegment, бинарный поиск и метод сравнения сегментов MemorySegmentComparator.compare
 20% процессорного времени занимало выполенине кода ядра, в честности 19% ушло на syscall получения набора семафоров (SEMGET).
 
-[Flamegraph Alloc](profiler/profile_get_alloc_8000.svg)
+[Flamegraph Alloc](./profile_get_alloc_8000.svg)
 
 Больше всего выделений памяти (8%) уходило на Mapped MemorySegment
 
@@ -129,10 +129,10 @@ Transfer/sec:    523.42KB
 100.000%   26.45ms
 ```
 
-[Flamegraph CPU](profiler/profile_put_8000.svg) 
+[Flamegraph CPU](./profile_put_8000.svg) 
 Здесь оптимизация, касающаяся SelectorThread также применима, что и постараюсь реализовать в следующей дз.
 
-[Flamegraph Alloc](profiler/profile_put_alloc_8000.svg)
+[Flamegraph Alloc](./profile_put_alloc_8000.svg)
 В отличие от GET, здесь происходит намного меньше обращений к памяти.
 
 **Замена существующего значения**

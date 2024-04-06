@@ -154,16 +154,9 @@ public class HttpServerImpl extends HttpServer {
                 try {
                     if (validateIdParam(request, session)) return;
 
-                    String urlToSend = partitionTable.getCorrectURL(request);
-
-                    if (urlToSend.equals(selfNodeURL)) {
-                        super.handleRequest(request, session);
-                    } else {
-                        session.sendResponse(clientMap.get(urlToSend).invoke(request, DEFAULT_TIMEOUT));
-                    }
+                    redirectLogic(request, session);
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
-
                 } catch (IOException e) {
                     errorAccept(session, e, Response.CONFLICT);
                 } catch (InterruptedException e) {
@@ -177,6 +170,21 @@ public class HttpServerImpl extends HttpServer {
             });
         } catch (RejectedExecutionException e) {
             session.sendError(Response.CONFLICT, e.toString());
+        }
+    }
+
+    private void redirectLogic(Request request, HttpSession session)
+            throws
+            IOException,
+            InterruptedException,
+            PoolException,
+            HttpException {
+        String urlToSend = partitionTable.getCorrectURL(request);
+
+        if (urlToSend.equals(selfNodeURL)) {
+            super.handleRequest(request, session);
+        } else {
+            session.sendResponse(clientMap.get(urlToSend).invoke(request, DEFAULT_TIMEOUT));
         }
     }
 
@@ -201,7 +209,7 @@ public class HttpServerImpl extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         int method = request.getMethod();
 
-        session.sendResponse(new Response(switch (method) {
+        session.sendResponse(new Response(switch(method) {
             case Request.METHOD_PUT
                     | Request.METHOD_GET
                     | Request.METHOD_DELETE -> Response.BAD_REQUEST;

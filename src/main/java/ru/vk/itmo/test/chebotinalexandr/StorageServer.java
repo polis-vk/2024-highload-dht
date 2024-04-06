@@ -218,9 +218,7 @@ public class StorageServer extends HttpServer {
                 if (handled.get() == from && readyResponses.size() < ack) {
                     sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
                 }
-            }, serverExecutor).exceptionally((throwable) -> {
-                return new Response(Response.INTERNAL_ERROR);
-            }
+            }, serverExecutor).exceptionally((throwable) -> new Response(Response.INTERNAL_ERROR)
             );
         }
     }

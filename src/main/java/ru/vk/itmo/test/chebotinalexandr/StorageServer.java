@@ -204,18 +204,26 @@ public class StorageServer extends HttpServer {
                     readyResponses.add(response);
                 }
 
-                //try to send win response
-                try {
-                    enough.set(compareReplicasResponses(httpMethod, session, readyResponses, ack));
-                } catch (IOException e) {
-                    log.error("Exception during send win response: ", e);
-                    emptyBodyResponseAndCloseSession(Response.INTERNAL_ERROR, session);
-                }
+                tryToSendWinResponse(session, ack, httpMethod, enough, readyResponses);
 
                 if (handled.get() == from && readyResponses.size() < ack) {
                     sendEmptyBodyResponse(NOT_ENOUGH_REPLICAS, session);
                 }
             }, serverExecutor).exceptionally((throwable) -> new Response(Response.INTERNAL_ERROR));
+        }
+    }
+
+    private static void tryToSendWinResponse(
+            HttpSession session,
+            int ack,
+            int httpMethod,
+            AtomicBoolean enough,
+            List<Response> readyResponses) {
+        try {
+            enough.set(compareReplicasResponses(httpMethod, session, readyResponses, ack));
+        } catch (IOException e) {
+            log.error("Exception during send win response: ", e);
+            emptyBodyResponseAndCloseSession(Response.INTERNAL_ERROR, session);
         }
     }
 

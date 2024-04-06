@@ -7,12 +7,12 @@ import ru.vk.itmo.test.ServiceFactory;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 
-@ServiceFactory(stage = 1)
+@ServiceFactory(stage = 4)
 public class ServiceFactoryImpl implements ServiceFactory.Factory {
     @Override
     public Service create(ServiceConfig config) {
         try {
-            return new ServiceImpl(config);
+            return new DaoServiceImpl(config);
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }

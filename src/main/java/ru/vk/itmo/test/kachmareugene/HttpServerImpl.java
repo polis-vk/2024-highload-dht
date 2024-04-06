@@ -152,11 +152,7 @@ public class HttpServerImpl extends HttpServer {
         try {
             executorService.execute(() -> {
                 try {
-                    String key = request.getParameter("id=");
-                    if (key == null || key.isEmpty()) {
-                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        return;
-                    }
+                    if (validateIdParam(request, session)) return;
 
                     String urlToSend = partitionTable.getCorrectURL(request);
 
@@ -184,6 +180,15 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
+    private static boolean validateIdParam(Request request, HttpSession session) throws IOException {
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return true;
+        }
+        return false;
+    }
+
     private void errorAccept(HttpSession session, Exception e, String message) {
         try {
             session.sendError(message, e.toString());
@@ -197,9 +202,9 @@ public class HttpServerImpl extends HttpServer {
         int method = request.getMethod();
 
         session.sendResponse(new Response(switch (method) {
-            case Request.METHOD_PUT |
-                    Request.METHOD_GET |
-                    Request.METHOD_DELETE -> Response.BAD_REQUEST;
+            case Request.METHOD_PUT
+                    | Request.METHOD_GET
+                    | Request.METHOD_DELETE -> Response.BAD_REQUEST;
 
             default -> Response.METHOD_NOT_ALLOWED;
         }, Response.EMPTY));

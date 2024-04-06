@@ -163,10 +163,10 @@ public class StorageServer extends HttpServer {
             int partition
     ) throws IOException, InterruptedException {
         long timestamp = System.currentTimeMillis();
-        List<CompletableFuture<Response>> completableFutureResponses = new CopyOnWriteArrayList<>();
         int httpMethod = request.getMethod();
 
-        //get completableFutures from nodes
+        //get completable futures from nodes
+        List<CompletableFuture<Response>> completableFutureResponses = new CopyOnWriteArrayList<>();
         for (int i = 0; i < from; i++) {
             int nodeIndex = (partition + i) % clusterUrls.size();
 
@@ -179,7 +179,16 @@ public class StorageServer extends HttpServer {
             completableFutureResponses.add(responseCompletableFuture);
         }
 
-        //callback
+        callback(session, ack, from, completableFutureResponses, httpMethod);
+    }
+
+    private void callback(
+            HttpSession session,
+            int ack,
+            int from,
+            List<CompletableFuture<Response>> completableFutureResponses,
+            int httpMethod
+    ) {
         List<Response> readyResponses = new CopyOnWriteArrayList<>();
         AtomicBoolean enough = new AtomicBoolean(false);
         AtomicInteger handled = new AtomicInteger(0);
@@ -219,14 +228,14 @@ public class StorageServer extends HttpServer {
         }
     }
 
-    private boolean responseStatusIsValid(Response response) {
+    private static boolean responseStatusIsValid(Response response) {
         return (response.getStatus() == 201)
                 || (response.getStatus() == 200)
                 || (response.getStatus() == 404)
                 || (response.getStatus() == 202);
     }
 
-    private boolean compareReplicasResponses(
+    private static boolean compareReplicasResponses(
             int httpMethod,
             HttpSession session,
             List<Response> responses,
@@ -246,7 +255,7 @@ public class StorageServer extends HttpServer {
         return false;
     }
 
-    private Response findLastWriteResponse(List<Response> responses) {
+    private static Response findLastWriteResponse(List<Response> responses) {
         Response result = responses.getFirst();
         long maxTimestamp = 0;
         for (Response response : responses) {
@@ -262,7 +271,7 @@ public class StorageServer extends HttpServer {
         return result;
     }
 
-    private long parseTimestamp(String timestampHeader) {
+    private static long parseTimestamp(String timestampHeader) {
         Pattern pattern = Pattern.compile("\\d+");
         Matcher matcher = pattern.matcher(timestampHeader);
 
@@ -273,7 +282,7 @@ public class StorageServer extends HttpServer {
         return 0L;
     }
 
-    private int quorum(int from) {
+    private static int quorum(int from) {
         return from / 2 + 1;
     }
 

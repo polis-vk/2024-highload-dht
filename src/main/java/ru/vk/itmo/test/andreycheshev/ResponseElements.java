@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import java.util.Comparator;
-
-public class ResponseElements implements Comparator<ResponseElements> {
+public class ResponseElements implements Comparable<ResponseElements> {
     private final int status;
     private final byte[] body;
     private final long timestamp;
@@ -26,12 +24,10 @@ public class ResponseElements implements Comparator<ResponseElements> {
     }
 
     @Override
-    public int compare(ResponseElements o1, ResponseElements o2) {
-        long timestamp1 = o1.getTimestamp();
-        long timestamp2 = o2.getTimestamp();
-        if (timestamp1 > timestamp2) {
+    public int compareTo(ResponseElements o) {
+        if (this.getTimestamp() > o.getTimestamp()) {
             return -1;
-        } else if (timestamp1 < timestamp2) {
+        } else if (this.getTimestamp() < o.getTimestamp()) {
             return 1;
         }
         return 0;

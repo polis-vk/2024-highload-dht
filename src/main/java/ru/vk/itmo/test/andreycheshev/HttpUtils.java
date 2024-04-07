@@ -10,7 +10,6 @@ import java.net.http.HttpResponse;
 import java.util.Map;
 import java.util.Optional;
 
-
 public class HttpUtils {
     public static final String TIMESTAMP_JAVA_NET_HEADER = "X-Timestamp";
     public static final String TIMESTAMP_ONE_NIO_HEADER = TIMESTAMP_JAVA_NET_HEADER + ": ";
@@ -21,6 +20,7 @@ public class HttpUtils {
     public static final int EMPTY_TIMESTAMP = -1;
 
     private static final Map<Integer, String> AVAILABLE_RESPONSES;
+
     static {
         AVAILABLE_RESPONSES = Map.of(
                 200, Response.OK,

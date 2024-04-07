@@ -20,6 +20,7 @@ public class RequestHandler implements HttpProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
 
     private static final Set<Integer> AVAILABLE_METHODS;
+
     static {
         AVAILABLE_METHODS = Set.of(
                 Request.METHOD_GET,
@@ -27,6 +28,8 @@ public class RequestHandler implements HttpProvider {
                 Request.METHOD_DELETE
         ); // Immutable set.
     }
+
+    private static String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
 
     private static final String REQUEST_PATH = "/v0/entity";
 
@@ -59,7 +62,7 @@ public class RequestHandler implements HttpProvider {
         try {
             asyncActions.sendAsync(response, session);
         } catch (AssertionError e) {
-            LOGGER.info("Error when CompletableFuture creation");
+            LOGGER.info(FUTURE_CREATION_ERROR);
         }
     }
 
@@ -93,7 +96,7 @@ public class RequestHandler implements HttpProvider {
                 assert future != null;
                 return null;
             } catch (AssertionError e) {
-                LOGGER.info("Error when CompletableFuture creation");
+                LOGGER.info(FUTURE_CREATION_ERROR);
                 return HttpUtils.getInternalError();
             } catch (NumberFormatException e) {
                 return HttpUtils.getBadRequest();
@@ -141,7 +144,7 @@ public class RequestHandler implements HttpProvider {
                     : asyncActions.processRemotelyToCollect(node, request, timestamp, collector);
 
             if (future == null) {
-                LOGGER.info("Error when CompletableFuture creation");
+                LOGGER.info(FUTURE_CREATION_ERROR);
             }
         }
     }

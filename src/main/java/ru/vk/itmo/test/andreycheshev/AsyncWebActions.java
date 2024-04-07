@@ -3,7 +3,6 @@ package ru.vk.itmo.test.andreycheshev;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 
-import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -14,10 +13,10 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class AsyncWebActions {
-    private final Executor putResponseExecutor = Executors.newFixedThreadPool(6);
-    private final Executor remoteCallExecutor = Executors.newFixedThreadPool(6);
-    private final Executor senderExecutor = Executors.newFixedThreadPool(6);
-    private final Executor localExecutor = Executors.newFixedThreadPool(6);
+    private final Executor putResponseExecutor = Executors.newFixedThreadPool(6, new WorkerThreadFactory("Put-thread"));
+    private final Executor remoteCallExecutor = Executors.newFixedThreadPool(6, new WorkerThreadFactory("RemoteCall-thread"));
+    private final Executor senderExecutor = Executors.newFixedThreadPool(6, new WorkerThreadFactory("Sender-thread"));
+    private final Executor localExecutor = Executors.newFixedThreadPool(6, new WorkerThreadFactory("LocalCall-thread"));
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .executor(remoteCallExecutor)
@@ -46,18 +45,13 @@ public class AsyncWebActions {
                         ),
                         senderExecutor
                 ).handleAsync(
-                        (future, exception) -> {
-                            if (exception instanceof ConnectException) {
-                                HttpUtils.sendBadRequest(session);
-                            } else {
-                                HttpUtils.sendBadRequest(session);
-                            }
+                        (future, _) -> {
+                            HttpUtils.sendBadRequest(session);
                             return future;
                         },
                         senderExecutor
                 );
     }
-
 
 //} catch (SocketTimeoutException e) {
 //        LOGGER.error("Request processing time exceeded on another node", e);
@@ -91,22 +85,6 @@ public class AsyncWebActions {
                 );
     }
 
-    public CompletableFuture<ResponseElements> getLocalFuture(
-            int method,
-            String id,
-            Request request,
-            long timestamp) {
-
-        return CompletableFuture.supplyAsync(
-                () -> switch (method) {
-                    case Request.METHOD_GET -> httpProvider.get(id);
-                    case Request.METHOD_PUT -> httpProvider.put(id, request.getBody(), timestamp);
-                    default -> httpProvider.delete(id, timestamp);
-                },
-                localExecutor
-        );
-    }
-
     public CompletableFuture<Void> processRemotelyToCollect(
             String node,
             Request request,
@@ -128,7 +106,9 @@ public class AsyncWebActions {
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .thenApplyAsync(
                         response -> { // java.net response
-                            return collector.add(HttpUtils.getElementsFromJavaNetResponse(response));
+                            return collector.add(
+                                    HttpUtils.getElementsFromJavaNetResponse(response)
+                            );
                         },
                         putResponseExecutor
                 )
@@ -146,4 +126,19 @@ public class AsyncWebActions {
                 );
     }
 
+    private CompletableFuture<ResponseElements> getLocalFuture(
+            int method,
+            String id,
+            Request request,
+            long timestamp) {
+
+        return CompletableFuture.supplyAsync(
+                () -> switch (method) {
+                    case Request.METHOD_GET -> httpProvider.get(id);
+                    case Request.METHOD_PUT -> httpProvider.put(id, request.getBody(), timestamp);
+                    default -> httpProvider.delete(id, timestamp);
+                },
+                localExecutor
+        );
+    }
 }

@@ -35,7 +35,7 @@ public class RequestExecutor {
                 KEEPALIVE_MILLIS,
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(MAX_WORK_QUEUE_SIZE),
-                new WorkerThreadFactory(),
+                new WorkerThreadFactory("Distributor-thread"),
                 new ThreadPoolExecutor.AbortPolicy()
         );
     }

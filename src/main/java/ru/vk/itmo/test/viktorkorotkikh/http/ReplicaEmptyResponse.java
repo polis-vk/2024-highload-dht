@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.viktorkorotkikh.http;
 
+import one.nio.http.Response;
+
 public class ReplicaEmptyResponse implements NodeResponse {
     private final int statusCode;
 
@@ -14,7 +16,7 @@ public class ReplicaEmptyResponse implements NodeResponse {
 
     @Override
     public byte[] body() {
-        return new byte[0];
+        return Response.EMPTY;
     }
 
     @Override

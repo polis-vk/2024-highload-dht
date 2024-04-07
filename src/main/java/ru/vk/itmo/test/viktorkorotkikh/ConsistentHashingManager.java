@@ -8,7 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.Set;
+import java.util.SequencedSet;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
@@ -27,12 +27,12 @@ public class ConsistentHashingManager {
         }
     }
 
-    public List<String> getReplicasList(final int from, final byte[] key) {
+    public SequencedSet<String> getReplicasSet(final int from, final byte[] key) {
         if (from > clusterSize) {
             throw new IllegalArgumentException("Not enough servers in cluster");
         }
 
-        final Set<String> replicas = new LinkedHashSet<>(from, 1.f);
+        final SequencedSet<String> replicas = new LinkedHashSet<>(from, 1.f);
         final int keyHash = bytesToHash(key);
 
         SortedMap<Integer, String> tailMap = hashRing.tailMap(keyHash);
@@ -53,7 +53,7 @@ public class ConsistentHashingManager {
                 i++;
             }
         }
-        return List.copyOf(replicas);
+        return replicas;
     }
 
     private static int bytesToHash(byte[] bytes) {

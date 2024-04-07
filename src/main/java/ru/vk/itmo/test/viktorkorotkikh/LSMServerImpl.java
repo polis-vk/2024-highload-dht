@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.SequencedSet;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -142,7 +143,7 @@ public class LSMServerImpl extends HttpServer {
         if (request.getHeader(REPLICA_REQUEST_HEADER) != null) {
             final String id = request.getParameter("id=");
             final byte[] key = id.getBytes(StandardCharsets.UTF_8);
-            final long requestTimestamp = Instant.now().toEpochMilli();
+            final long requestTimestamp = Long.parseLong(request.getHeader(LsmServerUtil.TIMESTAMP_HEADER_WITH_COLON));
             session.sendResponse(processLocal(request, key, id, requestTimestamp).getOriginal());
             return;
         }
@@ -183,7 +184,7 @@ public class LSMServerImpl extends HttpServer {
 
         final byte[] key = id.getBytes(StandardCharsets.UTF_8);
 
-        final List<String> replicas = consistentHashingManager.getReplicasList(from, key);
+        final SequencedSet<String> replicas = consistentHashingManager.getReplicasSet(from, key);
 
         final Response response = getResponseFromReplicas(
                 request,
@@ -222,7 +223,7 @@ public class LSMServerImpl extends HttpServer {
     private Response getResponseFromReplicas(
             Request request,
             Integer from,
-            List<String> replicas,
+            SequencedSet<String> replicas,
             byte[] key,
             String id,
             Integer ack
@@ -420,7 +421,6 @@ public class LSMServerImpl extends HttpServer {
     }
 
     private static int quorum(final int clusterSize) {
-        if (clusterSize < 3) return clusterSize;
         return clusterSize / 2 + 1;
     }
 }

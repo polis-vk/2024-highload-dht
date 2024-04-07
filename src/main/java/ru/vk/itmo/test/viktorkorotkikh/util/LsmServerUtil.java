@@ -15,6 +15,7 @@ import static java.net.HttpURLConnection.HTTP_OK;
 
 public class LsmServerUtil {
     public static final String TIMESTAMP_HEADER = "X-Entity-Timestamp";
+    public static final String TIMESTAMP_HEADER_WITH_COLON = TIMESTAMP_HEADER + ':';
 
     private LsmServerUtil() {
     }

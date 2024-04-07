@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.andreycheshev;
 
+import java.util.Arrays;
+
 public class ResponseElements implements Comparable<ResponseElements> {
     private final int status;
     private final byte[] body;
@@ -7,7 +9,7 @@ public class ResponseElements implements Comparable<ResponseElements> {
 
     public ResponseElements(int status, byte[] body, long timestamp) {
         this.status = status;
-        this.body = body;
+        this.body = Arrays.copyOf(body, body.length);;
         this.timestamp = timestamp;
     }
 
@@ -16,7 +18,7 @@ public class ResponseElements implements Comparable<ResponseElements> {
     }
 
     public byte[] getBody() {
-        return body;
+        return Arrays.copyOf(body, body.length);
     }
 
     public long getTimestamp() {

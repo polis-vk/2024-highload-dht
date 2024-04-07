@@ -10,7 +10,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 
@@ -35,7 +34,6 @@ public class Server extends HttpServer {
     private final ExecutorService workerPool;
     private final ShardingAlgorithm shardingAlgorithm;
     private final HttpClient httpClient;
-    private final FailureLimiter failureLimiter;
     private final RequestHandler requestHandler;
 
     private final String selfUrl;
@@ -44,8 +42,7 @@ public class Server extends HttpServer {
     private final long httpRequestTimeoutInMillis;
 
     public Server(ServiceConfig config, ReferenceDao dao, WorkerPool workerPool,
-                  ShardingAlgorithm shardingAlgorithm, ServerConfig serverConfig,
-                  FailureLimiter failureLimiter)
+                  ShardingAlgorithm shardingAlgorithm, ServerConfig serverConfig)
             throws IOException {
         super(createServerConfig(config));
 
@@ -58,7 +55,6 @@ public class Server extends HttpServer {
         this.clusterUrls = config.clusterUrls();
         this.requestMaxTimeToTakeInWorkInMillis = serverConfig.getRequestMaxTimeToTakeInWorkInMillis();
         this.httpRequestTimeoutInMillis = serverConfig.getHttpRequestTimeoutInMillis();
-        this.failureLimiter = failureLimiter;
         this.requestHandler = new RequestHandler(dao);
     }
 
@@ -214,16 +210,10 @@ public class Server extends HttpServer {
         logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, request.method(),
                 request.uri()));
 
-        if (failureLimiter.readyForRequests(nodeUrl)) {
-            return handleProxyRequest(request, nodeUrl);
-        } else {
-            logger.warn("[%s] Can't send request to closed node [%s]: %s %s".formatted(selfUrl, nodeUrl,
-                    request.method(), request.uri()));
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
+        return handleProxyRequest(request);
     }
 
-    private Response handleProxyRequest(HttpRequest httpRequest, String nodeUrl) {
+    private Response handleProxyRequest(HttpRequest httpRequest) {
         try {
             HttpResponse<byte[]> httpResponse = httpClient
                     .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
@@ -235,10 +225,6 @@ public class Server extends HttpServer {
                         + httpResponse.statusCode());
                 return new Response(Response.INTERNAL_ERROR, httpResponse.body());
             } else {
-                if (httpResponse.statusCode() >= Constants.SERVER_ERRORS) {
-                    failureLimiter.handleFailure(nodeUrl);
-                }
-
                 Response response = new Response(statusCode, httpResponse.body());
                 long timestamp = httpResponse.headers()
                         .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
@@ -248,15 +234,12 @@ public class Server extends HttpServer {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error(e.getMessage());
-            failureLimiter.handleFailure(nodeUrl);
             return handleExceptionInfo(e);
         } catch (ExecutionException e) {
             logger.error("Execution exception while processing the httpRequest", e);
-            failureLimiter.handleFailure(nodeUrl);
             return handleExceptionInfo(e);
         } catch (TimeoutException e) {
             logger.error("Request timed out. Maximum processing time exceeded", e);
-            failureLimiter.handleFailure(nodeUrl);
             return handleExceptionInfo(e);
         }
     }

@@ -2,7 +2,6 @@ package ru.vk.itmo.test.proninvalentin.sharding;
 
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -14,15 +13,13 @@ import java.util.Set;
 public class ConsistentHashing implements ShardingAlgorithm {
     private final int[] hashes;
     private final Map<Integer, String> hashToUrl = new HashMap<>();
-    private final FailureLimiter failureLimiter;
 
-    public ConsistentHashing(ShardingConfig config, FailureLimiter failureLimiter) {
+    public ConsistentHashing(ShardingConfig config) {
         List<String> clusterUrls = config.clusterUrls();
         int virtualNodesNumber = config.virtualNodesNumber();
         int hashesNumber = clusterUrls.size() * virtualNodesNumber;
         this.hashes = new int[hashesNumber];
         initVirtualNodes(clusterUrls, virtualNodesNumber);
-        this.failureLimiter = failureLimiter;
     }
 
     private void initVirtualNodes(List<String> clusterUrls, int virtualNodesNumber) {
@@ -59,9 +56,7 @@ public class ConsistentHashing implements ShardingAlgorithm {
         int nodeIndex = firstNodeIndex;
         for (int i = 0; i < virtualNodeNumber && nodeUrls.size() < necessaryNodeNumber; i++, nodeIndex++) {
             String nodeUrl = hashToUrl.get(hashes[nodeIndex % virtualNodeNumber]);
-            if (failureLimiter.readyForRequests(nodeUrl)) {
-                nodeUrls.add(nodeUrl);
-            }
+            nodeUrls.add(nodeUrl);
         }
         return nodeUrls.stream().toList();
     }

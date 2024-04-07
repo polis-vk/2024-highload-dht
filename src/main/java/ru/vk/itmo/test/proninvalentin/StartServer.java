@@ -5,8 +5,6 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiterConfig;
 import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
@@ -43,11 +41,8 @@ public final class StartServer {
             clusterUrls.add(url + ports[i]);
         }
 
-        FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
-        FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);
-
         ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
-        ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig, failureLimiter);
+        ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 
         for (int i = 0; i < clusterSize; i++) {
             int flushThresholdBytes = 1 << 20; // 1 MB
@@ -63,7 +58,7 @@ public final class StartServer {
             ServiceConfig serviceConfig = new ServiceConfig(ports[i], clusterUrls.get(i), clusterUrls,
                     profilingDataPath);
             Server server = new Server(serviceConfig, referenceDao, workerPool, shardingAlgorithm,
-                    ServerConfig.defaultConfig(), failureLimiter);
+                    ServerConfig.defaultConfig());
             server.start();
             logger.info("[" + clusterUrls.get(i) + "] successfully started");
         }

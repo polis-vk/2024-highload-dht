@@ -7,8 +7,6 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiterConfig;
 import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
@@ -44,13 +42,10 @@ public class ServiceImpl implements Service {
         WorkerPoolConfig workerPoolConfig = WorkerPoolConfig.defaultConfig();
         workerPool = new WorkerPool(workerPoolConfig);
 
-        FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
-        FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);
-
         ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
-        ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig, failureLimiter);
+        ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 
-        server = new Server(config, dao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig(), failureLimiter);
+        server = new Server(config, dao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig());
         server.start();
         serverAlreadyClosed = false;
         return CompletableFuture.completedFuture(null);

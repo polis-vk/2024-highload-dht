@@ -4,41 +4,51 @@ import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.timofeevkirill.dao.Dao;
+import ru.vk.itmo.test.timofeevkirill.dao.TimestampEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.stream.Collectors;
 
 import static ru.vk.itmo.test.timofeevkirill.Settings.MAX_PROCESSING_TIME_FOR_REQUEST;
 import static ru.vk.itmo.test.timofeevkirill.Settings.VERSION_PREFIX;
 
 public class TimofeevServer extends HttpServer {
+    public static final String PATH = VERSION_PREFIX + "/entity";
     private static final Logger logger = LoggerFactory.getLogger(TimofeevServer.class);
-    private static final String PATH = VERSION_PREFIX + "/entity";
-    private final Dao dao;
-    private final ThreadPoolExecutor threadPoolExecutor;
     private static final String TOO_MANY_REQUESTS_RESPONSE = "429 Too Many Requests";
+    private static final String NOT_ENOUGH_REPLICAS_RESPONSE = "504 Not Enough Replicas";
+    private final ThreadPoolExecutor threadPoolExecutor;
+    private final TimofeevProxyService proxyService;
+    private final ServiceConfig serviceConfig;
+    private final RequestHandler requestHandler;
 
-    public TimofeevServer(ServiceConfig serviceConfig, Dao dao,
-                          ThreadPoolExecutor threadPoolExecutor) throws IOException {
+    public TimofeevServer(
+            ServiceConfig serviceConfig,
+            Dao<MemorySegment, TimestampEntry<MemorySegment>> dao,
+            ThreadPoolExecutor threadPoolExecutor,
+            TimofeevProxyService proxyService
+    ) throws IOException {
         super(createServerConfig(serviceConfig));
-        this.dao = dao;
+        this.serviceConfig = serviceConfig;
         this.threadPoolExecutor = threadPoolExecutor;
+        this.proxyService = proxyService;
+        this.requestHandler = new RequestHandler(dao);
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -58,40 +68,6 @@ public class TimofeevServer extends HttpServer {
         return Response.ok("OK");
     }
 
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
-        if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-
-        Entry<MemorySegment> entry = dao.get(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)));
-
-        return entry == null
-                ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                : Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) {
-        if (isEmptyParam(id) || isEmptyRequest(request)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-
-        MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        MemorySegment value = MemorySegment.ofArray(request.getBody());
-        dao.upsert(new BaseEntry<>(key, value));
-
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
-        if (isEmptyParam(id)) return new Response(Response.BAD_REQUEST, Response.EMPTY);
-
-        dao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8)), null));
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = Settings.SUPPORTED_METHODS.contains(request.getMethod())
@@ -108,7 +84,7 @@ public class TimofeevServer extends HttpServer {
                 try {
                     processRequest(request, session, start);
                 } catch (IOException e) {
-                    logger.error("Exception while sending close connection", e);
+                    logger.error("Exception while sending close connection: ", e);
                     session.scheduleClose();
                 }
             });
@@ -124,23 +100,78 @@ public class TimofeevServer extends HttpServer {
             return;
         }
 
+        if (!Settings.SUPPORTED_METHODS.contains(request.getMethod())) {
+            handleDefault(request, session);
+            return;
+        }
+
         try {
-            super.handleRequest(request, session);
+            RequestData parameters = new RequestData(request, serviceConfig.clusterUrls().size());
+            if (request.getHeader(RequestData.SELF_PROCESS_HEADER) == null) {
+                processFirstRequest(request, session, parameters);
+            } else {
+                session.sendResponse(requestHandler.handle(request, parameters.id));
+            }
+        } catch (IllegalArgumentException e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
+                logger.error("Http exception: ", e);
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             } else {
                 // for like unexpected NPE
+                logger.error("Unexpected exception: ", e);
                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
         }
     }
 
-    private boolean isEmptyParam(String param) {
-        return param == null || param.isEmpty();
+    private void processFirstRequest(Request request, HttpSession session, RequestData parameters) throws IOException {
+        List<String> nodeUrls = proxyService.getNodesByHash(parameters.from);
+        if (nodeUrls.size() < parameters.from) {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        }
+
+        boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
+        Map<String, Response> responses = new HashMap<>();
+
+        try {
+            responses = proxyService.proxyAsyncRequests(request, nodeUrls, parameters.id);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        } catch (ExecutionException e) {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        }
+
+        if (isSelfProcessing) {
+            responses.put(serviceConfig.selfUrl(), requestHandler.handle(request, parameters.id));
+        }
+
+        List<Response> validResponses = responses.values().stream()
+                .filter(response -> isSuccessProcessed(response.getStatus()))
+                .collect(Collectors.toList());
+        if (validResponses.size() >= parameters.ack) {
+            if (request.getMethod() == Request.METHOD_GET) {
+                validResponses.sort(
+                        Comparator.comparingLong(r -> {
+                                    String timestamp = r.getHeader(RequestData.NIO_TIMESTAMP_STRING_HEADER);
+                                    return timestamp == null ? 0 : Long.parseLong(timestamp);
+                                }
+                        )
+                );
+                session.sendResponse(validResponses.getLast());
+            } else {
+                session.sendResponse(validResponses.getFirst());
+            }
+        } else {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+        }
+
     }
 
-    private boolean isEmptyRequest(Request request) {
-        return request.getBody() == null;
+    private boolean isSuccessProcessed(int status) {
+        // not server and time limit errors
+        return status < 500;
     }
 }

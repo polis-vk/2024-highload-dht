@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -20,19 +19,20 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 public class MyServer extends HttpServer {
-    private static final String HEADER_TIMESTAMP = "X-Timestamp: ";
-    private static final String HEADER_INTERNAL = "X-Internal";
+    public static final String HEADER_TIMESTAMP = "X-Timestamp: ";
+    public static final String HEADER_TIMESTAMP_LOWER_CASE = "x-timestamp";
+    public static final String HEADER_INTERNAL = "X-Internal";
+    public static final String LOCAL_REQUEST = "LOCAL";
     private static final int NOT_FOUND_CODE = 404;
-    private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
+    private static final long MAX_RESPONSE_TIME_MILLIS = TimeUnit.SECONDS.toMillis(1);
     private static final List<Integer> allowedMethods = List.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
@@ -87,7 +87,7 @@ public class MyServer extends HttpServer {
                 : Integer.parseInt(fromString);
         int ack = ackString == null || ackString.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackString);
 
-        if (ack == 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
+        if (ack <= 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
             sendResponseWithEmptyBody(session, Response.BAD_REQUEST);
             return;
         }
@@ -98,21 +98,15 @@ public class MyServer extends HttpServer {
         } catch (RejectedExecutionException e) {
             log.error("Workers pool queue overflow", e);
             session.sendError(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), null);
-        } catch (IllegalArgumentException e) {
-            log.error("Method not allowed", e);
-            session.sendError(Response.BAD_REQUEST, null);
-        } catch (Exception e) {
-            handleRequestException(session, e);
         }
     }
 
     private void executeRequests(Request request, HttpSession session, long createdAt, String key, int ack, int from) {
-        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
+        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME_MILLIS) {
             try {
                 session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             } catch (IOException e) {
-                log.error("Exception while sending close connection", e);
-                session.scheduleClose();
+                logIOExceptionAndCloseSession(session, e);
             }
             return;
         }
@@ -121,17 +115,16 @@ public class MyServer extends HttpServer {
             try {
                 session.sendResponse(response);
             } catch (IOException e) {
-                log.error("Exception while sending response", e);
-                session.scheduleClose();
+               logIOExceptionAndCloseSession(session, e);
             }
             return;
         }
 
-        List<String> targetNodes = getNodesSortedByRendezvousHashing(key, serviceConfig, from);
-        List<HttpRequest> httpRequests =
-                requestHandler.createRequests(request, key, targetNodes, serviceConfig);
+        Collection<String> targetNodes = getNodesSortedByRendezvousHashing(key, serviceConfig, from);
+        Collection<HttpRequest> httpRequests =
+                requestHandler.createRequests(request, key, targetNodes, serviceConfig.selfUrl());
         List<Response> responses = getResponses(request, ack, httpRequests);
-        if (responses.isEmpty() || responses.size() < ack) {
+        if (responses.size() < ack) {
             sendResponseWithEmptyBody(session, CustomResponseCodes.RESPONSE_NOT_ENOUGH_REPLICAS.getCode());
             return;
         }
@@ -149,26 +142,17 @@ public class MyServer extends HttpServer {
 
     private void mergeGetResponses(HttpSession session, List<Response> responses) throws IOException {
         byte[] body = null;
-        int notFoundResponsesCount = 0;
         long maxTimestamp = Long.MIN_VALUE;
         for (Response response : responses) {
             long timestamp = response.getHeader(HEADER_TIMESTAMP) == null ? -1
                     : Long.parseLong(response.getHeader(HEADER_TIMESTAMP));
-            if (response.getStatus() == NOT_FOUND_CODE) {
-                notFoundResponsesCount++;
-                if (timestamp != -1 && maxTimestamp < timestamp) {
-                    maxTimestamp = timestamp;
-                    body = null;
-                }
-                continue;
-            }
-            if (maxTimestamp < timestamp) {
+            if (timestamp > maxTimestamp) {
                 maxTimestamp = timestamp;
-                body = response.getBody();
+                body = response.getStatus() == NOT_FOUND_CODE ? null : response.getBody();
             }
         }
 
-        if (body != null && notFoundResponsesCount != responses.size()) {
+        if (body != null) {
             session.sendResponse(new Response(Response.OK, body));
             return;
         }
@@ -178,15 +162,16 @@ public class MyServer extends HttpServer {
     private List<Response> getResponses(
             Request request,
             int ack,
-            List<HttpRequest> requests
+            Collection<HttpRequest> requests
     ) {
-        List<Response> responses = new ArrayList<>();
-        // stop if ack responses are received or too many errors
-        int successCounter = ack;
+        List<Response> responses = new ArrayList<>(requests.size());
+        // stop if too many errors
         int acceptableErrors = requests.size() - ack + 1;
         for (HttpRequest httpRequest : requests) {
             Response response;
-            if (httpRequest == null) {
+            if (httpRequest.headers().map().containsKey(LOCAL_REQUEST)) {
+                request.addHeader(
+                        HEADER_TIMESTAMP + httpRequest.headers().map().get(HEADER_TIMESTAMP_LOWER_CASE).getFirst());
                 response = handleInternalRequest(request);
             } else {
                 response = proxyRequest(httpRequest);
@@ -199,10 +184,6 @@ public class MyServer extends HttpServer {
                 continue;
             }
             responses.add(response);
-            --successCounter;
-            if (successCounter == 0) {
-                break;
-            }
         }
         return responses;
     }
@@ -210,13 +191,13 @@ public class MyServer extends HttpServer {
     private Response handleInternalRequest(Request request) {
         Response response;
         String id = request.getParameter("id=");
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
+        long timestamp = request.getHeader(HEADER_TIMESTAMP_LOWER_CASE) == null
+                ? System.currentTimeMillis()
+                : Long.parseLong(request.getHeader(HEADER_TIMESTAMP.toLowerCase()));
         response = switch (request.getMethod()) {
             case Request.METHOD_GET -> requestHandler.handleGet(id);
-            case Request.METHOD_PUT -> requestHandler.handlePut(id, request.getBody());
-            case Request.METHOD_DELETE -> requestHandler.handleDelete(id);
+            case Request.METHOD_PUT -> requestHandler.handlePut(id, request.getBody(), timestamp);
+            case Request.METHOD_DELETE -> requestHandler.handleDelete(id, timestamp);
             default -> throw new IllegalArgumentException("Unsupported method: " + request.getMethod());
         };
         return response;
@@ -227,7 +208,7 @@ public class MyServer extends HttpServer {
             HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
             return proxyResponse(response, response.body());
         } catch (InterruptedException e) {
-            log.error("Exception while sending request", e);
+            log.error("Interrupted while sending request", e);
             Thread.currentThread().interrupt();
             return null;
         } catch (Exception e) {
@@ -241,19 +222,6 @@ public class MyServer extends HttpServer {
             session.sendResponse(new Response(status, Response.EMPTY));
         } catch (IOException e) {
             logIOExceptionAndCloseSession(session, e);
-        }
-    }
-
-    private void handleRequestException(HttpSession session, Exception e) {
-        log.error("Error while handling request", e);
-        try {
-            if (e instanceof HttpException) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        } catch (IOException ex) {
-            logIOExceptionAndCloseSession(session, ex);
         }
     }
 
@@ -273,8 +241,8 @@ public class MyServer extends HttpServer {
         };
 
         Response responseProxied = new Response(responseCode, body);
-        long timestamp = response.headers().map().containsKey("x-timestamp")
-                ? Long.parseLong(response.headers().map().get("x-timestamp").getFirst())
+        long timestamp = response.headers().map().containsKey(HEADER_TIMESTAMP_LOWER_CASE)
+                ? Long.parseLong(response.headers().map().get(HEADER_TIMESTAMP_LOWER_CASE).getFirst())
                 : -1;
         if (timestamp != -1) {
             responseProxied.addHeader(HEADER_TIMESTAMP + timestamp);
@@ -283,14 +251,15 @@ public class MyServer extends HttpServer {
     }
 
     List<String> getNodesSortedByRendezvousHashing(String key, ServiceConfig serviceConfig, int from) {
-        Map<Integer, String> nodesHashes = new TreeMap<>();
+        TreeMap<Integer, String> nodesHashes = new TreeMap<>();
 
         for (String nodeUrl : serviceConfig.clusterUrls()) {
             nodesHashes.put(Hash.murmur3(nodeUrl + key), nodeUrl);
+            if (nodesHashes.size() > from) {
+                nodesHashes.remove(nodesHashes.lastKey());
+            }
         }
 
-        return nodesHashes.values().stream()
-                .limit(from)
-                .collect(Collectors.toList());
+        return new ArrayList<>(nodesHashes.values());
     }
 }

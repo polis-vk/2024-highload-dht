@@ -22,12 +22,13 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
@@ -35,6 +36,7 @@ public class Server extends HttpServer {
     private final ShardingAlgorithm shardingAlgorithm;
     private final HttpClient httpClient;
     private final RequestHandler requestHandler;
+    private final ScheduledExecutorService timeoutChecker = Executors.newSingleThreadScheduledExecutor();
 
     private final String selfUrl;
     private final List<String> clusterUrls;
@@ -88,14 +90,19 @@ public class Server extends HttpServer {
         }
     }
 
-    private static Response handleExceptionInfo(Exception exception) {
-        String responseCode;
-        if (exception.getClass().equals(TimeoutException.class)) {
-            responseCode = Response.REQUEST_TIMEOUT;
-        } else {
-            responseCode = Response.INTERNAL_ERROR;
-        }
-        return new Response(responseCode, Response.EMPTY);
+    private CompletableFuture<Response> safetyHandleRequestFuture(Request request, String entryId) {
+        final CompletableFuture<Response> handleLocalRequestFuture = new CompletableFuture<>();
+        workerPool.execute(() -> {
+            logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
+                    request.getURI()));
+            try {
+                handleLocalRequestFuture.complete(requestHandler.handle(request, entryId));
+            } catch (Exception e) {
+                logger.error("Error while processing request", e);
+                handleLocalRequestFuture.completeExceptionally(e);
+            }
+        });
+        return handleLocalRequestFuture;
     }
 
     @Override
@@ -126,7 +133,7 @@ public class Server extends HttpServer {
         }
 
         // To prevent sending unnecessary proxied requests to the nodes
-        if (!hasHandler(request) || !Utils.isSupportedMethod(request.getMethod())) {
+        if (!Utils.hasHandler(request) || !Utils.isSupportedMethod(request.getMethod())) {
             handleDefault(request, session);
             return;
         }
@@ -144,103 +151,115 @@ public class Server extends HttpServer {
         }
 
         if (request.getHeader(Constants.TERMINATION_HEADER) == null) {
-            safetySendResponse(session, handleLeaderRequest(request, parameters));
+            CompletableFuture<Response> handleLeaderRequestFuture = handleLeaderRequest(request, parameters);
+            handleLeaderRequestFuture.whenComplete(((response, throwable) -> safetySendResponse(session, response)));
+            checkForTimeout(handleLeaderRequestFuture);
         } else {
             safetySendResponse(session, safetyHandleRequest(request, parameters.key()));
         }
     }
 
-    private boolean hasHandler(Request request) {
-        return request.getURI().startsWith(Constants.REQUEST_PATH);
+    private void checkForTimeout(CompletableFuture<Response> requestFuture) {
+        timeoutChecker.schedule(() -> {
+            if (!requestFuture.isDone()) {
+                logger.error("Request timed out. Maximum processing time exceeded");
+                requestFuture.complete(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            }
+        }, httpRequestTimeoutInMillis, TimeUnit.MILLISECONDS);
     }
 
-    private Response handleLeaderRequest(Request request, RequestParameters parameters) {
+    private CompletableFuture<Response> handleLeaderRequest(Request request, RequestParameters parameters) {
         String entryId = parameters.key();
         int from = parameters.from();
         int ack = parameters.ack();
 
         List<String> nodeUrls = shardingAlgorithm.getNodesByKey(entryId, from);
-        if (nodeUrls.size() < from) {
-            return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);
-        }
 
         Map<String, HttpRequest> requests = Utils.buildRequests(request, nodeUrls, entryId);
-        List<Response> responses = waitResponses(requests, nodeUrls);
+        List<CompletableFuture<Response>> requestsFutures = getRequestsFutures(requests, nodeUrls);
+
+        List<Response> positiveResponses = new ArrayList<>();
+        CompletableFuture<Response> waitQuorumFuture = new CompletableFuture<>();
+        AtomicInteger remainingFailures = new AtomicInteger(from - ack + 1);
+        AtomicInteger remainingAcks = new AtomicInteger(ack);
 
         if (requests.get(selfUrl) != null) {
-            responses.add(safetyHandleRequest(request, entryId));
+            requestsFutures.add(safetyHandleRequestFuture(request, entryId));
         }
 
-        List<Response> positiveResponses = getPositiveResponses(responses);
-        if (positiveResponses.size() >= ack) {
-            if (request.getMethod() == Request.METHOD_GET) {
-                positiveResponses.sort(Comparator.comparingLong(r ->
-                        Long.parseLong(r.getHeader(Constants.NIO_TIMESTAMP_HEADER))));
-                return positiveResponses.getLast();
-            } else {
-                return positiveResponses.getFirst();
-            }
-        } else {
-            return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        for (CompletableFuture<Response> requestFuture : requestsFutures) {
+            requestFuture.whenComplete((response, throwable) -> {
+                boolean positiveResponse = response != null
+                        && response.getStatus() < Constants.SERVER_ERRORS
+                        || throwable == null;
+                if (positiveResponse) {
+                    remainingAcks.decrementAndGet();
+                    positiveResponses.add(response);
+                } else {
+                    remainingFailures.decrementAndGet();
+                }
+
+                if (remainingAcks.get() == 0) {
+                    if (request.getMethod() == Request.METHOD_GET) {
+                        positiveResponses.sort(Comparator.comparingLong(r ->
+                                Long.parseLong(r.getHeader(Constants.NIO_TIMESTAMP_HEADER))));
+                        waitQuorumFuture.complete(positiveResponses.getLast());
+                    } else {
+                        waitQuorumFuture.complete(positiveResponses.getFirst());
+                    }
+                } else if (remainingFailures.get() == 0) {
+                    waitQuorumFuture.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                }
+            });
         }
+
+        return waitQuorumFuture;
     }
 
-    private List<Response> getPositiveResponses(List<Response> responses) {
-        List<Response> positiveResponses = new ArrayList<>();
-        for (Response response : responses) {
-            if (response.getStatus() < Constants.SERVER_ERRORS) {
-                positiveResponses.add(response);
-            }
-        }
-        return positiveResponses;
-    }
-
-    private List<Response> waitResponses(Map<String, HttpRequest> requests, List<String> nodeUrls) {
-        List<Response> responses = new ArrayList<>();
+    private List<CompletableFuture<Response>> getRequestsFutures(Map<String, HttpRequest> requests,
+                                                                 List<String> nodeUrls) {
+        List<CompletableFuture<Response>> responses = new ArrayList<>();
         for (String nodeUrl : nodeUrls) {
             HttpRequest request = requests.get(nodeUrl);
             if (!Objects.equals(selfUrl, nodeUrl)) {
-                responses.add(sendRequestToProxy(request, nodeUrl));
+                responses.add(sendRequestToProxyAsync(request, nodeUrl));
             }
         }
         return responses;
     }
 
-    private Response sendRequestToProxy(HttpRequest request, String nodeUrl) {
-        logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, request.method(),
-                request.uri()));
+    private CompletableFuture<Response> sendRequestToProxyAsync(HttpRequest httpRequest, String nodeUrl) {
+        logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, httpRequest.method(),
+                httpRequest.uri()));
 
-        return handleProxyRequest(request);
+        final CompletableFuture<Response> sendRequestFuture = new CompletableFuture<>();
+        httpClient
+                .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .whenComplete((httpResponse, throwable) -> {
+                            if (throwable != null) {
+                                logger.error(throwable.getMessage());
+                                sendRequestFuture.completeExceptionally(throwable);
+                                return;
+                            }
+                            sendRequestFuture.complete(processProxyResponse(httpResponse));
+                        }
+                );
+
+        return sendRequestFuture;
     }
 
-    private Response handleProxyRequest(HttpRequest httpRequest) {
-        try {
-            HttpResponse<byte[]> httpResponse = httpClient
-                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(httpRequestTimeoutInMillis, TimeUnit.MILLISECONDS);
-
-            String statusCode = Utils.httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
-            if (statusCode == null) {
-                logger.error("The proxied node returned a response with an unexpected status: "
-                        + httpResponse.statusCode());
-                return new Response(Response.INTERNAL_ERROR, httpResponse.body());
-            } else {
-                Response response = new Response(statusCode, httpResponse.body());
-                long timestamp = httpResponse.headers()
-                        .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
-                response.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
-                return response;
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.error(e.getMessage());
-            return handleExceptionInfo(e);
-        } catch (ExecutionException e) {
-            logger.error("Execution exception while processing the httpRequest", e);
-            return handleExceptionInfo(e);
-        } catch (TimeoutException e) {
-            logger.error("Request timed out. Maximum processing time exceeded", e);
-            return handleExceptionInfo(e);
+    private static Response processProxyResponse(HttpResponse<byte[]> httpResponse) {
+        String statusCode = Utils.httpCodeMapping.getOrDefault(httpResponse.statusCode(), null);
+        if (statusCode == null) {
+            logger.error("The proxied node returned a response with an unexpected status: "
+                    + httpResponse.statusCode());
+            return new Response(Response.INTERNAL_ERROR, httpResponse.body());
+        } else {
+            Response response = new Response(statusCode, httpResponse.body());
+            long timestamp = httpResponse.headers()
+                    .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
+            response.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
+            return response;
         }
     }
 }

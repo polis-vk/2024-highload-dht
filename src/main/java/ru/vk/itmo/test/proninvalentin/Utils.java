@@ -52,6 +52,10 @@ public final class Utils {
                 .build();
     }
 
+    public static boolean hasHandler(Request request) {
+        return request.getURI().startsWith(Constants.REQUEST_PATH);
+    }
+
     public static boolean isSupportedMethod(int httpMethod) {
         return SUPPORTED_HTTP_METHODS.contains(httpMethod);
     }

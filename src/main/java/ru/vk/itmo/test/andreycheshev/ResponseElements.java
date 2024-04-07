@@ -9,7 +9,7 @@ public class ResponseElements implements Comparable<ResponseElements> {
 
     public ResponseElements(int status, byte[] body, long timestamp) {
         this.status = status;
-        this.body = Arrays.copyOf(body, body.length);;
+        this.body = Arrays.copyOf(body, body.length); // CodeClimate requirement.
         this.timestamp = timestamp;
     }
 
@@ -18,7 +18,7 @@ public class ResponseElements implements Comparable<ResponseElements> {
     }
 
     public byte[] getBody() {
-        return Arrays.copyOf(body, body.length);
+        return Arrays.copyOf(body, body.length); // CodeClimate requirement.
     }
 
     public long getTimestamp() {

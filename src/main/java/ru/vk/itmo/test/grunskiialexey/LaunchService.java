@@ -6,10 +6,11 @@ import ru.vk.itmo.test.ServiceFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class LaunchService implements Service {
-    // :TODO Should make new abstraction which allows save dao in service, not in HttpServer
     private final DaoServer server;
     private boolean isStarted;
 
@@ -19,6 +20,19 @@ public class LaunchService implements Service {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    public static void main(String[] args) throws IOException {
+        java.nio.file.Path databasePath = java.nio.file.Path.of("db");
+        if (!Files.exists(databasePath)) {
+            Files.createDirectory(databasePath);
+        }
+        DaoServer server = new DaoServer(new ServiceConfig(
+                8081, "http://localhost",
+                List.of("http://localhost"),
+                databasePath
+        ));
+        server.start();
     }
 
     /*

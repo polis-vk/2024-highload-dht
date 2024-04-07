@@ -19,8 +19,6 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.List;
 
 public class DaoServer extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 65536;
@@ -48,19 +46,6 @@ public class DaoServer extends HttpServer {
 
     private static MemorySegmentDao createDao(ServiceConfig config) throws IOException {
         return new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-    }
-
-    public static void main(String[] args) throws IOException {
-        java.nio.file.Path databasePath = java.nio.file.Path.of("db");
-        if (!Files.exists(databasePath)) {
-            Files.createDirectory(databasePath);
-        }
-        DaoServer server = new DaoServer(new ServiceConfig(
-                8081, "http://localhost",
-                List.of("http://localhost"),
-                databasePath
-        ));
-        server.start();
     }
 
     @Path(ENDPOINT)

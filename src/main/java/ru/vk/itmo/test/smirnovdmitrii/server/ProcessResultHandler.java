@@ -94,12 +94,12 @@ public class ProcessResultHandler {
             final boolean isSuccess = status == HttpURLConnection.HTTP_OK || status == HttpURLConnection.HTTP_NOT_FOUND;
             while (true) {
                 final ProcessResult curResult = outcome.get();
-                if (curResult == null || curResult.timestamp() < result.timestamp()) {
-                    if (!outcome.compareAndSet(curResult, result)) {
-                        continue;
-                    }
+                if (curResult != null && curResult.timestamp() > result.timestamp()) {
+                    break;
                 }
-                break;
+                if (outcome.compareAndSet(curResult, result)) {
+                    break;
+                }
             }
             return isSuccess;
         } else {

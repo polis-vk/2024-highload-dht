@@ -9,8 +9,6 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 
-import javax.net.ssl.HttpsURLConnection;
-
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
@@ -25,6 +23,12 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 
+import static java.net.HttpURLConnection.HTTP_ACCEPTED;
+import static java.net.HttpURLConnection.HTTP_BAD_METHOD;
+import static java.net.HttpURLConnection.HTTP_CREATED;
+import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
@@ -75,12 +79,12 @@ public class DaoHttpServer extends HttpServer {
     public ProcessResult get(final MemorySegment key) {
         final TimeEntry<MemorySegment> entry = dao.get(key);
         if (entry == null) {
-            return new ProcessResult(HttpsURLConnection.HTTP_NOT_FOUND, Response.EMPTY);
+            return new ProcessResult(HTTP_NOT_FOUND, Response.EMPTY);
         } else if (entry.value() == null) {
-            return new ProcessResult(HttpsURLConnection.HTTP_NOT_FOUND, Response.EMPTY, epochMillisNow());
+            return new ProcessResult(HTTP_NOT_FOUND, Response.EMPTY, epochMillisNow());
         }
         return new ProcessResult(
-                HttpsURLConnection.HTTP_OK,
+                HTTP_OK,
                 entry.value().toArray(ValueLayout.JAVA_BYTE),
                 epochMillisNow()
         );
@@ -93,13 +97,13 @@ public class DaoHttpServer extends HttpServer {
         final MemorySegment value = MemorySegment.ofArray(request.getBody());
         final TimeEntry<MemorySegment> entry = new TimeEntry<>(epochMillisNow(), key, value);
         dao.upsert(entry);
-        return new ProcessResult(HttpsURLConnection.HTTP_CREATED, Response.EMPTY);
+        return new ProcessResult(HTTP_CREATED, Response.EMPTY);
     }
 
     public ProcessResult delete(final MemorySegment key) {
         final TimeEntry<MemorySegment> entry = new TimeEntry<>(epochMillisNow(), key, null);
         dao.upsert(entry);
-        return new ProcessResult(HttpsURLConnection.HTTP_ACCEPTED, Response.EMPTY);
+        return new ProcessResult(HTTP_ACCEPTED, Response.EMPTY);
     }
 
     @Override
@@ -170,11 +174,11 @@ public class DaoHttpServer extends HttpServer {
                 case METHOD_GET -> get(key);
                 case METHOD_DELETE -> delete(key);
                 case METHOD_PUT -> put(key, request);
-                default -> new ProcessResult(HttpsURLConnection.HTTP_BAD_METHOD, Response.EMPTY, -1);
+                default -> new ProcessResult(HTTP_BAD_METHOD, Response.EMPTY, -1);
             };
         } catch (final Exception e) {
             logger.error("Exception while handling request", e);
-            response = new ProcessResult(HttpsURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY, -1);
+            response = new ProcessResult(HTTP_INTERNAL_ERROR, Response.EMPTY, -1);
         }
         return response;
     }

@@ -98,14 +98,14 @@ final class TableSet {
                 newSsTables);
     }
 
-    Iterator<Entry<MemorySegment>> get(
+    Iterator<ExtendedEntry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
         final List<WeightedPeekingEntryIterator> iterators =
                 new ArrayList<>(2 + ssTables.size());
 
         // MemTable goes first
-        final Iterator<Entry<MemorySegment>> memTableIterator =
+        final Iterator<ExtendedEntry<MemorySegment>> memTableIterator =
                 memTable.get(from, to);
         if (memTableIterator.hasNext()) {
             iterators.add(
@@ -116,7 +116,7 @@ final class TableSet {
 
         // Then goes flushing
         if (flushingTable != null) {
-            final Iterator<Entry<MemorySegment>> flushingIterator =
+            final Iterator<ExtendedEntry<MemorySegment>> flushingIterator =
                     flushingTable.get(from, to);
             if (flushingIterator.hasNext()) {
                 iterators.add(
@@ -129,7 +129,7 @@ final class TableSet {
         // Then go all the SSTables
         for (int i = 0; i < ssTables.size(); i++) {
             final SSTable ssTable = ssTables.get(i);
-            final Iterator<Entry<MemorySegment>> ssTableIterator =
+            final Iterator<ExtendedEntry<MemorySegment>> ssTableIterator =
                     ssTable.get(from, to);
             if (ssTableIterator.hasNext()) {
                 iterators.add(
@@ -146,11 +146,11 @@ final class TableSet {
         };
     }
 
-    Entry<MemorySegment> get(final MemorySegment key) {
+    ExtendedEntry<MemorySegment> get(final MemorySegment key) {
         // Slightly optimized version not to pollute the heap
 
         // First check MemTable
-        Entry<MemorySegment> result = memTable.get(key);
+        ExtendedEntry<MemorySegment> result = memTable.get(key);
         if (result != null) {
             // Transform tombstone
             return swallowTombstone(result);
@@ -178,21 +178,21 @@ final class TableSet {
         return null;
     }
 
-    private static Entry<MemorySegment> swallowTombstone(final Entry<MemorySegment> entry) {
-        return entry.value() == null ? null : entry;
+    private static ExtendedEntry<MemorySegment> swallowTombstone(final ExtendedEntry<MemorySegment> entry) {
+        return entry.value() == null ? new ExtendedBaseEntry<>(entry.key(), null, entry.timestampMillis()) : entry;
     }
 
-    Entry<MemorySegment> upsert(final Entry<MemorySegment> entry) {
+    Entry<MemorySegment> upsert(final ExtendedEntry<MemorySegment> entry) {
         return memTable.upsert(entry);
     }
 
-    Iterator<Entry<MemorySegment>> allSSTableEntries() {
+    Iterator<ExtendedEntry<MemorySegment>> allSSTableEntries() {
         final List<WeightedPeekingEntryIterator> iterators =
                 new ArrayList<>(ssTables.size());
 
         for (int i = 0; i < ssTables.size(); i++) {
             final SSTable ssTable = ssTables.get(i);
-            final Iterator<Entry<MemorySegment>> ssTableIterator =
+            final Iterator<ExtendedEntry<MemorySegment>> ssTableIterator =
                     ssTable.get(null, null);
             iterators.add(
                     new WeightedPeekingEntryIterator(

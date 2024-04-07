@@ -2,7 +2,6 @@ package ru.vk.itmo.test.andreycheshev;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,12 +15,9 @@ import java.util.concurrent.TimeUnit;
 public class RequestExecutor {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
 
-    private static final String TOO_MANY_REQUESTS = "429 Too many requests";
-
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int MAX_CPU_THREADS_TIMES = 1;
     private static final int KEEPALIVE_MILLIS = 3000;
-    private static final long MAX_TASK_AWAITING_TIME_MILLIS = 3000;
     private static final int MAX_WORK_QUEUE_SIZE = 300;
 
     private final ExecutorService executor;
@@ -41,31 +37,11 @@ public class RequestExecutor {
     }
 
     public void execute(Request request, HttpSession session) {
-        long currTime = System.currentTimeMillis();
-
         try {
-            executor.execute(() -> {
-                Response response;
-
-                // If the deadline for completing the task has passed.
-                if (System.currentTimeMillis() - currTime > MAX_TASK_AWAITING_TIME_MILLIS) {
-                    LOGGER.error("The server is overloaded with too many requests");
-                    response = new Response(TOO_MANY_REQUESTS, Response.EMPTY);
-                } else {
-                    try {
-                        requestHandler.handle(request, session);
-                        return;
-                    } catch (Exception ex) {
-                        LOGGER.error("Internal error of the DAO operation", ex);
-                        response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                    }
-                }
-
-                HttpUtils.sendResponse(response, session);
-            });
-        } catch (RejectedExecutionException e) { // Queue overflow.
+            executor.execute(() -> requestHandler.handle(request, session));
+        } catch (RejectedExecutionException e) {
             LOGGER.error("Work queue overflow: task cannot be processed", e);
-            HttpUtils.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY), session);
+            requestHandler.sendAsync(HttpUtils.getTooManyRequests(), session);
         }
     }
 

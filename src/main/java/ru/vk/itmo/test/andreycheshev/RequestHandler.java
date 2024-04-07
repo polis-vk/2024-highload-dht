@@ -9,7 +9,6 @@ import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
 
-import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -19,8 +18,8 @@ import java.util.concurrent.CompletableFuture;
 
 public class RequestHandler implements HttpProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
-    private static final Set<Integer> AVAILABLE_METHODS;
 
+    private static final Set<Integer> AVAILABLE_METHODS;
     static {
         AVAILABLE_METHODS = Set.of(
                 Request.METHOD_GET,
@@ -37,7 +36,7 @@ public class RequestHandler implements HttpProvider {
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final RendezvousDistributor distributor;
-    private final AsyncWebActions webActions;
+    private final AsyncActions asyncActions;
 
     public RequestHandler(
             Dao<MemorySegment, Entry<MemorySegment>> dao,
@@ -45,28 +44,41 @@ public class RequestHandler implements HttpProvider {
 
         this.dao = dao;
         this.distributor = distributor;
-        this.webActions = new AsyncWebActions(this);
+        this.asyncActions = new AsyncActions(this);
     }
 
-    public void handle(Request request, HttpSession session) throws InterruptedException, IOException {
+    public void handle(Request request, HttpSession session) {
+        Response errorResponse = analyzeRequest(request, session);
+
+        if (errorResponse != null) {
+            sendAsync(errorResponse, session);
+        }
+    }
+
+    public void sendAsync(Response response, HttpSession session) {
+        try {
+            asyncActions.sendAsync(response, session);
+        } catch (AssertionError e) {
+            LOGGER.info("Error when CompletableFuture creation");
+        }
+    }
+
+    private Response analyzeRequest(Request request, HttpSession session) {
 
         // Checking the correctness.
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
-            HttpUtils.sendBadRequest(session);
-            return;
+            return HttpUtils.getBadRequest();
         }
 
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
-            HttpUtils.sendBadRequest(session);
-            return;
+            return HttpUtils.getBadRequest();
         }
 
         int method = request.getMethod();
         if (!AVAILABLE_METHODS.contains(method)) {
-            HttpUtils.sendMethodNotAllowed(session);
-            return;
+            return HttpUtils.getMethodNotAllowed();
         }
 
         // A timestamp is an indication that the request
@@ -75,18 +87,17 @@ public class RequestHandler implements HttpProvider {
         if (timestamp != null) {
             // The request came from a remote node.
             try {
-
                 CompletableFuture<Void> future =
-                        webActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
+                        asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
 
                 assert future != null;
-
+                return null;
             } catch (AssertionError e) {
-                HttpUtils.sendInternalError(session);
+                LOGGER.info("Error when CompletableFuture creation");
+                return HttpUtils.getInternalError();
             } catch (NumberFormatException e) {
-                HttpUtils.sendBadRequest(session);
+                return HttpUtils.getBadRequest();
             }
-            return;
         }
 
         // Get and check "ack" and "from" parameters.
@@ -97,12 +108,13 @@ public class RequestHandler implements HttpProvider {
                     request.getParameter(FROM_PARAMETER)
             );
         } catch (IllegalArgumentException e) {
-            HttpUtils.sendBadRequest(session);
-            return;
+            return HttpUtils.getBadRequest();
         }
 
         // Start processing on remote and local nodes.
         processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
+
+        return null;
     }
 
     private void processDistributed(
@@ -125,11 +137,11 @@ public class RequestHandler implements HttpProvider {
             String node = distributor.getNodeUrlByIndex(nodeIndex);
 
             CompletableFuture<Void> future = distributor.isOurNode(nodeIndex)
-                    ? webActions.processLocallyToCollect(method, id, request, timestamp, collector)
-                    : webActions.processRemotelyToCollect(node, request, timestamp, collector);
+                    ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector)
+                    : asyncActions.processRemotelyToCollect(node, request, timestamp, collector);
 
             if (future == null) {
-                LOGGER.info("Async operations error");
+                LOGGER.info("Error when CompletableFuture creation");
             }
         }
     }

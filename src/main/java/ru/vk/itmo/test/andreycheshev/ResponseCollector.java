@@ -62,13 +62,9 @@ public class ResponseCollector {
         // The following actions are performed only once.
 
         if (collector.size() >= ack) {
-            ResponseElements responseElements = collector.poll();
-            HttpUtils.sendResponse(
-                    HttpUtils.getOneNioResponse(method, responseElements),
-                    session
-            );
+            HttpUtils.sendResponse(HttpUtils.getOneNioResponse(method, collector.poll()), session);
         } else {
-            HttpUtils.sendNotEnoughReplicas(session);
+            HttpUtils.sendResponse(HttpUtils.getNotEnoughReplicas(), session);
         }
     }
 }

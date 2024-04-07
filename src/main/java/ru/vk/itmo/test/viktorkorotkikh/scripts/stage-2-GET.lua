@@ -6,7 +6,7 @@
 host = "localhost"
 port = 8080
 
-math.randomseed(os.time()) --- 1709820295
+math.randomseed(os.clock()) --- 1709820295
 
 request = function()
     rnd = math.random(750000, 2250000)

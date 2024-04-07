@@ -76,7 +76,8 @@ public class RequestHandler {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private HttpRequest buildHttpRequest(String key, String targetNode, Request request, long timestamp, String selfUrl) {
+    private HttpRequest buildHttpRequest(
+            String key, String targetNode, Request request, long timestamp, String selfUrl) {
         HttpRequest.Builder httpRequest = HttpRequest.newBuilder(URI.create(targetNode + BASE_PATH + "?id=" + key));
         switch (request.getMethod()) {
             case Request.METHOD_GET -> httpRequest.GET();

@@ -1,11 +1,9 @@
 package ru.vk.itmo.test.proninvalentin;
 
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -224,19 +222,24 @@ public class Server extends HttpServer {
                 }
 
                 if (remainingAcks.get() == 0) {
-                    if (request.getMethod() == Request.METHOD_GET) {
-                        positiveResponses.sort(Comparator.comparingLong(r ->
-                                Long.parseLong(r.getHeader(Constants.NIO_TIMESTAMP_HEADER))));
-                        waitQuorumFuture.complete(positiveResponses.getLast());
-                    } else {
-                        waitQuorumFuture.complete(positiveResponses.getFirst());
-                    }
+                    processResponse(request, positiveResponses, waitQuorumFuture);
                 } else if (remainingFailures.get() == 0) {
                     waitQuorumFuture.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
             });
         }
         return waitQuorumFuture;
+    }
+
+    private static void processResponse(Request request, List<Response> positiveResponses,
+                                        CompletableFuture<Response> waitQuorumFuture) {
+        if (request.getMethod() == Request.METHOD_GET) {
+            positiveResponses.sort(Comparator.comparingLong(r ->
+                    Long.parseLong(r.getHeader(Constants.NIO_TIMESTAMP_HEADER))));
+            waitQuorumFuture.complete(positiveResponses.getLast());
+        } else {
+            waitQuorumFuture.complete(positiveResponses.getFirst());
+        }
     }
 
     private CompletableFuture<Response> safetyHandleRequestFuture(Request request, String entryId) {

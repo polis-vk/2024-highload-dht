@@ -1,7 +1,10 @@
 package ru.vk.itmo.test.proninvalentin;
 
+import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.server.AcceptorConfig;
+import ru.vk.itmo.ServiceConfig;
 
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -78,5 +81,16 @@ public final class Utils {
 
     public static boolean isNullOrBlank(String str) {
         return str == null || str.isBlank();
+    }
+
+    public static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
+        HttpServerConfig serverConfig = new HttpServerConfig();
+        AcceptorConfig acceptorConfig = new AcceptorConfig();
+        acceptorConfig.port = serviceConfig.selfPort();
+        acceptorConfig.reusePort = true;
+
+        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        serverConfig.closeSessions = true;
+        return serverConfig;
     }
 }

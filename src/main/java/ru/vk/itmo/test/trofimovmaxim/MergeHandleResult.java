@@ -10,6 +10,7 @@ import java.net.HttpURLConnection;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MergeHandleResult {
+    public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final Logger log = LoggerFactory.getLogger(MergeHandleResult.class);
     private final HandleResult[] handleResults;
     private final AtomicInteger count;
@@ -52,7 +53,7 @@ public class MergeHandleResult {
 
         try {
             if (countGoodResponses < ack) {
-                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
             } else {
                 session.sendResponse(new Response(String.valueOf(mergedResult.status()), mergedResult.data()));
             }

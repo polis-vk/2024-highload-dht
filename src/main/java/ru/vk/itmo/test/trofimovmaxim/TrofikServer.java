@@ -102,7 +102,6 @@ public class TrofikServer extends HttpServer {
         int from = getInt(request, "from=", config.clusterUrls().size());
 
         if (from <= 0 || from > config.clusterUrls().size() || ack > from || ack <= 0) {
-            //todo другая ошибка
             session.sendError(Response.BAD_REQUEST, null);
             return;
         }
@@ -128,7 +127,6 @@ public class TrofikServer extends HttpServer {
                 response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
                 session.sendResponse(response);
             } catch (Exception e) {
-                //todo дублирование кода
                 log.error("Exception during handleRequest", e);
                 try {
                     session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
@@ -149,8 +147,7 @@ public class TrofikServer extends HttpServer {
             try {
                 ack = Integer.parseInt(ackStr);
             } catch (Exception e) {
-                // todo ваша ошибка
-                throw new IllegalArgumentException("parse error");
+                throw new BadParameterException("parse error of param");
             }
         }
         return ack;
@@ -178,7 +175,7 @@ public class TrofikServer extends HttpServer {
                 try {
                     handleResult = runnable.run();
                 } catch (Exception e) {
-                    log.error("Exception during handleRequest", e); //todo
+                    log.error("Exception during handleRequest", e);
                     handleResult = new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);
                 }
 
@@ -217,7 +214,7 @@ public class TrofikServer extends HttpServer {
             try {
                 timestamp = Long.parseLong(string.get());
             } catch (Exception e) {
-                log.error("todo ");
+                log.error("Cannot parse timestamp from header", e);
                 timestamp = 0;
             }
         } else {
@@ -290,7 +287,6 @@ public class TrofikServer extends HttpServer {
         return result;
     }
 
-    //todo  naming
     private interface HandlerRunnable {
         HandleResult run();
     }

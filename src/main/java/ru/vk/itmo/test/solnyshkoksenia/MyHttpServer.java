@@ -37,8 +37,10 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+
 public class MyHttpServer extends HttpServer {
     private final static String HEADER_TIMESTAMP = "X-timestamp";
+    private final static String HEADER_TIMESTAMP_HEADER = HEADER_TIMESTAMP + ": ";
     private final static int THREADS = Runtime.getRuntime().availableProcessors();
     private final ServiceConfig config;
     private final DaoImpl dao;
@@ -61,7 +63,7 @@ public class MyHttpServer extends HttpServer {
         super(createHttpServerConfig(config));
         this.config = config;
         this.dao = new DaoImpl(createConfig(config));
-        this.httpClient = java.net.http.HttpClient.newBuilder()
+        this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(THREADS))
                 .connectTimeout(Duration.ofMillis(500))
                 .version(HttpClient.Version.HTTP_1_1)
@@ -173,7 +175,6 @@ public class MyHttpServer extends HttpServer {
     }
 
     private void sendResponse(Request request, HttpSession session, List<Response> responses, int ack) throws IOException {
-//        responses = responses.stream().filter(response -> response.getStatus() == HttpURLConnection.HTTP_OK || response.getStatus() )
         List<Integer> statuses = responses.stream().map(Response::getStatus).toList();
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
@@ -191,9 +192,9 @@ public class MyHttpServer extends HttpServer {
 
                 Response bestResp = responses.getFirst();
                 for (int i = 1; i < responses.size(); i++) {
-                    String bestRespTime = bestResp.getHeader(HEADER_TIMESTAMP);
+                    String bestRespTime = bestResp.getHeader(HEADER_TIMESTAMP_HEADER);
                     if (responses.get(i).getHeader(HEADER_TIMESTAMP) != null) {
-                        if (bestRespTime == null || Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP)) > Long.parseLong(bestRespTime)) {
+                        if (bestRespTime == null || Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP_HEADER)) > Long.parseLong(bestRespTime)) {
                             bestResp = responses.get(i);
                         }
                     }
@@ -219,7 +220,7 @@ public class MyHttpServer extends HttpServer {
     }
 
     private Response invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
-        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI() + "&local=1")) // todo local as constant header
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI() + "&local=1"))
                 .method(
                         request.getMethodName(),
                         request.getBody() == null
@@ -229,19 +230,20 @@ public class MyHttpServer extends HttpServer {
                 .timeout(Duration.ofMillis(500))
                 .build();
         HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-        Optional<String> string = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
+        Optional<String> header = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
         long timestamp;
-        if (string.isPresent()) {
+        if (header.isPresent()) {
             try {
-                timestamp = Long.parseLong(string.get());
-            } catch (Exception e ){
+                timestamp = Long.parseLong(header.get());
+            } catch (Exception e) {
                 timestamp = 0;
             }
         } else {
             timestamp = 0;
         }
-        System.err.println(timestamp);
-        return new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
+        Response response = new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
+        response.addHeader(HEADER_TIMESTAMP_HEADER + timestamp);
+        return response;
     }
 
     private Response invokeLocal(Request request, String id) {
@@ -255,14 +257,12 @@ public class MyHttpServer extends HttpServer {
 
                 if (entry.value() == null) {
                     Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                    response.addHeader(HEADER_TIMESTAMP + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
-                    System.err.println("404: " + response.getHeader(HEADER_TIMESTAMP));
+                    response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
                     return response;
                 }
 
                 Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-                response.addHeader(HEADER_TIMESTAMP + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
-                System.err.println("200: " + response.getHeader(HEADER_TIMESTAMP));
+                response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
                 return response;
             }
             case Request.METHOD_PUT -> {

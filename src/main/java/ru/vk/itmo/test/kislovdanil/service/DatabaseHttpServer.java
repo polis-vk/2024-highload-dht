@@ -114,7 +114,7 @@ public class DatabaseHttpServer extends HttpServer {
         from = fromParam == null ? clusterSize : fromParam;
         acknowledge = acknowledgeParam == null ? from / 2 + 1 : acknowledgeParam;
         final boolean notProxy = notProxyParam != null && notProxyParam;
-        if (from <= 0 || acknowledge < 0 || acknowledge > from || from > clusterSize) {
+        if (acknowledge <= 0 || acknowledge > from || from > clusterSize) {
             sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
         }
         try {

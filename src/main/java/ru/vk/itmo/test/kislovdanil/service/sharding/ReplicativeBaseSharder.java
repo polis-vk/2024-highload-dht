@@ -13,6 +13,7 @@ public abstract class ReplicativeBaseSharder extends BaseSharder {
 
     private static final Comparator<Response> timestampComparator = Comparator
             .comparingLong(ReplicativeBaseSharder::extractTimestampHeader).reversed();
+
     private static long extractTimestampHeader(Response response) {
         return Long.parseLong(response.getHeader(TIMESTAMP_HEADER).substring(2));
     }

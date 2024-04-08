@@ -18,8 +18,7 @@ public abstract class BaseSharder implements Sharder {
     private static final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
     private final HttpClient client;
     private static final String TIMESTAMP_HEADER_LITERAL = TIMESTAMP_HEADER + " ";
-
-
+    
     protected BaseSharder(HttpClient client) {
         this.client = client;
     }

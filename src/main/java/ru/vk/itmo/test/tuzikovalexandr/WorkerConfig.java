@@ -22,7 +22,7 @@ public final class WorkerConfig {
     public WorkerConfig() {
         this.corePoolSize = Runtime.getRuntime().availableProcessors();
         this.maximumPoolSize = Runtime.getRuntime().availableProcessors();
-        this.keepAliveTime = 30L;
+        this.keepAliveTime = 60L;
         this.unit = TimeUnit.SECONDS;
         this.workQueue = new LinkedBlockingDeque<>(MAX_QUEUE_SIZE);
         this.threadFactory = new CustomThreadFactory("w", true);

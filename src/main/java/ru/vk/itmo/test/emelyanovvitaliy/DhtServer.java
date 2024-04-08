@@ -84,7 +84,7 @@ public class DhtServer extends HttpServer {
                     try {
                         CompletableFuture<TimestampedEntry<MemorySegment>> future = mergeDaoMediator.get(request);
                         future.whenComplete(
-                                (entry, _) -> {
+                                (entry, ex) -> {
                                     try {
                                         if (entry == null) {
                                             sendNotEnoughReplicas(session);
@@ -124,7 +124,7 @@ public class DhtServer extends HttpServer {
                 () -> {
                     try {
                         mergeDaoMediator.put(request).whenComplete(
-                                (success, _) -> {
+                                (success, ex) -> {
                                     try {
                                         if (success) {
                                             httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
@@ -151,7 +151,7 @@ public class DhtServer extends HttpServer {
                 () -> {
                     try {
                         mergeDaoMediator.delete(request).whenComplete(
-                                (success, _) -> {
+                                (success, ex) -> {
                                     try {
                                         if (success) {
                                             httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));

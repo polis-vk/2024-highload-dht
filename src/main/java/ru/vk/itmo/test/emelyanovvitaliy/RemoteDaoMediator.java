@@ -55,8 +55,7 @@ public class RemoteDaoMediator extends DaoMediator {
 
     protected CompletableFuture<Boolean> simpleForward(Request request) {
         try {
-            return invoke(request).handle((response, ex) ->
-                {
+            return invoke(request).handle((response, ex) -> {
                     if (response == null) {
                         return false;
                     }

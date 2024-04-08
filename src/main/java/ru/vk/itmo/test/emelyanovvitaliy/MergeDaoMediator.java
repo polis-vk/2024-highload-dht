@@ -21,14 +21,13 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class MergeDaoMediator extends DaoMediator {
     public static final String FINAL_EXECUTION_HEADER = "X-Final-Execution";
     public static final String ACK_KEY = "ack=";
     public static final String FROM_KEY = "from=";
     public static final String ID_KEY = "id=";
-    protected static final int DAO_MEDIATOR_THREADS = 4*Runtime.getRuntime().availableProcessors();
+    protected static final int DAO_MEDIATOR_THREADS = 4 * Runtime.getRuntime().availableProcessors();
     protected static final Duration HTTP_TIMEOUT = Duration.ofMillis(100);
     protected static final int KEEP_ALIVE_TIME_MS = 1000;
     protected static final String HEADER_TRUE_STRING = ": true";
@@ -56,12 +55,7 @@ public class MergeDaoMediator extends DaoMediator {
                 }
         );
         localDaoMediator = new LocalDaoMediator(
-                new ReferenceDao(
-                        new Config(
-                                localDir,
-                                FLUSH_THRESHOLD_BYTES
-                        )
-                ),
+                new ReferenceDao(new Config(localDir, FLUSH_THRESHOLD_BYTES)),
                 daoExecutor
         );
         daoMediators = getDaoMediators(urls, thisUrl, localDaoMediator, daoExecutor);
@@ -96,51 +90,20 @@ public class MergeDaoMediator extends DaoMediator {
         } else {
             int ack;
             int from;
-            try {
-                ack = getAck(request);
-                from = getFrom(request);
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException(e);
-            }
+            ack = getAck(request);
+            from = getFrom(request);
             if (!isAckFromCorrect(ack, from)) {
                 throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
             }
             String id = request.getParameter(ID_KEY);
             request.addHeader(FINAL_EXECUTION_HEADER + HEADER_TRUE_STRING);
             int currentMediatorIndex = getFirstMediatorIndex(id);
-            AtomicReference<TimestampedEntry<MemorySegment>> lastEntry = new AtomicReference<>();
-            AtomicInteger foundSmth = new AtomicInteger(0);
-            AtomicInteger notFound = new AtomicInteger(0);
-            CompletableFuture<TimestampedEntry<MemorySegment>> ans = new CompletableFuture<>();
+            EntryMerger entryMerger = new EntryMerger(from, ack);
             for (int i = 0; i < from; i++) {
-                CompletableFuture<TimestampedEntry<MemorySegment>> future =
-                        daoMediators[currentMediatorIndex].get(request);
-                future.whenComplete(
-                        (entry, _) -> {
-                            if (entry == null) {
-                                if (notFound.incrementAndGet() == from - ack + 1) {
-                                    ans.complete(null);
-                                }
-                            } else {
-                                TimestampedEntry<MemorySegment> current;
-                                TimestampedEntry<MemorySegment> lastOf2;
-                                do {
-                                    current = lastEntry.get();
-                                    lastOf2 = findLastEntry(current, entry);
-                                    if (lastOf2 == current) { // if ours variant is older
-                                        break;
-                                    }
-                                    // try again if lastEntry updated
-                                } while (lastEntry.compareAndExchange(current, lastOf2) != current);
-                                if (foundSmth.incrementAndGet() == ack) {
-                                    ans.complete(lastEntry.get());
-                                }
-                            }
-                        }
-                );
+                daoMediators[currentMediatorIndex].get(request).whenComplete(entryMerger::acceptResult);
                 currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
             }
-            return ans;
+            return entryMerger.getCompletableFuture();
         }
     }
 
@@ -161,11 +124,8 @@ public class MergeDaoMediator extends DaoMediator {
         List<String> tmpList = new ArrayList<>(urls);
         tmpList.sort(String::compareTo);
         for (String url : tmpList) {
-            if (url.equals(thisUrl)) {
-                mediators[cnt] = localDaoMediator;
-            } else {
-                mediators[cnt] = new RemoteDaoMediator(httpClient, url, HTTP_TIMEOUT);
-            }
+            mediators[cnt] = url.equals(thisUrl) ? localDaoMediator :
+                    new RemoteDaoMediator(httpClient, url, HTTP_TIMEOUT);
             cnt++;
         }
         return mediators;
@@ -183,70 +143,30 @@ public class MergeDaoMediator extends DaoMediator {
         return hashes;
     }
 
-    private static TimestampedEntry<MemorySegment> findLastEntry(
-            TimestampedEntry<MemorySegment> a,
-            TimestampedEntry<MemorySegment> b
-    ) {
-        if (a == null) {
-            return b;
-        }
-        if (b == null) {
-            return a;
-        }
-        if (a.timestamp() > b.timestamp()) {
-            return a;
-        }
-        return b;
-    }
-
     @SuppressWarnings("FutureReturnValueIgnored")
     private CompletableFuture<Boolean> simpleReplicate(Request request, boolean delete)
             throws IllegalArgumentException {
         if (Objects.equals(request.getHeader(FINAL_EXECUTION_HEADER), HEADER_TRUE_STRING)) {
-            if (delete) {
-                return localDaoMediator.delete(request);
-            } else {
-                return localDaoMediator.put(request);
-            }
+            return delete ? localDaoMediator.delete(request) : localDaoMediator.put(request);
         }
         int ack;
         int from;
-        try {
-            ack = getAck(request);
-            from = getFrom(request);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(e);
-        }
+        ack = getAck(request);
+        from = getFrom(request);
         if (!isAckFromCorrect(ack, from)) {
             throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
         }
         request.addHeader(FINAL_EXECUTION_HEADER + HEADER_TRUE_STRING);
         String id = request.getParameter(ID_KEY);
         int currentMediatorIndex = getFirstMediatorIndex(id);
-        AtomicInteger answeredOk = new AtomicInteger(0);
-        AtomicInteger answeredNotOk = new AtomicInteger(0);
-        CompletableFuture<Boolean> ans = new CompletableFuture<>();
+        BoolMerger boolMerger = new BoolMerger(from, ack);
         for (int i = 0; i < from; i++) {
-            CompletableFuture<Boolean> res;
-            if (delete) {
-                res = daoMediators[currentMediatorIndex].delete(request);
-            } else {
-                res = daoMediators[currentMediatorIndex].put(request);
-            }
-            res.thenAccept(success -> {
-                if (success) {
-                    if (answeredOk.incrementAndGet() == ack) {
-                        ans.complete(true);
-                    }
-                } else {
-                    if (answeredNotOk.incrementAndGet() == from - ack + 1) {
-                        ans.complete(false);
-                    }
-                }
-            });
+            CompletableFuture<Boolean> res = delete ? daoMediators[currentMediatorIndex].delete(request)
+                    : daoMediators[currentMediatorIndex].put(request);
+            res.whenComplete(boolMerger::acceptResult);
             currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
         }
-        return ans;
+        return boolMerger.getCompletableFuture();
     }
 
     private int getAck(Request request) throws NumberFormatException {
@@ -268,7 +188,6 @@ public class MergeDaoMediator extends DaoMediator {
         int choosen = 0;
         int keyHash = Math.abs(Hash.murmur3(key));
         for (int i = 0; i < mediatorsHashes.length; i++) {
-            // cantor pairing function works nicely only with non-negatives
             int totalHash = (mediatorsHashes[i] + keyHash) * (mediatorsHashes[i] + keyHash + 1) / 2 + keyHash;
             if (totalHash > maxHash) {
                 maxHash = totalHash;
@@ -277,5 +196,4 @@ public class MergeDaoMediator extends DaoMediator {
         }
         return choosen;
     }
-
 }

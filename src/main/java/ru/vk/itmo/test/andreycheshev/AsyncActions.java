@@ -17,19 +17,20 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class AsyncActions {
-    private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncActions.class);
 
+    private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
+
     private final Executor internalExecutor = Executors.newFixedThreadPool(
-            CPU_THREADS_COUNT,
+            CPU_THREADS_COUNT / 2,
             new WorkerThreadFactory("Internal-thread")
     );
     private final Executor senderExecutor = Executors.newFixedThreadPool(
-            CPU_THREADS_COUNT,
+            CPU_THREADS_COUNT / 2,
             new WorkerThreadFactory("Sender-thread")
     );
     private final Executor localCallExecutor = Executors.newFixedThreadPool(
-            CPU_THREADS_COUNT,
+            CPU_THREADS_COUNT / 2,
             new WorkerThreadFactory("LocalCall-thread")
     );
     private final Executor remoteCallExecutor = Executors.newFixedThreadPool(

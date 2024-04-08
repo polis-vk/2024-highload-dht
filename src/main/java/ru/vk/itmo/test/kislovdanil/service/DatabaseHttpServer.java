@@ -37,6 +37,7 @@ public class DatabaseHttpServer extends HttpServer {
             KEEP_ALIVE_TIME_MS, TimeUnit.MILLISECONDS, new LinkedBlockingStack<>());
     private final String selfUrl;
     private final int clusterSize;
+    private static final String TIMESTAMP_HEADER_LITERAL = Sharder.TIMESTAMP_HEADER + ": ";
 
     public DatabaseHttpServer(ServiceConfig config, PersistentDao dao, Sharder sharder) throws IOException {
         super(transformConfig(config));
@@ -113,7 +114,7 @@ public class DatabaseHttpServer extends HttpServer {
         from = fromParam == null ? clusterSize : fromParam;
         acknowledge = acknowledgeParam == null ? from / 2 + 1 : acknowledgeParam;
         final boolean notProxy = notProxyParam != null && notProxyParam;
-        if (from == 0 || acknowledge == 0 || acknowledge > from || from > clusterSize) {
+        if (from <= 0 || acknowledge < 0 || acknowledge > from || from > clusterSize) {
             sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
         }
         try {
@@ -137,7 +138,7 @@ public class DatabaseHttpServer extends HttpServer {
                 ? new Response(Response.NOT_FOUND, Response.EMPTY)
                 : Response.ok(data.value().toArray(ValueLayout.OfByte.JAVA_BYTE));
         long timestamp = data == null ? Long.MAX_VALUE : data.timestamp();
-        response.addHeader(sharder.getTimestampHeader() + ": " + timestamp);
+        response.addHeader(TIMESTAMP_HEADER_LITERAL + timestamp);
         return response;
     }
 

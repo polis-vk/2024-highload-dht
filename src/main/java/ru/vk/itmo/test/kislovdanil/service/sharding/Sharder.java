@@ -13,5 +13,5 @@ public interface Sharder {
 
     Response makeDecision(List<Response> responses, int acknowledge, int method);
 
-    String getTimestampHeader();
+    String TIMESTAMP_HEADER = "X-Timestamp";
 }

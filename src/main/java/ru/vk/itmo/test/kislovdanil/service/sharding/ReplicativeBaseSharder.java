@@ -11,17 +11,11 @@ import java.util.stream.Stream;
 
 public abstract class ReplicativeBaseSharder extends BaseSharder {
 
-    private static final Comparator<Response> timestampComparator = new Comparator<>() {
-
-        private long extractTimestampHeader(Response response) {
-            return Long.parseLong(response.getHeader(TIMESTAMP_HEADER).substring(2));
-        }
-
-        @Override
-        public int compare(Response o1, Response o2) {
-            return -Long.compare(extractTimestampHeader(o1), extractTimestampHeader(o2));
-        }
-    };
+    private static final Comparator<Response> timestampComparator = Comparator
+            .comparingLong(ReplicativeBaseSharder::extractTimestampHeader).reversed();
+    private static long extractTimestampHeader(Response response) {
+        return Long.parseLong(response.getHeader(TIMESTAMP_HEADER).substring(2));
+    }
 
     protected ReplicativeBaseSharder(HttpClient client) {
         super(client);

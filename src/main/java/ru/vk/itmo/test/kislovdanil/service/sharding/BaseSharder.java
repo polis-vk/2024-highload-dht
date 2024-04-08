@@ -17,12 +17,8 @@ public abstract class BaseSharder implements Sharder {
 
     private static final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
     private final HttpClient client;
-    protected static final String TIMESTAMP_HEADER = "X-Timestamp";
+    private static final String TIMESTAMP_HEADER_LITERAL = TIMESTAMP_HEADER + " ";
 
-    @Override
-    public String getTimestampHeader() {
-        return TIMESTAMP_HEADER;
-    }
 
     protected BaseSharder(HttpClient client) {
         this.client = client;
@@ -40,7 +36,7 @@ public abstract class BaseSharder implements Sharder {
             default -> new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         };
         if (timestamp != null) {
-            response.addHeader(TIMESTAMP_HEADER + " " + timestamp);
+            response.addHeader(TIMESTAMP_HEADER_LITERAL + timestamp);
         }
         return response;
     }
@@ -81,7 +77,7 @@ public abstract class BaseSharder implements Sharder {
                             .method(requestMethodNumberToString(method),
                                     body == null ? HttpRequest.BodyPublishers.noBody()
                                             : HttpRequest.BodyPublishers.ofByteArray(body))
-                            .timeout(Duration.ofMillis(50)).build(),
+                            .timeout(Duration.ofMillis(80)).build(),
                     HttpResponse.BodyHandlers.ofByteArray()).handleAsync(this::handleSendingException));
         }
         return futures;

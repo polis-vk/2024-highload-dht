@@ -12,16 +12,16 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.kislovdanil.dao.BaseEntry;
 import ru.vk.itmo.test.kislovdanil.dao.Entry;
 import ru.vk.itmo.test.kislovdanil.dao.PersistentDao;
+import ru.vk.itmo.test.kislovdanil.service.sharding.RequestsManager;
 import ru.vk.itmo.test.kislovdanil.service.sharding.Sharder;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -72,34 +72,30 @@ public class DatabaseHttpServer extends HttpServer {
         }
         MemorySegment key = fromString(entityKey);
         List<String> proxiedUrls = sharder.defineRequestProxyUrls(entityKey, from);
-        List<Response> responses = new ArrayList<>(from);
-
+        CompletableFuture<Response> currentNodeResponse = null;
         if (proxiedUrls.contains(selfUrl)) {
-            Response currentNodeResponse = switch (method) {
+            currentNodeResponse = CompletableFuture.supplyAsync(() -> switch (method) {
                 case Request.METHOD_GET -> getEntity(key);
                 case Request.METHOD_PUT -> putEntity(key, body);
                 case Request.METHOD_DELETE -> deleteEntity(key);
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            };
+            });
             if (notProxy) {
-                sendResponse(currentNodeResponse, session);
-                return;
+                try {
+                    sendResponse(currentNodeResponse.get(), session);
+                    return;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException e) {
+                    sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY), session);
+                }
             }
             proxiedUrls.remove(selfUrl);
-            responses.add(currentNodeResponse);
         }
-
-        for (Future<Response> future : sharder.proxyRequest(method, entityKey, body, proxiedUrls)) {
-            try {
-                responses.add(future.get());
-            } catch (ExecutionException e) {
-                responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        sendResponse(sharder.makeDecision(responses, acknowledge, method), session);
-
+        List<CompletableFuture<Response>> responses = sharder.proxyRequest(method, entityKey, body, proxiedUrls);
+        if (currentNodeResponse != null) responses.add(currentNodeResponse);
+        // RequestManager appends response sending async operations inside the constructor
+        new RequestsManager(responses, session, acknowledge, method);
     }
 
     @Path(ENTITY_ACCESS_URL)

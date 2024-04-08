@@ -228,6 +228,7 @@ public class DhtServer extends HttpServer {
         acceptorConfig.reusePort = true;
         config.acceptors = new AcceptorConfig[] {acceptorConfig};
         config.keepAlive = 1000;
+        config.closeSessions = true;
         return config;
     }
 }

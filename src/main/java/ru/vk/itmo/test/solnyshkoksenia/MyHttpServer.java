@@ -7,7 +7,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
@@ -16,17 +15,22 @@ import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.solnyshkoksenia.dao.DaoImpl;
+import ru.vk.itmo.test.solnyshkoksenia.dao.EntryExtended;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -34,6 +38,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyHttpServer extends HttpServer {
+    private final static String HEADER_TIMESTAMP = "X-timestamp";
     private final static int THREADS = Runtime.getRuntime().availableProcessors();
     private final ServiceConfig config;
     private final DaoImpl dao;
@@ -56,8 +61,7 @@ public class MyHttpServer extends HttpServer {
         super(createHttpServerConfig(config));
         this.config = config;
         this.dao = new DaoImpl(createConfig(config));
-
-        this.httpClient = HttpClient.newBuilder()
+        this.httpClient = java.net.http.HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(THREADS))
                 .connectTimeout(Duration.ofMillis(500))
                 .version(HttpClient.Version.HTTP_1_1)
@@ -81,6 +85,18 @@ public class MyHttpServer extends HttpServer {
     }
 
     @Override
+    public synchronized void stop() {
+        super.stop();
+        executorLocal.close();
+        executorRemote.close();
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
     public void handleDefault(Request request, HttpSession session) {
         executorLocal.execute(new Task(() -> {
             try {
@@ -97,51 +113,113 @@ public class MyHttpServer extends HttpServer {
         }, session));
     }
 
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        executorLocal.close();
-        executorRemote.close();
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+    @Path("/v0/entity")
+    public void handleRequest(final Request request, final HttpSession session,
+                              @Param(value = "id", required = true) String id, @Param(value = "ack") String ackString,
+                              @Param(value = "from") String fromString, @Param(value = "local") String local) throws IOException {
+        int ack = config.clusterUrls().size() / 2 + 1;
+        if (ackString != null && !ackString.isBlank()) {
+            try {
+                ack = Integer.parseInt(ackString);
+            } catch (NumberFormatException e) {
+                session.sendError(Response.BAD_REQUEST, "Invalid ack parameter");
+                return;
+            }
         }
-    }
 
-    private void handleAsync(ExecutorService executor, Runnable runnable) {
-        executor.execute(runnable);
-    }
-
-    private void handle(Request request, String id, Runnable runnable, HttpSession session) {
-        String executorNode = getNodeByEntityId(id);
-        if (executorNode.equals(config.selfUrl())) {
-            handleAsync(executorLocal, new Task(runnable, session));
-        } else {
-            handleAsync(executorRemote, () -> {
-                try {
-                    handleRemote(executorNode, request, session);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
+        int from = config.clusterUrls().size();
+        if (fromString != null && !fromString.isBlank()) {
+            try {
+                from = Integer.parseInt(fromString);
+            } catch (NumberFormatException e) {
+                session.sendError(Response.BAD_REQUEST, "Invalid from parameter");
+                return;
+            }
         }
-    }
 
-    private void handleRemote(String executorNode, Request request, HttpSession session) throws IOException {
-        try {
-            Response response = invokeRemote(executorNode, request);
+        if (id.isBlank() || ack < 1 || ack > from || from > config.clusterUrls().size()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        if (local != null) {
+            Response response = invokeLocal(request, id);
             session.sendResponse(response);
-        } catch (IOException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+            return;
+        }
+        handle(request, id, session, ack, from);
+    }
+
+    private void handle(Request request, String id, HttpSession session, Integer ack, Integer from) throws IOException {
+        List<String> executorNodes = getNodesByEntityId(id, from);
+        List<Response> responses = new ArrayList<>();
+
+        for (String node : executorNodes) {
+            if (node.equals(config.selfUrl())) {
+                responses.add(invokeLocal(request, id));
+            } else {
+                try {
+                    responses.add(invokeRemote(node, request));
+                } catch (IOException e) {
+                    responses.add(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+            }
+        }
+
+        sendResponse(request, session, responses, ack);
+    }
+
+    private void sendResponse(Request request, HttpSession session, List<Response> responses, int ack) throws IOException {
+//        responses = responses.stream().filter(response -> response.getStatus() == HttpURLConnection.HTTP_OK || response.getStatus() )
+        List<Integer> statuses = responses.stream().map(Response::getStatus).toList();
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                if (statuses.stream().filter(s -> s == HttpURLConnection.HTTP_OK || s == HttpURLConnection.HTTP_NOT_FOUND).count() < ack) {
+                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                    return;
+                }
+
+                if (statuses.stream().noneMatch(s -> s == HttpURLConnection.HTTP_OK)) {
+                    session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+                    return;
+                }
+
+                responses = responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK || r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND).toList();
+
+                Response bestResp = responses.getFirst();
+                for (int i = 1; i < responses.size(); i++) {
+                    String bestRespTime = bestResp.getHeader(HEADER_TIMESTAMP);
+                    if (responses.get(i).getHeader(HEADER_TIMESTAMP) != null) {
+                        if (bestRespTime == null || Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP)) > Long.parseLong(bestRespTime)) {
+                            bestResp = responses.get(i);
+                        }
+                    }
+                }
+                session.sendResponse(bestResp);
+            }
+            case Request.METHOD_PUT -> {
+                if (statuses.stream().filter(s -> s == HttpURLConnection.HTTP_CREATED).count() < ack) {
+                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                    return;
+                }
+                session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+            }
+            case Request.METHOD_DELETE -> {
+                if (statuses.stream().filter(s -> s == HttpURLConnection.HTTP_ACCEPTED).count() < ack) {
+                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                    return;
+                }
+                session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
+            }
+            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
     private Response invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
-        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI() + "&local=1")) // todo local as constant header
                 .method(
                         request.getMethodName(),
                         request.getBody() == null
@@ -151,92 +229,92 @@ public class MyHttpServer extends HttpServer {
                 .timeout(Duration.ofMillis(500))
                 .build();
         HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        Optional<String> string = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
+        long timestamp;
+        if (string.isPresent()) {
+            try {
+                timestamp = Long.parseLong(string.get());
+            } catch (Exception e ){
+                timestamp = 0;
+            }
+        } else {
+            timestamp = 0;
+        }
+        System.err.println(timestamp);
         return new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public void get(final Request request, final HttpSession session,
-                    @Param(value = "id", required = true) String id) {
-        Runnable runnable = () -> {
-            try {
-                if (sendResponseIfEmpty(id, session)) {
-                    return;
-                }
-
-                Entry<MemorySegment> entry = dao.get(toMS(id));
+    private Response invokeLocal(Request request, String id) {
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                MemorySegment key = toMS(id);
+                Entry<MemorySegment> entry = dao.get(key);
                 if (entry == null) {
-                    session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
-                    return;
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
                 }
-                session.sendResponse(Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE)));
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        };
-        handle(request, id, runnable, session);
-    }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public void put(final Request request, final HttpSession session,
-                    @Param(value = "id", required = true) String id) {
-        Runnable runnable = () -> {
-            try {
-                if (sendResponseIfEmpty(id, session)) {
-                    return;
+                if (entry.value() == null) {
+                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                    response.addHeader(HEADER_TIMESTAMP + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
+                    System.err.println("404: " + response.getHeader(HEADER_TIMESTAMP));
+                    return response;
                 }
-                dao.upsert(new BaseEntry<>(toMS(id), MemorySegment.ofArray(request.getBody())));
-                session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        };
-        handle(request, id, runnable, session);
-    }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public void delete(final Request request, final HttpSession session,
-                       @Param(value = "id", required = true) String id) {
-        Runnable runnable = () -> {
-            try {
-                if (sendResponseIfEmpty(id, session)) {
-                    return;
-                }
-                dao.upsert(new BaseEntry<>(toMS(id), null));
-                session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+                response.addHeader(HEADER_TIMESTAMP + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
+                System.err.println("200: " + response.getHeader(HEADER_TIMESTAMP));
+                return response;
             }
-        };
-        handle(request, id, runnable, session);
-    }
-
-    private boolean sendResponseIfEmpty(String input, final HttpSession session) throws IOException {
-        if (input.isBlank()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return true;
+            case Request.METHOD_PUT -> {
+                MemorySegment key = toMS(id);
+                MemorySegment value = MemorySegment.ofArray(request.getBody());
+                dao.upsert(new BaseEntry<>(key, value));
+                return new Response(Response.CREATED, Response.EMPTY);
+            }
+            case Request.METHOD_DELETE -> {
+                MemorySegment key = toMS(id);
+                dao.upsert(new BaseEntry<>(key, null));
+                return new Response(Response.ACCEPTED, Response.EMPTY);
+            }
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
         }
-        return false;
     }
 
     private MemorySegment toMS(String input) {
         return MemorySegment.ofArray(input.getBytes(StandardCharsets.UTF_8));
     }
 
-    private String getNodeByEntityId(String id) {
-        int nodeId = 0;
-        int maxHash = Hash.murmur3(config.clusterUrls().getFirst() + id);
-        for (int i = 1; i < config.clusterUrls().size(); i++) {
-            String url = config.clusterUrls().get(i);
-            int result = Hash.murmur3(url + id);
-            if (maxHash < result) {
-                maxHash = result;
-                nodeId = i;
+    private List<String> getNodesByEntityId(String id, Integer from) {
+        List<Node> executorNodes = new ArrayList<>();
+
+        for (int i = 0; i < from; i++) {
+            int hash = Hash.murmur3(config.clusterUrls().get(i) + id);
+            executorNodes.add(new Node(i, hash));
+            executorNodes.sort(Node::compareTo);
+        }
+
+        for (int i = from; i < config.clusterUrls().size(); i++) {
+            int hash = Hash.murmur3(config.clusterUrls().get(i) + id);
+            if (executorNodes.getFirst().hash < hash) {
+                executorNodes.remove(executorNodes.getFirst());
+                executorNodes.add(new Node(i, hash));
+                executorNodes.sort(Node::compareTo);
+                break;
             }
         }
-        return config.clusterUrls().get(nodeId);
+
+        return executorNodes.stream().map(node -> config.clusterUrls().get(node.id)).toList();
+    }
+
+    @SuppressWarnings("unused")
+    private record Node(int id, int hash) implements Comparable<Node> {
+
+        @Override
+        public int compareTo(Node o) {
+            return Integer.compare(hash, o.hash);
+        }
     }
 
     public static class Task implements Runnable {

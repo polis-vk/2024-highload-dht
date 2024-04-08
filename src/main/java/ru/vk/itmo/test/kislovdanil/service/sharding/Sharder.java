@@ -13,6 +13,4 @@ public interface Sharder {
 
     List<CompletableFuture<Response>> proxyRequest(int method, String entityKey, byte[] body,
                                                    List<String> baseUrls);
-
-    Response makeDecision(List<Response> responses, int acknowledge, int method);
 }

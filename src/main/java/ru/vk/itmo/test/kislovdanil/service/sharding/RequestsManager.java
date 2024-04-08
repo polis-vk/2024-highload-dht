@@ -49,7 +49,6 @@ public class RequestsManager {
         return Long.parseLong(response.getHeader(TIMESTAMP_HEADER).substring(2));
     }
 
-
     private void makeMethodDecision(Response response,
                                     Set<Integer> validStatuses,
                                     boolean useTimestamps) {
@@ -63,8 +62,8 @@ public class RequestsManager {
                     actualResponse.set(response);
                     break;
                 }
-                if (timestampComparator.compare(response, currentActualResponse) < 0 ||
-                        actualResponse.compareAndSet(currentActualResponse, response)) {
+                if (timestampComparator.compare(response, currentActualResponse) < 0
+                        || actualResponse.compareAndSet(currentActualResponse, response)) {
                     break;
                 }
             }

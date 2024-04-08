@@ -1,29 +1,35 @@
 package ru.vk.itmo.test.kachmareugene;
 
+import one.nio.http.HttpClient;
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.ConnectionString;
+import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.kachmareugene.dao.BaseTimestampEntry;
+import ru.vk.itmo.test.kachmareugene.dao.EntryWithTimestamp;
+import ru.vk.itmo.test.kachmareugene.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -32,24 +38,33 @@ public class HttpServerImpl extends HttpServer {
 
     private static final int CORE_POOL = 4;
     private static final int MAX_POOL = 8;
-    private final BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(50);
+    private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(256);
     private final ExecutorService executorService =
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
                         10L, TimeUnit.MILLISECONDS,
                                     queue);
-    private static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
-    Dao<MemorySegment, Entry<MemorySegment>> daoImpl;
+    Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> daoImpl;
+    private final String selfNodeURL;
     private final ServiceConfig serviceConfig;
-    private static final Response BAD = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private final PartitionMetaInfo partitionTable;
+    private final Map<String, HttpClient> clientMap = new HashMap<>();
+    private boolean closed;
 
-    public HttpServerImpl(ServiceConfig conf) throws IOException {
-        super(convertToHttpConfig(conf));
-        this.serviceConfig = conf;
+    public HttpServerImpl(ServiceConfig config, PartitionMetaInfo info) throws IOException {
+        super(convertToHttpConfig(config));
+        this.serviceConfig = config;
+        this.partitionTable = info;
+        this.selfNodeURL = config.selfUrl();
+
+        for (final String url: config.clusterUrls()) {
+            clientMap.put(url, new HttpClient(new ConnectionString(url)));
+        }
     }
 
-    private static HttpServerConfig convertToHttpConfig(ServiceConfig conf) {
+    private static HttpServerConfig convertToHttpConfig(ServiceConfig conf) throws UncheckedIOException {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = conf.selfPort();
+
         acceptorConfig.reusePort = true;
 
         HttpServerConfig httpServerConfig = new HttpServerConfig();
@@ -62,101 +77,152 @@ public class HttpServerImpl extends HttpServer {
     public synchronized void start() {
         try {
             daoImpl = new ReferenceDao(new Config(serviceConfig.workingDir(), 16384));
+            this.closed = false;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         super.start();
     }
 
-    private static void closeExecutorService(ExecutorService exec) {
-        if (exec == null) {
-            return;
+    public Response getEntry(String key) {
+
+        if (key == null || key.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, Utils.longToBytes(0L));
         }
 
-        exec.shutdownNow();
-        while (!exec.isTerminated()) {
-            try {
-                if (exec.awaitTermination(20, TimeUnit.SECONDS)) {
-                    exec.shutdownNow();
-                }
-
-            } catch (InterruptedException e) {
-                exec.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
+        EntryWithTimestamp<MemorySegment> result =
+                daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
+        if (result == null) {
+            return new Response(Response.NOT_FOUND, Utils.longToBytes(0L));
         }
+
+        byte[] time = Utils.longToBytes(result.timestamp());
+
+        if (result.value() == null) {
+            return new Response(Response.NOT_FOUND, time);
+        }
+
+        byte[] value = result.value().toArray(ValueLayout.JAVA_BYTE);
+        byte[] responseBody = new byte[value.length + time.length];
+
+        System.arraycopy(time, 0, responseBody, 0, time.length);
+        System.arraycopy(value, 0, responseBody, time.length, value.length);
+
+        return new Response(Response.OK, responseBody);
     }
 
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        try {
-            closeExecutorService(executorService);
-            daoImpl.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    @Path(value = "/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response getEntry(
-            @Param("id") String key) {
-
+    public Response putOrEmplaceEntry(String key, Request request, long timestamp) {
         if (key == null || key.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        Entry<MemorySegment> result = daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
-
-        if (result == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return new Response("200", result.value().toArray(ValueLayout.JAVA_BYTE));
-    }
-
-    @Path(value = "/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response putOrEmplaceEntry(
-            @Param("id") String key,
-            Request request) {
-
-        if (key == null || key.isEmpty()) {
-            return BAD;
-        }
-
-        daoImpl.upsert(
-                new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
-                                MemorySegment.ofArray(request.getBody())));
+        daoImpl.upsert(new BaseTimestampEntry<>(
+                MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
+                MemorySegment.ofArray(request.getBody()),
+                timestamp));
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(value = "/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param("id") String key) {
+    public Response delete(String key, long timestamp) {
         if (key.isEmpty()) {
-            return BAD;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        daoImpl.upsert(new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
-                        null));
-        return ACCEPTED;
+        daoImpl.upsert(
+                new BaseTimestampEntry<>(
+                        MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
+                        null,
+                        timestamp));
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
+        if (checkRequest(request, session)) return;
 
+        try {
             executorService.execute(() -> {
                 try {
-                    super.handleRequest(request, session);
+                    task(request, session);
                 } catch (RuntimeException e) {
                     errorAccept(session, e, Response.BAD_REQUEST);
                 } catch (IOException e) {
                     errorAccept(session, e, Response.CONFLICT);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    errorAccept(session, e, Response.CONFLICT);
+                } catch (HttpException e) {
+                    errorAccept(session, e, Response.NOT_ACCEPTABLE);
                 }
             });
         } catch (RejectedExecutionException e) {
             session.sendError(Response.CONFLICT, e.toString());
+        }
+    }
+
+    private void task(Request request, HttpSession session) throws IOException,
+            InterruptedException,
+            HttpException {
+        if (request.getHeader("X-Timestamp", null) != null) {
+            session.sendResponse(handleToDaoOperations(request,
+                    System.currentTimeMillis()));
+            return;
+        }
+
+        String urlToSend = partitionTable.getCorrectURL(request);
+
+        Coordinator coordinator = new Coordinator();
+        coordinator.getCoordinatorParams(request, serviceConfig);
+
+        List<String> slaves = partitionTable.getSlaveUrls(request, coordinator.from);
+        List<Response> responses = new ArrayList<>();
+
+        if (urlToSend.equals(selfNodeURL)) {
+            responses.add(handleToDaoOperations(request,
+                    System.currentTimeMillis()));
+        } else {
+            slaves.addFirst(urlToSend);
+        }
+
+        for (String slaveUrl : slaves) {
+            Request req = new Request(request);
+            req.addHeader("X-Timestamp: " + System.currentTimeMillis());
+            responseSafeAdd(slaveUrl, responses, req);
+        }
+
+        session.sendResponse(coordinator.resolve(responses, request.getMethod()));
+    }
+
+    private static boolean checkRequest(Request request, HttpSession session) throws IOException {
+        String path = request.getPath();
+        if (!path.equals("/v0/entity")) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return true;
+        }
+
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return true;
+        }
+        return false;
+    }
+
+    private void responseSafeAdd(
+            String slaveUrl,
+            List<Response> responses,
+            Request req) throws
+            InterruptedException,
+            IOException,
+            HttpException {
+        try {
+            if (slaveUrl.equals(selfNodeURL)) {
+                responses.add(handleToDaoOperations(req,
+                        System.currentTimeMillis()));
+            } else {
+                responses.add(clientMap.get(slaveUrl).invoke(req, 100));
+            }
+        } catch (PoolException | SocketTimeoutException e) {
+            responses.add(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         }
     }
 
@@ -168,19 +234,48 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
+    public Response handleToDaoOperations(Request request, long timestamp) {
+        String key = request.getParameter("id");
+
+        int m = request.getMethod();
+        return switch (m) {
+            case Request.METHOD_GET -> getEntry(key);
+            case Request.METHOD_PUT -> putOrEmplaceEntry(key, request, timestamp);
+            case Request.METHOD_DELETE -> delete(key, timestamp);
+            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        };
+    }
+
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         int method = request.getMethod();
         Response response;
-
         if (method == Request.METHOD_PUT
                 || method == Request.METHOD_DELETE
                 || method == Request.METHOD_GET) {
 
-            response = BAD;
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
         session.sendResponse(response);
+    }
+
+    @Override
+    public synchronized void stop() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        super.stop();
+        try {
+            Utils.closeExecutorService(executorService);
+            daoImpl.close();
+            for (final HttpClient client: clientMap.values()) {
+                client.close();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }

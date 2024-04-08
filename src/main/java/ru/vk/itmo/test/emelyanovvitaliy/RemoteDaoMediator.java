@@ -1,29 +1,35 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
-import one.nio.http.HttpClient;
-import one.nio.http.HttpException;
 import one.nio.http.Request;
-import one.nio.http.Response;
-import one.nio.pool.PoolException;
 import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.OptionalLong;
+import java.util.concurrent.CompletableFuture;
 
-import static ru.vk.itmo.test.emelyanovvitaliy.DhtServer.TIMESTAMP_HEADER;
+import static ru.vk.itmo.test.emelyanovvitaliy.MergeDaoMediator.FINAL_EXECUTION_HEADER;
 
 public class RemoteDaoMediator extends DaoMediator {
-    protected static final int DEFAULT_TIMEOUT = 100;
+    protected static final Duration DEFAULT_TIMEOUT = Duration.ofMillis(100);
+    public static final String TIMESTAMP_HEADER = "X-Timestamp";
     protected final HttpClient client;
-    protected final int timeout;
+    protected final String url;
+    protected final Duration timeout;
 
-    RemoteDaoMediator(HttpClient httpClient) {
-        this(httpClient, DEFAULT_TIMEOUT);
+    RemoteDaoMediator(HttpClient httpClient, String url) {
+        this(httpClient, url, DEFAULT_TIMEOUT);
     }
 
-    RemoteDaoMediator(HttpClient httpClient, int timeout) {
+    RemoteDaoMediator(HttpClient httpClient, String url, Duration timeout) {
         this.client = httpClient;
         this.timeout = timeout;
+        this.url = url;
     }
 
     protected boolean isStatusCodeCorrect(int statusCode) {
@@ -32,58 +38,74 @@ public class RemoteDaoMediator extends DaoMediator {
 
     @Override
     void stop() {
-        if (!client.isClosed()) {
+        if (!client.isTerminated()) {
             client.close();
         }
     }
 
     @Override
     boolean isStopped() {
-        return client.isClosed();
+        return client.isTerminated();
     }
 
     @Override
-    protected boolean put(Request request) {
+    protected CompletableFuture<Boolean> put(Request request) {
         return simpleForward(request);
     }
 
-    protected boolean simpleForward(Request request) {
+    protected CompletableFuture<Boolean> simpleForward(Request request) {
         try {
-            Response response = client.invoke(request);
-            return isStatusCodeCorrect(response.getStatus());
+            return invoke(request).handle((response, ex) ->
+                {
+                    if (response == null) {
+                        return false;
+                    }
+                    return isStatusCodeCorrect(response.statusCode());
+                }
+            );
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new UncheckedInterruptedException(e);
-        } catch (PoolException | IOException | HttpException e) {
-            return false;
+        } catch (IOException e) {
+            return CompletableFuture.completedFuture(false);
         }
     }
 
     @Override
-    TimestampedEntry<MemorySegment> get(Request request) {
-        Response response = null;
+    CompletableFuture<TimestampedEntry<MemorySegment>> get(Request request) {
         try {
-            response = client.invoke(request, timeout);
+            return invoke(request).handle(
+                    (response, ex) -> {
+                        if (response == null) {
+                            return null;
+                        }
+                        return getTimestampedEntry(request, response);
+                    }
+            );
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new UncheckedInterruptedException(e);
-        } catch (PoolException | IOException | HttpException e) {
+        } catch (IOException e) {
             return null;
         }
-        String timestampHeader = response.getHeader(TIMESTAMP_HEADER);
+
+    }
+
+    private TimestampedEntry<MemorySegment> getTimestampedEntry(Request request, HttpResponse<byte[]> response) {
+        OptionalLong timestampHeader = response.headers().firstValueAsLong(TIMESTAMP_HEADER);
         long timestamp;
-        if (timestampHeader == null) {
+        if (timestampHeader.isEmpty()) {
             timestamp = NEVER_TIMESTAMP;
         } else {
-            timestamp = Long.parseLong(timestampHeader);
+            timestamp = timestampHeader.getAsLong();
         }
-        if (isStatusCodeCorrect(response.getStatus()) && timestampHeader != null) {
+        if (isStatusCodeCorrect(response.statusCode()) && timestampHeader.isPresent()) {
             return new TimestampedEntry<>(
                     keyFor(request.getParameter(DhtServer.ID_KEY)),
-                    MemorySegment.ofArray(response.getBody()),
+                    MemorySegment.ofArray(response.body()),
                     timestamp
             );
-        } else if (response.getStatus() == 404) {
+        } else if (response.statusCode() == 404) {
             return new TimestampedEntry<>(
                     keyFor(request.getParameter(DhtServer.ID_KEY)),
                     null,
@@ -95,7 +117,21 @@ public class RemoteDaoMediator extends DaoMediator {
     }
 
     @Override
-    boolean delete(Request request) {
+    CompletableFuture<Boolean> delete(Request request) {
         return simpleForward(request);
+    }
+
+    private CompletableFuture<HttpResponse<byte[]>> invoke(Request request) throws IOException, InterruptedException {
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .setHeader(FINAL_EXECUTION_HEADER, "true")
+                .timeout(timeout)
+                .build();
+        return client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
     }
 }

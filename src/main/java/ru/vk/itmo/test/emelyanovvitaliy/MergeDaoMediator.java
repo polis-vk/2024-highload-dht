@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
-import one.nio.http.HttpClient;
 import one.nio.http.Request;
-import one.nio.net.ConnectionString;
 import one.nio.util.Hash;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.emelyanovvitaliy.dao.ReferenceDao;
@@ -10,34 +8,63 @@ import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class MergeDaoMediator extends DaoMediator {
-    public static final String FINAL_EXECUTION_HEADER = "X-Final-Execution: ";
+    public static final String FINAL_EXECUTION_HEADER = "X-Final-Execution";
     public static final String ACK_KEY = "ack=";
     public static final String FROM_KEY = "from=";
-    protected static final String TRUE_STRING = "true";
-    protected static final int FLUSH_THRESHOLD_BYTES = 1 << 24; // 16 MiB
     public static final String ID_KEY = "id=";
-    protected final AtomicBoolean isStopped = new AtomicBoolean(false);
+    protected static final int DAO_MEDIATOR_THREADS = 4*Runtime.getRuntime().availableProcessors();
+    protected static final Duration HTTP_TIMEOUT = Duration.ofMillis(100);
+    protected static final int KEEP_ALIVE_TIME_MS = 1000;
+    protected static final String HEADER_TRUE_STRING = ": true";
+    protected static final int FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MiB
+    public static final int DAO_THREADS_CAPACITY = 1024;
+    protected final Executor daoExecutor;
+    protected final AtomicBoolean isStopped;
     protected final DaoMediator[] daoMediators;
     protected final int[] mediatorsHashes;
     private final LocalDaoMediator localDaoMediator;
 
     MergeDaoMediator(Path localDir, String thisUrl, List<String> urls) throws IOException {
+        isStopped = new AtomicBoolean(false);
+        AtomicInteger threadCount = new AtomicInteger();
+        daoExecutor = new ThreadPoolExecutor(
+                DAO_MEDIATOR_THREADS,
+                DAO_MEDIATOR_THREADS,
+                KEEP_ALIVE_TIME_MS,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(DAO_THREADS_CAPACITY),
+                r -> {
+                    Thread thread = new Thread(r);
+                    thread.setName("Dao-Executor-" + threadCount.getAndIncrement());
+                    return thread;
+                }
+        );
         localDaoMediator = new LocalDaoMediator(
                 new ReferenceDao(
                         new Config(
                                 localDir,
                                 FLUSH_THRESHOLD_BYTES
                         )
-                )
+                ),
+                daoExecutor
         );
-        daoMediators = getDaoMediators(urls, thisUrl, localDaoMediator);
+        daoMediators = getDaoMediators(urls, thisUrl, localDaoMediator, daoExecutor);
         mediatorsHashes = getMediatorsHashes(urls);
     }
 
@@ -57,18 +84,18 @@ public class MergeDaoMediator extends DaoMediator {
     }
 
     @Override
-    boolean put(Request request) throws IllegalArgumentException {
+    CompletableFuture<Boolean> put(Request request) throws IllegalArgumentException {
         return simpleReplicate(request, false);
     }
 
     @Override
-    TimestampedEntry<MemorySegment> get(Request request) throws IllegalArgumentException {
-        if (Objects.equals(request.getHeader(FINAL_EXECUTION_HEADER), TRUE_STRING)) {
+    @SuppressWarnings("FutureReturnValueIgnored")
+    CompletableFuture<TimestampedEntry<MemorySegment>> get(Request request) throws IllegalArgumentException {
+        if (Objects.equals(request.getHeader(FINAL_EXECUTION_HEADER), HEADER_TRUE_STRING)) {
             return localDaoMediator.get(request);
         } else {
             int ack;
             int from;
-            int answered = 0;
             try {
                 ack = getAck(request);
                 from = getFrom(request);
@@ -79,37 +106,65 @@ public class MergeDaoMediator extends DaoMediator {
                 throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
             }
             String id = request.getParameter(ID_KEY);
-            request.addHeader(FINAL_EXECUTION_HEADER + TRUE_STRING);
+            request.addHeader(FINAL_EXECUTION_HEADER + HEADER_TRUE_STRING);
             int currentMediatorIndex = getFirstMediatorIndex(id);
-            TimestampedEntry<MemorySegment> lastEntry = null;
+            AtomicReference<TimestampedEntry<MemorySegment>> lastEntry = new AtomicReference<>();
+            AtomicInteger foundSmth = new AtomicInteger(0);
+            AtomicInteger notFound = new AtomicInteger(0);
+            CompletableFuture<TimestampedEntry<MemorySegment>> ans = new CompletableFuture<>();
             for (int i = 0; i < from; i++) {
-                TimestampedEntry<MemorySegment> entry =
+                CompletableFuture<TimestampedEntry<MemorySegment>> future =
                         daoMediators[currentMediatorIndex].get(request);
-                lastEntry = findLastEntry(lastEntry, entry);
-                if (entry != null) {
-                    answered += 1;
-                }
+                future.whenComplete(
+                        (entry, _) -> {
+                            if (entry == null) {
+                                if (notFound.incrementAndGet() == from - ack + 1) {
+                                    ans.complete(null);
+                                }
+                            } else {
+                                TimestampedEntry<MemorySegment> current;
+                                TimestampedEntry<MemorySegment> lastOf2;
+                                do {
+                                    current = lastEntry.get();
+                                    lastOf2 = findLastEntry(current, entry);
+                                    if (lastOf2 == current) { // if ours variant is older
+                                        break;
+                                    }
+                                    // try again if lastEntry updated
+                                } while (lastEntry.compareAndExchange(current, lastOf2) != current);
+                                if (foundSmth.incrementAndGet() == ack) {
+                                    ans.complete(lastEntry.get());
+                                }
+                            }
+                        }
+                );
                 currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
             }
-            return answered >= ack ? lastEntry : null;
+            return ans;
         }
     }
 
     @Override
-    boolean delete(Request request) throws IllegalArgumentException {
+    CompletableFuture<Boolean> delete(Request request) throws IllegalArgumentException {
         return simpleReplicate(request, true);
     }
 
-    private static DaoMediator[] getDaoMediators(List<String> urls, String thisUrl, LocalDaoMediator localDaoMediator) {
+    private static DaoMediator[] getDaoMediators(List<String> urls, String thisUrl, LocalDaoMediator localDaoMediator,
+                                                 Executor executor) {
         DaoMediator[] mediators = new DaoMediator[urls.size()];
         int cnt = 0;
+        HttpClient httpClient = HttpClient.newBuilder()
+                .executor(executor)
+                .connectTimeout(HTTP_TIMEOUT)
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
         List<String> tmpList = new ArrayList<>(urls);
         tmpList.sort(String::compareTo);
         for (String url : tmpList) {
             if (url.equals(thisUrl)) {
                 mediators[cnt] = localDaoMediator;
             } else {
-                mediators[cnt] = new RemoteDaoMediator(new HttpClient(new ConnectionString(url)));
+                mediators[cnt] = new RemoteDaoMediator(httpClient, url, HTTP_TIMEOUT);
             }
             cnt++;
         }
@@ -144,9 +199,10 @@ public class MergeDaoMediator extends DaoMediator {
         return b;
     }
 
-    private boolean simpleReplicate(Request request, boolean delete)
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private CompletableFuture<Boolean> simpleReplicate(Request request, boolean delete)
             throws IllegalArgumentException {
-        if (Objects.equals(request.getHeader(FINAL_EXECUTION_HEADER), TRUE_STRING)) {
+        if (Objects.equals(request.getHeader(FINAL_EXECUTION_HEADER), HEADER_TRUE_STRING)) {
             if (delete) {
                 return localDaoMediator.delete(request);
             } else {
@@ -155,7 +211,6 @@ public class MergeDaoMediator extends DaoMediator {
         }
         int ack;
         int from;
-        int answered = 0;
         try {
             ack = getAck(request);
             from = getFrom(request);
@@ -165,20 +220,33 @@ public class MergeDaoMediator extends DaoMediator {
         if (!isAckFromCorrect(ack, from)) {
             throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
         }
-        request.addHeader(FINAL_EXECUTION_HEADER + TRUE_STRING);
+        request.addHeader(FINAL_EXECUTION_HEADER + HEADER_TRUE_STRING);
         String id = request.getParameter(ID_KEY);
         int currentMediatorIndex = getFirstMediatorIndex(id);
+        AtomicInteger answeredOk = new AtomicInteger(0);
+        AtomicInteger answeredNotOk = new AtomicInteger(0);
+        CompletableFuture<Boolean> ans = new CompletableFuture<>();
         for (int i = 0; i < from; i++) {
-            boolean res;
+            CompletableFuture<Boolean> res;
             if (delete) {
                 res = daoMediators[currentMediatorIndex].delete(request);
             } else {
                 res = daoMediators[currentMediatorIndex].put(request);
             }
-            answered += res ? 1 : 0;
+            res.thenAccept(success -> {
+                if (success) {
+                    if (answeredOk.incrementAndGet() == ack) {
+                        ans.complete(true);
+                    }
+                } else {
+                    if (answeredNotOk.incrementAndGet() == from - ack + 1) {
+                        ans.complete(false);
+                    }
+                }
+            });
             currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
         }
-        return answered >= ack;
+        return ans;
     }
 
     private int getAck(Request request) throws NumberFormatException {

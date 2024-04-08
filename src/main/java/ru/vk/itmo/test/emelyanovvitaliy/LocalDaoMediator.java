@@ -7,14 +7,25 @@ import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class LocalDaoMediator extends DaoMediator {
+    protected final Executor executor;
     protected final ReferenceDao dao;
     protected final AtomicBoolean isClosed = new AtomicBoolean(false);
 
     LocalDaoMediator(ReferenceDao dao) {
         this.dao = dao;
+        this.executor = Executors.newSingleThreadExecutor(); // stub for testing, don't use in production
+    }
+
+    LocalDaoMediator(ReferenceDao dao, Executor executor) {
+        this.dao = dao;
+        this.executor = executor;
     }
 
     @Override
@@ -35,26 +46,28 @@ public class LocalDaoMediator extends DaoMediator {
     }
 
     @Override
-    boolean put(Request request) {
+    CompletableFuture<Boolean> put(Request request) {
+        // upsert is a really fast operation, so as I think we can do it on main thread
         String id = request.getParameter(DhtServer.ID_KEY);
         dao.upsert(new TimestampedEntry<>(keyFor(id), MemorySegment.ofArray(request.getBody())));
-        return true;
+        return CompletableFuture.completedFuture(true);
     }
 
     @Override
-    TimestampedEntry<MemorySegment> get(Request request) {
-        MemorySegment id = keyFor(request.getParameter(DhtServer.ID_KEY));
-        TimestampedEntry<MemorySegment> entry = dao.get(id);
-        if (entry == null) {
-            return new TimestampedEntry<>(id, null, NEVER_TIMESTAMP);
-        }
-        return entry;
+    CompletableFuture<TimestampedEntry<MemorySegment>> get(Request request) {
+        CompletableFuture<TimestampedEntry<MemorySegment>> ans = new CompletableFuture<>();
+        executor.execute(() -> {
+            MemorySegment id = keyFor(request.getParameter(DhtServer.ID_KEY));
+            TimestampedEntry<MemorySegment> entry = dao.get(id);
+            ans.complete(Objects.requireNonNullElseGet(entry, () -> new TimestampedEntry<>(id, null, NEVER_TIMESTAMP)));
+        });
+        return ans;
     }
 
     @Override
-    boolean delete(Request request) {
+    CompletableFuture<Boolean> delete(Request request) {
         String id = request.getParameter(DhtServer.ID_KEY);
         dao.upsert(new TimestampedEntry<>(keyFor(id), null));
-        return true;
+        return CompletableFuture.completedFuture(true);
     }
 }

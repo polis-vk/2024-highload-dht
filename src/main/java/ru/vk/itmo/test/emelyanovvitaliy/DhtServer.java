@@ -18,6 +18,7 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,22 +29,21 @@ import static one.nio.http.Request.METHOD_PUT;
 
 public class DhtServer extends HttpServer {
     public static final String NOT_ENOUGH_REPLICAS_STATUS = "504 Not Enough Replicas";
-    public static final String TIMESTAMP_HEADER = "X-Timestamp: ";
+    public static final String TIMESTAMP_HEADER = "X-Timestamp";
     public static final String ID_KEY = "id=";
-    protected static final int THREADS_PER_PROCESSOR = 2;
+    protected static final int THREADS_PER_PROCESSOR = 1;
     protected static final byte[] EMPTY_BODY = new byte[0];
     protected static final long KEEP_ALIVE_TIME_MILLIS = 1000;
     protected static final int REQUEST_TIMEOUT_MILLIS = 1024;
     protected static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
     protected static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
     protected final MergeDaoMediator mergeDaoMediator;
-    protected final AtomicInteger threadsInPool;
     protected final ThreadPoolExecutor threadPoolExecutor;
 
     public DhtServer(ServiceConfig config) throws IOException {
         super(createConfig(config));
         mergeDaoMediator = new MergeDaoMediator(config.workingDir(), config.selfUrl(), config.clusterUrls());
-        threadsInPool = new AtomicInteger(0);
+        AtomicInteger threadsInPool = new AtomicInteger(0);
         threadPoolExecutor = new ThreadPoolExecutor(
                 Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
                 Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
@@ -65,7 +65,7 @@ public class DhtServer extends HttpServer {
         try {
             threadPoolExecutor.shutdown();
             if (!threadPoolExecutor.awaitTermination(THREAD_POOL_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                throw new UncheckedTimeoutException("Waited too lot to stop the thread pool");
+                threadPoolExecutor.shutdownNow();
             }
             mergeDaoMediator.stop();
         } catch (InterruptedException e) {
@@ -74,6 +74,7 @@ public class DhtServer extends HttpServer {
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @RequestMethod(METHOD_GET)
     @Path("/v0/entity")
     public void entity(HttpSession session, Request request) throws IOException {
@@ -81,26 +82,33 @@ public class DhtServer extends HttpServer {
         requestProccessing(id, session,
                 () -> {
                     try {
-                        TimestampedEntry<MemorySegment> entry = mergeDaoMediator.get(request);
-                        if (entry == null) {
-                            sendNotEnoughReplicas(session);
-                        } else if (entry.timestamp() == DaoMediator.NEVER_TIMESTAMP) {
-                            session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
-                        } else {
-                            Response response;
-                            if (entry.value() == null) {
-                                response = new Response(Response.NOT_FOUND, EMPTY_BODY);
-                            } else {
-                                response = new Response(
-                                        Response.OK,
-                                        ((Entry<MemorySegment>) entry).value().toArray(ValueLayout.JAVA_BYTE)
-                                );
-                            }
-                            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
-                            session.sendResponse(response);
-                        }
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
+                        CompletableFuture<TimestampedEntry<MemorySegment>> future = mergeDaoMediator.get(request);
+                        future.whenComplete(
+                                (entry, _) -> {
+                                    try {
+                                        if (entry == null) {
+                                            sendNotEnoughReplicas(session);
+                                        } else if (entry.timestamp() == DaoMediator.NEVER_TIMESTAMP) {
+                                            session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+                                        } else {
+                                            Response response;
+                                            if (entry.value() == null) {
+                                                response = new Response(Response.NOT_FOUND, EMPTY_BODY);
+                                            } else {
+                                                response = new Response(
+                                                        Response.OK,
+                                                        ((Entry<MemorySegment>) entry).value()
+                                                                .toArray(ValueLayout.JAVA_BYTE)
+                                                );
+                                            }
+                                            response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
+                                            session.sendResponse(response);
+                                        }
+                                    } catch (IOException e) {
+                                        throw new UncheckedIOException(e);
+                                    }
+                                }
+                        );
                     } catch (IllegalArgumentException e) {
                         sendBadRequestResponseUnchecked(session);
                     }
@@ -108,19 +116,26 @@ public class DhtServer extends HttpServer {
         );
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @RequestMethod(METHOD_PUT)
     @Path("/v0/entity")
     public void putEntity(@Param(value = "id") String id, HttpSession httpSession, Request request) throws IOException {
         requestProccessing(id, httpSession,
                 () -> {
                     try {
-                        if (mergeDaoMediator.put(request)) {
-                            httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
-                        } else {
-                            sendNotEnoughReplicas(httpSession);
-                        }
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
+                        mergeDaoMediator.put(request).whenComplete(
+                                (success, _) -> {
+                                    try {
+                                        if (success) {
+                                            httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
+                                        } else {
+                                            sendNotEnoughReplicas(httpSession);
+                                        }
+                                    } catch (IOException e) {
+                                        throw new UncheckedIOException(e);
+                                    }
+                                }
+                        );
                     } catch (IllegalArgumentException e) {
                         sendBadRequestResponseUnchecked(httpSession);
                     }
@@ -128,19 +143,26 @@ public class DhtServer extends HttpServer {
         );
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @RequestMethod(METHOD_DELETE)
     @Path("/v0/entity")
     public void deleteEntity(@Param("id") String id, HttpSession httpSession, Request request) throws IOException {
         requestProccessing(id, httpSession,
                 () -> {
                     try {
-                        if (mergeDaoMediator.delete(request)) {
-                            httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
-                        } else {
-                            sendNotEnoughReplicas(httpSession);
-                        }
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
+                        mergeDaoMediator.delete(request).whenComplete(
+                                (success, _) -> {
+                                    try {
+                                        if (success) {
+                                            httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
+                                        } else {
+                                            sendNotEnoughReplicas(httpSession);
+                                        }
+                                    } catch (IOException e) {
+                                        throw new UncheckedIOException(e);
+                                    }
+                                }
+                        );
                     } catch (IllegalArgumentException e) {
                         sendBadRequestResponseUnchecked(httpSession);
                     }
@@ -205,7 +227,7 @@ public class DhtServer extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
         config.acceptors = new AcceptorConfig[] {acceptorConfig};
-        config.closeSessions = true;
+        config.keepAlive = 1000;
         return config;
     }
 }

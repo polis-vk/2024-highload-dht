@@ -23,12 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
@@ -130,7 +125,8 @@ public class ServerImpl extends HttpServer {
             if (request.getHeader(Constants.HTTP_TERMINATION_HEADER) == null) {
                 CompletableFuture<Response> handleProxyResponse =
                         handleProxyRequest(request, session, paramId, from, ack);
-                handleProxyResponse.whenComplete((response, throwable) -> sendResponse(session, response));
+                handleProxyResponse = handleProxyResponse.whenComplete((response, throwable) ->
+                        sendResponse(session, response));
                 checkingTimeout(handleProxyResponse);
             } else {
                 sendResponse(session, requestHandler.handle(request, paramId));
@@ -165,6 +161,7 @@ public class ServerImpl extends HttpServer {
 
     private CompletableFuture<Response> sendProxyRequest(HttpRequest httpRequest) {
         final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
+        CompletableFuture<HttpResponse<byte[]>> byteResponse =
         httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .whenComplete((response, throwable) -> {
                     if (throwable != null) {
@@ -174,16 +171,18 @@ public class ServerImpl extends HttpServer {
                     httpResponse.complete(processingResponse(response));
                 });
 
+        checkCompletableFuture(byteResponse);
         return httpResponse;
     }
 
     private void checkingTimeout(CompletableFuture<Response> requestFuture) {
-
-        checkingTimeout.schedule(() -> {
+        ScheduledFuture<?> future = checkingTimeout.schedule(() -> {
             if (!requestFuture.isDone()) {
                 requestFuture.complete(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             }
         }, Constants.REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+
+        checkCompletableFuture(future);
     }
 
     private Response processingResponse(HttpResponse<byte[]> response) {
@@ -244,8 +243,8 @@ public class ServerImpl extends HttpServer {
         AtomicInteger errorResponseCount = new AtomicInteger(from - ack + 1);
 
         for (CompletableFuture<Response> responseFuture : responses) {
-            responseFuture.whenComplete((response, throwable) -> {
-                if (throwable == null || response != null && response.getStatus() < Constants.SERVER_ERROR) {
+            responseFuture = responseFuture.whenComplete((response, throwable) -> {
+                if (throwable == null || (response != null && response.getStatus() < Constants.SERVER_ERROR)) {
                     successResponseCount.decrementAndGet();
                     successResponses.add(response);
                 } else {
@@ -266,8 +265,22 @@ public class ServerImpl extends HttpServer {
                     result.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
             });
+
+            checkCompletableFuture(responseFuture);
         }
 
         return result;
+    }
+
+    private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
+        if (completableFuture == null) {
+            log.error("Error CompletableFuture");
+        }
+    }
+
+    private void checkCompletableFuture(ScheduledFuture<?> scheduledFuture) {
+        if (scheduledFuture == null) {
+            log.error("Error ScheduledFuture");
+        }
     }
 }

@@ -82,7 +82,7 @@ public class RemoteDaoNode implements Dao<MemorySegment, EntryWithTimestamp<Memo
     public void upsert(EntryWithTimestamp<MemorySegment> entry) {
         Response response;
         String timestampHeader = "X-timestamp: " + entry.timestamp();
-        String innerRequest = "X-inner-request: " + 1;
+        String innerRequest = "X-inner-request: 1";
         try {
             if (entry.value() == null) {
                 response = client.delete(

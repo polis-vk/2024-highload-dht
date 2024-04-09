@@ -128,8 +128,8 @@ public class Server extends HttpServer {
     @RequestMethod(Request.METHOD_GET)
     public Response getOne(
             @Param(value = "id", required = true) String id,
-            @Param(value = "ack") String ack,
-            @Param(value = "from") String from,
+            @Param(value = "ack") Integer ack,
+            @Param(value = "from") Integer from,
             Request request
     ) {
         if (id.isEmpty()) {
@@ -142,8 +142,8 @@ public class Server extends HttpServer {
         if (request.getHeader(INNER_REQUEST_HEADER) == null) {
             entry = dao.get(
                     key,
-                    from == null ? null : Integer.parseInt(from),
-                    ack == null ? null : Integer.parseInt(ack)
+                    from,
+                    ack
             );
         } else {
             entry = dao.get(key);
@@ -163,8 +163,8 @@ public class Server extends HttpServer {
     @RequestMethod(Request.METHOD_PUT)
     public Response putOne(
             @Param(value = "id", required = true) String id,
-            @Param(value = "ack") String ack,
-            @Param(value = "from") String from,
+            @Param(value = "ack") Integer ack,
+            @Param(value = "from") Integer from,
             Request request
     ) {
         if (id.isEmpty()) {
@@ -178,8 +178,8 @@ public class Server extends HttpServer {
                             key,
                             val,
                             System.currentTimeMillis()),
-                    from == null ? null : Integer.parseInt(from),
-                    ack == null ? null : Integer.parseInt(ack)
+                    from,
+                    ack
             );
         } else {
             var timestamp = getTimestampHeaderValue(request);

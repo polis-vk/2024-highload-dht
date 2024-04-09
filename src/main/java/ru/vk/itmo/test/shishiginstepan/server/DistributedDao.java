@@ -97,12 +97,10 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
             if (numberOfNodes == 0) {
                 break;
             }
-            if (tokensOfChosenNodes.contains(node.realNodeKey)) {
-                continue;
+            if (tokensOfChosenNodes.add(node.realNodeKey)) {
+                chosenNodes.add(node);
+                numberOfNodes--;
             }
-            chosenNodes.add(node);
-            tokensOfChosenNodes.add(node.realNodeKey);
-            numberOfNodes--;
         } // здесь мы можем дойти до конца мапы которая является кольцом нод. если мы до сих пор не набрали нужное
         // кол-во нод, нужно теперь посмотреть другую часть кольца.
         ringPart = this.nodeRing.headMap(keyHash);
@@ -110,12 +108,13 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
             if (numberOfNodes == 0) {
                 break;
             }
-            if (tokensOfChosenNodes.contains(node.realNodeKey)) {
-                continue;
+            if (numberOfNodes == 0) {
+                break;
             }
-            chosenNodes.add(node);
-            tokensOfChosenNodes.add(node.realNodeKey);
-            numberOfNodes--;
+            if (tokensOfChosenNodes.add(node.realNodeKey)) {
+                chosenNodes.add(node);
+                numberOfNodes--;
+            }
         }
 
         if (numberOfNodes > 0) {

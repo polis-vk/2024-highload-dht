@@ -21,7 +21,7 @@ public class Node {
     }
 
     public void captureError() {
-        if (errors.addAndGet(1) > MAX_ERRORS) {
+        if (errors.incrementAndGet() > MAX_ERRORS) {
             isAlive = false;
         }
     }

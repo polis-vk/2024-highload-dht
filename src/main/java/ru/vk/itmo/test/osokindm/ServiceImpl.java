@@ -1,10 +1,12 @@
 package ru.vk.itmo.test.osokindm;
 
 import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +19,7 @@ import ru.vk.itmo.test.osokindm.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -24,13 +27,13 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.Math.floor;
 
@@ -43,10 +46,14 @@ public class ServiceImpl implements Service {
     private static final String TIMESTAMP_HEADER_LC = "request-timestamp";
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ServiceConfig config;
+    private final HttpClient client;
+    private final AtomicInteger successes;
+    private final AtomicInteger failures;
+    private final AtomicReference<Response> latestResponse;
     private RendezvousRouter router;
     private DaoWrapper daoWrapper;
     private HttpServerImpl server;
-    private final HttpClient client;
+    private long responseTime = 0;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -54,6 +61,9 @@ public class ServiceImpl implements Service {
                 .connectTimeout(Duration.of(CONNECTION_TIMEOUT_MS, ChronoUnit.MILLIS))
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .build();
+        successes = new AtomicInteger();
+        failures = new AtomicInteger();
+        latestResponse = new AtomicReference<>();
     }
 
     @Override
@@ -62,7 +72,6 @@ public class ServiceImpl implements Service {
             daoWrapper = new DaoWrapper(new Config(config.workingDir(), MEMORY_LIMIT_BYTES));
             router = new RendezvousRouter(config.clusterUrls());
             server = new HttpServerImpl(createServerConfig(config.selfPort()));
-            server.addRequestHandlers(this);
             server.start();
             LOGGER.debug("Server started: " + config.selfUrl());
         } catch (IOException e) {
@@ -92,6 +101,8 @@ public class ServiceImpl implements Service {
             return new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8));
         }
 
+        LOGGER.info("session.toString()");
+
         LOGGER.info("got request in entity:  " + request.toString());
         if (request.getHeader(TIMESTAMP_HEADER) != null) {
             String timestamp = request.getHeader(TIMESTAMP_HEADER + ": ");
@@ -118,41 +129,56 @@ public class ServiceImpl implements Service {
         }
 
         List<Node> targetNodes = router.getNodes(id, from);
-        List<Response> responses = sendRequestsToNodes(request, targetNodes, id);
-        if (responses.size() < ack) {
-            String message = "Not enough replicas responded";
-            return new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8));
-        } else if (request.getMethod() == Request.METHOD_GET) {
-            return selectLatestResponse(responses);
-        } else {
-            return responses.getFirst();
-        }
+        sendRequestsToNodes(request, targetNodes, id, ack, from);
+        return null;
     }
 
-    private List<Response> sendRequestsToNodes(Request request, List<Node> nodes, String id) {
-        List<Response> responses = new ArrayList<>();
+    private void sendRequestsToNodes(Request request, List<Node> nodes, String id, int ack, int from) {
         for (Node node : nodes) {
             if (!node.isAlive()) {
                 LOGGER.info("node is unreachable: " + node.address);
+                failures.incrementAndGet();
                 continue;
             }
             try {
                 long timestamp = getTimestamp(request);
-                Response response;
+                CompletableFuture<Response> futureResponse;
                 if (node.address.equals(config.selfUrl())) {
-                    response = handleRequestLocally(request, id, timestamp);
-
+                    futureResponse = CompletableFuture.supplyAsync(() -> handleRequestLocally(request, id, timestamp));
                 } else {
-                    response = forwardRequestToNode(request, node, timestamp);
+                    futureResponse = forwardRequestToNode(request, node, timestamp);
                 }
-                if (response != null) {
-                    responses.add(response);
-                }
+                futureResponse.thenApply(response1 -> {
+                    if (response1 != null) {
+                        if (request.getMethod() == Request.METHOD_GET) {
+                            updateLatestResponse(response1);
+                        }
+                        if (responseIsGood(response1)) {
+                            if (successes.incrementAndGet() > ack) {
+                                return latestResponse.get();
+                            }
+                        } else {
+                            if (failures.incrementAndGet() > from - ack) {
+                                String message = "Not enough replicas responded";
+                                return new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8));
+                            }
+                        }
+                    }
+                    return null;
+                }).exceptionally(ex -> {
+                    failures.incrementAndGet();
+                    LOGGER.error(ex.toString());
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                });
             } catch (NumberFormatException e) {
                 LOGGER.error(e.toString());
             }
         }
-        return responses;
+    }
+
+    private boolean responseIsGood(Response response1) {
+        return response1.getStatus() <= HttpURLConnection.HTTP_PARTIAL
+                || response1.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
     private long getTimestamp(Request request) throws NumberFormatException {
@@ -163,21 +189,30 @@ public class ServiceImpl implements Service {
         }
         return System.currentTimeMillis();
     }
+//
+//    private Response selectLatestResponse(List<Response> responses) {
+//        Response latestResponse = responses.getFirst();
+//        long latestTimestamp = Long.MIN_VALUE;
+//
+//        for (Response response : responses) {
+//            long timestamp = extractTimestampFromResponse(response);
+//
+//            if (timestamp > latestTimestamp) {
+//                latestTimestamp = timestamp;
+//                latestResponse = response;
+//            }
+//        }
+//
+//        return latestResponse;
+//    }
 
-    private Response selectLatestResponse(List<Response> responses) {
-        Response latestResponse = responses.getFirst();
-        long latestTimestamp = Long.MIN_VALUE;
+    private void updateLatestResponse(Response response) {
+        long timestamp = extractTimestampFromResponse(response);
 
-        for (Response response : responses) {
-            long timestamp = extractTimestampFromResponse(response);
-
-            if (timestamp > latestTimestamp) {
-                latestTimestamp = timestamp;
-                latestResponse = response;
-            }
+        if (timestamp > responseTime) {
+            responseTime = timestamp;
+            latestResponse.set(response);
         }
-
-        return latestResponse;
     }
 
     private long extractTimestampFromResponse(Response response) {
@@ -189,7 +224,7 @@ public class ServiceImpl implements Service {
         return Long.parseLong(timestampValue);
     }
 
-    private Response forwardRequestToNode(Request request, Node node, long timestamp) {
+    private CompletableFuture<Response> forwardRequestToNode(Request request, Node node, long timestamp) {
         try {
             return makeProxyRequest(request, node.address, timestamp);
         } catch (TimeoutException e) {
@@ -236,7 +271,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    private Response makeProxyRequest(Request request, String nodeAddress, long timestamp)
+    private CompletableFuture<Response> makeProxyRequest(Request request, String nodeAddress, long timestamp)
             throws ExecutionException, InterruptedException, TimeoutException, IOException {
         byte[] body = request.getBody();
         if (body == null) {
@@ -251,8 +286,7 @@ public class ServiceImpl implements Service {
 
         return client
                 .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .thenApply(ServiceImpl::processedResponse)
-                .get(500, TimeUnit.MILLISECONDS);
+                .thenApply(ServiceImpl::processedResponse);
     }
 
     private static Response processedResponse(HttpResponse<byte[]> response) {
@@ -295,7 +329,7 @@ public class ServiceImpl implements Service {
         return result;
     }
 
-    @ServiceFactory(stage = 4)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

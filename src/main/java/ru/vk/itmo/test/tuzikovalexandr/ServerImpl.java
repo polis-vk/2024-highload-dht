@@ -23,7 +23,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
@@ -237,6 +243,11 @@ public class ServerImpl extends HttpServer {
             responses.add(httpResponse);
         }
 
+        return getQuorumResult(request, from, ack, responses);
+    }
+
+    private CompletableFuture<Response> getQuorumResult(Request request, int from, int ack,
+                                                        List<CompletableFuture<Response>> responses) {
         List<Response> successResponses = new ArrayList<>();
         CompletableFuture<Response> result = new CompletableFuture<>();
         AtomicInteger successResponseCount = new AtomicInteger(ack);

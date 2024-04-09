@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
 
-public class RandevouzSharder extends BaseSharder {
+public class RandevouzSharder extends ReplicativeBaseSharder {
     private final List<String> urls;
     private final Map<String, Integer> urlsHash = new HashMap<>();
 

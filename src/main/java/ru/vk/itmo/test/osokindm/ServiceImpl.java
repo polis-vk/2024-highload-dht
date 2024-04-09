@@ -72,6 +72,7 @@ public class ServiceImpl implements Service {
             daoWrapper = new DaoWrapper(new Config(config.workingDir(), MEMORY_LIMIT_BYTES));
             router = new RendezvousRouter(config.clusterUrls());
             server = new HttpServerImpl(createServerConfig(config.selfPort()));
+            server.addRequestHandlers(this);
             server.start();
             LOGGER.debug("Server started: " + config.selfUrl());
         } catch (IOException e) {
@@ -93,12 +94,12 @@ public class ServiceImpl implements Service {
     }
 
     @Path(DEFAULT_PATH)
-    public Response entity(Request request,
+    public void entity(Request request, HttpSession session,
                            @Param(value = "id", required = true) String id,
                            @Param(value = "ack") Integer ack,
-                           @Param(value = "from") Integer from) throws TimeoutException {
+                           @Param(value = "from") Integer from) throws TimeoutException, IOException {
         if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8));
+            session.sendResponse(new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8)));
         }
 
         LOGGER.info("session.toString()");

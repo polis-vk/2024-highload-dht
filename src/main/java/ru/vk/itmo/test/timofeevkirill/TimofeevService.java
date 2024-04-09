@@ -5,11 +5,13 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.timofeevkirill.dao.Dao;
 import ru.vk.itmo.test.timofeevkirill.dao.ReferenceDao;
+import ru.vk.itmo.test.timofeevkirill.dao.TimestampEntry;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -24,7 +26,8 @@ public class TimofeevService implements Service {
     private final Config daoConfig;
     private TimofeevServer server;
     private ThreadPoolExecutor threadPoolExecutor;
-    private Dao dao;
+    private Dao<MemorySegment, TimestampEntry<MemorySegment>> dao;
+    private TimofeevProxyService proxyService;
 
     public TimofeevService(ServiceConfig serviceConfig) {
         this.config = serviceConfig;
@@ -36,7 +39,8 @@ public class TimofeevService implements Service {
         dao = new ReferenceDao(daoConfig);
         threadPoolExecutor = getDefaultThreadPoolExecutor();
         threadPoolExecutor.prestartAllCoreThreads();
-        server = new TimofeevServer(config, dao, threadPoolExecutor);
+        proxyService = new TimofeevProxyService(config);
+        server = new TimofeevServer(config, dao, threadPoolExecutor, proxyService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -45,6 +49,7 @@ public class TimofeevService implements Service {
     public synchronized CompletableFuture<Void> stop() throws IOException {
         server.stop();
         shutdownAndAwaitTermination(threadPoolExecutor);
+        proxyService.close();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -67,7 +72,7 @@ public class TimofeevService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

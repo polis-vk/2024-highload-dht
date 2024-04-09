@@ -108,9 +108,6 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
             if (numberOfNodes == 0) {
                 break;
             }
-            if (numberOfNodes == 0) {
-                break;
-            }
             if (tokensOfChosenNodes.add(node.realNodeKey)) {
                 chosenNodes.add(node);
                 numberOfNodes--;

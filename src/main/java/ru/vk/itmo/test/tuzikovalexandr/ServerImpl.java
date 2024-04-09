@@ -23,7 +23,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
@@ -33,6 +38,7 @@ public class ServerImpl extends HttpServer {
     private final ConsistentHashing consistentHashing;
     private final List<String> clusterUrls;
     private final RequestHandler requestHandler;
+    private final ScheduledExecutorService checkingTimeout = Executors.newSingleThreadScheduledExecutor();
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
     private final String selfUrl;
@@ -139,16 +145,6 @@ public class ServerImpl extends HttpServer {
         }
     }
 
-//    private Response sendException(Exception exception) {
-//        String responseCode;
-//        if (exception.getClass().equals(TimeoutException.class)) {
-//            responseCode = Response.REQUEST_TIMEOUT;
-//        } else {
-//            responseCode = Response.INTERNAL_ERROR;
-//        }
-//        return new Response(responseCode, Response.EMPTY);
-//    }
-
     private void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
@@ -179,28 +175,10 @@ public class ServerImpl extends HttpServer {
                 });
 
         return httpResponse;
-//        try {
-//            final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
-//            httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-//                    .whenComplete((response, throwable) -> {
-//                        if (throwable != null) {
-//                            httpResponse.completeExceptionally(throwable);
-//                            return;
-//                        }
-//                        httpResponse.complete(processingResponse(response));
-//                    });
-//
-//            return httpResponse;
-//        } catch (InterruptedException e) {
-//            Thread.currentThread().interrupt();
-//            return sendException(e);
-//        } catch (ExecutionException | TimeoutException e) {
-//            return sendException(e);
-//        }
     }
 
     private void checkingTimeout(CompletableFuture<Response> requestFuture) {
-        ScheduledExecutorService checkingTimeout = Executors.newSingleThreadScheduledExecutor();
+
         checkingTimeout.schedule(() -> {
             if (!requestFuture.isDone()) {
                 requestFuture.complete(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
@@ -250,11 +228,13 @@ public class ServerImpl extends HttpServer {
 
         if (httpRequests.get(selfUrl) != null) {
             final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
-            try {
-                httpResponse.complete(requestHandler.handle(request, paramId));
-            } catch (Exception e) {
-                httpResponse.completeExceptionally(e);
-            }
+            executorService.execute(() -> {
+                try {
+                    httpResponse.complete(requestHandler.handle(request, paramId));
+                } catch (Exception e) {
+                    httpResponse.completeExceptionally(e);
+                }
+            });
             responses.add(httpResponse);
         }
 
@@ -265,7 +245,7 @@ public class ServerImpl extends HttpServer {
 
         for (CompletableFuture<Response> responseFuture : responses) {
             responseFuture.whenComplete((response, throwable) -> {
-                if (response.getStatus() < Constants.SERVER_ERROR && throwable == null) {
+                if (throwable == null || response != null && response.getStatus() < Constants.SERVER_ERROR) {
                     successResponseCount.decrementAndGet();
                     successResponses.add(response);
                 } else {

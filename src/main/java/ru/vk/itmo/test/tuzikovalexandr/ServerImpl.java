@@ -200,8 +200,8 @@ public class ServerImpl extends HttpServer {
     }
 
     private void checkingTimeout(CompletableFuture<Response> requestFuture) {
-        ScheduledExecutorService timeoutChecker = Executors.newSingleThreadScheduledExecutor();
-        timeoutChecker.schedule(() -> {
+        ScheduledExecutorService checkingTimeout = Executors.newSingleThreadScheduledExecutor();
+        checkingTimeout.schedule(() -> {
             if (!requestFuture.isDone()) {
                 requestFuture.complete(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             }

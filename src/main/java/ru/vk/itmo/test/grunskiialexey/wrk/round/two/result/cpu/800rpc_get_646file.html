@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px 10px 22px 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {position: fixed; bottom: 0; margin: 0; padding: 2px 3px 2px 3px; outline: 1px solid #ffc000; display: none; overflow: hidden; white-space: nowrap; background-color: #ffffe0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {left: 0}
+	#match {right: 0}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 912px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>CPU profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='status'></p>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<script>
+	// Copyright The async-profiler authors
+	// SPDX-License-Identifier: Apache-2.0
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let level0 = 0, left0 = 0, width0 = 0;
+	let reverse = false;
+	const levels = Array(57);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(key, level, left, width, inln, c1, int) {
+		levels[level0 = level].push({left: left0 += left, width: width0 = width || width0,
+			color: getColor(palette[key & 7]), title: cpool[key >>> 3],
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function u(key, width, inln, c1, int) {
+		f(key, level0 + 1, 0, width, inln, c1, int)
+	}
+
+	function n(key, width, inln, c1, int) {
+		f(key, level0, width0, width, inln, c1, int)
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inline-block' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	function unpack(cpool) {
+		for (let i = 1; i < cpool.length; i++) {
+			cpool[i] = cpool[i - 1].substring(0, cpool[i].charCodeAt(0) - 32) + cpool[i].substring(1);
+		}
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f !== root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				status.style.display = 'inline-block';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = null;
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+
+const cpool = [
+'all',
+' InstanceKlass::allocate_instance',
+' Java_one_nio_net_NativeSocket_read',
+' MemAllocator::allocate',
+'.mem_allocate_inside_tlab_slow',
+' OptoRuntime::new_instance_C',
+' RequestHandler0_handleGet.handleRequest',
+' __alloc_skb',
+'"dev_queue_xmit',
+'#o_softirq',
+'"inet_lookup_established',
+'#p_finish_output',
+'%local_out',
+'%queue_xmit',
+'"libc_send',
+'#ocal_bh_enable_ip',
+'"memset_avx2_unaligned_erms',
+'#od_timer',
+'"napi_poll',
+'#etif_receive_skb',
+'3_one_core',
+'"recv',
+'"sys_recvfrom',
+'&sendto',
+'"tcp_ack_snd_check',
+'&push_pending_frames',
+'&transmit_skb',
+'"wake_up_common_lock',
+'*sync_key',
+'"x64_sys_recvfrom',
+'*sendto',
+'!raw_spin_unlock_irqrestore',
+' aa_label_sk_perm.part.0',
+'#profile_af_perm',
+'#sk_perm',
+'!pparmor_socket_recvmsg',
+' cache_from_obj',
+'!lock_gettime@@GLIBC_2.17',
+' dev_hard_start_xmit',
+'!o_softirq.part.0',
+'$yscall_64',
+' entry_SYSCALL_64_after_hwframe',
+'!poll_wait',
+'!th_type_trans',
+' inet6_sendmsg',
+'!p_finish_output',
+'02',
+'#local_deliver',
+'0_finish',
+')out',
+'#output',
+'#protocol_deliver_rcu',
+'#queue_xmit',
+'#rcv',
+'&_core',
+'"v4_conntrack_local?[nf_conntrack]',
+'%mtu',
+' java/lang/Byte.toUnsignedInt',
+'*Math.min',
+'*foreign/MemorySegment.get',
+'@mismatch',
+'*invoke/VarHandleGuards.guard_LJ_I',
+'JJ',
+':SegmentAsBytes.checkAddress',
+'Iget',
+'IoffsetNoVMAlignCheck',
+'CLongs.get',
+'%util/ArrayList$Itr.hasNext',
+'8next',
+'3.add',
+'*Comparator$$Lambda.0x00007f7eb80e5408.compare',
+'Ld90.compare',
+'4.lambda$comparing$ea9a8b3a$1',
+'<thenComparing$36697e65$1',
+'*PriorityQueue.add',
+'8offer',
+'8poll',
+'8siftDownUsingComparator',
+'<Up',
+'>UsingComparator',
+'*concurrent/ConcurrentSkipListMap$SubMap$SubMapIter.<init>',
+'XValueIterator.<init>',
+'Q.loNode',
+'KValues.iterator',
+'J.cpr',
+'KdoGet',
+'KfindNear',
+'OPredecessor',
+'Kget',
+'!dk/internal/foreign/AbstractMemorySegmentImpl.asSlice',
+'VNoCheck',
+'ObyteSize',
+'OcheckAccess',
+'TBounds',
+'Omismatch',
+'OsessionImpl',
+'5HeapMemorySegmentImpl$OfByte.unsafeGetBase',
+'5MappedMemorySegmentImpl.<init>',
+'MasSlice',
+'Mdup',
+'6emorySessionImpl.checkValidStateRaw',
+'-misc/ScopedMemoryAccess.getByte',
+'LInternal',
+'HLongUnaligned',
+'UInternal',
+'2Unsafe.getLongUnaligned',
+' kmem_cache_alloc_node',
+' lock_sock_nested',
+' mod_timer',
+' napi_consume_skb',
+'!eigh_hh_output',
+'"t_rx_action',
+'#dev_core_pick_tx',
+'!f_conntrack_handle_packet?[nf_conntrack]',
+'-in?[nf_conntrack]',
+'-tcp_packet?[nf_conntrack]',
+'#hook_slow',
+' one/nio/http/HttpServer.handleRequest',
+'3ssion.handleParsedRequest',
+'9parseRequest',
+':rocessHttpBuffer',
+'@Read',
+'9sendResponse',
+'9writeResponse',
+'(net/NativeSelector$2.<init>',
+'=findNext',
+':.epollWait',
+';select',
+'3ocket.read',
+'9write',
+',Session$ArrayQueueItem.write',
+'3.process',
+'4read',
+'4write',
+'(server/SelectorThread.run',
+'(util/Utf8.startsWith',
+' process_backlog',
+' ru/vk/itmo/dao/BaseEntry.<init>',
+'+test/grunskiialexey/DaoServer.handleGet',
+'?dao/Compaction$$Lambda.0x00007f7eb808f258.apply',
+'e490.compare',
+'N1.<init>',
+'Pnext',
+'M.iterator',
+'Nrange',
+'CDiskStorage.endOfKey',
+'OindexOf',
+'TSize',
+'Onormalize',
+'XdStartOfValue',
+'OrecordsCount',
+'Oslice',
+'PtartOfKey',
+'VValue',
+'CMemorySegmentDao$$Lambda.0x00007f7eb808a7d8.compare',
+'S.compare',
+'Tget',
+'WInMemory',
+'ErgeIterator$$Lambda.0x00007f7eb808fbb0.compare',
+'QPeekIterator.peek',
+'P.<init>',
+'QhasNext',
+'Qlambda$new$0',
+'Qnext',
+'Qpeek',
+'QskipEqualsElement',
+'URemovedEntry',
+' security_socket_recvmsg',
+'!k_reset_timer',
+'"b_free_head',
+'$release_data',
+'!ock_def_readable',
+'%recvmsg',
+'%sendmsg',
+'!rso_safe_ret',
+' tcp_ack',
+'\'_update_rtt',
+'$clean_rtx_queue.constprop.0',
+'%urrent_mss',
+'$data_ready',
+'$event_data_recv',
+'$push',
+'$rate_check_app_limited',
+'%cv_established',
+'%earm_rto',
+'$send_delayed_ack',
+')mss',
+'(msg',
+'+_locked',
+'%kb_entail',
+'%tream_alloc_skb',
+'$v4_do_rcv',
+'\'rcv',
+'$write_xmit',
+' validate_xmit_skb',
+'!oid AccessInternal::arraycopy_conjoint<signed char>'
+];
+unpack(cpool);
+
+n(3,855)
+u(1073)
+u(1017,4,1,0,0)
+u(994,1)
+u(1002)
+f(1009,3,1,3)
+u(299,2)
+n(339,1)
+f(1049,2,1,851)
+u(969)
+u(961,849)
+u(945,848)
+u(937)
+u(49)
+u(977,32)
+u(985)
+u(1065)
+u(1065)
+u(1041)
+u(1033)
+u(115)
+u(333)
+u(325)
+u(245)
+u(189)
+u(1389)
+u(357)
+u(1501)
+u(861,1)
+u(125)
+f(1461,22,1)
+n(1509,30)
+f(1453,23,1,26)
+u(205)
+u(1549)
+u(213,25)
+f(421,27,1,24)
+u(109)
+f(397,29,1,23)
+u(101,4)
+f(933,31,1,3)
+u(445)
+f(917,33,1,2)
+u(909)
+u(925)
+f(405,30,2,18)
+u(365)
+u(93)
+u(373)
+u(885)
+u(69)
+u(125,15)
+u(317)
+u(77)
+u(893)
+u(149,14)
+u(1093)
+u(157)
+u(165)
+u(429)
+u(381,13)
+u(389)
+u(413)
+u(1541)
+u(85,1)
+n(1533,12)
+u(1437,1)
+n(1469,11)
+f(197,51,1,1)
+u(1485)
+u(1349)
+u(869)
+u(141)
+u(253)
+f(1397,51,1)
+n(1405,4)
+f(1421,52,2,2)
+f(1413,53,1,1)
+f(1437,51,1,3)
+u(1373)
+u(229)
+u(221)
+u(253)
+f(1445,51,3,1)
+f(437,45,1)
+f(877,40,1)
+u(1365)
+u(1357)
+u(293)
+f(309,36,1)
+u(349)
+f(901,36,1)
+n(1557)
+f(933,30,1)
+f(1477,26,1)
+f(1493,23,1)
+u(1429)
+u(453)
+f(1517,23,1)
+n(1525)
+u(61)
+u(853)
+f(1105,8,1,816)
+u(1249,816,4,0,0)
+u(706,5,4,0,0)
+u(682,5,4,0,0)
+f(673,12,4,1)
+u(1233)
+u(1241)
+u(482)
+u(482)
+u(754)
+u(474)
+u(490)
+u(514)
+u(770)
+u(770)
+f(1153,10,1,796)
+f(538,11,4,1)
+n(546)
+n(554)
+n(1145,667,4,0,0)
+u(44,1)
+u(12)
+u(28)
+u(36)
+u(131)
+f(1130,12,1)
+n(1169,662)
+f(458,13,21,2)
+n(482,405)
+u(754)
+f(466,15,366,2)
+n(474,32)
+u(490)
+u(514)
+u(810)
+u(818)
+f(738,15,32,5)
+u(746)
+f(1162,13,5,168)
+u(1194)
+u(1186)
+f(1202,13,168,64)
+f(1178,14,62,2)
+u(474)
+u(498)
+u(530)
+u(762,1)
+n(826)
+u(834)
+u(802)
+f(1218,13,1,2)
+u(474)
+u(498)
+u(530)
+u(826)
+u(834)
+u(842)
+f(1202,12,2,3)
+f(1178,13,2,1)
+u(474)
+u(498)
+u(530)
+u(826)
+u(834)
+u(802)
+f(1281,11,1,122)
+f(538,12,1,1)
+n(546)
+n(593,119)
+u(601)
+u(625,119,39,0,0)
+u(633,119,39,0,0)
+f(569,16,11,108,28,0,0)
+f(585,17,2,106,26,0,0)
+f(1265,18,2,104,24,0,0)
+u(1297,104,24,0,0)
+f(561,20,10,59,14,0,0)
+u(577,59,14,0,0)
+f(1114,22,1,3)
+n(1121,55,10,0,0)
+f(1241,23,3,52,7,0,0)
+f(474,24,1,6)
+u(490)
+u(514)
+u(506,3)
+u(738)
+u(746)
+f(522,27,3)
+f(481,24,3,45)
+u(482)
+u(754)
+f(474,27,11,34)
+u(490)
+u(514)
+f(506,30,1,3)
+u(738)
+u(746)
+f(522,30,3,5)
+n(762,2)
+n(810,23)
+u(818)
+f(802,32,22,1)
+f(1273,20,1,35)
+u(1138)
+u(1138)
+u(1098,1)
+n(1162,25)
+u(1194)
+u(1226)
+f(1210,23,25,4)
+u(786)
+u(786)
+u(714)
+u(722,2)
+u(794)
+u(794)
+f(778,30,1,1)
+f(746,27,1,2)
+f(1218,23,2,5)
+f(474,24,4,1)
+u(498)
+u(530)
+u(826)
+u(834)
+u(802)
+f(1241,10,1)
+u(482)
+u(730)
+f(1257,10,1,2)
+u(666,2,1,0,0)
+u(650,2,1,0,0)
+u(642,2,1,0,0)
+u(658,2,1,0,0)
+u(690,2,1,0,0)
+u(698,2,1,0,0)
+u(674,2,1,0,0)
+u(1234,2,1,0,0)
+f(1241,19,1,1)
+f(1289,10,1,11)
+u(1313)
+u(609,2)
+u(617)
+u(570)
+u(586)
+u(1266)
+u(1298)
+u(562)
+u(578)
+u(1114)
+f(1321,12,2,8)
+u(593,2)
+u(601)
+u(625)
+u(633)
+u(569)
+u(585)
+u(1265)
+u(1297)
+u(561,1)
+u(577)
+u(1121)
+u(1241)
+u(481)
+u(482)
+u(754)
+u(474)
+u(490)
+u(514)
+u(762)
+f(1273,21,1)
+u(1138)
+u(1138)
+u(1218)
+f(609,13,1,6)
+u(617)
+u(570,6,2,0,0)
+u(586,6,2,0,0)
+f(1265,17,1,5,1,0,0)
+u(1297,5,1,0,0)
+u(562,3,1,0,0)
+u(578,3,1,0,0)
+u(1114,1)
+n(1121,2)
+u(1241)
+f(482,23,1,1)
+u(482)
+u(754)
+u(474)
+u(490)
+u(514)
+u(506)
+u(738)
+u(746)
+f(1273,19,1,2)
+f(1329,12,2,1)
+f(1305,10,1)
+u(593)
+u(601)
+u(625)
+u(633)
+u(569)
+u(585)
+u(1265)
+u(1297)
+u(561)
+u(577)
+u(1121)
+u(1241)
+u(481)
+u(482)
+u(754)
+u(474)
+u(490)
+u(514)
+u(506)
+u(738)
+u(746)
+f(954,5,1)
+u(1082)
+f(1057,4,1,2)
+u(1025)
+u(19,1)
+u(1564)
+f(171,6,1)
+u(333)
+u(325)
+u(237)
+u(181)
+u(1381)
+u(1341)
+u(285)
+u(277)
+u(261)
+u(269)
+
+search();
+</script></body></html>

@@ -13,6 +13,7 @@ public final class Constants {
     );
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    public static final int SERVER_ERROR = 500;
     public static final int REQUEST_TIMEOUT = 300;
     public static final Map<Integer, String> HTTP_CODE = Map.of(
             HttpURLConnection.HTTP_OK, Response.OK,

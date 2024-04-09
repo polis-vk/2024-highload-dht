@@ -23,12 +23,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
 
@@ -119,16 +115,19 @@ public class ServerImpl extends HttpServer {
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime,
                                    String paramId, int from, int ack) throws IOException {
-        if (System.currentTimeMillis() - processingStartTime > 350) {
+        if (System.currentTimeMillis() - processingStartTime > Constants.REQUEST_TIMEOUT) {
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
 
         try {
             if (request.getHeader(Constants.HTTP_TERMINATION_HEADER) == null) {
-                session.sendResponse(handleProxyRequest(request, session, paramId, from, ack));
+                CompletableFuture<Response> handleProxyResponse =
+                        handleProxyRequest(request, session, paramId, from, ack);
+                handleProxyResponse.whenComplete((response, throwable) -> sendResponse(session, response));
+                checkingTimeout(handleProxyResponse);
             } else {
-                session.sendResponse(requestHandler.handle(request, paramId));
+                sendResponse(session, requestHandler.handle(request, paramId));
             }
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
@@ -140,15 +139,15 @@ public class ServerImpl extends HttpServer {
         }
     }
 
-    private Response sendException(Exception exception) {
-        String responseCode;
-        if (exception.getClass().equals(TimeoutException.class)) {
-            responseCode = Response.REQUEST_TIMEOUT;
-        } else {
-            responseCode = Response.INTERNAL_ERROR;
-        }
-        return new Response(responseCode, Response.EMPTY);
-    }
+//    private Response sendException(Exception exception) {
+//        String responseCode;
+//        if (exception.getClass().equals(TimeoutException.class)) {
+//            responseCode = Response.REQUEST_TIMEOUT;
+//        } else {
+//            responseCode = Response.INTERNAL_ERROR;
+//        }
+//        return new Response(responseCode, Response.EMPTY);
+//    }
 
     private void sendResponse(HttpSession session, Response response) {
         try {
@@ -168,33 +167,63 @@ public class ServerImpl extends HttpServer {
                 .build();
     }
 
-    private Response sendProxyRequest(HttpRequest httpRequest) {
-        try {
-            HttpResponse<byte[]> httpResponse = httpClient
-                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(Constants.REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+    private CompletableFuture<Response> sendProxyRequest(HttpRequest httpRequest) {
+        final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
+        httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .whenComplete((response, throwable) -> {
+                    if (throwable != null) {
+                        httpResponse.completeExceptionally(throwable);
+                        return;
+                    }
+                    httpResponse.complete(processingResponse(response));
+                });
 
-            String statusCode = Constants.HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
-            if (statusCode == null) {
-                return new Response(Response.INTERNAL_ERROR, httpResponse.body());
-            } else {
+        return httpResponse;
+//        try {
+//            final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
+//            httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+//                    .whenComplete((response, throwable) -> {
+//                        if (throwable != null) {
+//                            httpResponse.completeExceptionally(throwable);
+//                            return;
+//                        }
+//                        httpResponse.complete(processingResponse(response));
+//                    });
+//
+//            return httpResponse;
+//        } catch (InterruptedException e) {
+//            Thread.currentThread().interrupt();
+//            return sendException(e);
+//        } catch (ExecutionException | TimeoutException e) {
+//            return sendException(e);
+//        }
+    }
 
-                Response response = new Response(statusCode, httpResponse.body());
-                long timestamp = httpRequest.headers()
-                        .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
-                response.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
-                return response;
+    private void checkingTimeout(CompletableFuture<Response> requestFuture) {
+        ScheduledExecutorService timeoutChecker = Executors.newSingleThreadScheduledExecutor();
+        timeoutChecker.schedule(() -> {
+            if (!requestFuture.isDone()) {
+                requestFuture.complete(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return sendException(e);
-        } catch (ExecutionException | TimeoutException e) {
-            return sendException(e);
+        }, Constants.REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+    }
+
+    private Response processingResponse(HttpResponse<byte[]> response) {
+        String statusCode = Constants.HTTP_CODE.getOrDefault(response.statusCode(), null);
+        if (statusCode == null) {
+            return new Response(Response.INTERNAL_ERROR, response.body());
+        } else {
+            Response newResponse = new Response(statusCode, response.body());
+            long timestamp = response.headers()
+                    .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
+            newResponse.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
+            return newResponse;
         }
     }
 
-    private List<Response> sendProxyRequests(Map<String, HttpRequest> httpRequests, List<String> nodeUrls) {
-        List<Response> responses = new ArrayList<>();
+    private List<CompletableFuture<Response>> sendProxyRequests(Map<String, HttpRequest> httpRequests,
+                                                                List<String> nodeUrls) {
+        List<CompletableFuture<Response>> responses = new ArrayList<>();
         for (String nodeUrl : nodeUrls) {
             HttpRequest httpRequest = httpRequests.get(nodeUrl);
             if (!Objects.equals(selfUrl, nodeUrl)) {
@@ -204,7 +233,8 @@ public class ServerImpl extends HttpServer {
         return responses;
     }
 
-    private Response handleProxyRequest(Request request, HttpSession session, String paramId, int from, int ack) {
+    private CompletableFuture<Response> handleProxyRequest(Request request, HttpSession session,
+                                                           String paramId, int from, int ack) {
         List<String> nodeUrls = consistentHashing.getNodes(paramId, clusterUrls, from);
 
         if (nodeUrls.size() < from) {
@@ -216,31 +246,48 @@ public class ServerImpl extends HttpServer {
             httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
         }
 
-        List<Response> responses = sendProxyRequests(httpRequests, nodeUrls);
+        List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
 
         if (httpRequests.get(selfUrl) != null) {
-            responses.add(requestHandler.handle(request, paramId));
+            final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
+            try {
+                httpResponse.complete(requestHandler.handle(request, paramId));
+            } catch (Exception e) {
+                httpResponse.completeExceptionally(e);
+            }
+            responses.add(httpResponse);
         }
 
         List<Response> successResponses = new ArrayList<>();
-        for (Response response : responses) {
-            if (response.getStatus() < 500) {
-                successResponses.add(response);
-            }
-        }
+        CompletableFuture<Response> result = new CompletableFuture<>();
+        AtomicInteger successResponseCount = new AtomicInteger(ack);
+        AtomicInteger errorResponseCount = new AtomicInteger(from - ack + 1);
 
-        if (successResponses.size() >= ack) {
-            if (request.getMethod() == Request.METHOD_GET) {
-                successResponses.sort(Comparator.comparingLong(r -> {
+        for (CompletableFuture<Response> responseFuture : responses) {
+            responseFuture.whenComplete((response, throwable) -> {
+                if (response.getStatus() < Constants.SERVER_ERROR && throwable == null) {
+                    successResponseCount.decrementAndGet();
+                    successResponses.add(response);
+                } else {
+                    errorResponseCount.decrementAndGet();
+                }
+
+                if (successResponseCount.get() == 0) {
+                    if (request.getMethod() == Request.METHOD_GET) {
+                        successResponses.sort(Comparator.comparingLong(r -> {
                             String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
                             return timestamp == null ? 0 : Long.parseLong(timestamp);
                         }));
-                return successResponses.getFirst();
-            } else {
-                return successResponses.getLast();
-            }
-        } else {
-            return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);
+                        result.complete(successResponses.getFirst());
+                    } else {
+                        result.complete(successResponses.getLast());
+                    }
+                } else if (errorResponseCount.get() == 0) {
+                    result.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                }
+            });
         }
+
+        return result;
     }
 }

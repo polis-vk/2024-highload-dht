@@ -238,7 +238,7 @@ public class HttpServerImpl extends HttpServer {
                     futureResponse = redirectRequest(method, id, node, request);
                 }
                 futureResponse.whenComplete(
-                        (response, _) -> {
+                        (response, ex) -> {
                             if (response == null) {
                                 futureResponses.completeExceptionally(
                                         new NotEnoughReplicasException("Not Enough Replicas"));

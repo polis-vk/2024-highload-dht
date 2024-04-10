@@ -231,29 +231,25 @@ public class HttpServerImpl extends HttpServer {
         for (String node : nodes) {
             CompletableFuture<Response> futureResponse;
             if (responses.size() == requiredAcks) break;
-            try {
-                if (node.equals(selfUrl)) {
-                    futureResponse = getFutureLocalRequest(request, id);
-                } else {
-                    futureResponse = redirectRequest(method, id, node, request);
-                }
-                futureResponse.whenComplete(
-                        (response, ex) -> {
-                            if (response == null) {
-                                futureResponses.completeExceptionally(
-                                        new NotEnoughReplicasException("Not Enough Replicas"));
-                                return;
-                            }
-                            responses.add(response);
-                            if (successCounter.decrementAndGet() == 0) {
-                                futureResponses.complete(responses);
-                            }
-                        }
-                );
-            } catch (InterruptedException | IOException e) {
-                log.error("Error sending request", e);
-                Thread.currentThread().interrupt();
+
+            if (node.equals(selfUrl)) {
+                futureResponse = getFutureLocalRequest(request, id);
+            } else {
+                futureResponse = redirectRequest(method, id, node, request);
             }
+            futureResponse.whenComplete(
+                    (response, ex) -> {
+                        if (response == null) {
+                            futureResponses.completeExceptionally(
+                                    new NotEnoughReplicasException("Not Enough Replicas"));
+                            return;
+                        }
+                        responses.add(response);
+                        if (successCounter.decrementAndGet() == 0) {
+                            futureResponses.complete(responses);
+                        }
+                    }
+            );
         }
         return futureResponses;
     }
@@ -294,8 +290,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
-    private CompletableFuture<Response> redirectRequest(String method, String id, String clusterUrl, Request request)
-            throws InterruptedException, IOException {
+    private CompletableFuture<Response> redirectRequest(String method, String id, String clusterUrl, Request request) {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(String.format("%s%s?id=%s", clusterUrl, PATH_NAME, id)))
                 .method(method, HttpRequest.BodyPublishers

@@ -7,17 +7,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 
-import java.io.IOException;
-import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class ProxyRequestHandler {
@@ -27,65 +27,78 @@ public class ProxyRequestHandler {
     private final Map<String, Integer> urlHashes;
 
     public ProxyRequestHandler(ServiceConfig serviceConfig) {
-        this.clients = HashMap.newHashMap(serviceConfig.clusterUrls().size() - 1);
-
+        this.clients = new HashMap<>();
         for (String url : serviceConfig.clusterUrls()) {
             if (!Objects.equals(url, serviceConfig.selfUrl())) {
                 clients.put(url, HttpClient.newHttpClient());
             }
         }
-        this.urlHashes = HashMap.newHashMap(serviceConfig.clusterUrls().size());
-        for (String url : serviceConfig.clusterUrls()) {
-            urlHashes.put(url, Hash.murmur3(url));
-        }
+        this.urlHashes = serviceConfig.clusterUrls().stream()
+                .collect(Collectors.toMap(url -> url, Hash::murmur3));
     }
 
     public synchronized void close() {
         clients.values().forEach(HttpClient::close);
     }
 
-    public Map<String, Response> proxyRequests(Request request, List<String> nodeUrls) throws IOException {
-        Map<String, Response> responses = HashMap.newHashMap(nodeUrls.size());
+    public List<Response> proxyRequests(
+            Request request,
+            List<String> nodeUrls,
+            int ack
+    ) throws InterruptedException, ExecutionException {
+        List<CompletableFuture<Response>> futures = new ArrayList<>();
+        List<Response> collectedResponses = new ArrayList<>();
+        AtomicInteger responsesCollected = new AtomicInteger();
+
         for (String url : nodeUrls) {
-            Response response = proxyRequest(request, url);
-            responses.put(url, response);
+            CompletableFuture<Response> futureResponse = proxyRequest(request, url);
+            CompletableFuture<Response> resultFuture = futureResponse.thenApply(response -> {
+                boolean success = ServerImpl.isSuccessProcessed(response.getStatus());
+                if (success && responsesCollected.getAndIncrement() < ack) {
+                    collectedResponses.add(response);
+                }
+                return response;
+            });
+            futures.add(resultFuture);
         }
 
-        return responses;
+        CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+                futures.stream()
+                        .limit(ack)
+                        .toArray(CompletableFuture[]::new)
+        );
+
+        try {
+            allFutures.get(5, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("Timeout reached while waiting for responses");
+        }
+
+        return collectedResponses;
     }
 
-    public Response proxyRequest(Request request, String proxiedNodeUrl) throws IOException {
+    private CompletableFuture<Response> proxyRequest(Request request, String proxiedNodeUrl) {
         String id = request.getParameter("id=");
         byte[] body = request.getBody();
         URI uri = URI.create(proxiedNodeUrl + request.getPath() + "?id=" + id);
-        try {
-            HttpResponse<byte[]> httpResponse = clients.get(proxiedNodeUrl).send(
-                HttpRequest.newBuilder()
-                    .uri(uri)
-                    .method(
-                        request.getMethodName(),
-                        body == null
-                            ? HttpRequest.BodyPublishers.noBody()
-                            : HttpRequest.BodyPublishers.ofByteArray(body)
-                    )
-                    .header(RequestWrapper.SELF_HEADER, "true")
-                    .build(),
-                HttpResponse.BodyHandlers.ofByteArray());
+
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(uri)
+                .method(request.getMethodName(), body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(body))
+                .header(RequestWrapper.SELF_HEADER, "true");
+
+        CompletableFuture<HttpResponse<byte[]>> httpResponseFuture = clients.get(proxiedNodeUrl)
+                .sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+
+        return httpResponseFuture.thenApply(httpResponse -> {
             Response response = new Response(proxyResponseCode(httpResponse), httpResponse.body());
-            long timestamp = httpResponse.headers().firstValueAsLong(RequestWrapper.NIO_TIMESTAMP_HEADER).orElse(0);
+            long timestamp = Long.parseLong(httpResponse.headers().firstValue(RequestWrapper.NIO_TIMESTAMP_HEADER).orElse("0"));
             response.addHeader(RequestWrapper.NIO_TIMESTAMP_STRING_HEADER + timestamp);
             return response;
-        } catch (InterruptedException ex) {
-            log.error("Proxy request thread interrupted", ex);
-            Thread.currentThread().interrupt();
+        }).exceptionally(ex -> {
+            log.error("Exception during proxy request to another node", ex);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (IllegalArgumentException ex) {
-            log.error("IllegalArgumentException during proxy request to another node", ex);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (ConnectException ex) {
-            log.error("ConnectException during proxy request to another node", ex);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        });
     }
 
     private String proxyResponseCode(HttpResponse<byte[]> response) {
@@ -101,9 +114,9 @@ public class ProxyRequestHandler {
 
     public List<String> getNodesByHash(int numOfNodes) {
         return urlHashes.entrySet().stream()
-            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-            .limit(numOfNodes)
-            .map(Map.Entry::getKey)
-            .collect(Collectors.toList());
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(numOfNodes)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
     }
 }

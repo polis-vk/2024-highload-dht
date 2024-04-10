@@ -113,9 +113,11 @@ public class TrofikServer extends HttpServer {
             String executorNode = config.clusterUrls().get(index);
             ResponseProcessor responseProcessor = new ResponseProcessor(mergeHandleResult, i);
             if (executorNode.equals(config.selfUrl())) {
-                handleAsync(executorLocal, i, mergeHandleResult, () -> responseProcessor.processResult(local(request, id)));
+                handleAsync(executorLocal, i,
+                        mergeHandleResult, () -> responseProcessor.processResult(local(request, id)));
             } else {
-                handleAsync(executorRemote, i, mergeHandleResult, () -> remote(request, executorNode, responseProcessor));
+                handleAsync(executorRemote, i,
+                        mergeHandleResult, () -> remote(request, executorNode, responseProcessor));
             }
         }
     }
@@ -176,7 +178,8 @@ public class TrofikServer extends HttpServer {
                     runnable.run();
                 } catch (Exception e) {
                     log.error("Exception during handleRequest", e);
-                    mergeHandleResult.add(index, new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
+                    mergeHandleResult.add(index,
+                            new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
                 }
             });
         } catch (Exception e) {
@@ -194,7 +197,9 @@ public class TrofikServer extends HttpServer {
         return Response.ok("OK");
     }
 
-    private void invokeRemote(String executorNode, Request request, ResponseProcessor responseProcessor) throws IOException, InterruptedException {
+    private void invokeRemote(String executorNode,
+                              Request request,
+                              ResponseProcessor responseProcessor) throws IOException, InterruptedException {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
                 .method(
                         request.getMethodName(),

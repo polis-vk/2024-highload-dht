@@ -260,8 +260,6 @@ public class TrofikServer extends HttpServer {
 
     // count <= config.clusterUrls().size()
     private int[] getIndexes(String id, int count) {
-        assert count < 5;
-
         int[] result = new int[count];
         int[] maxHashs = new int[count];
 

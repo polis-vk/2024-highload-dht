@@ -4,9 +4,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public final class Utils {
-    public final static int TIMEOUT_SECONDS = 100;
-    public final static String TIMESTAMP_HEADER = "X-Timestamp";
-    public final static String TIMESTAMP_ONE_NIO_HEADER = "X-Timestamp: ";
+    public static final int TIMEOUT_SECONDS = 100;
+    public static final String TIMESTAMP_HEADER = "X-Timestamp";
+    public static final String TIMESTAMP_ONE_NIO_HEADER = "X-Timestamp: ";
 
     private Utils() {
     }

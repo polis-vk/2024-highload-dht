@@ -179,7 +179,7 @@ public class HttpServerImpl extends HttpServer {
 
         // this method is non-blocking
         CompletableFuture.allOf(receivedResponses.toArray(CompletableFuture[]::new))
-                .thenApply(_ -> {
+                .thenApply(ignore -> {
                     var c = receivedResponses
                             .stream()
                             .map(CompletableFuture::join)
@@ -222,7 +222,7 @@ public class HttpServerImpl extends HttpServer {
                     JavaRequestConverter.convertRequest(slaveUrl, request, timestamp),
                             HttpResponse.BodyHandlers.ofByteArray())
                             .completeOnTimeout(null, Utils.TIMEOUT_SECONDS, TimeUnit.MILLISECONDS)
-                            .whenComplete((httpResponse, _) -> cfResponse.complete(
+                            .whenComplete((httpResponse, ignore) -> cfResponse.complete(
                                     JavaRequestConverter.convertResponse(httpResponse)));
         }
         return cfResponse;

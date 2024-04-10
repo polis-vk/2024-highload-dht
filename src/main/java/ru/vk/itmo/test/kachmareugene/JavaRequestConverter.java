@@ -17,10 +17,14 @@ public class JavaRequestConverter {
             200, Response.OK,
             404, Response.NOT_FOUND,
             400, Response.BAD_REQUEST);
+
+    private JavaRequestConverter() {
+    }
+
     public static HttpRequest convertRequest(String url, Request oneNIORequest, long timestamp) {
-        final var body = oneNIORequest.getBody() != null
-                ? HttpRequest.BodyPublishers.ofByteArray(oneNIORequest.getBody())
-                : HttpRequest.BodyPublishers.noBody();
+        final var body = oneNIORequest.getBody() == null
+                ? HttpRequest.BodyPublishers.noBody()
+                : HttpRequest.BodyPublishers.ofByteArray(oneNIORequest.getBody());
 
         return HttpRequest.newBuilder()
                 .uri(URI.create(url + oneNIORequest.getURI()))
@@ -46,8 +50,8 @@ public class JavaRequestConverter {
         }
 
         oneNioResp.addHeader(
-                Utils.TIMESTAMP_ONE_NIO_HEADER +
-                        Long.parseLong(
+                Utils.TIMESTAMP_ONE_NIO_HEADER
+                        + Long.parseLong(
                                 response.headers().map().get(Utils.TIMESTAMP_HEADER).getFirst()));
 
         return oneNioResp;

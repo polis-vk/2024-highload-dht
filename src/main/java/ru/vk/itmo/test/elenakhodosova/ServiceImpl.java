@@ -48,8 +48,8 @@ public class ServiceImpl implements Service {
                 executorService.shutdownNow();
             }
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             executorService.shutdownNow();
+            Thread.currentThread().interrupt();
         }
         dao.close();
         return CompletableFuture.completedFuture(null);

@@ -33,7 +33,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -99,6 +98,11 @@ public class HttpServerImpl extends HttpServer {
             }
             executorService.execute(() -> {
                 try {
+                    String isRedirected = request.getHeader(REDIRECTED_HEADER);
+                    if (isRedirected != null) {
+                        sendResponse(session, handleLocalRequest(request, id).get());
+                        return;
+                    }
                     processRequest(request, session, id, method, from, ack);
                 } catch (Exception e) {
                     logger.error("Unexpected error when processing request", e);
@@ -113,14 +117,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private void processRequest(Request request, HttpSession session, String id,
-                                AllowedMethods method, int from, int ack)
-            throws ExecutionException, InterruptedException {
-        String isRedirected = request.getHeader(REDIRECTED_HEADER);
-        if (isRedirected != null) {
-            sendResponse(session, handleLocalRequest(request, id).get());
-            return;
-        }
-
+                                AllowedMethods method, int from, int ack) {
         List<String> sortedNodes = getSortedNodes(id, from);
         AtomicInteger success = new AtomicInteger(0);
         AtomicInteger successRequests = new AtomicInteger(0);
@@ -133,12 +130,7 @@ public class HttpServerImpl extends HttpServer {
             final int currentIter = i;
             String node = sortedNodes.get(i);
             try {
-                if (node.equals(selfUrl)) {
-                    responses[currentIter] = handleLocalRequest(request, id);
-                } else {
-                    responses[currentIter] = redirectRequest(method, id, node, request);
-                }
-
+                responses[currentIter] = routeRequest(node, request, id, method);
                 CompletableFuture<?> futureResult = responses[currentIter].whenCompleteAsync((response, throwable) -> {
                     responseArray.set(currentIter, (Response) response);
                     successRequests.incrementAndGet();
@@ -163,12 +155,20 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
+    private CompletableFuture<Response> routeRequest(String node, Request request, String id, AllowedMethods method)
+            throws IOException, InterruptedException {
+        if (node.equals(selfUrl)) {
+            return handleLocalRequest(request, id);
+        }
+        return redirectRequest(method, id, node, request);
+    }
+
     private boolean validateReplicas(HttpSession session,
-                                int lastSuccessCount,
-                                AtomicInteger successRequests,
-                                AtomicBoolean requestHandled,
-                                int from,
-                                int ack) {
+                                     int lastSuccessCount,
+                                     AtomicInteger successRequests,
+                                     AtomicBoolean requestHandled,
+                                     int from,
+                                     int ack) {
         if (successRequests.get() == from && lastSuccessCount < ack) {
             if (requestHandled.compareAndSet(false, true)) {
                 sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
@@ -198,7 +198,7 @@ public class HttpServerImpl extends HttpServer {
         long latestTimestamp = 0L;
         Response latestResponse = null;
         for (int j = 0; j < responseArray.length(); j++) {
-           Response currentResponse = responseArray.get(j);
+            Response currentResponse = responseArray.get(j);
             if (currentResponse == null) {
                 continue;
             }
@@ -304,7 +304,7 @@ public class HttpServerImpl extends HttpServer {
     private CompletableFuture<Response> redirectRequest(AllowedMethods method,
                                                         String id,
                                                         String clusterUrl,
-                                                        Request request) throws InterruptedException, IOException {
+                                                        Request request) {
         byte[] body = request.getBody();
         HttpRequest redirectedRequest = HttpRequest.newBuilder(URI.create(clusterUrl + PATH_NAME + "?id=" + id))
                 .method(
@@ -359,7 +359,6 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        super.stop();
         for (SelectorThread selector : selectors) {
             if (selector.selector.isOpen()) {
                 for (Session session : selector.selector) {
@@ -367,6 +366,7 @@ public class HttpServerImpl extends HttpServer {
                 }
             }
         }
+        super.stop();
     }
 
     private boolean isParamIncorrect(String param) {

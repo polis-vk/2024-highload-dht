@@ -85,19 +85,13 @@ public class ServerImpl extends HttpServer {
             }
 
             String paramId = request.getParameter("id=");
-
-            if (paramId == null || paramId.isEmpty()) {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-
             String fromStr = request.getParameter("from=");
             String ackStr = request.getParameter("ack=");
 
             int from = fromStr == null || fromStr.isEmpty() ? clusterSize : Integer.parseInt(fromStr);
             int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
 
-            if (ack == 0 || from > clusterSize || ack > from) {
+            if (ack == 0 || from > clusterSize || ack > from || paramId == null || paramId.isEmpty()) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
@@ -162,19 +156,8 @@ public class ServerImpl extends HttpServer {
     }
 
     private CompletableFuture<Response> sendProxyRequest(HttpRequest httpRequest) {
-        final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
-        CompletableFuture<HttpResponse<byte[]>> byteResponse =
-        httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .whenComplete((response, throwable) -> {
-                    if (throwable != null) {
-                        httpResponse.completeExceptionally(throwable);
-                        return;
-                    }
-                    httpResponse.complete(processingResponse(response));
-                });
-
-        checkCompletableFuture(byteResponse);
-        return httpResponse;
+        return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApplyAsync(this::processingResponse);
     }
 
     private Response processingResponse(HttpResponse<byte[]> response) {
@@ -236,8 +219,8 @@ public class ServerImpl extends HttpServer {
                                                         List<CompletableFuture<Response>> responses) {
         List<Response> successResponses = new ArrayList<>();
         CompletableFuture<Response> result = new CompletableFuture<>();
-        AtomicInteger successResponseCount = new AtomicInteger(0);
-        AtomicInteger errorResponseCount = new AtomicInteger(0);
+        AtomicInteger successResponseCount = new AtomicInteger();
+        AtomicInteger errorResponseCount = new AtomicInteger();
 
         for (CompletableFuture<Response> responseFuture : responses) {
             responseFuture = responseFuture.whenComplete((response, throwable) -> {
@@ -250,15 +233,14 @@ public class ServerImpl extends HttpServer {
 
                 if (successResponseCount.get() == ack) {
                     if (request.getMethod() == Request.METHOD_GET) {
-                        successResponses.sort(Comparator.comparingLong(r -> {
-                            String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
-                            return timestamp == null ? 0 : Long.parseLong(timestamp);
-                        }));
+                        sortResponses(successResponses);
                         result.complete(successResponses.getLast());
                     } else {
                         result.complete(successResponses.getFirst());
                     }
-                } else if (errorResponseCount.get() == from - ack + 1) {
+                }
+
+                if (errorResponseCount.get() == from - ack + 1) {
                     result.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
             });
@@ -267,6 +249,13 @@ public class ServerImpl extends HttpServer {
         }
 
         return result;
+    }
+
+    private void sortResponses(List<Response> successResponses) {
+        successResponses.sort(Comparator.comparingLong(r -> {
+            String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
+            return timestamp == null ? 0 : Long.parseLong(timestamp);
+        }));
     }
 
     private void checkCompletableFuture(CompletableFuture<?> completableFuture) {

@@ -3,6 +3,7 @@ package ru.vk.itmo.test.kovalevigor.server.util;
 import one.nio.http.HttpSession;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -15,6 +16,7 @@ public final class ServerUtil {
     public static final Set<Integer> GOOD_STATUSES = Set.of(
             200, 201, 202, 404
     );
+    public static final Duration REMOTE_TIMEOUT = Duration.ofSeconds(1);
 
     private ServerUtil() {
     }

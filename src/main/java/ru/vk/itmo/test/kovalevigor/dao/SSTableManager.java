@@ -104,11 +104,7 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
                 wArena
         )) {
             for (final T entry: map.values()) {
-                try {
-                    dumper.writeEntry(entry);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+                dumper.writeEntry(entry);
             }
         }
     }

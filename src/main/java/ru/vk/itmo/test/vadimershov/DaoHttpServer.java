@@ -126,20 +126,24 @@ public class DaoHttpServer extends HttpServer {
             @Param(value = "from") Integer from,
             @Header(value = "X-inner") boolean inner
     ) throws DaoException, RemoteServiceException, NotFoundException {
+
+        logger.info("GET");
         if (id.isBlank()) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
 
-        Pair<byte[], Long> value;
+        ResultResponse response;
             if (inner) {
-                value = dao.get(id);
+                response = dao.get(id);
             } else {
-                value = dao.get(id, ack, from);
+                response = dao.get(id, ack, from);
             }
-        if (value.first() == null) {
-            return DaoResponse.empty(DaoResponse.NOT_FOUND, value.second());
+
+        logger.info("" + response);
+        if (response.httpCode() == 404) {
+            return DaoResponse.empty(DaoResponse.NOT_FOUND, response.timestamp());
         }
-        return DaoResponse.ok(value.first(), value.second());
+        return DaoResponse.ok(response.value(), response.timestamp());
     }
 
     @Path("/v0/entity")
@@ -152,6 +156,7 @@ public class DaoHttpServer extends HttpServer {
             @Header(value = "X-timestamp") Long timestamp,
             Request request
     ) throws DaoException, RemoteServiceException {
+        logger.info("PUT");
         if (id.isBlank() || request.getBody() == null) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
@@ -174,6 +179,7 @@ public class DaoHttpServer extends HttpServer {
             @Header(value = "X-inner") boolean inner,
             @Header(value = "X-timestamp") Long timestamp
     ) throws DaoException, RemoteServiceException {
+        logger.info("DELETE");
         if (id.isBlank()) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }

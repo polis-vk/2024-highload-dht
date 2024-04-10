@@ -1,13 +1,13 @@
 package ru.vk.itmo.test.vadimershov.hash;
 
-import one.nio.http.HttpClient;
-import one.nio.net.ConnectionString;
 import one.nio.util.Hash;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 import ru.vk.itmo.test.vadimershov.exceptions.FailedSharding;
 
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -40,7 +40,9 @@ public class ConsistentHashing {
             } else {
                 HttpClient currentHttpClient = httpClientMap.get(currentUrl);
                 if (currentHttpClient == null) {
-                    currentHttpClient = new HttpClient(new ConnectionString(currentUrl));
+                    currentHttpClient = HttpClient.newBuilder()
+                            .connectTimeout(Duration.ofMillis(100))
+                            .build();
                     httpClientMap.put(currentUrl, currentHttpClient);
                 }
                 for (int i = 0; i < VIRTUAL_NODE_COUNT; i++) {

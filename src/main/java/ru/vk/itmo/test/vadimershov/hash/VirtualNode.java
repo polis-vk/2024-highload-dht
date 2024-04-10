@@ -1,13 +1,12 @@
 package ru.vk.itmo.test.vadimershov.hash;
 
-import ru.vk.itmo.test.vadimershov.Pair;
-import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
-import ru.vk.itmo.test.vadimershov.exceptions.NotFoundException;
-import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
+import ru.vk.itmo.test.vadimershov.ResultResponse;
+
+import java.util.concurrent.CompletableFuture;
 
 public abstract class VirtualNode {
-    private final String url;
-    private final int replicaIndex;
+    protected final String url;
+    protected final int replicaIndex;
 
     protected VirtualNode(String url, int replicaIndex) {
         this.url = url;
@@ -24,10 +23,10 @@ public abstract class VirtualNode {
 
     public abstract void close();
 
-    public abstract Pair<byte[], Long> get(String key) throws NotFoundException, DaoException, RemoteServiceException;
+    public abstract CompletableFuture<ResultResponse> get(String key);
 
-    public abstract void upsert(String key, byte[] value, Long timestamp) throws DaoException, RemoteServiceException;
+    public abstract CompletableFuture<ResultResponse> upsert(String key, byte[] value, Long timestamp);
 
-    public abstract void delete(String key, Long timestamp) throws DaoException, RemoteServiceException;
+    public abstract CompletableFuture<ResultResponse> delete(String key, Long timestamp);
 
 }

@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.vadimershov;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
@@ -17,12 +15,15 @@ import ru.vk.itmo.test.vadimershov.hash.VirtualNode;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.PriorityQueue;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ShardingDao {
-
-    private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     private final int nodeCount;
     private final int nodeQuorum;
@@ -41,11 +42,11 @@ public class ShardingDao {
         );
     }
 
-    public Pair<byte[], Long> get(String key) throws NotFoundException, DaoException, RemoteServiceException {
-        return consistentHashing.getLocalNode().get(key);
+    public ResultResponse get(String key) throws NotFoundException, DaoException {
+        return consistentHashing.getLocalNode().get(key).join();
     }
 
-    public Pair<byte[], Long> get(
+    public ResultResponse get(
             String key,
             Integer ack,
             Integer from
@@ -54,19 +55,49 @@ public class ShardingDao {
         int correctFrom = validate(from, nodeCount);
 
         Collection<VirtualNode> virtualNodes = consistentHashing.findVNodes(key, correctFrom);
-        PriorityQueue<Pair<byte[], Long>> entityQueue =
-                new PriorityQueue<>(correctFrom, (e1, e2) -> -e1.second().compareTo(e2.second()));
+        List<CompletableFuture<ResultResponse>> requestsFutures = new ArrayList<>();
         for (var node : virtualNodes) {
-            try {
-                entityQueue.add(node.get(key));
-            } catch (DaoException | RemoteServiceException e) {
-                logger.error("Exception with remote node in from", e);
-            }
+            requestsFutures.add(node.get(key));
         }
-        if (entityQueue.size() < correctAck) {
+
+        try {
+            return waitFuture(correctAck, correctFrom, requestsFutures);
+        } catch (CompletionException e) {
             throw new FailedSharding();
         }
-        return entityQueue.poll();
+    }
+
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private ResultResponse waitFuture(
+            int ack,
+            int from,
+            List<CompletableFuture<ResultResponse>> requestsFutures
+    ) {
+        CompletableFuture<ResultResponse> waitQuorumFuture = new CompletableFuture<>();
+        AtomicInteger countFailures = new AtomicInteger(from - ack + 1);
+        AtomicInteger countAcks = new AtomicInteger(ack);
+        final AtomicReference<ResultResponse> response = new AtomicReference<>(new ResultResponse(-1, null, -1L));
+
+        for (CompletableFuture<ResultResponse> requestFuture : requestsFutures) {
+            requestFuture.whenComplete((resultResponse, throwable) -> {
+                boolean positiveResponse = throwable == null && resultResponse.timestamp() >= 0;
+                if (positiveResponse) {
+                    countAcks.decrementAndGet();
+                    if (response.get().timestamp() < resultResponse.timestamp()) {
+                        response.set(resultResponse);
+                    }
+                } else {
+                    countFailures.decrementAndGet();
+                }
+
+                if (countAcks.get() == 0) {
+                    waitQuorumFuture.complete(response.get());
+                } else if (countFailures.get() == 0) {
+                    waitQuorumFuture.completeExceptionally(new FailedSharding());
+                }
+            });
+        }
+        return waitQuorumFuture.join();
     }
 
     public void upsert(
@@ -74,7 +105,8 @@ public class ShardingDao {
             byte[] value,
             Long timestamp
     ) throws DaoException, RemoteServiceException, FailedSharding {
-        consistentHashing.getLocalNode().upsert(key, value, timestamp);
+        consistentHashing.getLocalNode().upsert(key, value, timestamp)
+                .join();
     }
 
     public void upsert(
@@ -87,23 +119,23 @@ public class ShardingDao {
         int correctFrom = validate(from, nodeCount);
 
         Collection<VirtualNode> virtualNodes = consistentHashing.findVNodes(key, correctFrom);
-        int correctSave = 0;
+        List<CompletableFuture<ResultResponse>> requestsFutures = new ArrayList<>();
+
         long timestamp = System.currentTimeMillis();
         for (var node : virtualNodes) {
-            try {
-                node.upsert(key, value, timestamp);
-                correctSave++;
-            } catch (Exception e) {
-                logger.error("Exception with remote node in from", e);
-            }
+            requestsFutures.add(node.upsert(key, value, timestamp));
         }
-        if (correctSave < correctAck) {
+
+        try {
+            waitFuture(correctAck, correctFrom, requestsFutures);
+        } catch (CompletionException e) {
             throw new FailedSharding();
         }
     }
 
     public void delete(String key, Long timestamp) throws DaoException, RemoteServiceException {
-        consistentHashing.getLocalNode().delete(key, timestamp);
+        consistentHashing.getLocalNode().delete(key, timestamp)
+                .join();
     }
 
     public void delete(
@@ -115,17 +147,16 @@ public class ShardingDao {
         int correctFrom = validate(from, nodeCount);
 
         Collection<VirtualNode> virtualNodes = consistentHashing.findVNodes(key, correctFrom);
-        int correctSave = 0;
+        List<CompletableFuture<ResultResponse>> requestsFutures = new ArrayList<>();
+
         long timestamp = System.currentTimeMillis();
         for (var node : virtualNodes) {
-            try {
-                node.delete(key, timestamp);
-                correctSave++;
-            } catch (Exception e) {
-                logger.error("Exception with remote node in from param", e);
-            }
+            requestsFutures.add(node.delete(key, timestamp));
         }
-        if (correctSave < correctAck) {
+
+        try {
+            waitFuture(correctAck, correctFrom, requestsFutures);
+        } catch (CompletionException e) {
             throw new FailedSharding();
         }
     }

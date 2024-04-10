@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.Math.floor;
@@ -50,11 +51,11 @@ public class ServiceImpl implements Service {
     private final HttpClient client;
     private final AtomicInteger successes;
     private final AtomicInteger failures;
+    private final AtomicLong responseTime;
     private final AtomicReference<Response> latestResponse;
     private RendezvousRouter router;
     private DaoWrapper daoWrapper;
     private HttpServerImpl server;
-    private long responseTime = 0;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -64,6 +65,7 @@ public class ServiceImpl implements Service {
                 .build();
         successes = new AtomicInteger();
         failures = new AtomicInteger();
+        responseTime = new AtomicLong();
         latestResponse = new AtomicReference<>();
     }
 
@@ -103,6 +105,10 @@ public class ServiceImpl implements Service {
             session.sendResponse(new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8)));
             return;
         }
+        successes.set(0);
+        failures.set(0);
+        responseTime.set(0);
+        latestResponse.set(null);
 
         LOGGER.info("got request in entity:  " + request.toString());
         if (request.getHeader(TIMESTAMP_HEADER) != null) {
@@ -135,6 +141,7 @@ public class ServiceImpl implements Service {
         List<Node> targetNodes = router.getNodes(id, from);
         sendRequestsToNodes(request, session, targetNodes, id, ack, from);
     }
+
     private void sendRequestsToNodes(Request request, HttpSession session, List<Node> nodes, String id, int ack, int from) {
         for (Node node : nodes) {
             if (!node.isAlive()) {
@@ -146,7 +153,7 @@ public class ServiceImpl implements Service {
                 long timestamp = getTimestamp(request);
                 CompletableFuture<Response> futureResponse;
                 if (node.address.equals(config.selfUrl())) {
-                    futureResponse = CompletableFuture.supplyAsync(()->handleRequestLocally(request, id, timestamp));
+                    futureResponse = CompletableFuture.supplyAsync(() -> handleRequestLocally(request, id, timestamp));
                 } else {
                     futureResponse = forwardRequestToNode(request, node, timestamp);
                 }
@@ -192,8 +199,10 @@ public class ServiceImpl implements Service {
     }
 
     private boolean responseIsGood(Response response) {
+        // accepting all responses we can get from handleRequestLocally()
         return response.getStatus() <= HttpURLConnection.HTTP_PARTIAL
-                || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
+                || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND
+                || response.getStatus() == HttpURLConnection.HTTP_BAD_METHOD;
     }
 
     private long getTimestamp(Request request) throws NumberFormatException {
@@ -210,11 +219,23 @@ public class ServiceImpl implements Service {
             latestResponse.set(response);
             return;
         }
+//        long timestamp = extractTimestampFromResponse(response);
+//        if (timestamp > responseTime) {
+//            responseTime = timestamp;
+//            latestResponse.set(response);
+//        }
+
         long timestamp = extractTimestampFromResponse(response);
-        if (timestamp > responseTime) {
-            responseTime = timestamp;
-            latestResponse.set(response);
-        }
+        long currentResponseTime;
+
+        do {
+            currentResponseTime = responseTime.get();
+            if (timestamp <= currentResponseTime) {
+                return;
+            }
+        } while (!responseTime.compareAndSet(currentResponseTime, timestamp));
+
+        latestResponse.set(response);
     }
 
     private long extractTimestampFromResponse(Response response) {
@@ -289,7 +310,7 @@ public class ServiceImpl implements Service {
                 .method(request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
-         LOGGER.info("checking request " + proxyRequest.headers().toString());
+        LOGGER.info("checking request " + proxyRequest.headers().toString());
 
         return client
                 .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())

@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
-import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -111,8 +110,6 @@ public final class Server {
                 count = 0;
             }
         }
-
-        return partition;
     }
 
     private static MemorySegment keyAt(int index) {

@@ -2,9 +2,11 @@ package ru.vk.itmo.test.andreycheshev;
 
 import one.nio.util.Hash;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.stream.Collectors;
 
 public class RendezvousDistributor {
     private final List<String> clusterUrls;
@@ -32,7 +34,7 @@ public class RendezvousDistributor {
         for (int i = 0; i < quorumNumber; i++) {
             queue.add(new HashPair(hashCode(key + i), i));
         }
-        return queue.stream().map(HashPair::getIndex).toList();
+        return queue.stream().map(HashPair::getIndex).collect(Collectors.toCollection(ArrayList::new));
     }
 
     public String getNodeUrlByIndex(int index) {

@@ -15,11 +15,9 @@ import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
@@ -127,13 +125,34 @@ public class ServerImpl extends HttpServer {
         }
 
         boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
-        List<Response> validResponses = proxyRequestHandler.proxyRequests(request, nodeUrls, parameters.ack);
+
+        List<CompletableFuture<Response>> futures = new CopyOnWriteArrayList<>();
+        List<Response> validResponses = new CopyOnWriteArrayList<>();
+        AtomicInteger unsuccessfulResponsesCount = new AtomicInteger(0);
+
+        proxyRequestHandler.proxyRequests(
+                request,
+                nodeUrls,
+                parameters.ack,
+                futures,
+                validResponses,
+                unsuccessfulResponsesCount
+        );
 
         if (isSelfProcessing) {
-            Response response = requestHandler.handle(request);
-            if (isSuccessProcessed(response.getStatus())) {
-                validResponses.add(response);
-            }
+            requestHandler.handle(request, futures, validResponses, unsuccessfulResponsesCount);
+        }
+
+        CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+                futures.stream()
+                        .limit(parameters.ack)
+                        .toArray(CompletableFuture[]::new)
+        );
+
+        try {
+            allFutures.get(5, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("Timeout reached while waiting for responses");
         }
 
         if (validResponses.size() >= parameters.ack) {

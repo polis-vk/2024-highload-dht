@@ -14,9 +14,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -41,40 +38,33 @@ public class ProxyRequestHandler {
         clients.values().forEach(HttpClient::close);
     }
 
-    public List<Response> proxyRequests(
+    public void proxyRequests(
             Request request,
             List<String> nodeUrls,
-            int ack
-    ) throws InterruptedException, ExecutionException {
-        List<CompletableFuture<Response>> futures = new ArrayList<>();
-        List<Response> collectedResponses = new ArrayList<>();
+            int ack,
+            List<CompletableFuture<Response>> futures,
+            List<Response> collectedResponses,
+            AtomicInteger unsuccessfulResponsesCount
+    ) {
         AtomicInteger responsesCollected = new AtomicInteger();
 
         for (String url : nodeUrls) {
+            if (unsuccessfulResponsesCount.get() >= ack) {
+                futures.add(CompletableFuture.completedFuture(null));
+            }
+
             CompletableFuture<Response> futureResponse = proxyRequest(request, url);
             CompletableFuture<Response> resultFuture = futureResponse.thenApply(response -> {
                 boolean success = ServerImpl.isSuccessProcessed(response.getStatus());
                 if (success && responsesCollected.getAndIncrement() < ack) {
                     collectedResponses.add(response);
+                } else {
+                    unsuccessfulResponsesCount.incrementAndGet();
                 }
                 return response;
             });
             futures.add(resultFuture);
         }
-
-        CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-                futures.stream()
-                        .limit(ack)
-                        .toArray(CompletableFuture[]::new)
-        );
-
-        try {
-            allFutures.get(5, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            log.warn("Timeout reached while waiting for responses");
-        }
-
-        return collectedResponses;
     }
 
     private CompletableFuture<Response> proxyRequest(Request request, String proxiedNodeUrl) {

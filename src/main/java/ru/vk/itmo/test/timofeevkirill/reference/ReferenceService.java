@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.rmi.UnexpectedException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -115,9 +114,9 @@ public class ReferenceService implements Service {
             ReferenceService instance = new ReferenceService(serviceConfig);
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new UnexpectedException(e.getMessage());
+            } catch (ExecutionException | TimeoutException _) {
             }
         }
     }

@@ -43,12 +43,12 @@ public class ReferenceServer extends HttpServer {
     private static final String ACK_PARAMETER_KEY = "ack=";
     private static final String FROM_PARAMETER_KEY = "from=";
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
-    private final int THREADS = Runtime.getRuntime().availableProcessors();
+    private final int totalThreads = Runtime.getRuntime().availableProcessors();
 
     private final ExecutorService executorLocal =
-            Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("local-work"));
+            Executors.newFixedThreadPool(totalThreads / 2, new CustomThreadFactory("local-work"));
     private final ExecutorService executorRemote =
-            Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("remote-work"));
+            Executors.newFixedThreadPool(totalThreads / 2, new CustomThreadFactory("remote-work"));
     private final ReferenceDao dao;
     private final ServiceConfig config;
     private final HttpClient httpClient;
@@ -60,7 +60,7 @@ public class ReferenceServer extends HttpServer {
         this.config = config;
 
         this.httpClient = HttpClient.newBuilder()
-                .executor(Executors.newFixedThreadPool(THREADS))
+                .executor(Executors.newFixedThreadPool(totalThreads))
                 .connectTimeout(Duration.ofMillis(500))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
@@ -99,17 +99,7 @@ public class ReferenceServer extends HttpServer {
         }
 
         if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
-            executorLocal.execute(() -> {
-                try {
-                    CompletableFuture<HandleResult> localFuture = local(request, id);
-                    HandleResult local = localFuture.get();
-                    Response response = new Response(String.valueOf(local.status()), local.data());
-                    response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
-                    session.sendResponse(response);
-                } catch (Exception e) {
-                    ExceptionUtils.handleErrorFromHandleRequest(e, session);
-                }
-            });
+            handleLocalAsReplica(request, session, id);
             return;
         }
 
@@ -138,6 +128,20 @@ public class ReferenceServer extends HttpServer {
                 handleAsync(executorRemote, mergeHandleResult, () -> remote(request, executorNode));
             }
         }
+    }
+
+    private void handleLocalAsReplica(Request request, HttpSession session, String id) {
+        executorLocal.execute(() -> {
+            try {
+                CompletableFuture<HandleResult> localFuture = local(request, id);
+                HandleResult local = localFuture.get();
+                Response response = new Response(String.valueOf(local.status()), local.data());
+                response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
+                session.sendResponse(response);
+            } catch (Exception e) {
+                ExceptionUtils.handleErrorFromHandleRequest(e, session);
+            }
+        });
     }
 
     private int getInt(Request request, String param, int defaultValue) throws IllegalArgumentException {

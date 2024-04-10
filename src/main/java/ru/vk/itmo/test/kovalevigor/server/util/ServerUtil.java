@@ -26,7 +26,7 @@ public final class ServerUtil {
         try {
             session.sendResponse(response);
         } catch (IOException ioException) {
-            log.log(Level.SEVERE, "IO in socket", ioException);
+            logIO(ioException);
             closeSession(session, ioException);
         }
     }
@@ -39,9 +39,13 @@ public final class ServerUtil {
         try {
             session.sendError(code, message);
         } catch (IOException ioException) {
-            log.log(Level.SEVERE, "IO in socket", ioException);
+            logIO(ioException);
             closeSession(session, ioException);
         }
+    }
+
+    public static void logIO(IOException exception) {
+        log.log(Level.SEVERE, "IO in socket", exception);
     }
 
     public static void closeSession(HttpSession session, Exception base) {
@@ -49,7 +53,7 @@ public final class ServerUtil {
             session.sendError(Responses.SERVICE_UNAVAILABLE.getResponseCode(), null);
         } catch (IOException ioException) {
             ioException.addSuppressed(base);
-            log.log(Level.SEVERE, "IO in socket", ioException);
+            logIO(ioException);
             session.handleException(ioException);
         }
     }

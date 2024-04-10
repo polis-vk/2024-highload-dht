@@ -60,20 +60,16 @@ class ShardingTest extends TestBase {
         // Check
         assertArrayEquals(value1, serviceInfos.get(0).get(key1).body());
         assertArrayEquals(value1, serviceInfos.get(1).get(key1).body());
-        System.out.println("vvbbbv");
 
         // Insert 2
         assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(1).upsert(key2, value2).statusCode());
 
-        System.out.println("lklklk");
         // Check
         assertArrayEquals(value1, serviceInfos.get(0).get(key1).body());
         assertArrayEquals(value1, serviceInfos.get(1).get(key1).body());
         assertArrayEquals(value2, serviceInfos.get(0).get(key2).body());
-        System.out.println("llllooooo");
         assertArrayEquals(value2, serviceInfos.get(1).get(key2).body());
 
-        System.out.println("nnbn");
         // Delete 1
         assertEquals(HttpURLConnection.HTTP_ACCEPTED, serviceInfos.get(0).delete(key1).statusCode());
         assertEquals(HttpURLConnection.HTTP_ACCEPTED, serviceInfos.get(1).delete(key1).statusCode());

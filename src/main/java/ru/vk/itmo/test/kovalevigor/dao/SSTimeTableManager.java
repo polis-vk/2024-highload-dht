@@ -17,31 +17,6 @@ public class SSTimeTableManager extends SSTableManager<TimeEntry<MemorySegment>>
 
     public SSTimeTableManager(Path root) throws IOException {
         super(root);
-//        Iterator<TimeEntry<MemorySegment>> a = get(
-//                MemorySegment.ofArray("k0".getBytes(StandardCharsets.UTF_8)),
-//                MemorySegment.ofArray("k2".getBytes(StandardCharsets.UTF_8)));
-//        int test = 0;
-//        while (a.hasNext()) {
-//            a.next();
-//            System.out.println(new String(a.next().key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
-//            test += 1;
-//            if (test > 1000) {
-//                break;
-//            }
-//            MemorySegment b = a.next().key();
-//            byte[] bytes = b.toArray(ValueLayout.JAVA_BYTE);
-////            String kek = new String(bytes, StandardCharsets.UTF_8);
-//            System.out.println(bytes.length);
-//            b.unload();
-
-//            System.out.flush();
-//            try {
-////                System.out.println(a.next().key().byteSize());
-////                System.out.println(a.next().timestamp());
-//                System.out.println(new String(a.next().key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
-//            } catch (Exception ignored){}
-//        }
-//        System.out.println(test);
     }
 
     @Override

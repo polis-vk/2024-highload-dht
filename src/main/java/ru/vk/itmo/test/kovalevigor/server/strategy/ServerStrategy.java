@@ -11,6 +11,7 @@ import java.util.concurrent.Executor;
 public interface ServerStrategy extends AutoCloseable {
 
     Response handleRequest(Request request, HttpSession session) throws IOException;
+
     default CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session) {
         return handleRequestAsync(request, session, null);
     }
@@ -31,6 +32,7 @@ public interface ServerStrategy extends AutoCloseable {
     }
 
     void handleDefault(Request request, HttpSession session) throws IOException;
+
     default CompletableFuture<Response> handleDefaultAsync(Request request, HttpSession session, Executor executor) {
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -43,6 +45,7 @@ public interface ServerStrategy extends AutoCloseable {
     }
 
     void rejectRequest(Request request, HttpSession session);
+
     void handleIOException(Request request, HttpSession session, IOException exception);
 
     @Override

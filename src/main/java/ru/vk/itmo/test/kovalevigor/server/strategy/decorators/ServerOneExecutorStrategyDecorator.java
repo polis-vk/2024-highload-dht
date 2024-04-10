@@ -49,8 +49,6 @@ public class ServerOneExecutorStrategyDecorator extends ServerStrategyDecorator 
     @Override
     public Response handleRequest(Request request, HttpSession session) {
         handleRequestAsync(request, session);
-//        executorService.execute(new ServerTask(request, session, super::handleRequest));
-//        return handleRequestAsync(request, session).join()
         return null;
     }
 

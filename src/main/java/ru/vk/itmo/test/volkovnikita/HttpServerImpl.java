@@ -233,7 +233,7 @@ public class HttpServerImpl extends HttpServer {
             if (responses.size() == requiredAcks) break;
             try {
                 if (node.equals(selfUrl)) {
-                    futureResponse = getInternalResponse(request, id);
+                    futureResponse = getFutureLocalRequest(request, id);
                 } else {
                     futureResponse = redirectRequest(method, id, node, request);
                 }
@@ -258,7 +258,7 @@ public class HttpServerImpl extends HttpServer {
         return futureResponses;
     }
 
-    private CompletableFuture<Response> getInternalResponse(Request request, String id) {
+    private CompletableFuture<Response> getFutureLocalRequest(Request request, String id) {
         final CompletableFuture<Response> futureResponse = new CompletableFuture<>();
         executor.execute(() -> futureResponse.complete(handleLocalRequest(request, id)));
         return futureResponse;

@@ -201,15 +201,9 @@ public class ServerImpl extends HttpServer {
         List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
 
         if (httpRequests.get(selfUrl) != null) {
-            final CompletableFuture<Response> httpResponse = new CompletableFuture<>();
-            executorService.execute(() -> {
-                try {
-                    httpResponse.complete(requestHandler.handle(request, paramId));
-                } catch (Exception e) {
-                    httpResponse.completeExceptionally(e);
-                }
-            });
-            responses.add(httpResponse);
+            responses.add(
+                    CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId))
+            );
         }
 
         return getQuorumResult(request, from, ack, responses);
@@ -232,12 +226,7 @@ public class ServerImpl extends HttpServer {
                 }
 
                 if (successResponseCount.get() == ack) {
-                    if (request.getMethod() == Request.METHOD_GET) {
-                        sortResponses(successResponses);
-                        result.complete(successResponses.getLast());
-                    } else {
-                        result.complete(successResponses.getFirst());
-                    }
+                    result.complete(getResult(request, successResponses));
                 }
 
                 if (errorResponseCount.get() == from - ack + 1) {
@@ -249,6 +238,15 @@ public class ServerImpl extends HttpServer {
         }
 
         return result;
+    }
+
+    private Response getResult(Request request, List<Response> successResponses) {
+        if (request.getMethod() == Request.METHOD_GET) {
+            sortResponses(successResponses);
+            return successResponses.getLast();
+        } else {
+            return successResponses.getFirst();
+        }
     }
 
     private void sortResponses(List<Response> successResponses) {

@@ -31,9 +31,9 @@ import java.util.concurrent.Executors;
 
 public class TrofikServer extends HttpServer {
 
-    private static final String HEADER_REMOTE = "X-flag-remote-reference-server-to-node-by-paschenko";
+    private static final String HEADER_REMOTE = "X-flag-remote-reference-server-to-node-by-trofik";
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": da";
-    private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-server-to-node-by-paschenko2";
+    private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-timestamp-trofik";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final Logger log = LoggerFactory.getLogger(TrofikServer.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();

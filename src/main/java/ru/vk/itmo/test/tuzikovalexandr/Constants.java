@@ -26,7 +26,7 @@ public final class Constants {
     public static final String BASE_URL = "http://localhost";
     public static final int BASE_PORT = 8080;
     public static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
-    public static final int NUMBER_OF_VIRTUAL_NODES = 5;
+    public static final int NUMBER_OF_VIRTUAL_NODES = 50;
     public static final String HTTP_TIMESTAMP_HEADER = "X-Timestamp";
     public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
     public static final String HTTP_TERMINATION_HEADER = "X-Termination";

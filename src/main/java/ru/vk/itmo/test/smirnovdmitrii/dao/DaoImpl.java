@@ -2,7 +2,6 @@ package ru.vk.itmo.test.smirnovdmitrii.dao;
 
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.smirnovdmitrii.dao.inmemory.Flusher;
 import ru.vk.itmo.test.smirnovdmitrii.dao.inmemory.InMemoryDao;
 import ru.vk.itmo.test.smirnovdmitrii.dao.inmemory.InMemoryDaoImpl;
@@ -23,9 +22,9 @@ import java.util.Iterator;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
-    private final InMemoryDao<MemorySegment, Entry<MemorySegment>> inMemoryDao;
-    private final OutMemoryDao<MemorySegment, Entry<MemorySegment>> outMemoryDao;
+public class DaoImpl implements Dao<MemorySegment, TimeEntry<MemorySegment>> {
+    private final InMemoryDao<MemorySegment, TimeEntry<MemorySegment>> inMemoryDao;
+    private final OutMemoryDao<MemorySegment, TimeEntry<MemorySegment>> outMemoryDao;
     private final StateService stateService = new StateService();
     private final EqualsComparator<MemorySegment> comparator = new MemorySegmentComparator();
     private final AtomicBoolean isClosed = new AtomicBoolean(false);
@@ -37,36 +36,33 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
+    public Iterator<TimeEntry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
         int id = 0;
-        final MergeIterator.Builder<MemorySegment, Entry<MemorySegment>> builder
+        final MergeIterator.Builder<MemorySegment, TimeEntry<MemorySegment>> builder
                 = new MergeIterator.Builder<>(comparator);
         final State state = stateService.state();
-        for (final Iterator<Entry<MemorySegment>> inMemoryIterator : inMemoryDao.get(state, from, to)) {
+        for (final Iterator<TimeEntry<MemorySegment>> inMemoryIterator : inMemoryDao.get(state, from, to)) {
             builder.addIterator(new WrappedIterator<>(id++, inMemoryIterator));
         }
-        for (final Iterator<Entry<MemorySegment>> outMemoryIterator : outMemoryDao.get(state, from, to)) {
+        for (final Iterator<TimeEntry<MemorySegment>> outMemoryIterator : outMemoryDao.get(state, from, to)) {
             builder.addIterator(new WrappedIterator<>(id++, outMemoryIterator));
         }
         return builder.build();
     }
 
     @Override
-    public Entry<MemorySegment> get(final MemorySegment key) {
+    public TimeEntry<MemorySegment> get(final MemorySegment key) {
         Objects.requireNonNull(key);
         final State state = stateService.state();
-        Entry<MemorySegment> result = inMemoryDao.get(state, key);
+        TimeEntry<MemorySegment> result = inMemoryDao.get(state, key);
         if (result == null) {
             result = outMemoryDao.get(state, key);
-        }
-        if (result == null || result.value() == null) {
-            return null;
         }
         return result;
     }
 
     @Override
-    public void upsert(final Entry<MemorySegment> entry) {
+    public void upsert(final TimeEntry<MemorySegment> entry) {
         try {
             while (true) {
                 final State state = stateService.state();

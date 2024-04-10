@@ -126,8 +126,6 @@ public class DaoHttpServer extends HttpServer {
             @Param(value = "from") Integer from,
             @Header(value = "X-inner") boolean inner
     ) throws DaoException, RemoteServiceException, NotFoundException {
-
-        logger.info("GET");
         if (id.isBlank()) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
@@ -139,7 +137,6 @@ public class DaoHttpServer extends HttpServer {
                 response = dao.get(id, ack, from);
             }
 
-        logger.info("" + response);
         if (response.httpCode() == 404) {
             return DaoResponse.empty(DaoResponse.NOT_FOUND, response.timestamp());
         }
@@ -156,7 +153,6 @@ public class DaoHttpServer extends HttpServer {
             @Header(value = "X-timestamp") Long timestamp,
             Request request
     ) throws DaoException, RemoteServiceException {
-        logger.info("PUT");
         if (id.isBlank() || request.getBody() == null) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
@@ -179,7 +175,6 @@ public class DaoHttpServer extends HttpServer {
             @Header(value = "X-inner") boolean inner,
             @Header(value = "X-timestamp") Long timestamp
     ) throws DaoException, RemoteServiceException {
-        logger.info("DELETE");
         if (id.isBlank()) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }

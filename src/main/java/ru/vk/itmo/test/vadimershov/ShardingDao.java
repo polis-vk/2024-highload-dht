@@ -63,7 +63,7 @@ public class ShardingDao {
         try {
             return waitFuture(correctAck, correctFrom, requestsFutures);
         } catch (CompletionException e) {
-            throw new FailedSharding();
+            throw (FailedSharding) new FailedSharding().initCause(e);
         }
     }
 
@@ -129,7 +129,7 @@ public class ShardingDao {
         try {
             waitFuture(correctAck, correctFrom, requestsFutures);
         } catch (CompletionException e) {
-            throw new FailedSharding();
+            throw (FailedSharding) new FailedSharding().initCause(e);
         }
     }
 
@@ -157,7 +157,7 @@ public class ShardingDao {
         try {
             waitFuture(correctAck, correctFrom, requestsFutures);
         } catch (CompletionException e) {
-            throw new FailedSharding();
+            throw (FailedSharding) new FailedSharding().initCause(e);
         }
     }
 

@@ -38,15 +38,13 @@ public class ConsistentHashing {
                     ring.put(Hash.murmur3(virtualNode.key(currentUrl)), virtualNode);
                 }
             } else {
-                HttpClient currentHttpClient = httpClientMap.get(currentUrl);
-                if (currentHttpClient == null) {
-                    currentHttpClient = HttpClient.newBuilder()
-                            .connectTimeout(Duration.ofMillis(100))
-                            .build();
-                    httpClientMap.put(currentUrl, currentHttpClient);
-                }
+                HttpClient httpClient = httpClientMap.computeIfAbsent(
+                        currentUrl,
+                        _ -> HttpClient.newBuilder()
+                                .connectTimeout(Duration.ofMillis(100))
+                                .build());
                 for (int i = 0; i < VIRTUAL_NODE_COUNT; i++) {
-                    VirtualNode virtualNode = new RemoteNode(currentUrl, currentHttpClient, i);
+                    VirtualNode virtualNode = new RemoteNode(currentUrl, httpClient, i);
                     ring.put(Hash.murmur3(virtualNode.key(currentUrl)), virtualNode);
                 }
             }

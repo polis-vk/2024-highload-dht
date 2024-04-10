@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.vadimershov.ResultResponse;
 import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
+import ru.vk.itmo.test.vadimershov.utils.MSUtil;
 
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
@@ -14,10 +15,6 @@ import static java.net.HttpURLConnection.HTTP_CREATED;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toByteArray;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toDeletedEntity;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toEntity;
-import static ru.vk.itmo.test.vadimershov.utils.MemorySegmentUtil.toMemorySegment;
 
 public class LocalNode extends VirtualNode {
 
@@ -40,17 +37,17 @@ public class LocalNode extends VirtualNode {
         return CompletableFuture.supplyAsync(() -> {
             TimestampEntry<MemorySegment> entry;
             try {
-                entry = dao.get(toMemorySegment(key));
+                entry = dao.get(MSUtil.toMemorySegment(key));
             } catch (Exception e) {
                 logger.error("Can't get value by key={}", key, e);
                 return new ResultResponse(HTTP_INTERNAL_ERROR, null, 0L);
             }
             logger.info(entry.toString());
             if (entry.value() == null) {
-                return new ResultResponse(HTTP_NOT_FOUND, null, entry.timestamp() == null? 0L : entry.timestamp());
+                return new ResultResponse(HTTP_NOT_FOUND, null, entry.timestamp() == null ? 0L : entry.timestamp());
             }
 
-            return new ResultResponse(HTTP_OK, toByteArray(entry.value()), entry.timestamp());
+            return new ResultResponse(HTTP_OK, MSUtil.toByteArray(entry.value()), entry.timestamp());
         });
     }
 
@@ -58,9 +55,7 @@ public class LocalNode extends VirtualNode {
     public CompletableFuture<ResultResponse> upsert(String key, byte[] value, Long timestamp) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                TimestampEntry<MemorySegment> entity = toEntity(key, value, timestamp);
-                logger.info("" + entity);
-                dao.upsert(entity);
+                dao.upsert(MSUtil.toEntity(key, value, timestamp));
             } catch (Exception e) {
                 logger.error("Can't upsert value by key={}", key, e);
                 return new ResultResponse(HTTP_INTERNAL_ERROR, null, 0L);
@@ -73,7 +68,7 @@ public class LocalNode extends VirtualNode {
     public CompletableFuture<ResultResponse> delete(String key, Long timestamp) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                dao.upsert(toDeletedEntity(key, timestamp));
+                dao.upsert(MSUtil.toDeletedEntity(key, timestamp));
             } catch (Exception e) {
                 logger.error("Can't upsert value by key={}", key, e);
                 return new ResultResponse(HTTP_INTERNAL_ERROR, null, 0L);

@@ -8,9 +8,9 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-public final class MemorySegmentUtil {
+public final class MSUtil {
 
-    private MemorySegmentUtil() {
+    private MSUtil() {
     }
 
     public static MemorySegment toMemorySegment(@Nonnull String data) {

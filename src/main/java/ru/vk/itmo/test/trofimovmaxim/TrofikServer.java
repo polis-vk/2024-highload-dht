@@ -25,7 +25,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -33,7 +33,7 @@ public class TrofikServer extends HttpServer {
 
     private static final String HEADER_REMOTE = "X-flag-remote-reference-server-to-node-by-trofik";
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": da";
-    private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-timestamp-trofik";
+    static final String HEADER_TIMESTAMP = "X-flag-remote-reference-timestamp-trofik";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final Logger log = LoggerFactory.getLogger(TrofikServer.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
@@ -111,10 +111,11 @@ public class TrofikServer extends HttpServer {
         for (int i = 0; i < indexes.length; i++) {
             int index = indexes[i];
             String executorNode = config.clusterUrls().get(index);
+            ResponseProcessor responseProcessor = new ResponseProcessor(mergeHandleResult, i);
             if (executorNode.equals(config.selfUrl())) {
-                handleAsync(executorLocal, i, mergeHandleResult, () -> local(request, id));
+                handleAsync(executorLocal, i, mergeHandleResult, () -> responseProcessor.processResult(local(request, id)));
             } else {
-                handleAsync(executorRemote, i, mergeHandleResult, () -> remote(request, executorNode));
+                handleAsync(executorRemote, i, mergeHandleResult, () -> remote(request, executorNode, responseProcessor));
             }
         }
     }
@@ -153,16 +154,16 @@ public class TrofikServer extends HttpServer {
         return ack;
     }
 
-    private HandleResult remote(Request request, String executorNode) {
+    private void remote(Request request, String executorNode, ResponseProcessor responseProcessor) {
         try {
-            return invokeRemote(executorNode, request);
+            invokeRemote(executorNode, request, responseProcessor);
         } catch (IOException e) {
             log.info("I/O exception while calling remote node", e);
-            return new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);
+            responseProcessor.processResult(new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.info("Thread interrupted");
-            return new HandleResult(HttpURLConnection.HTTP_UNAVAILABLE, Response.EMPTY);
+            responseProcessor.processResult(new HandleResult(HttpURLConnection.HTTP_UNAVAILABLE, Response.EMPTY));
         }
     }
 
@@ -171,15 +172,12 @@ public class TrofikServer extends HttpServer {
                              HandlerRunnable runnable) {
         try {
             executor.execute(() -> {
-                HandleResult handleResult;
                 try {
-                    handleResult = runnable.run();
+                    runnable.run();
                 } catch (Exception e) {
                     log.error("Exception during handleRequest", e);
-                    handleResult = new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);
+                    mergeHandleResult.add(index, new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
                 }
-
-                mergeHandleResult.add(index, handleResult);
             });
         } catch (Exception e) {
             mergeHandleResult.add(index, new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
@@ -196,7 +194,7 @@ public class TrofikServer extends HttpServer {
         return Response.ok("OK");
     }
 
-    private HandleResult invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
+    private void invokeRemote(String executorNode, Request request, ResponseProcessor responseProcessor) throws IOException, InterruptedException {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
                 .method(
                         request.getMethodName(),
@@ -207,20 +205,11 @@ public class TrofikServer extends HttpServer {
                 .header(HEADER_REMOTE, "da")
                 .timeout(Duration.ofMillis(500))
                 .build();
-        HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-        Optional<String> string = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
-        long timestamp;
-        if (string.isPresent()) {
-            try {
-                timestamp = Long.parseLong(string.get());
-            } catch (Exception e) {
-                log.error("Cannot parse timestamp from header", e);
-                timestamp = 0;
-            }
-        } else {
-            timestamp = 0;
+        CompletableFuture<HttpResponse<byte[]>> sending = httpClient.sendAsync(httpRequest,
+                HttpResponse.BodyHandlers.ofByteArray()).whenComplete(responseProcessor);
+        if (sending == null) {
+            log.error("error while send async");
         }
-        return new HandleResult(httpResponse.statusCode(), httpResponse.body(), timestamp);
     }
 
     private HandleResult local(Request request, String id) {
@@ -286,7 +275,7 @@ public class TrofikServer extends HttpServer {
     }
 
     private interface HandlerRunnable {
-        HandleResult run();
+        void run();
     }
 
     @Override

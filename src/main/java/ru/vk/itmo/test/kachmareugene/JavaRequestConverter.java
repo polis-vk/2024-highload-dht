@@ -9,7 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
 
-public class JavaRequestConverter {
+public final class JavaRequestConverter {
     private static final Map<Integer, String> intToStringCode =
             Map.of(
             202, Response.ACCEPTED,

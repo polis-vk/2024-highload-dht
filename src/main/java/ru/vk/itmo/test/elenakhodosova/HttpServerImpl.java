@@ -28,14 +28,18 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.stream.Collectors;
 
 public class HttpServerImpl extends HttpServer {
@@ -46,6 +50,7 @@ public class HttpServerImpl extends HttpServer {
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String TIMESTAMP_HEADER = "X-timestamp: ";
     private static final String REDIRECTED_HEADER = "X-redirected";
+    public static final String X_TOMB_HEADER = "X-tomb: ";
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executorService;
     private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
@@ -65,10 +70,10 @@ public class HttpServerImpl extends HttpServer {
         this.selfUrl = config.selfUrl();
         this.nodes = config.clusterUrls();
         this.client = HttpClient.newBuilder()
-                        .executor(Executors.newFixedThreadPool(THREADS))
-                        .connectTimeout(Duration.ofMillis(500))
-                        .version(HttpClient.Version.HTTP_1_1)
-                        .build();
+                .executor(Executors.newFixedThreadPool(THREADS))
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     @Override
@@ -89,7 +94,7 @@ public class HttpServerImpl extends HttpServer {
             int from = fromStr == null || fromStr.isEmpty() ? nodes.size() : Integer.parseInt(fromStr);
             int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
             if (ack == 0 || from == 0 || ack > from || from > nodes.size()) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
             executorService.execute(() -> {
@@ -98,6 +103,7 @@ public class HttpServerImpl extends HttpServer {
                 } catch (Exception e) {
                     logger.error("Unexpected error when processing request", e);
                     sendError(session, e);
+                    Thread.currentThread().interrupt();
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -107,73 +113,113 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private void processRequest(Request request, HttpSession session, String id,
-                                AllowedMethods method, int from, int ack) throws IOException {
+                                AllowedMethods method, int from, int ack)
+            throws ExecutionException, InterruptedException {
         String isRedirected = request.getHeader(REDIRECTED_HEADER);
         if (isRedirected != null) {
-            session.sendResponse(handleLocalRequest(request, id));
+            sendResponse(session, handleLocalRequest(request, id).get());
             return;
         }
 
         List<String> sortedNodes = getSortedNodes(id, from);
-        List<Response> responses = new ArrayList<>(ack);
+        AtomicInteger success = new AtomicInteger(0);
+        AtomicInteger successRequests = new AtomicInteger(0);
+        AtomicBoolean requestHandled = new AtomicBoolean(false);
+        AtomicInteger lastSuccessResp = new AtomicInteger();
+        CompletableFuture<?>[] responses = new CompletableFuture<?>[from];
+        AtomicReferenceArray<Response> responseArray = new AtomicReferenceArray<>(from);
         request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
         for (int i = 0; i < from; i++) {
-            if (responses.size() == ack) {
-                break;
-            }
+            final int currentIter = i;
             String node = sortedNodes.get(i);
             try {
                 if (node.equals(selfUrl)) {
-                    responses.add(handleLocalRequest(request, id));
+                    responses[currentIter] = handleLocalRequest(request, id);
                 } else {
-                    responses.add(redirectRequest(method, id, node, request));
+                    responses[currentIter] = redirectRequest(method, id, node, request);
                 }
+
+                CompletableFuture<?> futureResult = responses[currentIter].whenCompleteAsync((response, throwable) -> {
+                    responseArray.set(currentIter, (Response) response);
+                    successRequests.incrementAndGet();
+                    if (throwable == null) {
+                        success.incrementAndGet();
+                        lastSuccessResp.set(currentIter);
+                    }
+                    int lastSuccessCount = success.get();
+                    if (validateReplicas(session, lastSuccessCount, successRequests, requestHandled, from, ack)) {
+                        return;
+                    }
+
+                    if (lastSuccessCount >= ack && requestHandled.compareAndSet(false, true)) {
+                        handleSendResponse(request, session, ack, responseArray, lastSuccessResp);
+                    }
+                });
+                validateFuture(futureResult);
             } catch (InterruptedException | IOException e) {
                 logger.error("Error during sending request", e);
                 Thread.currentThread().interrupt();
             }
         }
-        if (responses.size() < ack) {
-            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-            return;
-        }
-
-        if (request.getMethod() == Request.METHOD_GET) {
-            Response response = validateGetRequests(ack, responses);
-            session.sendResponse(response);
-            return;
-        }
-        String responseStatusCode = getResponseByCode(responses.getFirst().getStatus());
-        Response response = new Response(responseStatusCode, responses.getFirst().getBody());
-        session.sendResponse(response);
     }
 
-    private Response validateGetRequests(int ack, List<Response> responses) {
+    private boolean validateReplicas(HttpSession session,
+                                int lastSuccessCount,
+                                AtomicInteger successRequests,
+                                AtomicBoolean requestHandled,
+                                int from,
+                                int ack) {
+        if (successRequests.get() == from && lastSuccessCount < ack) {
+            if (requestHandled.compareAndSet(false, true)) {
+                sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void handleSendResponse(Request request,
+                                    HttpSession session,
+                                    int ack,
+                                    AtomicReferenceArray<Response> responseArray,
+                                    AtomicInteger lastSuccessResp) {
+        if (request.getMethod() == Request.METHOD_GET) {
+            sendResponse(session, validateGetRequests(ack, responseArray));
+            return;
+        }
+        Response result = new Response(
+                getResponseByCode(responseArray.get(lastSuccessResp.get()).getStatus()),
+                responseArray.get(lastSuccessResp.get()).getBody());
+        sendResponse(session, result);
+    }
+
+    private Response validateGetRequests(int ack, AtomicReferenceArray<Response> responseArray) {
         int notFound = 0;
         long latestTimestamp = 0L;
         Response latestResponse = null;
-        boolean isLatestFailed = false;
-        for (Response response : responses) {
-            long timestamp = response.getHeader(TIMESTAMP_HEADER) == null ? 0L
-                    : Long.parseLong(response.getHeader(TIMESTAMP_HEADER));
-            if (response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
-                notFound++;
-                if (timestamp != 0L && latestTimestamp < timestamp) {
-                    latestTimestamp = timestamp;
-                    isLatestFailed = true;
-                }
+        for (int j = 0; j < responseArray.length(); j++) {
+           Response currentResponse = responseArray.get(j);
+            if (currentResponse == null) {
                 continue;
             }
-            isLatestFailed = false;
+            if (currentResponse.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
+                notFound++;
+                continue;
+            }
+            long timestamp = Long.parseLong(currentResponse.getHeader(TIMESTAMP_HEADER));
             if (timestamp > latestTimestamp) {
                 latestTimestamp = timestamp;
-                latestResponse = response;
+                latestResponse = currentResponse;
             }
         }
-        if (notFound == ack || isLatestFailed || latestResponse == null) {
+        if (notFound == ack || latestResponse == null
+                || (latestResponse.getBody().length == 0
+                && latestResponse.getHeader(X_TOMB_HEADER) != null)
+        ) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else {
+            return new Response(Response.OK, latestResponse.getBody());
         }
-        return new Response(Response.OK, latestResponse.getBody());
     }
 
     private void sendError(HttpSession session, Exception e) {
@@ -215,7 +261,8 @@ public class HttpServerImpl extends HttpServer {
 
             Response response;
             if (value.value() == null) {
-                response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                response = new Response(Response.OK, Response.EMPTY);
+                response.addHeader("X-tomb: true");
             } else {
                 response = Response.ok(value.value().toArray(ValueLayout.JAVA_BYTE));
             }
@@ -254,41 +301,59 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private Response redirectRequest(AllowedMethods method,
-                                     String id,
-                                     String clusterUrl,
-                                     Request request) throws InterruptedException, IOException {
+    private CompletableFuture<Response> redirectRequest(AllowedMethods method,
+                                                        String id,
+                                                        String clusterUrl,
+                                                        Request request) throws InterruptedException, IOException {
         byte[] body = request.getBody();
-        HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder()
-                .uri(URI.create(clusterUrl + PATH_NAME + "?id=" + id))
-                .method(method.name(), body == null
-                        ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofByteArray(body))
+        HttpRequest redirectedRequest = HttpRequest.newBuilder(URI.create(clusterUrl + PATH_NAME + "?id=" + id))
+                .method(
+                        method.name(),
+                        body == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(body)
+                )
                 .header(REDIRECTED_HEADER, "true")
-                .header("X-timestamp", request.getHeader(TIMESTAMP_HEADER)
-                ).build(), HttpResponse.BodyHandlers.ofByteArray());
-        Response result = new Response(getResponseByCode(response.statusCode()), response.body());
-        Optional<String> respTimestamp = response.headers().firstValue("X-timestamp");
-        respTimestamp.ifPresent(v -> result.addHeader(TIMESTAMP_HEADER + v));
-        return result;
+                .header("X-timestamp", request.getHeader(TIMESTAMP_HEADER))
+                .build();
+        return client.sendAsync(redirectedRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(response -> {
+                    Response result = new Response(getResponseByCode(response.statusCode()), response.body());
+                    Optional<String> respTimestamp = response.headers().firstValue("X-timestamp");
+                    respTimestamp.ifPresent(v -> result.addHeader(TIMESTAMP_HEADER + v));
+                    Optional<String> headerTomb = response.headers().firstValue("X-tomb");
+                    headerTomb.ifPresent(v -> result.addHeader(X_TOMB_HEADER + v));
+                    return result;
+                });
     }
 
-    private Response handleLocalRequest(Request request, String id) {
-        String timestampHeader = request.getHeader(TIMESTAMP_HEADER);
-        long timestamp = timestampHeader == null ? System.currentTimeMillis() : Long.parseLong(timestampHeader);
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                return getEntity(id);
+    private CompletableFuture<Response> handleLocalRequest(Request request, String id) {
+        return CompletableFuture.supplyAsync(() -> {
+            String timestampHeader = request.getHeader(TIMESTAMP_HEADER);
+            long timestamp = timestampHeader == null ? System.currentTimeMillis() : Long.parseLong(timestampHeader);
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    return getEntity(id);
+                }
+                case Request.METHOD_PUT -> {
+                    return putEntity(id, request, timestamp);
+                }
+                case Request.METHOD_DELETE -> {
+                    return deleteEntity(id, timestamp);
+                }
+                default -> {
+                    return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                }
             }
-            case Request.METHOD_PUT -> {
-                return putEntity(id, request, timestamp);
-            }
-            case Request.METHOD_DELETE -> {
-                return deleteEntity(id, timestamp);
-            }
-            default -> {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
+        }, executorService);
+    }
+
+    private static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("Error send response", e);
+            session.close();
         }
     }
 
@@ -319,6 +384,12 @@ public class HttpServerImpl extends HttpServer {
             case 429 -> TOO_MANY_REQUESTS;
             default -> Response.INTERNAL_ERROR;
         };
+    }
+
+    private void validateFuture(CompletableFuture<?> future) {
+        if (future == null) {
+            logger.warn("Future is null");
+        }
     }
 
     private AllowedMethods getMethod(int method) {

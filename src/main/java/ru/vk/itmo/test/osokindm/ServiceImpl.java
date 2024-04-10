@@ -13,22 +13,15 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.osokindm.dao.Entry;
 
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
@@ -45,28 +38,29 @@ public class ServiceImpl implements Service {
     private static final int CONNECTION_TIMEOUT_MS = 250;
     private static final String DEFAULT_PATH = "/v0/entity";
     private static final String TIMESTAMP_HEADER = "Request-timestamp";
-    private static final String TIMESTAMP_HEADER_LC = "request-timestamp";
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ServiceConfig config;
-    private final HttpClient client;
     private final Executor responseExecutor;
+    private final RequestHandler requestHandler;
     private RendezvousRouter router;
     private DaoWrapper daoWrapper;
     private HttpServerImpl server;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
-        client = HttpClient.newBuilder()
+        HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.of(CONNECTION_TIMEOUT_MS, ChronoUnit.MILLIS))
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .build();
         responseExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        requestHandler = new RequestHandler(client);
     }
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
         try {
             daoWrapper = new DaoWrapper(new Config(config.workingDir(), MEMORY_LIMIT_BYTES));
+            requestHandler.setDaoWrapper(daoWrapper);
             router = new RendezvousRouter(config.clusterUrls());
             server = new HttpServerImpl(createServerConfig(config.selfPort()));
             server.addRequestHandlers(this);
@@ -109,7 +103,7 @@ public class ServiceImpl implements Service {
             try {
                 if (timestamp != null && !timestamp.isBlank()) {
                     long parsedTimestamp = Long.parseLong(timestamp);
-                    session.sendResponse(handleRequestLocally(request, id, parsedTimestamp));
+                    session.sendResponse(requestHandler.handleRequestLocally(request, id, parsedTimestamp));
                     return;
                 }
             } catch (NumberFormatException e) {
@@ -147,9 +141,9 @@ public class ServiceImpl implements Service {
                 long timestamp = getTimestamp(request);
                 CompletableFuture<Response> futureResponse;
                 if (node.address.equals(config.selfUrl())) {
-                    futureResponse = CompletableFuture.supplyAsync(() -> handleRequestLocally(request, id, timestamp));
+                    futureResponse = CompletableFuture.supplyAsync(() -> requestHandler.handleRequestLocally(request, id, timestamp));
                 } else {
-                    futureResponse = forwardRequestToNode(request, node, timestamp);
+                    futureResponse = requestHandler.forwardRequestToNode(request, node, timestamp);
                 }
                 futureResponse
                         .whenCompleteAsync((resp, _) -> {
@@ -167,7 +161,7 @@ public class ServiceImpl implements Service {
                             } else {
                                 if (failures.incrementAndGet() > from - ack) {
                                     String message = "Not enough replicas responded";
-                                    LOGGER.info("Not enough replicas responded");
+                                    LOGGER.info(message);
                                     try {
                                         session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8)));
                                     } catch (IOException e) {
@@ -227,87 +221,6 @@ public class ServiceImpl implements Service {
         return Long.parseLong(timestampValue);
     }
 
-    private CompletableFuture<Response> forwardRequestToNode(Request request, Node node, long timestamp) {
-        try {
-            return makeProxyRequest(request, node.address, timestamp);
-        } catch (TimeoutException e) {
-            node.captureError();
-            LOGGER.error(node + " not responding", e);
-            return CompletableFuture.completedFuture(null);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return CompletableFuture.completedFuture(null);
-
-        } catch (ExecutionException | IOException e) {
-            LOGGER.error(node + " not responding", e);
-            return CompletableFuture.completedFuture(null);
-
-        }
-    }
-
-    private Response handleRequestLocally(Request request, String id, long timestamp) {
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                Entry<MemorySegment> result = daoWrapper.get(id);
-                if (result == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
-                }
-
-                if (result.value() == null) {
-                    Response response = new Response(Response.NOT_FOUND, longToBytes(result.timestamp()));
-                    response.addHeader(TIMESTAMP_HEADER + ": " + result.timestamp());
-                    return response;
-                }
-                Response response = Response.ok(result.value().toArray(ValueLayout.JAVA_BYTE));
-                response.addHeader(TIMESTAMP_HEADER + ": " + result.timestamp());
-                return response;
-            }
-            case Request.METHOD_PUT -> {
-                daoWrapper.upsert(id, request, timestamp);
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                daoWrapper.delete(id, timestamp);
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
-        }
-    }
-
-    private CompletableFuture<Response> makeProxyRequest(Request request, String nodeAddress, long timestamp)
-            throws ExecutionException, InterruptedException, TimeoutException, IOException {
-        byte[] body = request.getBody();
-        if (body == null) {
-            body = Response.EMPTY;
-        }
-        HttpRequest proxyRequest = HttpRequest
-                .newBuilder(URI.create(nodeAddress + request.getURI()))
-                .header(TIMESTAMP_HEADER, String.valueOf(timestamp))
-                .method(request.getMethodName(),
-                        HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
-        LOGGER.info("checking request " + proxyRequest.headers().toString());
-
-        return client
-                .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .thenApply(ServiceImpl::processedResponse);
-    }
-
-    private static Response processedResponse(HttpResponse<byte[]> response) {
-        long timestamp = response.headers().map().containsKey(TIMESTAMP_HEADER_LC)
-                ? Long.parseLong(response.headers().map().get(TIMESTAMP_HEADER_LC).getFirst())
-                : -1;
-
-        if (response.body().length == 0 && timestamp == -1) {
-            return new Response(String.valueOf(response.statusCode()), Response.EMPTY);
-        }
-        Response processedResponse = new Response(String.valueOf(response.statusCode()), response.body());
-        processedResponse.addHeader(TIMESTAMP_HEADER + ": " + timestamp);
-        return processedResponse;
-    }
-
     private static HttpServerConfig createServerConfig(int port) {
         HttpServerConfig serverConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
@@ -326,14 +239,6 @@ public class ServiceImpl implements Service {
         return (int) floor(clusterSize * 0.75);
     }
 
-    private static byte[] longToBytes(long l) {
-        byte[] result = new byte[Long.BYTES];
-        for (int i = Long.BYTES - 1; i >= 0; i--) {
-            result[i] = (byte) (l & 0xFF);
-            l >>= Byte.SIZE;
-        }
-        return result;
-    }
 
     @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {

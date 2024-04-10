@@ -146,24 +146,17 @@ public class ServiceImpl implements Service {
                 long timestamp = getTimestamp(request);
                 CompletableFuture<Response> futureResponse;
                 if (node.address.equals(config.selfUrl())) {
-                    futureResponse = CompletableFuture.supplyAsync(() -> handleRequestLocally(request, id, timestamp));
+                    futureResponse = CompletableFuture.supplyAsync(()->handleRequestLocally(request, id, timestamp));
                 } else {
                     futureResponse = forwardRequestToNode(request, node, timestamp);
                 }
                 futureResponse
                         .whenCompleteAsync((resp, ex) -> {
                             if (resp != null) {
-                                updateLatestResponse(resp);
-//                                if (request.getMethod() == Request.METHOD_GET) {
-//                                    LOGGER.info("latest response updated");
-//                                }
+                                updateLatestResponse(resp, request.getMethod());
                                 if (responseIsGood(resp)) {
                                     if (successes.incrementAndGet() >= ack) {
-                                        // если get, то должны взять самый последний ентри
-                                        // если пут или делит, то сразу же можно вернуть значение
-                                        // логика как в старом решении - можно изменить метод updateLatestResponse, чтобы он проверял как назначать значение в зависимости от типа задачи - гет пут
                                         try {
-                                            LOGGER.info("NEED latest response " + latestResponse.get());
                                             session.sendResponse(latestResponse.get());
                                         } catch (IOException e) {
                                             throw new RuntimeException(e);
@@ -172,6 +165,7 @@ public class ServiceImpl implements Service {
                                 } else {
                                     if (failures.incrementAndGet() > from - ack) {
                                         String message = "Not enough replicas responded";
+                                        LOGGER.info("Not enough replicas responded");
                                         try {
                                             session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8)));
                                         } catch (IOException e) {
@@ -183,7 +177,7 @@ public class ServiceImpl implements Service {
                         })
                         .exceptionally(ex -> {
                             failures.incrementAndGet();
-                            LOGGER.error("NIGGA" + ex.toString());
+                            LOGGER.error("NIGGA " + ex.toString());
                             try {
                                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                             } catch (IOException e) {
@@ -211,14 +205,15 @@ public class ServiceImpl implements Service {
         return System.currentTimeMillis();
     }
 
-    private void updateLatestResponse(Response response) {
+    private void updateLatestResponse(Response response, int method) {
+        if (method != Request.METHOD_GET) {
+            latestResponse.set(response);
+            return;
+        }
         long timestamp = extractTimestampFromResponse(response);
-        LOGGER.info("latest response timestamp " + timestamp);
-
         if (timestamp > responseTime) {
             responseTime = timestamp;
             latestResponse.set(response);
-            LOGGER.info("latest response is set");
         }
     }
 
@@ -237,13 +232,17 @@ public class ServiceImpl implements Service {
         } catch (TimeoutException e) {
             node.captureError();
             LOGGER.error(node + " not responding", e);
-            return null;
+            return CompletableFuture.completedFuture(null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return null;
+//            return null;
+            return CompletableFuture.completedFuture(null);
+
         } catch (ExecutionException | IOException e) {
             LOGGER.error(node + " not responding", e);
-            return null;
+//            return null;
+            return CompletableFuture.completedFuture(null);
+
         }
     }
 
@@ -302,6 +301,7 @@ public class ServiceImpl implements Service {
                 ? Long.parseLong(response.headers().map().get(TIMESTAMP_HEADER_LC).getFirst())
                 : -1;
 
+        LOGGER.info("got smth " + timestamp);
         if (response.body().length == 0 && timestamp == -1) {
             return new Response(String.valueOf(response.statusCode()), Response.EMPTY);
         }

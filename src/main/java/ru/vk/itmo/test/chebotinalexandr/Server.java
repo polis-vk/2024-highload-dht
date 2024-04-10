@@ -2,9 +2,9 @@ package ru.vk.itmo.test.chebotinalexandr;
 
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
 import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 import ru.vk.itmo.test.chebotinalexandr.dao.entry.TimestampEntry;
 
 import java.io.IOException;

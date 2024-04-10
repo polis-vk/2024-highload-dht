@@ -11,9 +11,9 @@ import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.dao.TimestampEntry;
+import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.TimestampEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

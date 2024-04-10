@@ -18,6 +18,7 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.volkovnikita.dao.EntryWithTimestamp;
 import ru.vk.itmo.test.volkovnikita.dao.ReferenceDao;
 import ru.vk.itmo.test.volkovnikita.dao.TimestampEntry;
+import ru.vk.itmo.test.volkovnikita.util.NotEnoughReplicasException;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -27,12 +28,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.NOT_ENOUGH_REPLICAS;
@@ -170,6 +173,7 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void process(Request request, HttpSession session, String id, String method, int from, int ack)
             throws IOException {
         if (isRedirected(request)) {
@@ -178,51 +182,86 @@ public class HttpServerImpl extends HttpServer {
         }
 
         List<String> sortedNodes = getSortNods(id, from);
-        List<Response> responses = collectResponses(request, sortedNodes, method, id, ack);
 
-        if (responses.size() < ack) {
-            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS.toString(), Response.EMPTY));
-            return;
-        }
+        CompletableFuture<List<Response>> responses = collectResponses(request, sortedNodes, method, id, ack);
 
-        sendFinalResponse(request, session, responses);
+        responses.whenComplete(
+                (responseList, ex) -> {
+                    if (ex != null || responseList == null || responseList.size() < ack) {
+                        try {
+                            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS.toString(), Response.EMPTY));
+                        } catch (IOException e) {
+                            log.error("error in processing request", e);
+                            sendError(session, e);
+                        }
+                        return;
+                    }
+                    try {
+                        if (request.getMethod() == Request.METHOD_GET) {
+                            session.sendResponse(validGetResponses(responseList.size(), responseList));
+                        } else {
+                            Response firstResponse = responseList.getFirst();
+                            session.sendResponse(
+                                    new Response(getProxyResponse(firstResponse.getStatus()), firstResponse.getBody()));
+                        }
+                    } catch (IOException e) {
+                        sendError(session, e);
+                    }
+                }
+        );
     }
 
     private boolean isRedirected(Request request) {
         return request.getHeader(REDIRECTED_HEADER) != null;
     }
 
-    private List<Response> collectResponses(
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private CompletableFuture<List<Response>> collectResponses(
             Request request,
             List<String> nodes,
             String method,
             String id,
             int requiredAcks
     ) {
-        List<Response> responses = new ArrayList<>(requiredAcks);
+        CompletableFuture<List<Response>> futureResponses = new CompletableFuture<>();
         request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
 
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        AtomicInteger successCounter = new AtomicInteger(requiredAcks);
         for (String node : nodes) {
+            CompletableFuture<Response> futureResponse;
             if (responses.size() == requiredAcks) break;
             try {
-                responses.add(node.equals(selfUrl)
-                        ? handleLocalRequest(request, id)
-                        : redirectRequest(method, id, node, request));
+                if (node.equals(selfUrl)) {
+                    futureResponse = getInternalResponse(request, id);
+                } else {
+                    futureResponse = redirectRequest(method, id, node, request);
+                }
+                futureResponse.whenComplete(
+                        (response, _) -> {
+                            if (response == null) {
+                                futureResponses.completeExceptionally(
+                                        new NotEnoughReplicasException("Not Enough Replicas"));
+                                return;
+                            }
+                            responses.add(response);
+                            if (successCounter.decrementAndGet() == 0) {
+                                futureResponses.complete(responses);
+                            }
+                        }
+                );
             } catch (InterruptedException | IOException e) {
                 log.error("Error sending request", e);
                 Thread.currentThread().interrupt();
             }
         }
-        return responses;
+        return futureResponses;
     }
 
-    private void sendFinalResponse(Request request, HttpSession session, List<Response> responses) throws IOException {
-        if (request.getMethod() == Request.METHOD_GET) {
-            session.sendResponse(validGetResponses(responses.size(), responses));
-        } else {
-            Response firstResponse = responses.getFirst();
-            session.sendResponse(new Response(getProxyResponse(firstResponse.getStatus()), firstResponse.getBody()));
-        }
+    private CompletableFuture<Response> getInternalResponse(Request request, String id) {
+        final CompletableFuture<Response> futureResponse = new CompletableFuture<>();
+        executor.execute(() -> futureResponse.complete(handleLocalRequest(request, id)));
+        return futureResponse;
     }
 
     private Response validGetResponses(int ack, List<Response> responses) {
@@ -254,7 +293,8 @@ public class HttpServerImpl extends HttpServer {
         return new Response(Response.OK, latestResponse.getBody());
     }
 
-    private Response redirectRequest(String method, String id, String clusterUrl, Request request)
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private CompletableFuture<Response> redirectRequest(String method, String id, String clusterUrl, Request request)
             throws InterruptedException, IOException {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(String.format("%s%s?id=%s", clusterUrl, PATH_NAME, id)))
@@ -263,13 +303,23 @@ public class HttpServerImpl extends HttpServer {
                 .header(REDIRECTED_HEADER, "true")
                 .header("X-timestamp", Optional.ofNullable(request.getHeader(TIMESTAMP_HEADER)).orElse(""));
 
-        HttpResponse<byte[]> httpResponse =
-                client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
-        Response response = new Response(getProxyResponse(httpResponse.statusCode()), httpResponse.body());
+        final CompletableFuture<Response> futureResponse = new CompletableFuture<>();
 
-        httpResponse.headers().firstValue("X-timestamp")
-                .ifPresent(ts -> response.addHeader(TIMESTAMP_HEADER + ts));
-        return response;
+        client.sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray())
+                .whenComplete((response, ex) -> {
+                    if (ex != null) {
+                        futureResponse.completeExceptionally(new IllegalArgumentException());
+                        return;
+                    }
+                    Response newResponse = new Response(getProxyResponse(response.statusCode()), response.body());
+
+                    response.headers().firstValue("X-timestamp")
+                            .ifPresent(ts -> newResponse.addHeader(TIMESTAMP_HEADER + ts));
+
+                    futureResponse.complete(newResponse);
+                });
+
+        return futureResponse;
     }
 
     private Response handleLocalRequest(Request request, String id) {

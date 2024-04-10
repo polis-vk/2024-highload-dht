@@ -192,7 +192,7 @@ public class StorageServer extends HttpServer {
         for (CompletableFuture<Response> completableFuture : completableFutureResponses) {
             completableFuture.whenCompleteAsync((response, throwable) -> {
                 if (enough.get()) {
-                    return;
+                    return; //todo try to cancel other future tasks when done
                 }
                 handled.incrementAndGet();
 

@@ -116,7 +116,9 @@ public class ReferenceService implements Service {
                 instance.start().get(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-            } catch (ExecutionException | TimeoutException _) {
+                log.error("Error" + e);
+            } catch (ExecutionException | TimeoutException e) {
+                log.error("Error" + e);
             }
         }
     }

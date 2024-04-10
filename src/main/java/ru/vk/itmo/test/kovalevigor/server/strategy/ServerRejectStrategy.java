@@ -27,6 +27,11 @@ public class ServerRejectStrategy implements ServerStrategy {
     }
 
     @Override
+    public void handleIOException(Request request, HttpSession session, IOException exception) {
+        sendResponseWithoutIo(session, Responses.INTERNAL_ERROR);
+    }
+
+    @Override
     public void close() throws IOException {
         // nothing to close
     }

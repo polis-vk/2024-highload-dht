@@ -2,12 +2,10 @@ package ru.vk.itmo.test.osokindm;
 
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +29,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,10 +48,11 @@ public class ServiceImpl implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ServiceConfig config;
     private final HttpClient client;
-    private final AtomicInteger successes;
-    private final AtomicInteger failures;
-    private final AtomicLong responseTime;
-    private final AtomicReference<Response> latestResponse;
+    private final Executor responseExecutor;
+//    private final AtomicInteger successes;
+//    private final AtomicInteger failures;
+//    private final AtomicLong responseTime;
+//    private final AtomicReference<Response> latestResponse;
     private RendezvousRouter router;
     private DaoWrapper daoWrapper;
     private HttpServerImpl server;
@@ -63,10 +63,11 @@ public class ServiceImpl implements Service {
                 .connectTimeout(Duration.of(CONNECTION_TIMEOUT_MS, ChronoUnit.MILLIS))
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .build();
-        successes = new AtomicInteger();
-        failures = new AtomicInteger();
-        responseTime = new AtomicLong();
-        latestResponse = new AtomicReference<>();
+        responseExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+//        successes = new AtomicInteger();
+//        failures = new AtomicInteger();
+//        responseTime = new AtomicLong();
+//        latestResponse = new AtomicReference<>();
     }
 
     @Override
@@ -105,12 +106,11 @@ public class ServiceImpl implements Service {
             session.sendResponse(new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8)));
             return;
         }
-        successes.set(0);
-        failures.set(0);
-        responseTime.set(0);
-        latestResponse.set(null);
+        AtomicInteger successes = new AtomicInteger();
+        AtomicInteger failures = new AtomicInteger();
+        AtomicLong responseTime = new AtomicLong();
+        AtomicReference<Response> latestResponse = new AtomicReference<>();
 
-        LOGGER.info("got request in entity:  " + request.toString());
         if (request.getHeader(TIMESTAMP_HEADER) != null) {
             String timestamp = request.getHeader(TIMESTAMP_HEADER + ": ");
             try {
@@ -139,10 +139,10 @@ public class ServiceImpl implements Service {
         }
 
         List<Node> targetNodes = router.getNodes(id, from);
-        sendRequestsToNodes(request, session, targetNodes, id, ack, from);
+        sendRequestsToNodes(request, session, targetNodes, id, ack, from, successes, failures, responseTime, latestResponse);
     }
 
-    private void sendRequestsToNodes(Request request, HttpSession session, List<Node> nodes, String id, int ack, int from) {
+    private void sendRequestsToNodes(Request request, HttpSession session, List<Node> nodes, String id, int ack, int from, AtomicInteger successes, AtomicInteger failures, AtomicLong responseTime, AtomicReference<Response> latestResponse) {
         for (Node node : nodes) {
             if (!node.isAlive()) {
                 LOGGER.info("node is unreachable: " + node.address);
@@ -158,9 +158,9 @@ public class ServiceImpl implements Service {
                     futureResponse = forwardRequestToNode(request, node, timestamp);
                 }
                 futureResponse
-                        .whenCompleteAsync((resp, ex) -> {
+                        .whenCompleteAsync((resp, _) -> {
                             if (resp != null) {
-                                updateLatestResponse(resp, request.getMethod());
+                                updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
                                 if (responseIsGood(resp)) {
                                     if (successes.incrementAndGet() >= ack) {
                                         try {
@@ -169,27 +169,22 @@ public class ServiceImpl implements Service {
                                             throw new RuntimeException(e);
                                         }
                                     }
-                                } else {
-                                    if (failures.incrementAndGet() > from - ack) {
-                                        String message = "Not enough replicas responded";
-                                        LOGGER.info("Not enough replicas responded");
-                                        try {
-                                            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8)));
-                                        } catch (IOException e) {
-                                            throw new RuntimeException(e);
-                                        }
+                                }
+                            } else {
+                                if (failures.incrementAndGet() > from - ack) {
+                                    String message = "Not enough replicas responded";
+                                    LOGGER.info("Not enough replicas responded");
+                                    try {
+                                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8)));
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
                                     }
                                 }
                             }
-                        })
+                        }, responseExecutor)
                         .exceptionally(ex -> {
                             failures.incrementAndGet();
                             LOGGER.error("NIGGA " + ex.toString());
-                            try {
-                                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                            } catch (IOException e) {
-                                throw new RuntimeException(e);
-                            }
                             return null;
                         });
             } catch (NumberFormatException e) {
@@ -214,27 +209,18 @@ public class ServiceImpl implements Service {
         return System.currentTimeMillis();
     }
 
-    private void updateLatestResponse(Response response, int method) {
-        if (method != Request.METHOD_GET) {
-            latestResponse.set(response);
-            return;
+    private void updateLatestResponse(Response response, int method, AtomicLong responseTime, AtomicReference<Response> latestResponse) {
+        latestResponse.compareAndSet(null, response);
+        if (method == Request.METHOD_GET) {
+            long timestamp = extractTimestampFromResponse(response);
+            long currentResponseTime;
+            do {
+                currentResponseTime = responseTime.get();
+                if (timestamp <= currentResponseTime) {
+                    return;
+                }
+            } while (!responseTime.compareAndSet(currentResponseTime, timestamp));
         }
-//        long timestamp = extractTimestampFromResponse(response);
-//        if (timestamp > responseTime) {
-//            responseTime = timestamp;
-//            latestResponse.set(response);
-//        }
-
-        long timestamp = extractTimestampFromResponse(response);
-        long currentResponseTime;
-
-        do {
-            currentResponseTime = responseTime.get();
-            if (timestamp <= currentResponseTime) {
-                return;
-            }
-        } while (!responseTime.compareAndSet(currentResponseTime, timestamp));
-
         latestResponse.set(response);
     }
 
@@ -256,12 +242,10 @@ public class ServiceImpl implements Service {
             return CompletableFuture.completedFuture(null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-//            return null;
             return CompletableFuture.completedFuture(null);
 
         } catch (ExecutionException | IOException e) {
             LOGGER.error(node + " not responding", e);
-//            return null;
             return CompletableFuture.completedFuture(null);
 
         }
@@ -322,7 +306,6 @@ public class ServiceImpl implements Service {
                 ? Long.parseLong(response.headers().map().get(TIMESTAMP_HEADER_LC).getFirst())
                 : -1;
 
-        LOGGER.info("got smth " + timestamp);
         if (response.body().length == 0 && timestamp == -1) {
             return new Response(String.valueOf(response.statusCode()), Response.EMPTY);
         }

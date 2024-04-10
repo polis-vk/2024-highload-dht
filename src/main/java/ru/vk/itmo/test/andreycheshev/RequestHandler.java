@@ -19,17 +19,13 @@ import java.util.concurrent.CompletableFuture;
 public class RequestHandler implements HttpProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
 
-    private static final Set<Integer> AVAILABLE_METHODS;
+    private static final Set<Integer> AVAILABLE_METHODS = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    ); // Immutable set.
 
-    static {
-        AVAILABLE_METHODS = Set.of(
-                Request.METHOD_GET,
-                Request.METHOD_PUT,
-                Request.METHOD_DELETE
-        ); // Immutable set.
-    }
-
-    private static String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
+    private static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
 
     private static final String REQUEST_PATH = "/v0/entity";
 
@@ -84,40 +80,44 @@ public class RequestHandler implements HttpProvider {
             return HttpUtils.getMethodNotAllowed();
         }
 
-        // A timestamp is an indication that the request
-        // came from the client directly or from the cluster node.
         String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
-        if (timestamp != null) {
+        if (isRequestCameFromNode(timestamp)) {
             // The request came from a remote node.
             try {
                 CompletableFuture<Void> future =
                         asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
 
                 assert future != null;
-                return null;
             } catch (AssertionError e) {
                 LOGGER.info(FUTURE_CREATION_ERROR);
                 return HttpUtils.getInternalError();
             } catch (NumberFormatException e) {
                 return HttpUtils.getBadRequest();
             }
-        }
+        } else {
 
-        // Get and check "ack" and "from" parameters.
-        ParametersParser parser = new ParametersParser(distributor);
-        try {
-            parser.parseAckFrom(
-                    request.getParameter(ACK_PARAMETER),
-                    request.getParameter(FROM_PARAMETER)
-            );
-        } catch (IllegalArgumentException e) {
-            return HttpUtils.getBadRequest();
-        }
+            // Get and check "ack" and "from" parameters.
+            ParametersParser parser = new ParametersParser(distributor);
+            try {
+                parser.parseAckFrom(
+                        request.getParameter(ACK_PARAMETER),
+                        request.getParameter(FROM_PARAMETER)
+                );
+            } catch (IllegalArgumentException e) {
+                return HttpUtils.getBadRequest();
+            }
 
-        // Start processing on remote and local nodes.
-        processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
+            // Start processing on remote and local nodes.
+            processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
+        }
 
         return null;
+    }
+
+    private boolean isRequestCameFromNode(String timestamp) {
+        // A timestamp is an indication that the request
+        // came from the client directly or from the cluster node.
+        return timestamp != null;
     }
 
     private void processDistributed(

@@ -27,9 +27,10 @@ public class ResponseElements implements Comparable<ResponseElements> {
 
     @Override
     public int compareTo(ResponseElements o) {
-        if (this.getTimestamp() > o.getTimestamp()) {
+        long diff = this.getTimestamp() - o.getTimestamp();
+        if (diff > 0) {
             return -1;
-        } else if (this.getTimestamp() < o.getTimestamp()) {
+        } else if (diff < 0) {
             return 1;
         }
         return 0;

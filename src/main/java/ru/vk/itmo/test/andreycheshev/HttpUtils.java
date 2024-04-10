@@ -19,17 +19,13 @@ public class HttpUtils {
 
     public static final int EMPTY_TIMESTAMP = -1;
 
-    private static final Map<Integer, String> AVAILABLE_RESPONSES;
-
-    static {
-        AVAILABLE_RESPONSES = Map.of(
-                200, Response.OK,
-                201, Response.CREATED,
-                202, Response.ACCEPTED,
-                404, Response.NOT_FOUND,
-                410, Response.GONE
-        ); // Immutable map.
-    }
+    private static final Map<Integer, String> AVAILABLE_RESPONSES = Map.of(
+            200, Response.OK,
+            201, Response.CREATED,
+            202, Response.ACCEPTED,
+            404, Response.NOT_FOUND,
+            410, Response.GONE
+    ); // Immutable map.
 
     private HttpUtils() {
 

@@ -2,6 +2,7 @@ package ru.vk.itmo.test.osokindm;
 
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -95,14 +96,13 @@ public class ServiceImpl implements Service {
 
     @Path(DEFAULT_PATH)
     public void entity(Request request, HttpSession session,
-                           @Param(value = "id", required = true) String id,
-                           @Param(value = "ack") Integer ack,
-                           @Param(value = "from") Integer from) throws TimeoutException, IOException {
+                       @Param(value = "id", required = true) String id,
+                       @Param(value = "ack") Integer ack,
+                       @Param(value = "from") Integer from) throws TimeoutException, IOException {
         if (id == null || id.isBlank()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8)));
+            return;
         }
-
-        LOGGER.info("session.toString()");
 
         LOGGER.info("got request in entity:  " + request.toString());
         if (request.getHeader(TIMESTAMP_HEADER) != null) {
@@ -110,10 +110,12 @@ public class ServiceImpl implements Service {
             try {
                 if (timestamp != null && !timestamp.isBlank()) {
                     long parsedTimestamp = Long.parseLong(timestamp);
-                    return handleRequestLocally(request, id, parsedTimestamp);
+                    session.sendResponse(handleRequestLocally(request, id, parsedTimestamp));
+                    return;
                 }
             } catch (NumberFormatException e) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
             }
         }
 
@@ -126,15 +128,14 @@ public class ServiceImpl implements Service {
         }
 
         if (ack > from || ack == 0) {
-            return new Response(Response.BAD_REQUEST, "wrong 'ack' value".getBytes(StandardCharsets.UTF_8));
+            session.sendResponse(new Response(Response.BAD_REQUEST, "wrong 'ack' value".getBytes(StandardCharsets.UTF_8)));
+            return;
         }
 
         List<Node> targetNodes = router.getNodes(id, from);
-        sendRequestsToNodes(request, targetNodes, id, ack, from);
-        return null;
+        sendRequestsToNodes(request, session, targetNodes, id, ack, from);
     }
-
-    private void sendRequestsToNodes(Request request, List<Node> nodes, String id, int ack, int from) {
+    private void sendRequestsToNodes(Request request, HttpSession session, List<Node> nodes, String id, int ack, int from) {
         for (Node node : nodes) {
             if (!node.isAlive()) {
                 LOGGER.info("node is unreachable: " + node.address);
@@ -149,37 +150,56 @@ public class ServiceImpl implements Service {
                 } else {
                     futureResponse = forwardRequestToNode(request, node, timestamp);
                 }
-                futureResponse.thenApply(response1 -> {
-                    if (response1 != null) {
-                        if (request.getMethod() == Request.METHOD_GET) {
-                            updateLatestResponse(response1);
-                        }
-                        if (responseIsGood(response1)) {
-                            if (successes.incrementAndGet() > ack) {
-                                return latestResponse.get();
+                futureResponse
+                        .whenCompleteAsync((resp, ex) -> {
+                            if (resp != null) {
+                                updateLatestResponse(resp);
+//                                if (request.getMethod() == Request.METHOD_GET) {
+//                                    LOGGER.info("latest response updated");
+//                                }
+                                if (responseIsGood(resp)) {
+                                    if (successes.incrementAndGet() >= ack) {
+                                        // если get, то должны взять самый последний ентри
+                                        // если пут или делит, то сразу же можно вернуть значение
+                                        // логика как в старом решении - можно изменить метод updateLatestResponse, чтобы он проверял как назначать значение в зависимости от типа задачи - гет пут
+                                        try {
+                                            LOGGER.info("NEED latest response " + latestResponse.get());
+                                            session.sendResponse(latestResponse.get());
+                                        } catch (IOException e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                    }
+                                } else {
+                                    if (failures.incrementAndGet() > from - ack) {
+                                        String message = "Not enough replicas responded";
+                                        try {
+                                            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8)));
+                                        } catch (IOException e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                    }
+                                }
                             }
-                        } else {
-                            if (failures.incrementAndGet() > from - ack) {
-                                String message = "Not enough replicas responded";
-                                return new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8));
+                        })
+                        .exceptionally(ex -> {
+                            failures.incrementAndGet();
+                            LOGGER.error("NIGGA" + ex.toString());
+                            try {
+                                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
                             }
-                        }
-                    }
-                    return null;
-                }).exceptionally(ex -> {
-                    failures.incrementAndGet();
-                    LOGGER.error(ex.toString());
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                });
+                            return null;
+                        });
             } catch (NumberFormatException e) {
                 LOGGER.error(e.toString());
             }
         }
     }
 
-    private boolean responseIsGood(Response response1) {
-        return response1.getStatus() <= HttpURLConnection.HTTP_PARTIAL
-                || response1.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
+    private boolean responseIsGood(Response response) {
+        return response.getStatus() <= HttpURLConnection.HTTP_PARTIAL
+                || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
     private long getTimestamp(Request request) throws NumberFormatException {
@@ -190,29 +210,15 @@ public class ServiceImpl implements Service {
         }
         return System.currentTimeMillis();
     }
-//
-//    private Response selectLatestResponse(List<Response> responses) {
-//        Response latestResponse = responses.getFirst();
-//        long latestTimestamp = Long.MIN_VALUE;
-//
-//        for (Response response : responses) {
-//            long timestamp = extractTimestampFromResponse(response);
-//
-//            if (timestamp > latestTimestamp) {
-//                latestTimestamp = timestamp;
-//                latestResponse = response;
-//            }
-//        }
-//
-//        return latestResponse;
-//    }
 
     private void updateLatestResponse(Response response) {
         long timestamp = extractTimestampFromResponse(response);
+        LOGGER.info("latest response timestamp " + timestamp);
 
         if (timestamp > responseTime) {
             responseTime = timestamp;
             latestResponse.set(response);
+            LOGGER.info("latest response is set");
         }
     }
 
@@ -284,6 +290,7 @@ public class ServiceImpl implements Service {
                 .method(request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
+         LOGGER.info("checking request " + proxyRequest.headers().toString());
 
         return client
                 .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())

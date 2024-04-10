@@ -51,9 +51,7 @@ final class SSTables {
         return baseDir.resolve(sequence + INDEX_SUFFIX + TEMP_SUFFIX);
     }
 
-    static Path tempDataName(
-            final Path baseDir,
-            final int sequence) {
+    static Path tempDataName(final Path baseDir, final int sequence) {
         return baseDir.resolve(sequence + DATA_SUFFIX + TEMP_SUFFIX);
     }
 

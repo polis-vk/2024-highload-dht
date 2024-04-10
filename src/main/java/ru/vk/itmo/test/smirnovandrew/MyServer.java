@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.smirnovandrew;
 
 import one.nio.http.Header;
-import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
@@ -15,29 +14,49 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 public class MyServer extends HttpServer {
 
     private static final String ROOT = "/v0/entity";
     private static final String X_SENDER_NODE = "X-SenderNode";
+    private static final String X_TIMESTAMP = "X-TimeStamp";
+    public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
+    public static final Map<Integer, String> HTTP_CODE = Map.of(
+            HttpURLConnection.HTTP_OK, Response.OK,
+            HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
+            HttpURLConnection.HTTP_CREATED, Response.CREATED,
+            HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND,
+            HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
+            HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR
+    );
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final long DURATION = 1000L;
 
     private final MyServerDao dao;
     private final MyExecutor executor;
     private final Logger logger;
-    private final Map<String, HttpClient> httpClients;
+    private final HttpClient httpClient;
     private final RendezvousClusterManager rendezvousClustersManager;
     private final ServiceConfig config;
 
@@ -63,13 +82,14 @@ public class MyServer extends HttpServer {
         this.dao = new MyServerDao(dao);
         this.executor = new MyExecutor(corePoolSize, availableProcessors);
         this.logger = Logger.getLogger(MyServer.class.getName());
-        this.httpClients = config.clusterUrls().stream()
-                .filter(url -> !Objects.equals(url, config.selfUrl()))
-                .collect(Collectors.toMap(
-                        s -> s,
-                        MyServerUtil::createClient,
-                        (c, c1) -> c)
-                );
+        this.httpClient = HttpClient.newHttpClient();
+//        this.httpClients = config.clusterUrls().stream()
+//                .filter(url -> !Objects.equals(url, config.selfUrl()))
+//                .collect(Collectors.toMap(
+//                        s -> s,
+//                        MyServerUtil::createClient,
+//                        (c, c1) -> c)
+//                );
     }
 
     @Override
@@ -101,27 +121,52 @@ public class MyServer extends HttpServer {
         return from / 2 + 1;
     }
 
-    private Response sendToAnotherNode(
+    private HttpRequest toHttpRequest(Request request, String nodeUrl, String params) {
+        return HttpRequest.newBuilder(URI.create(nodeUrl + ROOT + "?id=" + params))
+                .method(request.getMethodName(), request.getBody() == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .setHeader(X_SENDER_NODE, config.selfUrl())
+                .build();
+    }
+
+    private Response processingResponse(HttpResponse<byte[]> response) {
+        String statusCode = HTTP_CODE.getOrDefault(response.statusCode(), null);
+        if (statusCode == null) {
+            return new Response(Response.INTERNAL_ERROR, response.body());
+        } else {
+            Response newResponse = new Response(statusCode, response.body());
+            long timestamp = response.headers()
+                    .firstValueAsLong(X_TIMESTAMP).orElse(0);
+            newResponse.addHeader(X_TIMESTAMP + ": " + timestamp);
+            return newResponse;
+        }
+    }
+
+    private CompletableFuture<Response> sendToAnotherNode(
             Request request,
             String clusterUrl,
             Function<MyServerDao, Response> operation
     ) {
         if (Objects.equals(clusterUrl, config.selfUrl())) {
-            return operation.apply(dao);
+            return CompletableFuture.completedFuture(operation.apply(dao));
         }
 
-        var httpClient = httpClients.get(clusterUrl);
+        var httpRequest = toHttpRequest(request, clusterUrl, request.getParameter("id"));
 
-        try {
-            return httpClient.invoke(request);
-        } catch (InterruptedException e) {
-            logger.info(e.getMessage());
-            Thread.currentThread().interrupt();
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (HttpException | IOException | PoolException e1) {
-            logger.info(e1.getMessage());
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApplyAsync(this::processingResponse);
+
+//        try {
+//
+//        } catch (InterruptedException e) {
+//            logger.info(e.getMessage());
+//            Thread.currentThread().interrupt();
+//            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+//        } catch (HttpException | IOException | PoolException e1) {
+//            logger.info(e1.getMessage());
+//            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+//        }
     }
 
     private Response handleLocalRequest(
@@ -131,15 +176,17 @@ public class MyServer extends HttpServer {
             Integer ackParam,
             String senderNode,
             Function<MyServerDao, Response> operation
-    ) {
+    ) throws ExecutionException, InterruptedException, TimeoutException {
         Integer from = fromParam;
         if (Objects.isNull(from)) {
             from = config.clusterUrls().size();
         }
 
-        Integer ack = ackParam;
-        if (Objects.isNull(ack)) {
+        Integer ack;
+        if (Objects.isNull(ackParam)) {
             ack = quorum(from);
+        } else {
+            ack = ackParam;
         }
 
         String paramError = getParametersError(id, from, ack);
@@ -160,24 +207,43 @@ public class MyServer extends HttpServer {
         var sortedNodes = RendezvousClusterManager.getSortedNodes(id, from, config);
 
         if (sortedNodes.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
-            return sendToAnotherNode(request, clusterUrl, operation);
+            return sendToAnotherNode(request, clusterUrl, operation).get(DURATION, TimeUnit.SECONDS);
         }
 
-        request.addHeader(String.join(": ",X_SENDER_NODE, config.selfUrl()));
-        var responses = sortedNodes.stream()
+        List<Response> successResponses = new ArrayList<>();
+        var successResponseCount = new AtomicInteger();
+        var errorResponseCount = new AtomicInteger();
+        var result = new CompletableFuture<Response>();
+
+        var completableResults = sortedNodes.stream()
                 .map(nodeNumber -> sendToAnotherNode(request, config.clusterUrls().get(nodeNumber), operation))
-                .filter(
-                        r -> r.getStatus() < 300 || (r.getStatus() == 404 && request.getMethod() == Request.METHOD_GET)
-                )
                 .toList();
 
-        if (responses.size() < ack) {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        for (var completableFuture : completableResults) {
+            var responseFuture = completableFuture.whenComplete((r, throwable) -> {
+                if (throwable == null || (r.getStatus() < 300 || (r.getStatus() == 404 && request.getMethod() == Request.METHOD_GET))) {
+                    successResponseCount.incrementAndGet();
+                    successResponses.add(r);
+                } else {
+                    errorResponseCount.incrementAndGet();
+                }
+
+                if (successResponseCount.get() == ack) {
+                    result.complete(successResponses.stream()
+                            .max(Comparator.comparingLong(MyServerUtil::headerTimestampToLong))
+                            .get());
+                }
+            });
+            if (responseFuture == null) {
+                logger.info("Error completable future is null!");
+            }
         }
 
-        return responses.stream()
-                .max(Comparator.comparingLong(MyServerUtil::headerTimestampToLong))
-                .get();
+        if (result.isDone()) {
+            return result.get();
+        }
+
+        return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
     }
 
     private String getParametersError(String id, Integer from, Integer ack) {
@@ -213,7 +279,7 @@ public class MyServer extends HttpServer {
             @Param(value = "ack") Integer ack,
             @Header(value = X_SENDER_NODE) String senderNode,
             Request request
-    ) {
+    ) throws ExecutionException, InterruptedException, TimeoutException {
         return handleLocalRequest(
                 request,
                 id,
@@ -232,7 +298,7 @@ public class MyServer extends HttpServer {
             @Param(value = "ack") Integer ack,
             @Header(value = X_SENDER_NODE) String senderNode,
             Request request
-    ) {
+    ) throws ExecutionException, InterruptedException, TimeoutException {
         return handleLocalRequest(
                 request,
                 id,
@@ -251,7 +317,7 @@ public class MyServer extends HttpServer {
             @Param(value = "ack") Integer ack,
             @Header(value = X_SENDER_NODE) String senderNode,
             Request request
-    ) {
+    ) throws ExecutionException, InterruptedException, TimeoutException {
         request.addHeader("Content-Length: " + request.getBody().length);
         request.setBody(request.getBody());
 
@@ -279,6 +345,6 @@ public class MyServer extends HttpServer {
     public synchronized void stop() {
         this.executor.shutdown();
         super.stop();
-        httpClients.values().forEach(HttpClient::close);
+        httpClient.close();
     }
 }

@@ -43,10 +43,12 @@ public class ReferenceServer extends HttpServer {
     private static final String ACK_PARAMETER_KEY = "ack=";
     private static final String FROM_PARAMETER_KEY = "from=";
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
-    private final static int THREADS = Runtime.getRuntime().availableProcessors();
+    private final int THREADS = Runtime.getRuntime().availableProcessors();
 
-    private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("local-work"));
-    private final ExecutorService executorRemote = Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("remote-work"));
+    private final ExecutorService executorLocal =
+            Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("local-work"));
+    private final ExecutorService executorRemote =
+            Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("remote-work"));
     private final ReferenceDao dao;
     private final ServiceConfig config;
     private final HttpClient httpClient;
@@ -56,7 +58,6 @@ public class ReferenceServer extends HttpServer {
         super(createServerConfigWithPort(config.selfPort()));
         this.dao = dao;
         this.config = config;
-
 
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(THREADS))
@@ -70,7 +71,6 @@ public class ReferenceServer extends HttpServer {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = port;
         acceptorConfig.reusePort = true;
-//        acceptorConfig.threads = Runtime.getRuntime().availableProcessors() / 2;
         serverConfig.selectors = Runtime.getRuntime().availableProcessors() / 2;
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
@@ -91,7 +91,6 @@ public class ReferenceServer extends HttpServer {
             session.sendError(Response.METHOD_NOT_ALLOWED, null);
             return;
         }
-
 
         String id = request.getParameter(ID_PARAMETER_KEY);
         if (id == null || id.isBlank()) {
@@ -114,28 +113,30 @@ public class ReferenceServer extends HttpServer {
             return;
         }
 
+        int ack;
+        int from;
         try {
-            int ack = getInt(request, ACK_PARAMETER_KEY, config.clusterUrls().size() / 2 + 1);
-            int from = getInt(request, FROM_PARAMETER_KEY, config.clusterUrls().size());
-
-            if (from <= 0 || from > config.clusterUrls().size() || ack > from || ack <= 0) {
-                session.sendError(Response.BAD_REQUEST, "Invalid parameter values for ack/from");
-                return;
-            }
-
-
-            int[] indexes = getIndexes(id, from);
-            MergeHandleResult mergeHandleResult = new MergeHandleResult(session, from, ack);
-            for (int index : indexes) {
-                String executorNode = config.clusterUrls().get(index);
-                if (executorNode.equals(config.selfUrl())) {
-                    handleAsync(executorLocal, mergeHandleResult, () -> local(request, id));
-                } else {
-                    handleAsync(executorRemote, mergeHandleResult, () -> remote(request, executorNode));
-                }
-            }
+            ack = getInt(request, ACK_PARAMETER_KEY, config.clusterUrls().size() / 2 + 1);
+            from = getInt(request, FROM_PARAMETER_KEY, config.clusterUrls().size());
         } catch (IllegalArgumentException e) {
             session.sendError(UNPROCESSABLE_CONTENT_RESPONSE, "Invalid parameter values for ack/from");
+            return;
+        }
+
+        if (from <= 0 || from > config.clusterUrls().size() || ack > from || ack <= 0) {
+            session.sendError(Response.BAD_REQUEST, "Invalid parameter values for ack/from");
+            return;
+        }
+
+        int[] indexes = getIndexes(id, from);
+        MergeHandleResult mergeHandleResult = new MergeHandleResult(session, from, ack);
+        for (int index : indexes) {
+            String executorNode = config.clusterUrls().get(index);
+            if (executorNode.equals(config.selfUrl())) {
+                handleAsync(executorLocal, mergeHandleResult, () -> local(request, id));
+            } else {
+                handleAsync(executorRemote, mergeHandleResult, () -> remote(request, executorNode));
+            }
         }
     }
 
@@ -148,7 +149,9 @@ public class ReferenceServer extends HttpServer {
             try {
                 intParameter = Integer.parseInt(parameterStr);
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("Failed to parse parameter '" + param + "' as an integer: " + parameterStr);
+                throw new IllegalArgumentException(
+                        "Failed to parse parameter '" + param + "' as an integer: " + parameterStr
+                );
             }
         }
         return intParameter;
@@ -178,13 +181,16 @@ public class ReferenceServer extends HttpServer {
                     handleResult = runnable.run();
                 } catch (Exception e) {
                     log.error("Exception during handleRequest", e);
-                    handleResult = wrapCompleted(new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
+                    handleResult =
+                            wrapCompleted(new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
                 }
 
                 mergeHandleResult.add(handleResult);
             });
         } catch (Exception e) {
-            mergeHandleResult.add(wrapCompleted(new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY)));
+            mergeHandleResult.add(
+                    wrapCompleted(new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY))
+            );
         }
     }
 
@@ -198,7 +204,8 @@ public class ReferenceServer extends HttpServer {
         return Response.ok("OK");
     }
 
-    private CompletableFuture<HandleResult> invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
+    private CompletableFuture<HandleResult> invokeRemote(String executorNode, Request request)
+            throws IOException, InterruptedException {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
                 .method(
                         request.getMethodName(),
@@ -242,10 +249,18 @@ public class ReferenceServer extends HttpServer {
                     return wrapCompleted(new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY));
                 }
                 if (entry.value() == null) {
-                    return wrapCompleted(new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY, entry.timestamp()));
+                    return wrapCompleted(
+                            new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY, entry.timestamp())
+                    );
                 }
 
-                return wrapCompleted(new HandleResult(HttpURLConnection.HTTP_OK, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp()));
+                return wrapCompleted(
+                        new HandleResult(
+                                HttpURLConnection.HTTP_OK,
+                                entry.value().toArray(ValueLayout.JAVA_BYTE),
+                                entry.timestamp()
+                        )
+                );
             }
             case Request.METHOD_PUT -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
@@ -300,7 +315,7 @@ public class ReferenceServer extends HttpServer {
     }
 
     private interface ExecutableTask {
-        CompletableFuture<HandleResult> run() throws Exception;
+        CompletableFuture<HandleResult> run() throws IOException;
     }
 
     @Override

@@ -56,13 +56,13 @@ public class MergeHandleResult {
     private void sendResult() {
         HandleResult mergedResult = new HandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
 
-        int count = 0;
+        int positiveCount = 0;
         for (HandleResult handleResult : results) {
             if (handleResult.status() == HttpURLConnection.HTTP_OK
                     || handleResult.status() == HttpURLConnection.HTTP_CREATED
                     || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
                     || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND) {
-                count++;
+                positiveCount++;
                 if (mergedResult.timestamp() <= handleResult.timestamp()) {
                     mergedResult = handleResult;
                 }
@@ -70,7 +70,7 @@ public class MergeHandleResult {
         }
 
         try {
-            if (count < ack) {
+            if (positiveCount < ack) {
                 session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
             } else {
                 session.sendResponse(new Response(String.valueOf(mergedResult.status()), mergedResult.data()));

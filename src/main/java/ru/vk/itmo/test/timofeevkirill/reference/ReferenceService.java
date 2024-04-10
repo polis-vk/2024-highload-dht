@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.timofeevkirill.reference;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -10,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.rmi.UnexpectedException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -21,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class ReferenceService implements Service {
-
+    private static final Logger log = LoggerFactory.getLogger(ReferenceService.class);
     private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
 
     private static final String LOCALHOST_PREFIX = "http://localhost:";
@@ -31,6 +34,7 @@ public class ReferenceService implements Service {
     private ReferenceDao dao;
     private ReferenceServer server;
     private boolean stopped;
+
     public ReferenceService(ServiceConfig config) {
         this.config = config;
     }
@@ -65,7 +69,7 @@ public class ReferenceService implements Service {
             if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
                 if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                    System.err.println("Pool did not terminate");
+                    log.error("Pool did not terminate");
                 }
             }
         } catch (InterruptedException ex) {
@@ -112,7 +116,8 @@ public class ReferenceService implements Service {
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt();
+                throw new UnexpectedException(e.getMessage());
             }
         }
     }

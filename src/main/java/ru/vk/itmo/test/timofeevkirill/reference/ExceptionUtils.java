@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
-public class ExceptionUtils {
+public final class ExceptionUtils {
     private static final Logger log = LoggerFactory.getLogger(ExceptionUtils.class);
 
     public static void handleErrorFromHandleRequest(Exception e, HttpSession session) {

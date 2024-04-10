@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -49,10 +50,6 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private final HttpClient client;
     private final Executor responseExecutor;
-//    private final AtomicInteger successes;
-//    private final AtomicInteger failures;
-//    private final AtomicLong responseTime;
-//    private final AtomicReference<Response> latestResponse;
     private RendezvousRouter router;
     private DaoWrapper daoWrapper;
     private HttpServerImpl server;
@@ -64,10 +61,6 @@ public class ServiceImpl implements Service {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .build();
         responseExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-//        successes = new AtomicInteger();
-//        failures = new AtomicInteger();
-//        responseTime = new AtomicLong();
-//        latestResponse = new AtomicReference<>();
     }
 
     @Override
@@ -143,6 +136,7 @@ public class ServiceImpl implements Service {
     }
 
     private void sendRequestsToNodes(Request request, HttpSession session, List<Node> nodes, String id, int ack, int from, AtomicInteger successes, AtomicInteger failures, AtomicLong responseTime, AtomicReference<Response> latestResponse) {
+        AtomicBoolean responseSent = new AtomicBoolean();
         for (Node node : nodes) {
             if (!node.isAlive()) {
                 LOGGER.info("node is unreachable: " + node.address);
@@ -162,7 +156,7 @@ public class ServiceImpl implements Service {
                             if (resp != null) {
                                 updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
                                 if (responseIsGood(resp)) {
-                                    if (successes.incrementAndGet() >= ack) {
+                                    if (successes.incrementAndGet() >= ack && !responseSent.getAndSet(true)) {
                                         try {
                                             session.sendResponse(latestResponse.get());
                                         } catch (IOException e) {

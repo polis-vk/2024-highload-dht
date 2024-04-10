@@ -11,9 +11,12 @@ import ru.vk.itmo.test.kovalevigor.server.util.Responses;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.GOOD_STATUSES;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.compareTimestamps;
+import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.mergeResponses;
 
 public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator {
 
@@ -56,6 +59,40 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
         return checkReplicaResponse(responseCount, ack, replicasResponse);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
+    @Override
+    public CompletableFuture<Response> handleRequestAsync(
+            Request request,
+            HttpSession session,
+            Executor executor
+    ) {
+        if (Headers.hasHeader(request, Headers.REPLICATION)) {
+            return super.handleRequestAsync(request, session, executor);
+        }
+        int ack = Parameters.getParameter(request, Parameters.ACK, Integer::parseInt, serviceInfo.getQuorum());
+        int from = Parameters.getParameter(request, Parameters.FROM, Integer::parseInt, serviceInfo.getClusterSize());
+        if (ack > from || ack == 0) {
+            return CompletableFuture.completedFuture(Responses.BAD_REQUEST.toResponse());
+        }
+
+        Collection<ServerStrategy> strategies = serviceInfo.getPartitionStrategy(
+                this,
+                Parameters.getParameter(request, Parameters.ID),
+                from
+        );
+
+        Headers.addHeader(request, Headers.REPLICATION, "");
+        AckEitherCompletableFuture result = new AckEitherCompletableFuture(ack, from);
+        for (ServerStrategy strategy : strategies) {
+            CompletableFuture<Response> future =
+                    strategy == this
+                            ? super.handleRequestAsync(request, session, executor)
+                            : strategy.handleRequestAsync(request, session, executor);
+            future.whenComplete(result::markCompletedFuture);
+        }
+        return result.orTimeout(1, TimeUnit.SECONDS);
+    }
+
     private static Response checkReplicaResponse(int responseCount, int ack, Response replicasResponse) {
         Response response;
         if (responseCount >= ack) {
@@ -68,23 +105,5 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
             response = Responses.NOT_ENOUGH_REPLICAS.toResponse();
         }
         return response;
-    }
-
-    private Response mergeResponses(Response lhs, Response rhs) {
-        if (lhs == null) {
-            return rhs;
-        } else if (rhs == null) {
-            return lhs;
-        }
-
-        int compare = compareTimestamps(getTimestamp(lhs), getTimestamp(rhs));
-        if (compare == 0) {
-            return rhs;
-        }
-        return compare > 0 ? lhs : rhs;
-    }
-
-    private static String getTimestamp(Response response) {
-        return Headers.getHeader(response, Headers.TIMESTAMP);
     }
 }

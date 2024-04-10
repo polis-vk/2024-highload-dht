@@ -15,7 +15,11 @@ public interface ServerStrategy extends AutoCloseable {
         return handleRequestAsync(request, session, null);
     }
 
-    default CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session, Executor executor) {
+    default CompletableFuture<Response> handleRequestAsync(
+            Request request,
+            HttpSession session,
+            Executor executor
+    ) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return handleRequest(request, session);
@@ -27,6 +31,16 @@ public interface ServerStrategy extends AutoCloseable {
     }
 
     void handleDefault(Request request, HttpSession session) throws IOException;
+    default CompletableFuture<Response> handleDefaultAsync(Request request, HttpSession session, Executor executor) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                handleDefault(request, session);
+            } catch (IOException e) {
+                handleIOException(request, session, e);
+            }
+            return null;
+        }, executor);
+    }
 
     void rejectRequest(Request request, HttpSession session);
     void handleIOException(Request request, HttpSession session, IOException exception);

@@ -56,8 +56,8 @@ public class ServiceImpl implements Service {
         server = new ServerBasedOnStrategy(
                 config,
                 new ServerOneExecutorStrategyDecorator(
-                        new ServerRequestValidationStrategyDecorator(
-                            new ServerSendResponseStrategyDecorator(
+                        new ServerSendResponseStrategyDecorator(
+                            new ServerRequestValidationStrategyDecorator(
                                     new ServerReplicationStrategyDecorator(
                                         new ServerDaoStrategy(config),
                                         fullServiceInfo

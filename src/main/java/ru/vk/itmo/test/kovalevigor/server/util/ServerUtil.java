@@ -1,6 +1,7 @@
 package ru.vk.itmo.test.kovalevigor.server.util;
 
 import one.nio.http.HttpSession;
+import one.nio.http.Response;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -21,9 +22,22 @@ public final class ServerUtil {
     private ServerUtil() {
     }
 
-    public static void sendResponseWithoutIo(HttpSession session, Responses response) {
+    public static void sendResponseWithoutIo(HttpSession session, Response response) {
         try {
-            session.sendResponse(response.toResponse());
+            session.sendResponse(response);
+        } catch (IOException ioException) {
+            log.log(Level.SEVERE, "IO in socket", ioException);
+            closeSession(session, ioException);
+        }
+    }
+
+    public static void sendResponseWithoutIo(HttpSession session, Responses response) {
+        sendResponseWithoutIo(session, response.toResponse());
+    }
+
+    public static void sendErrorWithoutIo(HttpSession session, String code, String message) {
+        try {
+            session.sendError(code, message);
         } catch (IOException ioException) {
             log.log(Level.SEVERE, "IO in socket", ioException);
             closeSession(session, ioException);
@@ -81,5 +95,23 @@ public final class ServerUtil {
             }
         }
         return 0;
+    }
+
+    public static Response mergeResponses(Response lhs, Response rhs) {
+        if (lhs == null) {
+            return rhs;
+        } else if (rhs == null) {
+            return lhs;
+        }
+
+        int compare = compareTimestamps(getTimestamp(lhs), getTimestamp(rhs));
+        if (compare == 0) {
+            return rhs;
+        }
+        return compare > 0 ? lhs : rhs;
+    }
+
+    public static String getTimestamp(Response response) {
+        return Headers.getHeader(response, Headers.TIMESTAMP);
     }
 }

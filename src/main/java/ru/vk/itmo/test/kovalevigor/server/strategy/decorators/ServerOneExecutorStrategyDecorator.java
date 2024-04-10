@@ -9,6 +9,7 @@ import ru.vk.itmo.test.kovalevigor.server.util.ServerTask;
 import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -44,10 +45,18 @@ public class ServerOneExecutorStrategyDecorator extends ServerStrategyDecorator 
         rejectRequest(serverTask.request, serverTask.session);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public Response handleRequest(Request request, HttpSession session) {
-        executorService.execute(new ServerTask(request, session, super::handleRequest));
+        handleRequestAsync(request, session);
+//        executorService.execute(new ServerTask(request, session, super::handleRequest));
+//        return handleRequestAsync(request, session).join()
         return null;
+    }
+
+    @Override
+    public CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session) {
+        return super.handleRequestAsync(request, session, executorService);
     }
 
     @Override

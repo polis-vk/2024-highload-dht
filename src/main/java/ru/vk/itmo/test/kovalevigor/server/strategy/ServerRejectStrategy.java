@@ -12,7 +12,7 @@ import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.sendResponseWit
 public class ServerRejectStrategy implements ServerStrategy {
     @Override
     public Response handleRequest(Request request, HttpSession session) throws IOException {
-        handleDefault(request, session);
+        rejectRequest(request, session);
         return null;
     }
 
@@ -28,7 +28,7 @@ public class ServerRejectStrategy implements ServerStrategy {
 
     @Override
     public void handleIOException(Request request, HttpSession session, IOException exception) {
-        sendResponseWithoutIo(session, Responses.INTERNAL_ERROR);
+        // do nothing
     }
 
     @Override

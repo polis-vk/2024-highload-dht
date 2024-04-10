@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 public class ServerRequestValidationStrategyDecorator extends ServerStrategyDecorator {
 
@@ -42,6 +44,25 @@ public class ServerRequestValidationStrategyDecorator extends ServerStrategyDeco
         }
         handleDefault(request, session);
         return null;
+    }
+
+    @Override
+    public CompletableFuture<Response> handleRequestAsync(
+            Request request,
+            HttpSession session,
+            Executor executor
+    ) {
+        Paths path = Paths.getPath(request.getPath());
+        if (path != null) {
+            if (checkMethods(request, path)) {
+                if (checkParameters(request, path)) {
+                    return super.handleRequestAsync(request, session, executor);
+                }
+            } else {
+                return CompletableFuture.completedFuture(Responses.NOT_ALLOWED.toResponse());
+            }
+        }
+        return handleDefaultAsync(request, session, executor);
     }
 
     private static boolean checkMethods(Request request, Paths path) {

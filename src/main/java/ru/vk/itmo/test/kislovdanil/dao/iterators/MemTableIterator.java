@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.kislovdanil.dao.iterators;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kislovdanil.dao.Entry;
 import ru.vk.itmo.test.kislovdanil.dao.MemTable;
 
 import java.lang.foreign.MemorySegment;

@@ -1,14 +1,11 @@
 package ru.vk.itmo.test.kachmareugene;
 
-import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
-import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -21,14 +18,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.net.SocketTimeoutException;
+import java.net.http.HttpClient;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -38,27 +35,26 @@ public class HttpServerImpl extends HttpServer {
 
     private static final int CORE_POOL = 4;
     private static final int MAX_POOL = 8;
+    public static final String PATH = "/v0/entity";
+    public static final long KEEP_ALIVE_TIME = 10L;
     private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(256);
     private final ExecutorService executorService =
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
-                        10L, TimeUnit.MILLISECONDS,
+                    KEEP_ALIVE_TIME, TimeUnit.MILLISECONDS,
                                     queue);
     Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> daoImpl;
     private final String selfNodeURL;
     private final ServiceConfig serviceConfig;
     private final PartitionMetaInfo partitionTable;
-    private final Map<String, HttpClient> clientMap = new HashMap<>();
+    private final HttpClient client;
     private boolean closed;
 
-    public HttpServerImpl(ServiceConfig config, PartitionMetaInfo info) throws IOException {
+    public HttpServerImpl(ServiceConfig config, PartitionMetaInfo info, HttpClient client) throws IOException {
         super(convertToHttpConfig(config));
         this.serviceConfig = config;
         this.partitionTable = info;
+        this.client = client;
         this.selfNodeURL = config.selfUrl();
-
-        for (final String url: config.clusterUrls()) {
-            clientMap.put(url, new HttpClient(new ConnectionString(url)));
-        }
     }
 
     private static HttpServerConfig convertToHttpConfig(ServiceConfig conf) throws UncheckedIOException {
@@ -85,11 +81,6 @@ public class HttpServerImpl extends HttpServer {
     }
 
     public Response getEntry(String key) {
-
-        if (key == null || key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Utils.longToBytes(0L));
-        }
-
         EntryWithTimestamp<MemorySegment> result =
                 daoImpl.get(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)));
         if (result == null) {
@@ -112,10 +103,6 @@ public class HttpServerImpl extends HttpServer {
     }
 
     public Response putOrEmplaceEntry(String key, Request request, long timestamp) {
-        if (key == null || key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
         daoImpl.upsert(new BaseTimestampEntry<>(
                 MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
                 MemorySegment.ofArray(request.getBody()),
@@ -124,9 +111,6 @@ public class HttpServerImpl extends HttpServer {
     }
 
     public Response delete(String key, long timestamp) {
-        if (key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         daoImpl.upsert(
                 new BaseTimestampEntry<>(
                         MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
@@ -159,10 +143,13 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private void task(Request request, HttpSession session) throws IOException,
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private void task(Request request,
+                      HttpSession session)
+            throws IOException,
             InterruptedException,
             HttpException {
-        if (request.getHeader("X-Timestamp", null) != null) {
+        if (request.getHeader(Utils.TIMESTAMP_HEADER, null) != null) {
             session.sendResponse(handleToDaoOperations(request,
                     System.currentTimeMillis()));
             return;
@@ -174,27 +161,41 @@ public class HttpServerImpl extends HttpServer {
         coordinator.getCoordinatorParams(request, serviceConfig);
 
         List<String> slaves = partitionTable.getSlaveUrls(request, coordinator.from);
-        List<Response> responses = new ArrayList<>();
+        List<CompletableFuture<Response>> receivedResponses = new CopyOnWriteArrayList<>();
 
         if (urlToSend.equals(selfNodeURL)) {
-            responses.add(handleToDaoOperations(request,
+            CompletableFuture<Response> future = new CompletableFuture<>();
+            future.complete(handleToDaoOperations(request,
                     System.currentTimeMillis()));
+            receivedResponses.add(future);
         } else {
             slaves.addFirst(urlToSend);
         }
 
         for (String slaveUrl : slaves) {
-            Request req = new Request(request);
-            req.addHeader("X-Timestamp: " + System.currentTimeMillis());
-            responseSafeAdd(slaveUrl, responses, req);
+            receivedResponses.add(
+                    responseSafeAdd(request, slaveUrl, System.currentTimeMillis()));
         }
 
-        session.sendResponse(coordinator.resolve(responses, request.getMethod()));
+        // this method is non-blocking
+        CompletableFuture.allOf(receivedResponses.toArray(CompletableFuture[]::new))
+                .thenApply(_ -> {
+                    var c = receivedResponses
+                            .stream()
+                            .map(CompletableFuture::join)
+                            .toList();
+                    try {
+                        session.sendResponse(coordinator.resolve(c, request.getMethod()));
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                    return null;
+                });
     }
 
     private static boolean checkRequest(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
-        if (!path.equals("/v0/entity")) {
+        if (!path.equals(PATH)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return true;
         }
@@ -207,23 +208,24 @@ public class HttpServerImpl extends HttpServer {
         return false;
     }
 
-    private void responseSafeAdd(
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private CompletableFuture<Response> responseSafeAdd(
+            Request request,
             String slaveUrl,
-            List<Response> responses,
-            Request req) throws
-            InterruptedException,
-            IOException,
-            HttpException {
-        try {
-            if (slaveUrl.equals(selfNodeURL)) {
-                responses.add(handleToDaoOperations(req,
-                        System.currentTimeMillis()));
-            } else {
-                responses.add(clientMap.get(slaveUrl).invoke(req, 100));
-            }
-        } catch (PoolException | SocketTimeoutException e) {
-            responses.add(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+            long timestamp) {
+        CompletableFuture<Response> cfResponse = new CompletableFuture<>();
+        if (slaveUrl.equals(selfNodeURL)) {
+            cfResponse.complete(handleToDaoOperations(request,
+                    System.currentTimeMillis()));
+        } else {
+            client.sendAsync(
+                    JavaRequestConverter.convertRequest(slaveUrl, request, timestamp),
+                            HttpResponse.BodyHandlers.ofByteArray())
+                            .completeOnTimeout(null, Utils.TIMEOUT_SECONDS, TimeUnit.MILLISECONDS)
+                            .whenComplete((httpResponse, _) -> cfResponse.complete(
+                                    JavaRequestConverter.convertResponse(httpResponse)));
         }
+        return cfResponse;
     }
 
     private void errorAccept(HttpSession session, Exception e, String message) {
@@ -271,9 +273,6 @@ public class HttpServerImpl extends HttpServer {
         try {
             Utils.closeExecutorService(executorService);
             daoImpl.close();
-            for (final HttpClient client: clientMap.values()) {
-                client.close();
-            }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

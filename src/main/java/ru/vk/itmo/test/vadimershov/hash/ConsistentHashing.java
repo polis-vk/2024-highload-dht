@@ -40,7 +40,7 @@ public class ConsistentHashing {
             } else {
                 HttpClient httpClient = httpClientMap.computeIfAbsent(
                         currentUrl,
-                        _ -> HttpClient.newBuilder()
+                        key -> HttpClient.newBuilder()
                                 .connectTimeout(Duration.ofMillis(100))
                                 .build());
                 for (int i = 0; i < VIRTUAL_NODE_COUNT; i++) {

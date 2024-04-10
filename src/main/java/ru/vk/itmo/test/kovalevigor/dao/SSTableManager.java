@@ -87,7 +87,7 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
             final DaoEntry<MemorySegment> value = entry.getValue();
 
             keysSize += entry.getKey().byteSize();
-            valuesSize += value.valueSize();
+            valuesSize += value == null ? 0 : value.valueSize();
         }
         return new SizeInfo(map.size(), keysSize, valuesSize);
     }
@@ -104,7 +104,11 @@ public abstract class SSTableManager<T extends DaoEntry<MemorySegment>> implemen
                 wArena
         )) {
             for (final T entry: map.values()) {
-                dumper.writeEntry(entry);
+                try {
+                    dumper.writeEntry(entry);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         }
     }

@@ -6,8 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.HttpURLConnection;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MergeHandleResult {
@@ -28,7 +26,6 @@ public class MergeHandleResult {
         this.from = size;
     }
 
-
     public boolean add(int index, HandleResult handleResult) {
         handleResults[index] = handleResult;
         int valid = validateResultStatus(handleResult.status()) ? countValid.getAndIncrement() : countValid.get();
@@ -46,25 +43,24 @@ public class MergeHandleResult {
 
     private boolean validateResultStatus(final int status) {
         return status == HttpURLConnection.HTTP_OK
-                ||status == HttpURLConnection.HTTP_CREATED
+                || status == HttpURLConnection.HTTP_CREATED
                 || status == HttpURLConnection.HTTP_ACCEPTED
                 || status == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
-
     private void sendResult() {
         HandleResult mergedResult = new HandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
-        int count = 0;
+        int cnt = 0;
         for (HandleResult handleResult : handleResults) {
             if (validateResultStatus(handleResult.status())) {
-                count++;
+                cnt++;
                 if (mergedResult.timestamp() <= handleResult.timestamp()) {
                     mergedResult = handleResult;
                 }
             }
         }
         try {
-            if (count < ack) {
+            if (cnt < ack) {
                 session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
             } else {
                 session.sendResponse(new Response(String.valueOf(mergedResult.status()), mergedResult.data()));

@@ -38,7 +38,7 @@ public class ServerImpl extends HttpServer {
     private static final String HEADER_TIMESTAMP = "X-flag-remote-server-to-node";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
-    private final static int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final int THREADS = Runtime.getRuntime().availableProcessors();
 
     private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2,
             new CustomThreadFactory("local-work"));
@@ -53,8 +53,6 @@ public class ServerImpl extends HttpServer {
         super(createServerConfigWithPort(config.selfPort()));
         this.dao = dao;
         this.config = config;
-
-
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(THREADS))
                 .connectTimeout(Duration.ofMillis(500))
@@ -296,7 +294,7 @@ public class ServerImpl extends HttpServer {
     }
 
     private interface ERunnable {
-        CompletableFuture<HandleResult> run() throws Exception;
+        CompletableFuture<HandleResult> run() throws IOException;
     }
 
     @Override

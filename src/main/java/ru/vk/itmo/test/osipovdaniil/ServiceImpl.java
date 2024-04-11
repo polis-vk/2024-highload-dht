@@ -7,6 +7,7 @@ import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.osipovdaniil.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,8 +18,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class ServiceImpl implements Service {
 
@@ -31,6 +32,7 @@ public class ServiceImpl implements Service {
     private ReferenceDao dao;
     private ServerImpl server;
     private boolean stopped;
+
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
@@ -110,7 +112,10 @@ public class ServiceImpl implements Service {
             ServiceImpl instance = new ServiceImpl(serviceConfig);
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } catch (ExecutionException | TimeoutException e) {
                 throw new RuntimeException(e);
             }
         }

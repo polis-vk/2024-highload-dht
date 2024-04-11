@@ -67,7 +67,7 @@ public class Server extends HttpServer {
         this.clusterUrls = config.clusterUrls();
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
-        this.selfHandler = new SelfRequestHandler(dao, utils, broadcastExecutor);
+        this.selfHandler = new SelfRequestHandler(dao, utils);
         this.closeSessions = true;
     }
 
@@ -178,7 +178,8 @@ public class Server extends HttpServer {
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger exceptionCount = new AtomicInteger(0);
         for (CompletableFuture<Response> futureResponse : futureResponses) {
-            futureResponse = futureResponse.whenCompleteAsync((response, exception) -> {
+            CompletableFuture<Response> future = new CompletableFuture<>();
+            futureResponse.whenComplete((response, exception) -> {
 
                 if (exception == null && response.getStatus() < 500) {
                     checkTimestampHeaderExistenceAndSet(response);
@@ -187,18 +188,22 @@ public class Server extends HttpServer {
                 } else {
                     exceptionCount.incrementAndGet();
                 }
-
+                Response response1;
                 if (successCount.get() == ack) {
-                    sendAsyncResponse(chooseResponse(responses), session);
+                    response1 =chooseResponse(responses);
+                    sendAsyncResponse(response1, session);
+                    future.complete(response1);
                 } else if (exceptionCount.get() == from - ack + 1) {
-                    sendAsyncResponse(new Response("504 Not enough replicas", Response.EMPTY), session);
+                    response1 = new Response("504 Not enough replicas", Response.EMPTY);
+                    sendAsyncResponse(response1, session);
+                    future.complete(response1);
                 }
 
-            }, broadcastExecutor).exceptionally(exception -> {
+            }).exceptionally(exception -> {
                 logger.error("Unexpected error", exception);
+                future.completeExceptionally(exception);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             });
-            futureResponse.complete(null);
         }
     }
 
@@ -207,7 +212,6 @@ public class Server extends HttpServer {
             session.sendResponse(resp);
         } catch (IOException e) {
             logger.error("Failed to send error response", e);
-            session.close();
         }
     }
 
@@ -225,10 +229,10 @@ public class Server extends HttpServer {
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
                         request.getBody() == null ? new byte[]{} : request.getBody())
                 ).build();
-
-        return httpClient
+        CompletableFuture<Response> future = new CompletableFuture<>();
+        httpClient
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .thenApplyAsync(httpResponse -> {
+                .thenApply(httpResponse -> {
                     Response response1 = new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
                     if (httpResponse.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) == null) {
                         response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
@@ -238,8 +242,13 @@ public class Server extends HttpServer {
                                 TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase(Locale.ROOT)).getFirst()
                         );
                     }
+                    future.complete(response1);
                     return response1;
-                }, broadcastExecutor);
+                }).exceptionally(throwable -> {
+                    future.completeExceptionally(throwable);
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                });
+        return future;
     }
 
     private Map<String, Integer> getFromAndAck(Request request) {

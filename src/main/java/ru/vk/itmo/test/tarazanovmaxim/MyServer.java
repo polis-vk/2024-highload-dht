@@ -118,21 +118,18 @@ public class MyServer extends HttpServer {
                 session.close();
             }
         }
-
-        super.stop();
-
+        client.shutdownNow();
+        client = null;
         executorService.shutdown();
         try {
-            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!executorService.awaitTermination(5, TimeUnit.MILLISECONDS)) {
                 executorService.shutdownNow();
-                if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
-                    logger.error("Pool did not terminate");
-                }
             }
         } catch (InterruptedException ex) {
             executorService.shutdownNow();
             Thread.currentThread().interrupt();
         }
+        super.stop();
         dao.close();
     }
 

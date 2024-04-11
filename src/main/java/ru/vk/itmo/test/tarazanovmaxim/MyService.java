@@ -30,6 +30,7 @@ public class MyService implements Service {
         if (stopped) {
             return CompletableFuture.completedFuture(null);
         }
+
         server.stop();
         server.getDao().close();
         stopped = true;

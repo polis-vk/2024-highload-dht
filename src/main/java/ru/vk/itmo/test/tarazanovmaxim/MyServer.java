@@ -112,7 +112,7 @@ public class MyServer extends HttpServer {
         return MemorySegment.ofArray(string.getBytes(StandardCharsets.UTF_8));
     }
 
-    public synchronized final Dao getDao() {
+    public synchronized Dao getDao() {
         return dao;
     }
 

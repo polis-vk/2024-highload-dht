@@ -91,7 +91,7 @@ public class Server extends HttpServer {
         } else {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
-        session.sendResponse(response);
+        sendResponseAndCloseSession(session, response);
     }
 
     @Override
@@ -121,8 +121,7 @@ public class Server extends HttpServer {
                     } else {
                         Response resp = selfHandler.handleRequest(request);
                         checkTimestampHeaderExistenceAndSet(resp);
-                        session.sendResponse(resp);
-                        session.close();
+                        sendResponseAndCloseSession(session, resp);
                     }
                 } catch (Exception e) {
                     solveUnexpectedError(e, session);
@@ -130,22 +129,27 @@ public class Server extends HttpServer {
             });
         } catch (RejectedExecutionException e) {
             logger.error("Service is unavailable", e);
-            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-            session.close();
+            sendResponseAndCloseSession(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }
 
     private void solveUnexpectedError(Exception e, HttpSession session) {
         logger.error("Unexpected error", e);
-        try (session) {
             if (e.getClass() == HttpException.class) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                sendResponseAndCloseSession(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             } else {
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                sendResponseAndCloseSession(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
+    }
+
+    private void sendResponseAndCloseSession(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+            session.close();
         } catch (IOException exception) {
-            logger.error("Failed to send error response", exception);
-        }
+        logger.error("Failed to send error response", exception);
+        session.close();
+    }
     }
 
     private boolean checkBadRequest(int ack, int from) {
@@ -199,26 +203,22 @@ public class Server extends HttpServer {
     }
 
     private void sendAsyncResponse(List<Response> responses, int ack, HttpSession session) {
-        try (session) {
-            Response resp;
-            if (responses.stream().filter(response -> response.getStatus() == 200
-                    || response.getStatus() == 404
-                    || response.getStatus() == 202
-                    || response.getStatus() == 201
-                    || response.getStatus() == 400).count() < ack) {
-                resp = new Response("504 Not Enough Replicas", Response.EMPTY);
-            } else {
-                resp = responses.stream().max((o1, o2) -> {
-                    Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
-                    Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
-                    return header1.compareTo(header2);
-                }).get();
-            }
-            session.sendResponse(resp);
 
-        } catch (IOException e) {
-            logger.error("Failed to send error response", e);
+        Response resp;
+        if (responses.stream().filter(response -> response.getStatus() == 200
+                || response.getStatus() == 404
+                || response.getStatus() == 202
+                || response.getStatus() == 201
+                || response.getStatus() == 400).count() < ack) {
+            resp = new Response("504 Not Enough Replicas", Response.EMPTY);
+        } else {
+            resp = responses.stream().max((o1, o2) -> {
+                Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
+                Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
+                return header1.compareTo(header2);
+            }).get();
         }
+        sendResponseAndCloseSession(session, resp);
     }
 
     public CompletableFuture<Response> handleProxy(String redirectedUrl, Request request) {

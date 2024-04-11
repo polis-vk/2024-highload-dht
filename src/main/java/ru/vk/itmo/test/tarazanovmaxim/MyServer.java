@@ -58,7 +58,7 @@ public class MyServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
-    private final HttpClient client;
+    private HttpClient client;
     private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
     private final String selfUrl;
@@ -113,18 +113,11 @@ public class MyServer extends HttpServer {
         return MemorySegment.ofArray(string.getBytes(StandardCharsets.UTF_8));
     }
 
-    @Override
-    public synchronized void stop() {
+    public void close() throws IOException {
         executorService.shutdown();
-        try {
-            dao.close();
-        } catch (IOException e) {
-            logger.error("dao.close() -> exception()");
-        }
-        super.stop();
         executorService.shutdownNow();
-        client.close();
-        client.shutdownNow();
+        client = null;
+        dao.close();
     }
 
     private int quorum(final int from) {

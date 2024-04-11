@@ -31,8 +31,9 @@ public class MyService implements Service {
             return CompletableFuture.completedFuture(null);
         }
 
-        server.stop();
         stopped = true;
+        server.stop();
+        server.close();
         return CompletableFuture.completedFuture(null);
     }
 }

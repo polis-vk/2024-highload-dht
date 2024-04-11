@@ -62,7 +62,7 @@ public class ServerRequestValidationStrategyDecorator extends ServerStrategyDeco
                 return CompletableFuture.completedFuture(Responses.NOT_ALLOWED.toResponse());
             }
         }
-        return handleDefaultAsync(request, session, executor);
+        return CompletableFuture.completedFuture(Responses.BAD_REQUEST.toResponse());
     }
 
     private static boolean checkMethods(Request request, Paths path) {

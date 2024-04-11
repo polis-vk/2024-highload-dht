@@ -41,11 +41,11 @@ public class ServerSendResponseStrategyDecorator extends ServerStrategyDecorator
     ) {
         return super.handleRequestAsync(request, session, executor)
                 .whenComplete((response, exception) -> {
-                    if (response == null) {
-                        log.log(Level.SEVERE, "IO exception", exception);
+                    if (response == null && exception != null) {
                         if (exception instanceof TimeoutException) {
                             sendErrorWithoutIo(session, Response.GATEWAY_TIMEOUT, "");
                         } else {
+                            log.log(Level.SEVERE, "IO exception", exception);
                             sendErrorWithoutIo(session, Response.INTERNAL_ERROR, "");
                         }
                     } else {

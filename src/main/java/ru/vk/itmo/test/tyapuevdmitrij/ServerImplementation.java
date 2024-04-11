@@ -240,7 +240,7 @@ public class ServerImplementation extends HttpServer {
         for (int i = 0; i < config.clusterUrls().size(); i++) {
             treeMap.put(getCustomHashCode(key, i), config.clusterUrls().get(i));
         }
-        return new ArrayList<>(treeMap.values().stream().limit(size).toList());
+        return treeMap.values().stream().limit(size).toList();
     }
 
     private int getCustomHashCode(String key, int nodeNumber) {
@@ -302,30 +302,36 @@ public class ServerImplementation extends HttpServer {
                         successResponses.incrementAndGet();
                     }
                 }
-                if (successResponses.get() == ack) {
-                    try {
-                        session.sendResponse(finalResponse.get());
-                        return;
-                    } catch (IOException e) {
-                        LOGGER.error("error sent final response", e);
-                        session.close();
-                        return;
-                    }
-                }
-                completedFuture.incrementAndGet();
-                if (successResponses.get() < ack && completedFuture.get() == responses.size()) {
-                    finalResponse.set(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                    try {
-                        session.sendResponse(finalResponse.get());
-                    } catch (IOException e) {
-                        LOGGER.error("error sent final response", e);
-                        session.close();
-                    }
-                }
+                sentFinalResponse(responses, ack, finalResponse, session, successResponses, completedFuture);
             }, aggregator).exceptionally(throwable -> {
                 LOGGER.error("future exception", throwable);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             });
+        }
+    }
+
+    private static void sentFinalResponse(List<CompletableFuture<Response>> responses, int ack,
+                                          AtomicReference<Response> finalResponse, HttpSession session,
+                                          AtomicInteger successResponses, AtomicInteger completedFuture) {
+        if (successResponses.get() == ack) {
+            try {
+                session.sendResponse(finalResponse.get());
+                return;
+            } catch (IOException e) {
+                LOGGER.error("error sent final response", e);
+                session.close();
+                return;
+            }
+        }
+        completedFuture.incrementAndGet();
+        if (successResponses.get() < ack && completedFuture.get() == responses.size()) {
+            finalResponse.set(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            try {
+                session.sendResponse(finalResponse.get());
+            } catch (IOException e) {
+                LOGGER.error("error sent final response", e);
+                session.close();
+            }
         }
     }
 }

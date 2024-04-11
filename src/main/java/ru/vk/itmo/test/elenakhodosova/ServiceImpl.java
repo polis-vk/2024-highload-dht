@@ -33,6 +33,7 @@ public class ServiceImpl implements Service {
         executorService = ExecutorServiceConfig.newExecutorService();
         server = new HttpServerImpl(config, dao, executorService);
         server.start();
+        isServiceStopped.getAndSet(false);
         return CompletableFuture.completedFuture(null);
     }
 

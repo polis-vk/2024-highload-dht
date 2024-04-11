@@ -40,6 +40,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
@@ -132,7 +133,12 @@ public class MyServer extends HttpServer {
     private Response shardLookup(final Request request, final String shard) {
         Response response;
         try {
-            response = convertResponse(client.send(convertRequest(request, shard), HttpResponse.BodyHandlers.ofByteArray()));
+            response = convertResponse(
+                    client.send(
+                            convertRequest(request, shard),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    )
+            );
         } catch (Exception e) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
@@ -159,18 +165,19 @@ public class MyServer extends HttpServer {
             case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
             case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
             case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
             case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
             case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
             default -> throw new IllegalArgumentException(response.statusCode() + "Unknown status code");
         };
         Response convertedResponse = new Response(status, response.body());
-        response.headers().firstValue("Timestamp").ifPresent((ts) ->
-            convertedResponse.addHeader(TIMESTAMP_HEADER + ts)
+        response.headers().firstValue("Timestamp").ifPresent((timestamp) ->
+            convertedResponse.addHeader(TIMESTAMP_HEADER + timestamp)
         );
         return convertedResponse;
     }
 
-    private Response getGoodGet(List<Response> responses) {
+    private Response getGoodGet(final List<Response> responses) {
         List<Response> responses200 = new ArrayList<>();
         for (final var resp : responses) {
             if (resp.getStatus() == 200) {
@@ -202,6 +209,7 @@ public class MyServer extends HttpServer {
         return tsTombstone > tsLatest200 ? tombstone : latest200;
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public final void get(@Param(value = "id", required = true) String id,
@@ -222,19 +230,44 @@ public class MyServer extends HttpServer {
         }
 
         request.addHeader(REDIRECT_HEADER + "true");
-        List<Response> responses = new ArrayList<>();
+        List<Response> responses = new CopyOnWriteArrayList<>();
         List<String> shardToRequest = shards.getNShardByKey(id, fromV);
+        AtomicInteger fails = new AtomicInteger(0);
+        AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
-            Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-            if (answer.getStatus() < 500) {
-                responses.addLast(answer);
-            }
+            CompletableFuture
+                    .supplyAsync(
+                            () -> sendTo.equals(selfUrl)
+                                    ? responseLocal(request, id)
+                                    : shardLookup(request, sendTo),
+                            executorService)
+                    .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                    .whenCompleteAsync((response, throwable) -> {
+                        if (throwable == null) {
+                            if (response.getStatus() < 500) {
+                                responses.addLast(response);
+                            } else {
+                                fails.incrementAndGet();
+                            }
+                        } else {
+                            fails.incrementAndGet();
+                        }
+
+                        if (responses.size() >= ackV) {
+                            if (sent.compareAndSet(false, true)) {
+                                sendResponse(getGoodGet(responses), session);
+                            }
+
+                            return;
+                        }
+
+                        if (fails.get() > fromV - ackV) {
+                            if (sent.compareAndSet(false, true)) {
+                                sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                            }
+                        }
+                    }, executorService);
         }
-        if (responses.size() >= ackV) {
-            sendResponse(getGoodGet(responses), session);
-            return;
-        }
-        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
@@ -257,43 +290,48 @@ public class MyServer extends HttpServer {
             return;
         }
 
-        request.addHeader(REDIRECT_HEADER + "true");
         List<Response> responses = new CopyOnWriteArrayList<>();
-        List<String> shardToRequest = shards.getNShardByKey(id, ackV);
+        List<String> shardToRequest = shards.getNShardByKey(id, fromV);
         AtomicInteger fails = new AtomicInteger(0);
+        AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
-            CompletableFuture<Response> answer =
-                    CompletableFuture.supplyAsync(
+            CompletableFuture
+                    .supplyAsync(
                             () -> sendTo.equals(selfUrl)
                                     ? responseLocal(request, id)
                                     : shardLookup(request, sendTo),
-                            executorService
-                    );
+                            executorService)
+                    .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                    .whenCompleteAsync((response, throwable) -> {
+                        if (throwable == null) {
+                            if (response.getStatus() < 500) {
+                                responses.addLast(response);
+                            } else {
+                                fails.incrementAndGet();
+                            }
+                        } else {
+                            fails.incrementAndGet();
+                        }
 
-            answer.whenCompleteAsync((response, throwable) -> {
-                if (throwable == null) {
-                    if (response.getStatus() < 500) {
-                        responses.addLast(response);
-                    } else {
-                        fails.incrementAndGet();
-                    }
-                } else {
-                    fails.incrementAndGet();
-                }
+                        if (responses.size() >= ackV) {
+                            if (sent.compareAndSet(false, true)) {
+                                sendResponse(responses.getFirst(), session);
+                            }
 
-                if (responses.size() == ackV) {
-                    sendResponse(responses.getFirst(), session);
-                    return;
-                }
+                            return;
+                        }
 
-                if (fails.get() > fromV - ackV) {
-                    sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
-                }
+                        if (fails.get() > fromV - ackV) {
+                            if (sent.compareAndSet(false, true)) {
+                                sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                            }
+                        }
 
-            }, executorService);
+                    }, executorService);
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public final void delete(@Param(value = "id", required = true) String id,
@@ -314,19 +352,45 @@ public class MyServer extends HttpServer {
         }
 
         request.addHeader(REDIRECT_HEADER + "true");
-        List<Response> responses = new ArrayList<>();
-        List<String> shardToRequest = shards.getNShardByKey(id, ackV);
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        List<String> shardToRequest = shards.getNShardByKey(id, fromV);
+        AtomicInteger fails = new AtomicInteger(0);
+        AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
-            Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-            if (answer.getStatus() < 500) {
-                responses.addLast(answer);
-            }
-            if (responses.size() == ackV) {
-                sendResponse(responses.getFirst(), session);
-                return;
-            }
+            CompletableFuture
+                    .supplyAsync(
+                            () -> sendTo.equals(selfUrl)
+                                    ? responseLocal(request, id)
+                                    : shardLookup(request, sendTo),
+                            executorService)
+                    .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                    .whenCompleteAsync((response, throwable) -> {
+                        if (throwable == null) {
+                            if (response.getStatus() < 500) {
+                                responses.addLast(response);
+                            } else {
+                                fails.incrementAndGet();
+                            }
+                        } else {
+                            fails.incrementAndGet();
+                        }
+
+                        if (responses.size() >= ackV) {
+                            if (sent.compareAndSet(false, true)) {
+                                sendResponse(responses.getFirst(), session);
+                            }
+
+                            return;
+                        }
+
+                        if (fails.get() > fromV - ackV) {
+                            if (sent.compareAndSet(false, true)) {
+                                sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                            }
+                        }
+
+                    }, executorService);
         }
-        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
     }
 
     @Path(PATH)
@@ -356,11 +420,11 @@ public class MyServer extends HttpServer {
                     logger.error("IOException in handleRequest->executorService.execute(): "
                             + e + " M" + request.getMethod());
                     sendResponse(
-                        new Response(
-                            e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
-                            Response.EMPTY
-                        ),
-                        session
+                            new Response(
+                                    e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
+                                    Response.EMPTY
+                            ),
+                            session
                     );
                 }
             });

@@ -4,7 +4,7 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.ServiceFactory;
 
-@ServiceFactory(stage = 1)
+@ServiceFactory(stage = 4)
 public class ServiceFactoryImpl implements ServiceFactory.Factory {
 
     @Override

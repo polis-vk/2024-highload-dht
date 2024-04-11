@@ -1,33 +1,57 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.HttpServerConfig;
-import one.nio.server.AcceptorConfig;
-import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public final class ServerStarter {
-    private static final Path DIT_PATH = Path.of("/home/andrey/andrey/tmp");
-    private static final int THRESHOLD_BYTES = 100000;
-    private static final int PORT = 8080;
+    private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/lab3/");
+    private static final String LOCALHOST = "http://localhost";
+    private static final int BASE_PORT = 8080;
+    private static final int CLUSTER_NODE_COUNT = 4;
 
     private ServerStarter() {
 
     }
 
-    public static void main(String[] args) throws IOException {
-        AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = PORT;
-        acceptorConfig.reusePort = true;
-        HttpServerConfig serverConfig = new HttpServerConfig();
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-        serverConfig.closeSessions = true;
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
+        startCluster();
+    }
 
-        Config daoConfig = new Config(DIT_PATH, THRESHOLD_BYTES);
+    private static void startCluster() throws IOException, ExecutionException, InterruptedException {
+        List<Integer> ports = new ArrayList<>(CLUSTER_NODE_COUNT);
+        List<Path> dirs = new ArrayList<>(CLUSTER_NODE_COUNT);
+        for (int i = 0; i < CLUSTER_NODE_COUNT; i++) {
+            int port = BASE_PORT + i;
+            Path dir = STORAGE_DIR_PATH.resolve(Paths.get(String.valueOf(port)));
 
-        ServerImpl server = new ServerImpl(serverConfig, daoConfig);
+            ports.add(port);
+            dirs.add(dir);
 
-        server.start();
+            Files.createDirectories(dir);
+        }
+
+        List<String> urls = new ArrayList<>(CLUSTER_NODE_COUNT);
+        for (Integer port: ports) {
+            urls.add(LOCALHOST + port);
+        }
+
+        for (int i = 0; i < CLUSTER_NODE_COUNT; i++) {
+            ServiceImpl service = new ServiceImpl(
+                    new ServiceConfig(
+                            ports.get(i),
+                            urls.get(i),
+                            urls,
+                            dirs.get(i)
+                    )
+            );
+            service.start().get();
+        }
     }
 }

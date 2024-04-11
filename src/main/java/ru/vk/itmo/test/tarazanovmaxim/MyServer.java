@@ -120,9 +120,9 @@ public class MyServer extends HttpServer {
     public synchronized void stop() {
         executorService.shutdown();
         try {
-            if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+            if (!executorService.awaitTermination(1, TimeUnit.MINUTES)) {
                 executorService.shutdownNow();
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                if (!executorService.awaitTermination(1, TimeUnit.MINUTES)) {
                     logger.error("Pool did not terminate");
                 }
             }

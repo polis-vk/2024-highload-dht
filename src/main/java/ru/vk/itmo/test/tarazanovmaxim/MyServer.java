@@ -111,9 +111,7 @@ public class MyServer extends HttpServer {
     }
 
     public void close() throws IOException {
-        executorService.shutdown();
         executorService.shutdownNow();
-        client.shutdown();
         client.shutdownNow();
         dao.close();
     }

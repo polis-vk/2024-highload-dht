@@ -45,9 +45,9 @@ public class State {
     }
 
     public void putInMemory(Entry<MemorySegment> entry, Long timestamp, Long ttl) {
-        MemorySegment createdTime = longToMS(timestamp);
+        MemorySegment time = longToMS(timestamp);
         MemorySegment expiration = ttl == null ? null : longToMS(timestamp + ttl);
-        EntryExtended<MemorySegment> entryExtended = new EntryExtended<>(entry.key(), entry.value(), createdTime, expiration);
+        EntryExtended<MemorySegment> entryExtended = new EntryExtended<>(entry.key(), entry.value(), time, expiration);
         EntryExtended<MemorySegment> previousEntry = storage.put(entryExtended.key(), entryExtended);
 
         if (previousEntry != null) {

@@ -127,6 +127,27 @@ public class StorageUtils {
         return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, 0);
     }
 
+    protected Entry<Long> countSizes(Iterable<EntryExtended<MemorySegment>> iterable, long currentTime) {
+        long dataSize = 0L;
+        long count = 0L;
+        for (EntryExtended<MemorySegment> entry : iterable) {
+            MemorySegment expiration = entry.expiration();
+            if (expiration == null || checkTTL(expiration, currentTime)) {
+                dataSize += entry.key().byteSize();
+                MemorySegment value = entry.value();
+                if (value != null) {
+                    dataSize += value.byteSize();
+                }
+                dataSize += entry.timestamp().byteSize();
+                if (expiration != null) {
+                    dataSize += expiration.byteSize();
+                }
+                count++;
+            }
+        }
+        return new BaseEntry<>(dataSize, count);
+    }
+
     protected long indexOf(MemorySegment segment, MemorySegment key) {
         long recordsCount = recordsCount(segment);
 

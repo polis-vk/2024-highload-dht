@@ -119,7 +119,8 @@ public class MyHttpServer extends HttpServer {
     @Path("/v0/entity")
     public void handleRequest(final Request request, final HttpSession session,
                               @Param(value = "id", required = true) String id, @Param(value = "ack") String ackString,
-                              @Param(value = "from") String fromString, @Param(value = "local") String local) throws IOException {
+                              @Param(value = "from") String fromString, @Param(value = "local") String local)
+            throws IOException {
         int ack = config.clusterUrls().size() / 2 + 1;
         if (ackString != null && !ackString.isBlank()) {
             try {
@@ -164,10 +165,12 @@ public class MyHttpServer extends HttpServer {
                 try {
                     responses.add(invokeRemote(node, request));
                 } catch (IOException e) {
-                    responses.add(CompletableFuture.completedFuture(new Response(Response.INTERNAL_ERROR, Response.EMPTY)));
+                    responses.add(CompletableFuture.completedFuture(new Response(Response.INTERNAL_ERROR,
+                            Response.EMPTY)));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    responses.add(CompletableFuture.completedFuture(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)));
+                    responses.add(CompletableFuture.completedFuture(new Response(Response.SERVICE_UNAVAILABLE,
+                            Response.EMPTY)));
                 }
             }
         }
@@ -193,11 +196,13 @@ public class MyHttpServer extends HttpServer {
         });
     }
 
-    private void sendResponse(Request request, HttpSession session, List<Response> responses, int ack) throws IOException {
+    private void sendResponse(Request request, HttpSession session, List<Response> responses, int ack)
+            throws IOException {
         List<Integer> statuses = responses.stream().map(Response::getStatus).toList();
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                if (statuses.stream().filter(s -> s == HttpURLConnection.HTTP_OK || s == HttpURLConnection.HTTP_NOT_FOUND).count() < ack) {
+                if (statuses.stream().filter(s -> s == HttpURLConnection.HTTP_OK
+                        || s == HttpURLConnection.HTTP_NOT_FOUND).count() < ack) {
                     session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
                     return;
                 }
@@ -207,13 +212,15 @@ public class MyHttpServer extends HttpServer {
                     return;
                 }
 
-                responses = responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK || r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND).toList();
+                responses = responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK ||
+                        r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND).toList();
 
                 Response bestResp = responses.getFirst();
                 for (int i = 1; i < responses.size(); i++) {
                     String bestRespTime = bestResp.getHeader(HEADER_TIMESTAMP_HEADER);
                     if (responses.get(i).getHeader(HEADER_TIMESTAMP) != null) {
-                        if (bestRespTime == null || Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP_HEADER)) > Long.parseLong(bestRespTime)) {
+                        if (bestRespTime == null || Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP_HEADER))
+                                > Long.parseLong(bestRespTime)) {
                             bestResp = responses.get(i);
                         }
                     }
@@ -239,7 +246,8 @@ public class MyHttpServer extends HttpServer {
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
-    private CompletableFuture<Response> invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
+    private CompletableFuture<Response> invokeRemote(String executorNode, Request request)
+            throws IOException, InterruptedException {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI() + "&local=1"))
                 .method(
                         request.getMethodName(),
@@ -283,12 +291,14 @@ public class MyHttpServer extends HttpServer {
 
                 if (entry.value() == null) {
                     Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                    response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
+                    response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry)
+                            .timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
                     return response;
                 }
 
                 Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-                response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry).timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
+                response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry)
+                        .timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
                 return response;
             }
             case Request.METHOD_PUT -> {

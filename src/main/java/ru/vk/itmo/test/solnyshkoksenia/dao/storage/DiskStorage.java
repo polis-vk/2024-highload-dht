@@ -73,23 +73,10 @@ public class DiskStorage {
 
         final long currentTime = System.currentTimeMillis();
 
-        long dataSize = 0L;
-        long count = 0L;
-        for (EntryExtended<MemorySegment> entry : iterable) {
-            MemorySegment expiration = entry.expiration();
-            if (expiration == null || utils.checkTTL(expiration, currentTime)) {
-                dataSize += entry.key().byteSize();
-                MemorySegment value = entry.value();
-                if (value != null) {
-                    dataSize += value.byteSize();
-                }
-                dataSize += entry.timestamp().byteSize();
-                if (expiration != null) {
-                    dataSize += expiration.byteSize();
-                }
-                count++;
-            }
-        }
+        Entry<Long> sizes = utils.countSizes(iterable, currentTime);
+
+        long dataSize = sizes.key();
+        long count = sizes.value();
 
         if (count == 0) {
             return;

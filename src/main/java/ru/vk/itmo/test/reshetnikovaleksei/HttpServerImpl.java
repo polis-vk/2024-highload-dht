@@ -102,7 +102,8 @@ public class HttpServerImpl extends HttpServer {
     public Response entity(Request request,
                            @Param(value = "id") String id,
                            @Param(value = "from") Integer from,
-                           @Param(value = "ack") Integer ack) {
+                           @Param(value = "ack") Integer ack
+    ) throws ExecutionException, InterruptedException {
         if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -120,18 +121,12 @@ public class HttpServerImpl extends HttpServer {
         }
 
         if (request.getHeader(REDIRECTED_REQUEST_HEADER_NAME) == null) {
-            List<Response> responses = sendRequestsAndGetResponses(
-                    request, id, requestRouter.getNodesByEntityId(id, from)
-            ).stream().map(future -> {
-                try {
-                    return future.get();
-                } catch (InterruptedException | ExecutionException e) {
-                    LOGGER.error("Got error while redirecting request: {} with errors: {}", request, e.getMessage());
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                }
-            }).toList();
+            List<Response> notErrorResponses = extractFuturesAndGetNotErrorResponses(
+                    sendRequestsAndGetResponses(
+                            request, id, requestRouter.getNodesByEntityId(id, from)
+                    )
+            );
 
-            List<Response> notErrorResponses = getNotErrorResponses(responses);
             if (notErrorResponses.size() >= ack) {
                 return request.getMethod() == Request.METHOD_GET
                         ? getLastResponse(notErrorResponses)
@@ -141,12 +136,7 @@ public class HttpServerImpl extends HttpServer {
             return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
 
-        try {
-            return invokeLocal(request, id).get();
-        } catch (InterruptedException | ExecutionException e) {
-            LOGGER.error("Got error while process request locally: {} with errors: {}", request, e.getMessage());
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+        return invokeLocal(request, id).get();
     }
 
     private CompletableFuture<Response> invokeLocal(Request request, String id) {
@@ -187,7 +177,9 @@ public class HttpServerImpl extends HttpServer {
         return completableFuture;
     }
 
-    private List<CompletableFuture<Response>> sendRequestsAndGetResponses(Request request, String id, List<String> nodes) {
+    private List<CompletableFuture<Response>> sendRequestsAndGetResponses(
+            Request request, String id, List<String> nodes
+    ) {
         List<CompletableFuture<Response>> responses = new ArrayList<>();
         for (String node : nodes) {
             if (node.equals(selfUrl)) {
@@ -216,7 +208,16 @@ public class HttpServerImpl extends HttpServer {
         return responses;
     }
 
-    private List<Response> getNotErrorResponses(List<Response> responses) {
+    private List<Response> extractFuturesAndGetNotErrorResponses(List<CompletableFuture<Response>> futures) {
+        List<Response> responses = futures.stream().map(future -> {
+            try {
+                return future.get();
+            } catch (InterruptedException | ExecutionException e) {
+                LOGGER.error("Got error while redirecting request: {}", e.getMessage());
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+        }).toList();
+
         List<Response> not5xxResponses = new ArrayList<>();
         for (Response response : responses) {
             if (response.getStatus() < 500 && response.getStatus() != 429) {

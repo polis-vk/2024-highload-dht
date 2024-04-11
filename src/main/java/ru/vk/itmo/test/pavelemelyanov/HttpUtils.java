@@ -22,7 +22,7 @@ public final class HttpUtils {
             HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
             HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR
     );
-    public static final int NUMBER_OF_VIRTUAL_NODES = 5;
+    public static final int NUMBER_OF_VIRTUAL_NODES = 50;
 
     private HttpUtils() {
 

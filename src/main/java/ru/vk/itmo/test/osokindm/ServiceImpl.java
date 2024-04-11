@@ -150,28 +150,19 @@ public class ServiceImpl implements Service {
             }
             long timestamp = getTimestamp(request);
             CompletableFuture<Response> futureResponse =
-                    requestHandler.processRequest(request, id, node ,timestamp, config.selfUrl());
+                    requestHandler.processRequest(request, id, node, timestamp, config.selfUrl());
 
             futureResponse
                     .whenCompleteAsync((resp, ex) -> {
-                        if (resp != null) {
+                        if (resp == null) {
+                            checkAck(session, failures, ack, from);
+                        } else {
                             updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
                             if (responseIsGood(resp)
                                     && successes.incrementAndGet() >= ack
                                     && !responseSent.getAndSet(true)) {
                                 try {
                                     session.sendResponse(latestResponse.get());
-                                } catch (IOException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }
-                        } else {
-                            if (failures.incrementAndGet() > from - ack) {
-                                String message = "Not enough replicas responded";
-                                LOGGER.info(message);
-                                try {
-                                    byte[] mes = message.getBytes(StandardCharsets.UTF_8);
-                                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, mes));
                                 } catch (IOException e) {
                                     throw new RuntimeException(e);
                                 }
@@ -183,6 +174,19 @@ public class ServiceImpl implements Service {
                         LOGGER.error(ex.toString());
                         return null;
                     });
+        }
+    }
+
+    private void checkAck(HttpSession session, AtomicInteger failures, Integer ack, Integer from) {
+        if (failures.incrementAndGet() > from - ack) {
+            String message = "Not enough replicas responded";
+            LOGGER.info(message);
+            try {
+                byte[] mes = message.getBytes(StandardCharsets.UTF_8);
+                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, mes));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

@@ -170,6 +170,7 @@ public class ServiceImpl implements Service {
                         logFailure(ex.getMessage(), failures);
                         return null;
                     });
+
         }
     }
 

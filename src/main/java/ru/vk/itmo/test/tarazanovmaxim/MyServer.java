@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.tarazanovmaxim;
 
-import one.nio.http.HttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -9,7 +8,6 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
@@ -24,14 +22,17 @@ import ru.vk.itmo.test.tarazanovmaxim.hash.ConsistentHashing;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -50,7 +51,7 @@ public class MyServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
-    private final Map<String, HttpClient> httpClients = new HashMap<>();
+    private final HttpClient client;
     private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
     private final String selfUrl;
@@ -74,6 +75,10 @@ public class MyServer extends HttpServer {
                 new ThreadPoolExecutor.AbortPolicy()
         );
 
+        client = HttpClient.newBuilder()
+                .executor(executorService)
+                .build();
+
         int nodeCount = 1;
         HashSet<Integer> nodeSet = new HashSet<>(nodeCount);
         for (String url : config.clusterUrls()) {
@@ -81,8 +86,6 @@ public class MyServer extends HttpServer {
                 nodeSet.add(Hash.murmur3(url));
             }
             shards.addShard(url, nodeSet);
-
-            httpClients.put(url, new HttpClient(new ConnectionString(url)));
         }
     }
 
@@ -104,12 +107,13 @@ public class MyServer extends HttpServer {
     }
 
     public void close() throws IOException {
+        client.close();
+
         executorService.shutdown();
         executorService.shutdownNow();
 
-        for (HttpClient httpClient : httpClients.values()) {
-            httpClient.close();
-        }
+        client.shutdown();
+        client.shutdownNow();
         dao.close();
     }
 
@@ -125,11 +129,54 @@ public class MyServer extends HttpServer {
     private Response shardLookup(final Request request, final String shard) {
         Response response;
         try {
-            response = httpClients.get(shard).invoke(request, 500);
+            response = convertResponse(client.send(convertRequest(request, shard), HttpResponse.BodyHandlers.ofByteArray()));
         } catch (Exception e) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
         return response;
+    }
+
+    private static HttpRequest convertRequest(Request request, String url) {
+        return HttpRequest.newBuilder(URI.create(url + request.getURI()))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .header("Redirected", "true")
+                .build();
+    }
+
+    private static Response convertResponse(HttpResponse<byte[]> response) {
+        String status = switch (response.statusCode()) {
+            case HttpURLConnection.HTTP_OK -> Response.OK;
+            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
+            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
+            case HttpURLConnection.HTTP_NO_CONTENT -> Response.NO_CONTENT;
+            case HttpURLConnection.HTTP_SEE_OTHER -> Response.SEE_OTHER;
+            case HttpURLConnection.HTTP_NOT_MODIFIED -> Response.NOT_MODIFIED;
+            case HttpURLConnection.HTTP_USE_PROXY -> Response.USE_PROXY;
+            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
+            case HttpURLConnection.HTTP_UNAUTHORIZED -> Response.UNAUTHORIZED;
+            case HttpURLConnection.HTTP_PAYMENT_REQUIRED -> Response.PAYMENT_REQUIRED;
+            case HttpURLConnection.HTTP_FORBIDDEN -> Response.FORBIDDEN;
+            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
+            case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> Response.NOT_ACCEPTABLE;
+            case HttpURLConnection.HTTP_CONFLICT -> Response.CONFLICT;
+            case HttpURLConnection.HTTP_GONE -> Response.GONE;
+            case HttpURLConnection.HTTP_LENGTH_REQUIRED -> Response.LENGTH_REQUIRED;
+            case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
+            case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
+            case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
+            default -> throw new IllegalArgumentException(response.statusCode() + "Unknown status code");
+        };
+        Response convertedResponse = new Response(status, response.body());
+        response.headers().firstValue("Timestamp").ifPresent((ts) -> {
+            convertedResponse.addHeader(TIMESTAMP_HEADER + ts);
+        });
+        return convertedResponse;
     }
 
     private Response getGoodGet(List<Response> responses) {

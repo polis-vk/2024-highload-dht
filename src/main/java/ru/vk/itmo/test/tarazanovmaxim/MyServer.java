@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.tarazanovmaxim.dao.ReferenceDao;
 import ru.vk.itmo.test.tarazanovmaxim.dao.TimestampBaseEntry;
 import ru.vk.itmo.test.tarazanovmaxim.dao.TimestampEntry;
@@ -111,15 +112,14 @@ public class MyServer extends HttpServer {
         return MemorySegment.ofArray(string.getBytes(StandardCharsets.UTF_8));
     }
 
+    public synchronized final Dao getDao() {
+        return dao;
+    }
+
     @Override
     public synchronized void stop() {
         super.stop();
         executorService.shutdown();
-        try {
-            dao.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private int quorum(final int from) {
@@ -232,8 +232,7 @@ public class MyServer extends HttpServer {
             } else {
                 fails.incrementAndGet();
             }
-        }
-        else {
+        } else {
             fails.incrementAndGet();
         }
     }

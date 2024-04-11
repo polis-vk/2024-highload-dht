@@ -11,7 +11,7 @@ public class MyService implements Service {
 
     private final ServiceConfig config;
 
-    private boolean stopped = false;
+    private boolean stopped;
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -20,6 +20,7 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         server = new MyServer(config);
+        stopped = false;
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -30,6 +31,7 @@ public class MyService implements Service {
             return CompletableFuture.completedFuture(null);
         }
         server.stop();
+        server.getDao().close();
         stopped = true;
         return CompletableFuture.completedFuture(null);
     }

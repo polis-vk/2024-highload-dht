@@ -8,8 +8,6 @@ import ru.vk.itmo.test.osipovdaniil.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 

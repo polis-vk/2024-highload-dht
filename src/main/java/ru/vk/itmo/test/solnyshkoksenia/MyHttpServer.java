@@ -40,11 +40,10 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-
 public class MyHttpServer extends HttpServer {
-    private final static String HEADER_TIMESTAMP = "X-timestamp";
-    private final static String HEADER_TIMESTAMP_HEADER = HEADER_TIMESTAMP + ": ";
-    private final static int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final String HEADER_TIMESTAMP = "X-timestamp";
+    private static final String HEADER_TIMESTAMP_HEADER = HEADER_TIMESTAMP + ": ";
+    private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ServiceConfig config;
     private final DaoImpl dao;
     private final HttpClient httpClient;
@@ -212,8 +211,8 @@ public class MyHttpServer extends HttpServer {
                     return;
                 }
 
-                responses = responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK ||
-                        r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND).toList();
+                responses = responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK
+                        || r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND).toList();
 
                 Response bestResp = responses.getFirst();
                 for (int i = 1; i < responses.size(); i++) {

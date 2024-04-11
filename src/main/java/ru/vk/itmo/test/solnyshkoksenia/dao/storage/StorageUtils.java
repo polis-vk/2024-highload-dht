@@ -59,7 +59,7 @@ public class StorageUtils {
     }
 
     protected long recordsCount(MemorySegment segment) {
-        long indexSize = indexSize(segment);
+        long indexSize = segment.get(ValueLayout.JAVA_LONG_UNALIGNED, 0);
         return indexSize / Long.BYTES / 4;
     }
 
@@ -121,10 +121,6 @@ public class StorageUtils {
 
     private long normalizedStartOfExpiration(MemorySegment segment, long recordIndex) {
         return normalize(startOfExpiration(segment, recordIndex));
-    }
-
-    private static long indexSize(MemorySegment segment) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, 0);
     }
 
     protected Entry<Long> countSizes(Iterable<EntryExtended<MemorySegment>> iterable, long currentTime) {

@@ -19,6 +19,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.logging.Logger;
 
 public final class MyServerUtil {
@@ -82,47 +83,45 @@ public final class MyServerUtil {
     public static Response getResults(
             int from,
             int ack,
-            Request request,
             List<CompletableFuture<Response>> completableResults,
             Logger logger
-    ) {
+    ) throws ExecutionException, InterruptedException {
         var okResponses = new ArrayList<Response>();
         var okResponsesCount = new AtomicInteger();
         var failedResponsesCount = new AtomicInteger();
         var answer = new CompletableFuture<Response>();
 
-        for (var completableFuture : completableResults) {
-            var responseFuture = completableFuture.whenComplete((r, throwable) -> {
-                if (throwable == null
-                        || (r.getStatus() < 300
-                        || (r.getStatus() == 404 && request.getMethod() == Request.METHOD_GET))) {
-                    okResponsesCount.incrementAndGet();
-                    okResponses.add(r);
-                } else {
-                    failedResponsesCount.incrementAndGet();
-                }
+        BiConsumer<Response, Throwable> whenComplete = (r, throwable) -> {
+            if (throwable == null || r.getStatus() < 500) {
+                okResponsesCount.incrementAndGet();
+                okResponses.add(r);
+            } else {
+                failedResponsesCount.incrementAndGet();
+            }
 
-                if (okResponsesCount.get() == ack) {
-                    answer.complete(okResponses.stream()
-                            .max(Comparator.comparingLong(MyServerUtil::headerTimestampToLong))
-                            .get());
-                }
+            if (okResponsesCount.get() == ack) {
+                answer.complete(okResponses.stream()
+                        .max(Comparator.comparingLong(MyServerUtil::headerTimestampToLong))
+                        .get());
+            }
 
-                if (failedResponsesCount.get() == from - ack + 1) {
-                    answer.complete(new Response(MyServerUtil.NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                }
-            });
+            if (failedResponsesCount.get() == from - ack + 1) {
+                answer.complete(new Response(MyServerUtil.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            }
+        };
+
+        completableResults.forEach(completableFuture -> {
+            var responseFuture = completableFuture.whenComplete(whenComplete);
             if (responseFuture == null) {
                 logger.info("Error completable future is null!");
             }
-        }
+        });
 
         try {
             return answer.get(MyServerUtil.DURATION, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException | InterruptedException | ExecutionException e) {
+        } catch (TimeoutException e) {
             logger.info("Too long waiting for response: " + e.getMessage());
             return new Response(MyServerUtil.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
     }
 }
-

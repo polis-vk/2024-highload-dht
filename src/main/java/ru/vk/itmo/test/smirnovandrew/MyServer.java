@@ -163,13 +163,18 @@ public class MyServer extends HttpServer {
         }
 
         var completableResults = sortedNodes.stream()
-                .map(nodeNumber -> sendToAnotherNode(request, ack, from, id, config.clusterUrls().get(nodeNumber), operation))
+                .map(nodeNumber -> sendToAnotherNode(
+                        request,
+                        ack,
+                        from,
+                        id,
+                        config.clusterUrls().get(nodeNumber),
+                        operation))
                 .toList();
 
         return MyServerUtil.getResults(
                 from,
                 ack,
-                request,
                 completableResults,
                 logger
         );

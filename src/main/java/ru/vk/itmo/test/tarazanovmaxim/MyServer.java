@@ -8,15 +8,12 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.tarazanovmaxim.dao.ReferenceDao;
 import ru.vk.itmo.test.tarazanovmaxim.dao.TimestampBaseEntry;
 import ru.vk.itmo.test.tarazanovmaxim.dao.TimestampEntry;
@@ -58,7 +55,7 @@ public class MyServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
-    private HttpClient client;
+    private final HttpClient client;
     private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
     private final String selfUrl;
@@ -116,7 +113,8 @@ public class MyServer extends HttpServer {
     public void close() throws IOException {
         executorService.shutdown();
         executorService.shutdownNow();
-        client = null;
+        client.shutdown();
+        client.shutdownNow();
         dao.close();
     }
 

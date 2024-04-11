@@ -1,10 +1,8 @@
 package ru.vk.itmo.test.pelogeikomakar;
 
-import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -12,7 +10,6 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -201,21 +198,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     }
 
     private Response executeRemoteMethod(String executorNode, Request request, long givenTime) {
-        HttpRequest.Builder httpRequestBuilder = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
-                .method(
-                        request.getMethodName(),
-                        request.getBody() == null
-                                ? HttpRequest.BodyPublishers.noBody()
-                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-                )
-                .header(INTERNAL_RQ_HEADER, "true")
-                .timeout(Duration.ofSeconds(1));
-
-        if (givenTime >= 0) {
-            httpRequestBuilder = httpRequestBuilder.header(TIME_HEADER, Long.toString(givenTime));
-        }
-
-        HttpRequest httpRequest = httpRequestBuilder.build();
+        HttpRequest httpRequest = ServerUtils.buildHttpRequest(executorNode, request, givenTime,
+                INTERNAL_RQ_HEADER, TIME_HEADER);
 
         try {
             HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
@@ -241,8 +225,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    Response r = method.call();
-                    session.sendResponse(r);
+                    session.sendResponse(method.call());
                 } catch (Exception e) {
                     log.error("Exception during handleRequest", e);
                     sendResponseWithError(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
@@ -276,7 +259,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             int currFrom = Convertor.intOfString(request.getParameter("from="), defaultFrom, log);
 
             if (currFrom > clusterUrls.size() || currAck > currFrom || currAck < 1) {
-                log.error("BAD ack or from parameter: [ack: {}, from: {}]", currAck, currFrom);
                 session.sendError(Response.BAD_REQUEST, null);
                 return;
             }
@@ -306,5 +288,4 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         ServiceImpl.shutdownAndAwaitTermination(localExecutorService);
         ServiceImpl.shutdownAndAwaitTermination(remoteExecutorService);
     }
-
 }

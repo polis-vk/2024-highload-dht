@@ -2,7 +2,7 @@ package ru.vk.itmo.test.viktorkorotkikh.util;
 
 import one.nio.http.Request;
 import one.nio.http.Response;
-import ru.vk.itmo.test.viktorkorotkikh.http.LSMConstantResponse;
+import ru.vk.itmo.test.viktorkorotkikh.util.http.LSMConstantResponse;
 import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
 
 import java.util.List;

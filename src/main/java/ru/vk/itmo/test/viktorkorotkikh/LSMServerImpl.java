@@ -18,7 +18,7 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
 import ru.vk.itmo.test.viktorkorotkikh.http.HttpResponseNodeResponse;
-import ru.vk.itmo.test.viktorkorotkikh.http.LSMConstantResponse;
+import ru.vk.itmo.test.viktorkorotkikh.util.http.LSMConstantResponse;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
 import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
@@ -135,7 +135,7 @@ public class LSMServerImpl extends HttpServer {
             return;
         }
         if (request.getMethod() == METHOD_PUT && request.getBody() == null) {
-            log.info("PUT bad request: empty body");
+            log.debug("PUT bad request: empty body");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
@@ -152,32 +152,32 @@ public class LSMServerImpl extends HttpServer {
         try {
             requestParameters = getRequestParameters(request);
         } catch (NumberFormatException e) {
-            log.info("Bad request: invalid parameters");
+            log.debug("Bad request: invalid parameters");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
         // validate id parameter
         final String id = requestParameters.id();
         if (id == null || id.isEmpty()) {
-            log.info("Bad request: empty id parameter");
+            log.debug("Bad request: empty id parameter");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
-        Integer ack = requestParameters.ack();
-        Integer from = requestParameters.from();
-        if (ack == null ^ from == null) {
-            log.info("Bad request: one of the ack or from parameters is missing");
+        int ack = requestParameters.ack();
+        int from = requestParameters.from();
+        if (ack == -1 && from != -1 || ack != -1 && from == -1) {
+            log.debug("Bad request: one of the ack or from parameters is missing");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
 
-        if (ack == null) {
+        if (ack == -1) {
             from = serviceConfig.clusterUrls().size();
             ack = quorum(serviceConfig.clusterUrls().size());
         }
 
-        if (ack == 0 || from == 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
-            log.info("Bad request: ack should be <= from and from should be <= cluster size");
+        if (ack <= 0 || from <= 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
+            log.debug("Bad request: ack should be <= from and from should be <= cluster size");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }
@@ -200,19 +200,19 @@ public class LSMServerImpl extends HttpServer {
     private static RequestParameters getRequestParameters(Request request) {
         final Iterator<Map.Entry<String, String>> parametersIterator = request.getParameters().iterator();
         String id = null;
-        Integer ack = null;
-        Integer from = null;
-        while (parametersIterator.hasNext() && (id == null || ack == null || from == null)) {
+        int ack = -1;
+        int from = -1;
+        while (parametersIterator.hasNext() && (id == null || ack == -1 || from == -1)) {
             final Map.Entry<String, String> parameter = parametersIterator.next();
             if (id == null && parameter.getKey().equals("id")) { // get first value
                 id = parameter.getValue();
             }
 
-            if (ack == null && parameter.getKey().equals("ack")) { // get first value
+            if (ack == -1 && parameter.getKey().equals("ack")) { // get first value
                 ack = Integer.parseInt(parameter.getValue());
             }
 
-            if (from == null && parameter.getKey().equals("from")) { // get first value
+            if (from == -1 && parameter.getKey().equals("from")) { // get first value
                 from = Integer.parseInt(parameter.getValue());
             }
         }
@@ -325,11 +325,11 @@ public class LSMServerImpl extends HttpServer {
             return LSMConstantResponse.serviceUnavailable(request);
         }
         if (entry == null) {
-            log.info("Entity(id={}) was not found", idString);
+            log.debug("Entity(id={}) was not found", idString);
             return LSMConstantResponse.notFound(request);
         }
         if (entry.value() == null) {
-            log.info("Entity(id={}) was deleted", idString);
+            log.debug("Entity(id={}) was deleted", idString);
             Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
             response.addHeader(LsmServerUtil.timestampToHeader(entry.timestamp()));
             return response;
@@ -349,7 +349,7 @@ public class LSMServerImpl extends HttpServer {
             final long requestTimestamp
     ) {
         if (request.getBody() == null) {
-            log.info("PUT bad request: empty body");
+            log.debug("PUT bad request: empty body");
             return LSMConstantResponse.badRequest(request);
         }
 
@@ -362,7 +362,7 @@ public class LSMServerImpl extends HttpServer {
             dao.upsert(newEntry);
         } catch (LSMDaoOutOfMemoryException e) {
             // when entry is too big to be putted into memtable
-            log.info("Entity(id={}) is too big to be putted into memtable", idString);
+            log.debug("Entity(id={}) is too big to be putted into memtable", idString);
             return LSMConstantResponse.entityTooLarge(request);
         } catch (TooManyFlushesException e) {
             // when one memory table is in the process of being flushed, and the second is already full
@@ -388,7 +388,7 @@ public class LSMServerImpl extends HttpServer {
             dao.upsert(newEntry);
         } catch (LSMDaoOutOfMemoryException e) {
             // when entry is too big to be putted into memtable
-            log.info("Entity(id={}) is too big to be putted into memtable", idString);
+            log.debug("Entity(id={}) is too big to be putted into memtable", idString);
             return LSMConstantResponse.entityTooLarge(request);
         } catch (TooManyFlushesException e) {
             // when one memory table is in the process of being flushed, and the second is already full

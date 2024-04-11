@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.viktorkorotkikh.http;
+package ru.vk.itmo.test.viktorkorotkikh.util.http;
 
 import one.nio.http.Request;
 import one.nio.http.Response;

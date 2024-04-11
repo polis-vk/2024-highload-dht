@@ -188,7 +188,7 @@ public class ServiceImpl implements Service {
                 byte[] mes = message.getBytes(StandardCharsets.UTF_8);
                 session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, mes));
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                logFailure(e.getMessage(), failures);
             }
         }
     }

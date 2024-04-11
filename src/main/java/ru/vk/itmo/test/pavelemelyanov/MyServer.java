@@ -114,8 +114,7 @@ public class MyServer extends HttpServer {
                 return;
             }
             sendResponse(session, requestHandler.handle(request, paramId));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;

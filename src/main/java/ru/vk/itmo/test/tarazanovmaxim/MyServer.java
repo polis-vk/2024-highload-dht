@@ -220,33 +220,14 @@ public class MyServer extends HttpServer {
         }
     }
 
-    private void whenCompleteAsync(
-            final int method,
+    private void actionOnResponse(
             final Response response,
             final List<Response> responses,
-            final AtomicInteger fails,
-            final AtomicBoolean sent,
-            final int ackV,
-            final int fromV,
-            final HttpSession session
-            ) {
+            final AtomicInteger fails) {
         if (response.getStatus() < 500) {
             responses.addLast(response);
         } else {
             fails.incrementAndGet();
-        }
-
-        if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
-            if (method == Request.METHOD_GET) {
-                sendResponse(getGoodGet(responses), session);
-            } else {
-                sendResponse(responses.getFirst(), session);
-            }
-            return;
-        }
-
-        if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
-            sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
         }
     }
 
@@ -279,17 +260,17 @@ public class MyServer extends HttpServer {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
                 .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
-                .whenCompleteAsync((response, throwable) ->
-                    whenCompleteAsync(
-                        Request.METHOD_GET,
-                        response,
-                        responses,
-                        fails,
-                        sent,
-                        ackV,
-                        fromV,
-                        session
-                    ), executorService);
+                .whenCompleteAsync((response, throwable) -> {
+                    actionOnResponse(response, responses, fails);
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(getGoodGet(responses), session);
+                        return;
+                    }
+
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
         }
     }
 
@@ -319,17 +300,17 @@ public class MyServer extends HttpServer {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
                 .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
-                    .whenCompleteAsync((response, throwable) ->
-                        whenCompleteAsync(
-                            Request.METHOD_PUT,
-                            response,
-                            responses,
-                            fails,
-                            sent,
-                            ackV,
-                            fromV,
-                            session
-                        ), executorService);
+                .whenCompleteAsync((response, throwable) -> {
+                    actionOnResponse(response, responses, fails);
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(responses.getFirst(), session);
+                        return;
+                    }
+
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
         }
     }
 
@@ -361,17 +342,16 @@ public class MyServer extends HttpServer {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
                 .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
-                .whenCompleteAsync((response, throwable) ->
-                    whenCompleteAsync(
-                        Request.METHOD_DELETE,
-                        response,
-                        responses,
-                        fails,
-                        sent,
-                        ackV,
-                        fromV,
-                        session
-                    ), executorService);
+                .whenCompleteAsync((response, throwable) -> {
+                    actionOnResponse(response, responses, fails);
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(responses.getFirst(), session);
+                        return;
+                    }
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
         }
     }
 

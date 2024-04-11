@@ -111,26 +111,17 @@ public class MyServer extends HttpServer {
     private static MemorySegment toMemorySegment(String string) {
         return MemorySegment.ofArray(string.getBytes(StandardCharsets.UTF_8));
     }
-
-    public void close() throws IOException {
-        for (SelectorThread selector : selectors) {
-            for (Session session : selector.selector) {
-                session.close();
-            }
-        }
-        client.shutdownNow();
-        client = null;
-        executorService.shutdown();
-        try {
-            if (!executorService.awaitTermination(5, TimeUnit.MILLISECONDS)) {
-                executorService.shutdownNow();
-            }
-        } catch (InterruptedException ex) {
-            executorService.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+    
+    @Override
+    public synchronized void stop() {
         super.stop();
-        dao.close();
+        executorService.close();
+        client.close();
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private int quorum(final int from) {

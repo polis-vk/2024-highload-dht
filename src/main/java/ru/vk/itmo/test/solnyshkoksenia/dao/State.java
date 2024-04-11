@@ -108,13 +108,11 @@ public class State {
         EntryExtended<MemorySegment> entry = storage.get(key);
         if (isValidEntry(entry)) {
             return entry;
-//            return entry.value() == null ? null : entry;
         }
 
         entry = flushingStorage.get(key);
         if (isValidEntry(entry)) {
             return entry;
-//            return entry.value() == null ? null : entry;
         }
 
         Iterator<EntryExtended<MemorySegment>> iterator = diskStorage.range(Collections.emptyIterator(), key, null);

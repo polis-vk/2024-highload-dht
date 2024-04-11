@@ -31,11 +31,14 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 
 public class MyHttpServer extends HttpServer {
@@ -56,8 +59,6 @@ public class MyHttpServer extends HttpServer {
                     throw new UncheckedIOException(e);
                 }
             });
-    private final ExecutorService executorRemote = Executors.newFixedThreadPool(THREADS / 2,
-            new CustomThreadFactory("remote-work"));
 
     public MyHttpServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config));
@@ -90,7 +91,7 @@ public class MyHttpServer extends HttpServer {
     public synchronized void stop() {
         super.stop();
         executorLocal.close();
-        executorRemote.close();
+        httpClient.close();
         try {
             dao.close();
         } catch (IOException e) {
@@ -152,26 +153,44 @@ public class MyHttpServer extends HttpServer {
         handle(request, id, session, ack, from);
     }
 
-    private void handle(Request request, String id, HttpSession session, Integer ack, Integer from) throws IOException {
+    private void handle(Request request, String id, HttpSession session, Integer ack, Integer from) {
         List<String> executorNodes = getNodesByEntityId(id, from);
-        List<Response> responses = new ArrayList<>();
+        List<CompletableFuture<Response>> responses = new ArrayList<>();
 
         for (String node : executorNodes) {
             if (node.equals(config.selfUrl())) {
-                responses.add(invokeLocal(request, id));
+                responses.add(CompletableFuture.completedFuture(invokeLocal(request, id)));
             } else {
                 try {
                     responses.add(invokeRemote(node, request));
                 } catch (IOException e) {
-                    responses.add(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                    responses.add(CompletableFuture.completedFuture(new Response(Response.INTERNAL_ERROR, Response.EMPTY)));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                    responses.add(CompletableFuture.completedFuture(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)));
                 }
             }
         }
 
-        sendResponse(request, session, responses, ack);
+        executorLocal.execute(() -> {
+            List<Response> completedResponses = responses
+                    .stream()
+                    .map(cf -> {
+                        try {
+                            return cf.get(500, TimeUnit.MILLISECONDS);
+                        } catch (ExecutionException | TimeoutException e) {
+                            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                        }
+                    }).toList();
+            try {
+                sendResponse(request, session, completedResponses, ack);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 
     private void sendResponse(Request request, HttpSession session, List<Response> responses, int ack) throws IOException {
@@ -219,7 +238,8 @@ public class MyHttpServer extends HttpServer {
         }
     }
 
-    private Response invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private CompletableFuture<Response> invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI() + "&local=1"))
                 .method(
                         request.getMethodName(),
@@ -229,7 +249,13 @@ public class MyHttpServer extends HttpServer {
                 )
                 .timeout(Duration.ofMillis(500))
                 .build();
-        HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        CompletableFuture<Response> response = new CompletableFuture<>();
+        httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .whenComplete((httpResponse, throwable) -> response.complete(makeResponse(httpResponse)));
+        return response;
+    }
+
+    private Response makeResponse(HttpResponse<byte[]> httpResponse) {
         Optional<String> header = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
         long timestamp;
         if (header.isPresent()) {

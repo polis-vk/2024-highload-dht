@@ -71,7 +71,7 @@ public class ReferenceService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 4)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

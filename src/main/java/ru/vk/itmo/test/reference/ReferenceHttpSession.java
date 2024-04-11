@@ -21,7 +21,7 @@ public class ReferenceHttpSession extends HttpSession {
         }
     }
 
-    public void sendError(Exception e) {
+    public void sendError(Throwable e) {
         log.error("Exception during handleRequest", e);
         try {
             sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));

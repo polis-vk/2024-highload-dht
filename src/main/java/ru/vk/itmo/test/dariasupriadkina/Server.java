@@ -102,10 +102,8 @@ public class Server extends HttpServer {
                 int from = ackFrom.get("from");
                 int ack = ackFrom.get("ack");
                 try {
-                    if (!permittedMethods.contains(request.getMethod()) || ack > from || ack <= 0 ||
-                            from > clusterUrls.size()) {
+                    if (!permittedMethods.contains(request.getMethod()) || checkBadRequest(ack, from)) {
                         handleDefault(request, session);
-
                         return;
                     }
                     if (request.getHeader(FROM_HEADER) == null) {
@@ -144,6 +142,10 @@ public class Server extends HttpServer {
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
 
         }
+    }
+
+    private boolean checkBadRequest(int ack, int from) {
+        return ack > from || ack <= 0 || from > clusterUrls.size();
     }
 
     private List<CompletableFuture<Response>> broadcast(List<String> nodes, Request request) {

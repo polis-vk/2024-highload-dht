@@ -104,6 +104,7 @@ public class Server extends HttpServer {
                     int ack = ackFrom.get("ack");
                     if (!permittedMethods.contains(request.getMethod()) || checkBadRequest(ack, from)) {
                         handleDefault(request, session);
+                        session.close();
                         return;
                     }
                     if (request.getHeader(FROM_HEADER) == null) {
@@ -121,26 +122,29 @@ public class Server extends HttpServer {
                         Response resp = selfHandler.handleRequest(request);
                         checkTimestampHeaderExistenceAndSet(resp);
                         session.sendResponse(resp);
-                    }
-
-                } catch (Exception e) {
-                    logger.error("Unexpected error", e);
-                    try {
-                        if (e.getClass() == HttpException.class) {
-                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        } else {
-                            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                        }
-                    } catch (IOException exception) {
-                        logger.error("Failed to send error response", exception);
                         session.close();
                     }
+                } catch (Exception e) {
+                    solveUnexpectedError(e, session);
                 }
             });
         } catch (RejectedExecutionException e) {
             logger.error("Service is unavailable", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+            session.close();
+        }
+    }
 
+    private void solveUnexpectedError(Exception e, HttpSession session) {
+        logger.error("Unexpected error", e);
+        try (session) {
+            if (e.getClass() == HttpException.class) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            } else {
+                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            }
+        } catch (IOException exception) {
+            logger.error("Failed to send error response", exception);
         }
     }
 

@@ -17,11 +17,15 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static ru.vk.itmo.test.alenkovayulya.ShardRouter.REDIRECT_HEADER;
 import static ru.vk.itmo.test.alenkovayulya.ShardRouter.TIMESTAMP_HEADER;
@@ -34,6 +38,11 @@ public class ServerImpl extends HttpServer {
     private final ExecutorService executorService;
     private final String url;
     private final ShardSelector shardSelector;
+    private static final Set<Integer> ALLOWED_METHODS = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
     private static final int[] AVAILABLE_GOOD_RESPONSE_CODES = new int[] {200, 201, 202, 404};
 
     public ServerImpl(ServiceConfig serviceConfig,
@@ -59,6 +68,11 @@ public class ServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (!ALLOWED_METHODS.contains(request.getMethod())) {
+            sendEmptyResponse(Response.METHOD_NOT_ALLOWED, session);
+            return;
+        }
+
         String id = request.getParameter("id=");
         if (isEmptyId(id)) {
             sendEmptyResponse(Response.BAD_REQUEST, session);
@@ -104,7 +118,6 @@ public class ServerImpl extends HttpServer {
             LOGGER.error("Request rejected by policy", e);
             sendEmptyResponse(Response.SERVICE_UNAVAILABLE, session);
         }
-
     }
 
     private void collectResponses(Request request,
@@ -112,54 +125,104 @@ public class ServerImpl extends HttpServer {
             String id,
             int from,
             int ack
-    ) throws IOException {
-        List<Response> responses = new ArrayList<>();
+    ) {
+        List<CompletableFuture<Response>> asyncResponses = new CopyOnWriteArrayList<>();
         long timestamp = System.currentTimeMillis();
         int firstOwnerShardIndex = shardSelector.getOwnerShardIndex(id);
 
         for (int i = 0; i < from; i++) {
+            CompletableFuture<Response> asyncResponse;
             int shardIndex = (firstOwnerShardIndex + i) % shardSelector.getClusterSize();
 
             if (isRedirectNeeded(shardIndex)) {
-                handleRedirect(request, timestamp, shardIndex, responses);
+                asyncResponse = handleRedirect(request, timestamp, shardIndex);
             } else {
-                Response response = handleInternalRequest(request, id, timestamp);
-                responses.add(response);
+                asyncResponse = handleInternalRequestAsync(request, id, timestamp);
             }
+
+            asyncResponses.add(asyncResponse);
 
         }
 
-        checkReplicasResponsesNumber(request, session, responses, ack);
+        handleAsyncResponses(session, ack, from, request, asyncResponses);
+
     }
 
-    private void checkReplicasResponsesNumber(
+    private void handleAsyncResponses(
+            HttpSession session, int ack, int from, Request request,
+            List<CompletableFuture<Response>> completableFutureResponses
+    ) {
+        List<Response> validResponses = new CopyOnWriteArrayList<>();
+        AtomicBoolean isEnoughValidResponses = new AtomicBoolean();
+        AtomicInteger allResponsesCounter = new AtomicInteger();
+
+        for (CompletableFuture<Response> completableFuture : completableFutureResponses) {
+            completableFuture.whenCompleteAsync((response, throwable) -> {
+                if (isEnoughValidResponses.get()) {
+                    return;
+                }
+                allResponsesCounter.incrementAndGet();
+
+                if (throwable != null) {
+                    response = new Response(Response.INTERNAL_ERROR);
+                }
+
+                if (isValidResponse(response)) {
+                    validResponses.add(response);
+                }
+
+                sendResponseIfEnoughReplicasResponsesNumber(request,
+                        isEnoughValidResponses,
+                        session,
+                        validResponses,
+                        ack);
+
+                if (allResponsesCounter.get() == from && validResponses.size() < ack) {
+                    sendEmptyResponse("504 Not Enough Replicas", session);
+                }
+            }, executorService).exceptionally((th) -> new Response(Response.INTERNAL_ERROR));
+        }
+    }
+
+    private void sendResponseIfEnoughReplicasResponsesNumber(
             Request request,
+            AtomicBoolean isEnoughValidResponses,
             HttpSession session,
             List<Response> responses,
             int ack
-    ) throws IOException {
-        if (responses.size() >= ack) {
-            if (request.getMethod() == Request.METHOD_GET) {
-                session.sendResponse(getResponseWithMaxTimestamp(responses));
-            } else {
-                session.sendResponse(responses.getFirst());
+    ) {
+        try {
+            if (responses.size() >= ack) {
+                isEnoughValidResponses.set(true);
+                if (request.getMethod() == Request.METHOD_GET) {
+                    session.sendResponse(getResponseWithMaxTimestamp(responses));
+                } else {
+                    session.sendResponse(responses.getFirst());
+                }
             }
-        } else {
-            sendEmptyResponse("504 Not Enough Replicas", session);
+        } catch (IOException e) {
+            LOGGER.error("Exception during send win response: ", e);
+            sendEmptyResponse(Response.INTERNAL_ERROR, session);
+            session.close();
         }
     }
 
-    private void handleRedirect(Request request, long timestamp, int nodeIndex, List<Response> responses) {
-        Response response = redirectRequest(request.getMethodName(),
+    private boolean isValidResponse(Response response) {
+        return Arrays.stream(AVAILABLE_GOOD_RESPONSE_CODES)
+                .anyMatch(code -> code == response.getStatus());
+    }
+
+    private CompletableFuture<Response> handleRedirect(Request request, long timestamp, int nodeIndex) {
+        return redirectRequest(request.getMethodName(),
                 request.getParameter("id="),
                 shardSelector.getShardUrlByIndex(nodeIndex),
                 request.getBody() == null
                         ? new byte[0] : request.getBody(), timestamp);
-        boolean correctRes = Arrays.stream(AVAILABLE_GOOD_RESPONSE_CODES)
-                .anyMatch(code -> code == response.getStatus());
-        if (correctRes) {
-            responses.add(response);
-        }
+    }
+
+    private CompletableFuture<Response> handleInternalRequestAsync(Request request, String id, long timestamp) {
+        return CompletableFuture.supplyAsync(() ->
+                handleInternalRequest(request, id, timestamp), ShardRouter.proxyExecutor);
     }
 
     private Response handleInternalRequest(Request request, String id, long timestamp) {
@@ -233,7 +296,6 @@ public class ServerImpl extends HttpServer {
             session.sendResponse(emptyRes);
         } catch (IOException e) {
             LOGGER.info("Exception during sending the empty response: ", e);
-            session.close();
         }
     }
 

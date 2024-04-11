@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static one.nio.util.Hash.murmur3;
 
@@ -240,7 +241,8 @@ public class ServerImplementation extends HttpServer {
         for (int i = 0; i < config.clusterUrls().size(); i++) {
             treeMap.put(getCustomHashCode(key, i), config.clusterUrls().get(i));
         }
-        return treeMap.values().stream().limit(size).toList();
+        Stream<String> maxHashCodeUrlsStream = treeMap.values().stream().limit(size);
+        return maxHashCodeUrlsStream.toList();
     }
 
     private int getCustomHashCode(String key, int nodeNumber) {
@@ -288,25 +290,30 @@ public class ServerImplementation extends HttpServer {
                 if (completedFuture.get() == responses.size() || ack == successResponses.get()) {
                     return;
                 }
-                String dataHeader = response.getHeader(Client.NODE_TIMESTAMP_HEADER + ":");
-                if (dataHeader != null) {
-                    long headerTime = Long.parseLong(dataHeader);
-                    if (headerTime >= finalTime.get()) {
-                        finalTime.set(headerTime);
-                        finalResponse.set(response);
-                        successResponses.incrementAndGet();
-                    }
-                } else {
-                    if (response.getStatus() != INTERNAL_ERROR_STATUS) {
-                        finalResponse.set(response);
-                        successResponses.incrementAndGet();
-                    }
-                }
+                validateResponse(finalResponse, response, finalTime, successResponses);
                 sentFinalResponse(responses, ack, finalResponse, session, successResponses, completedFuture);
             }, aggregator).exceptionally(throwable -> {
                 LOGGER.error("future exception", throwable);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             });
+        }
+    }
+
+    private static void validateResponse(AtomicReference<Response> finalResponse, Response response,
+                                         AtomicLong finalTime, AtomicInteger successResponses) {
+        String dataHeader = response.getHeader(Client.NODE_TIMESTAMP_HEADER + ":");
+        if (dataHeader != null) {
+            long headerTime = Long.parseLong(dataHeader);
+            if (headerTime >= finalTime.get()) {
+                finalTime.set(headerTime);
+                finalResponse.set(response);
+                successResponses.incrementAndGet();
+            }
+        } else {
+            if (response.getStatus() != INTERNAL_ERROR_STATUS) {
+                finalResponse.set(response);
+                successResponses.incrementAndGet();
+            }
         }
     }
 

@@ -29,7 +29,7 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         if (stopped.compareAndSet(false, true)) {
-            server.close();
+            server.stop();
         }
 
         return CompletableFuture.completedFuture(null);

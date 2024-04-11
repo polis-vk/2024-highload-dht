@@ -166,92 +166,107 @@ public class MyServer extends HttpServer {
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
-    public final Response get(@Param(value = "id", required = true) String id,
-                              @Param(value = "ack") String ack,
-                              @Param(value = "from") String from,
-                              Request request) {
+    public final void get(@Param(value = "id", required = true) String id,
+                          @Param(value = "ack") String ack,
+                          @Param(value = "from") String from,
+                          Request request,
+                          HttpSession session) {
         int fromV = from == null ? clusterSize : Integer.parseInt(from);
         int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
         if (isParamsBad(id, ackV, fromV)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
-        if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(REDIRECT_HEADER + "true");
-            List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, fromV);
-            for (String sendTo : shardToRequest) {
-                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
-                    responses.addLast(answer);
-                }
-            }
-            if (responses.size() >= ackV) {
-                return getGoodGet(responses);
-            }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        if (request.getHeader(REDIRECT_HEADER) != null) {
+            sendResponse(responseLocal(request, id), session);
+            return;
         }
-        return responseLocal(request, id);
+
+        request.addHeader(REDIRECT_HEADER + "true");
+        List<Response> responses = new ArrayList<>();
+        List<String> shardToRequest = shards.getNShardByKey(id, fromV);
+        for (String sendTo : shardToRequest) {
+            Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
+            if (answer.getStatus() < 500) {
+                responses.addLast(answer);
+            }
+        }
+        if (responses.size() >= ackV) {
+            sendResponse(getGoodGet(responses), session);
+            return;
+        }
+        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
     }
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
-    public final Response put(@Param(value = "id", required = true) String id,
-                              @Param(value = "ack") String ack,
-                              @Param(value = "from") String from,
-                              Request request) {
+    public final void put(@Param(value = "id", required = true) String id,
+                          @Param(value = "ack") String ack,
+                          @Param(value = "from") String from,
+                          Request request,
+                          HttpSession session) {
         int fromV = from == null ? clusterSize : Integer.parseInt(from);
         int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
         if (isParamsBad(id, ackV, fromV)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
-        if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(REDIRECT_HEADER + "true");
-            List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, ackV);
-            for (String sendTo : shardToRequest) {
-                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
-                    responses.addLast(answer);
-                }
-                if (responses.size() == ackV) {
-                    return responses.getFirst();
-                }
-            }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        if (request.getHeader(REDIRECT_HEADER) != null) {
+            sendResponse(responseLocal(request, id), session);
+            return;
         }
-        return responseLocal(request, id);
+
+        request.addHeader(REDIRECT_HEADER + "true");
+        List<Response> responses = new ArrayList<>();
+        List<String> shardToRequest = shards.getNShardByKey(id, ackV);
+        for (String sendTo : shardToRequest) {
+            Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
+            if (answer.getStatus() < 500) {
+                responses.addLast(answer);
+            }
+            if (responses.size() == ackV) {
+                sendResponse(responses.getFirst(), session);
+                return;
+            }
+        }
+        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
     }
 
     @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public final Response delete(@Param(value = "id", required = true) String id,
-                                 @Param(value = "ack") String ack,
-                                 @Param(value = "from") String from,
-                                 Request request) {
+    public final void delete(@Param(value = "id", required = true) String id,
+                             @Param(value = "ack") String ack,
+                             @Param(value = "from") String from,
+                             Request request,
+                             HttpSession session) {
         int fromV = from == null ? clusterSize : Integer.parseInt(from);
         int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
         if (isParamsBad(id, ackV, fromV)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
-        if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(REDIRECT_HEADER + "true");
-            List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, ackV);
-            for (String sendTo : shardToRequest) {
-                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
-                    responses.addLast(answer);
-                }
-                if (responses.size() == ackV) {
-                    return responses.getFirst();
-                }
-            }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        if (request.getHeader(REDIRECT_HEADER) != null) {
+            sendResponse(responseLocal(request, id), session);
+            return;
         }
-        return responseLocal(request, id);
+
+        request.addHeader(REDIRECT_HEADER + "true");
+        List<Response> responses = new ArrayList<>();
+        List<String> shardToRequest = shards.getNShardByKey(id, ackV);
+        for (String sendTo : shardToRequest) {
+            Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
+            if (answer.getStatus() < 500) {
+                responses.addLast(answer);
+            }
+            if (responses.size() == ackV) {
+                sendResponse(responses.getFirst(), session);
+                return;
+            }
+        }
+        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
     }
 
     @Path(PATH)

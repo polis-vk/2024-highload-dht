@@ -241,8 +241,7 @@ public class ServerImplementation extends HttpServer {
         for (int i = 0; i < config.clusterUrls().size(); i++) {
             treeMap.put(getCustomHashCode(key, i), config.clusterUrls().get(i));
         }
-        Stream<String> maxHashCodeUrlsStream = treeMap.values().stream().limit(size);
-        return maxHashCodeUrlsStream.toList();
+        return new ArrayList<>(treeMap.values()).subList(0, size);
     }
 
     private int getCustomHashCode(String key, int nodeNumber) {

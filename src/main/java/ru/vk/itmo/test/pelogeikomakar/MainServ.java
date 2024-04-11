@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
 
 public final class MainServ {
 
@@ -35,7 +34,6 @@ public final class MainServ {
         }
 
         for (ServiceConfig config: configs) {
-            //ExecutorService execServ = ExecutorServiceFactory.newExecutorService("mainServ");
             Config daoConfig = new Config(config.workingDir(), 1_048_576L);
             DaoHttpServer server = new DaoHttpServer(config, new ReferenceDaoPel(daoConfig));
             server.start();

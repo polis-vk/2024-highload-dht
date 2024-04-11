@@ -5,7 +5,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -20,10 +19,8 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -48,9 +45,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     private final String selfUrl;
     private final HttpClient httpClient;
 
-
     public DaoHttpServer(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
-        super(createHttpServerConfig(config));
+        super(ServerUtils.createHttpServerConfig(config));
 
         this.clusterUrls = config.clusterUrls();
         this.selfUrl = config.selfUrl();
@@ -69,21 +65,9 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         remoteExecutorService = ExecutorServiceFactory.newExecutorService("remoteExecutor-");
     }
 
-    private static HttpServerConfig createHttpServerConfig(ServiceConfig config) {
-        HttpServerConfig serverConfig = new HttpServerConfig();
-        AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = config.selfPort();
-        acceptorConfig.reusePort = true;
-
-        serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-        serverConfig.closeSessions = true;
-        return serverConfig;
-    }
-
     public Dao<MemorySegment, Entry<MemorySegment>> getDao() {
         return dao;
     }
-
 
     private List<CompletableFuture<Response>> invokeAsyncAllRequests(String id, Request request, String[] urls,
                                                                      long time) {
@@ -123,14 +107,14 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
                 doneResponses.incrementAndGet();
 
-                if (successResponses.get() >= currAck &&
-                        queryProcessed.compareAndSet(false, true)) {
+                if (successResponses.get() >= currAck
+                        && queryProcessed.compareAndSet(false, true)) {
                     mergeAndSend(session, readyResponses);
                     return;
                 }
 
-                if (doneResponses.get() == currFrom && successResponses.get() < currAck &&
-                        queryProcessed.compareAndSet(false, true)) {
+                if (doneResponses.get() == currFrom && successResponses.get() < currAck
+                        && queryProcessed.compareAndSet(false, true)) {
                     sendResponseWithError(session, new Response(NOT_REPLICAS_HEADER, Response.EMPTY));
                 }
                 }, localExecutorService)
@@ -233,8 +217,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
         HttpRequest httpRequest = httpRequestBuilder.build();
 
-
-
         try {
             HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
             Response response = new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
@@ -286,7 +268,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             return;
         }
 
-
         long time = System.currentTimeMillis();
 
         if (request.getHeader(INTERNAL_RQ_HEADER) == null) {
@@ -300,7 +281,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                 return;
             }
 
-            String[] urls = getServerUrlsForKey(id, currFrom);
+            String[] urls = ServerUtils.getServerUrlsForKey(id, currFrom, clusterUrls);
             List<CompletableFuture<Response>> responses = invokeAsyncAllRequests(id, request, urls, time);
             accumulateAndSendResults(responses, session, currAck, currFrom);
 
@@ -324,23 +305,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         super.stop();
         ServiceImpl.shutdownAndAwaitTermination(localExecutorService);
         ServiceImpl.shutdownAndAwaitTermination(remoteExecutorService);
-    }
-
-    private String[] getServerUrlsForKey(String key, int from) {
-        NavigableMap<Integer, String> allCandidates = new TreeMap<>();
-
-        for (String url : clusterUrls) {
-            int currentHash = Hash.murmur3(url + key);
-            allCandidates.put(currentHash, url);
-        }
-
-        String[] resultUrls = new String[from];
-
-        for (int i = 0; i < from; i++) {
-            resultUrls[i] = allCandidates.pollLastEntry().getValue();
-        }
-
-        return resultUrls;
     }
 
 }

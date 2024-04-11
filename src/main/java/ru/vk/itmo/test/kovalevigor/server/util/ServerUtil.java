@@ -17,7 +17,10 @@ public final class ServerUtil {
     public static final Set<Integer> GOOD_STATUSES = Set.of(
             200, 201, 202, 404
     );
-    public static final Duration REMOTE_TIMEOUT = Duration.ofSeconds(1);
+
+    public static final TimeUnit REMOTE_TIMEOUT_TIMEUNIT = TimeUnit.MILLISECONDS;
+    public static final int REMOTE_TIMEOUT_VALUE = 500;
+    public static final Duration REMOTE_TIMEOUT = Duration.ofMillis(500);
 
     private ServerUtil() {
     }

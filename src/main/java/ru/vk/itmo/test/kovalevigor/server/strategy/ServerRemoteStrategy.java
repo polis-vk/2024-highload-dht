@@ -5,19 +5,19 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.util.Headers;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 
 import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
 import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT;
+import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT_TIMEUNIT;
+import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT_VALUE;
 
 public class ServerRemoteStrategy extends ServerRejectStrategy {
     private final HttpClient httpClient;
@@ -31,12 +31,10 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
     @Override
     public Response handleRequest(Request request, HttpSession session) {
         try {
-            return handleRequestAsync(request, session).get(1, TimeUnit.SECONDS);
+            return mapResponse(httpClient.send(mapRequest(request), HttpResponse.BodyHandlers.ofByteArray()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        } catch (ExecutionException e) {
-            log.log(Level.SEVERE, "Exception while redirection", e.getCause());
-        } catch (TimeoutException e) {
+        } catch (IOException e) {
             log.log(Level.SEVERE, "Exception while redirection", e);
         }
         return null;
@@ -44,6 +42,17 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
 
     @Override
     public CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session) {
+        return httpClient.sendAsync(mapRequest(request), HttpResponse.BodyHandlers.ofByteArray())
+                .orTimeout(REMOTE_TIMEOUT_VALUE, REMOTE_TIMEOUT_TIMEUNIT)
+                .thenApply(ServerRemoteStrategy::mapResponse);
+    }
+
+    @Override
+    public CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session, Executor executor) {
+        return handleRequestAsync(request, session);
+    }
+
+    private HttpRequest mapRequest(Request request) {
         HttpRequest.Builder httpRequestBuilder = HttpRequest.newBuilder(URI.create(remoteUrl + request.getURI()))
                 .method(
                         request.getMethodName(),
@@ -58,14 +67,7 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
                 httpRequestBuilder.header(header.getName(), headerValue);
             }
         }
-        return httpClient.sendAsync(httpRequestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray())
-                .orTimeout(1, TimeUnit.SECONDS)
-                .thenApply(ServerRemoteStrategy::mapResponse);
-    }
-
-    @Override
-    public CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session, Executor executor) {
-        return handleRequestAsync(request, session);
+        return httpRequestBuilder.build();
     }
 
     private static Response mapResponse(HttpResponse<byte[]> httpResponse) {

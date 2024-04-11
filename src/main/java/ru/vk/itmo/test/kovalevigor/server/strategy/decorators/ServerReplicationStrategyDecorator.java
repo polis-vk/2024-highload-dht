@@ -16,6 +16,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.GOOD_STATUSES;
+import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT_VALUE;
 import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.mergeResponses;
 
 public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator {
@@ -90,7 +91,7 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
                             : strategy.handleRequestAsync(request, session, executor);
             future.whenComplete(result::markCompletedFuture);
         }
-        return result.orTimeout(1, TimeUnit.SECONDS);
+        return result.orTimeout(REMOTE_TIMEOUT_VALUE, TimeUnit.SECONDS);
     }
 
     private static Response checkReplicaResponse(int responseCount, int ack, Response replicasResponse) {

@@ -27,27 +27,28 @@ public class AckEitherCompletableFuture extends CompletableFuture<Response> {
     }
 
     public void markCompletedFuture(Response response, Throwable exception) {
-        if (response == null || !GOOD_STATUSES.contains(response.getStatus())) {
-            totalCount.decrementAndGet();
-            if (totalCount.get() == 0) {
-                complete(null);
+        totalCount.decrementAndGet();
+        if (response != null && GOOD_STATUSES.contains(response.getStatus())) {
+            responseCount.incrementAndGet();
+            Response oldResponse;
+            Response merged;
+            do {
+                oldResponse = replicasResponse.get();
+                merged = mergeResponses(oldResponse, response);
+            } while (!replicasResponse.compareAndSet(oldResponse, merged));
+
+            if (responseCount.get() >= ack) {
+                complete(Objects.requireNonNullElseGet(merged, Responses.NOT_FOUND::toResponse));
+                return;
             }
+        } else if (response == null) {
             if (exception instanceof IOException ioException) {
                 logIO(ioException);
             }
-            return;
         }
 
-        responseCount.incrementAndGet();
-        Response oldResponse;
-        Response merged;
-        do {
-            oldResponse = replicasResponse.get();
-            merged = mergeResponses(oldResponse, response);
-        } while (!replicasResponse.compareAndSet(oldResponse, merged));
-
-        if (responseCount.get() >= ack) {
-            complete(Objects.requireNonNullElseGet(merged, Responses.NOT_FOUND::toResponse));
+        if (totalCount.get() == 0) {
+            complete(null);
         }
     }
 }

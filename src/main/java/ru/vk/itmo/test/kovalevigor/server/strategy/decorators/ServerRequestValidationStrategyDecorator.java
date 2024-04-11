@@ -31,19 +31,10 @@ public class ServerRequestValidationStrategyDecorator extends ServerStrategyDeco
 
     @Override
     public Response handleRequest(Request request, HttpSession session) throws IOException {
-        Paths path = Paths.getPath(request.getPath());
-        if (path != null) {
-            if (checkMethods(request, path)) {
-                if (checkParameters(request, path)) {
-                    return super.handleRequest(request, session);
-                }
-            } else {
-                session.sendResponse(Responses.NOT_ALLOWED.toResponse());
-                return null;
-            }
-        }
-        handleDefault(request, session);
-        return null;
+        Response response = checkErrors(request);
+        return response == null
+                ? super.handleRequest(request, session)
+                : response;
     }
 
     @Override
@@ -52,17 +43,24 @@ public class ServerRequestValidationStrategyDecorator extends ServerStrategyDeco
             HttpSession session,
             Executor executor
     ) {
+        Response response = checkErrors(request);
+        return response == null
+                ? super.handleRequestAsync(request, session, executor)
+                : CompletableFuture.completedFuture(response);
+    }
+
+    private static Response checkErrors(Request request) {
         Paths path = Paths.getPath(request.getPath());
         if (path != null) {
             if (checkMethods(request, path)) {
                 if (checkParameters(request, path)) {
-                    return super.handleRequestAsync(request, session, executor);
+                    return null;
                 }
             } else {
-                return CompletableFuture.completedFuture(Responses.NOT_ALLOWED.toResponse());
+                return Responses.NOT_ALLOWED.toResponse();
             }
         }
-        return CompletableFuture.completedFuture(Responses.BAD_REQUEST.toResponse());
+        return Responses.BAD_REQUEST.toResponse();
     }
 
     private static boolean checkMethods(Request request, Paths path) {

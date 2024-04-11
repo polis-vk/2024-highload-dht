@@ -9,6 +9,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,15 +111,15 @@ public class MyServer extends HttpServer {
         return MemorySegment.ofArray(string.getBytes(StandardCharsets.UTF_8));
     }
 
-    public void close() throws IOException {
-        client.close();
-
+    @Override
+    public synchronized void stop() {
+        super.stop();
         executorService.shutdown();
-        executorService.shutdownNow();
-
-        client.shutdown();
-        client.shutdownNow();
-        dao.close();
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private int quorum(final int from) {
@@ -222,11 +223,17 @@ public class MyServer extends HttpServer {
 
     private void actionOnResponse(
             final Response response,
+            final Throwable throwable,
             final List<Response> responses,
             final AtomicInteger fails) {
-        if (response.getStatus() < 500) {
-            responses.addLast(response);
-        } else {
+        if (throwable == null) {
+            if (response.getStatus() < 500) {
+                responses.addLast(response);
+            } else {
+                fails.incrementAndGet();
+            }
+        }
+        else {
             fails.incrementAndGet();
         }
     }
@@ -259,9 +266,9 @@ public class MyServer extends HttpServer {
         for (String sendTo : shardToRequest) {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                //.completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
                 .whenCompleteAsync((response, throwable) -> {
-                    actionOnResponse(response, responses, fails);
+                    actionOnResponse(response, throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
                         sendResponse(getGoodGet(responses), session);
                         return;
@@ -299,9 +306,9 @@ public class MyServer extends HttpServer {
         for (String sendTo : shardToRequest) {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                //.completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
                 .whenCompleteAsync((response, throwable) -> {
-                    actionOnResponse(response, responses, fails);
+                    actionOnResponse(response, throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
                         sendResponse(responses.getFirst(), session);
                         return;
@@ -341,9 +348,9 @@ public class MyServer extends HttpServer {
         for (String sendTo : shardToRequest) {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                //.completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
                 .whenCompleteAsync((response, throwable) -> {
-                    actionOnResponse(response, responses, fails);
+                    actionOnResponse(response, throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
                         sendResponse(responses.getFirst(), session);
                         return;

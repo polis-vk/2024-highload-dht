@@ -11,6 +11,8 @@ public class MyService implements Service {
 
     private final ServiceConfig config;
 
+    private boolean stopped = false;
+
     public MyService(ServiceConfig config) {
         this.config = config;
     }
@@ -24,8 +26,11 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
+        if (stopped) {
+            return CompletableFuture.completedFuture(null);
+        }
         server.stop();
-        server.close();
+        stopped = true;
         return CompletableFuture.completedFuture(null);
     }
 }

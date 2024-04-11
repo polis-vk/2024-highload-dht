@@ -18,7 +18,6 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
 import ru.vk.itmo.test.viktorkorotkikh.http.HttpResponseNodeResponse;
-import ru.vk.itmo.test.viktorkorotkikh.util.http.LSMConstantResponse;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
 import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
@@ -26,6 +25,7 @@ import ru.vk.itmo.test.viktorkorotkikh.http.OneNioNodeResponse;
 import ru.vk.itmo.test.viktorkorotkikh.http.ReplicaEmptyResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.LsmServerUtil;
 import ru.vk.itmo.test.viktorkorotkikh.util.RequestParameters;
+import ru.vk.itmo.test.viktorkorotkikh.util.http.LSMConstantResponse;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -165,7 +165,7 @@ public class LSMServerImpl extends HttpServer {
         }
         int ack = requestParameters.ack();
         int from = requestParameters.from();
-        if (ack == -1 && from != -1 || ack != -1 && from == -1) {
+        if ((ack == -1 && from != -1) || (ack != -1 && from == -1)) {
             log.debug("Bad request: one of the ack or from parameters is missing");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;

@@ -41,10 +41,8 @@ public class AckEitherCompletableFuture extends CompletableFuture<Response> {
                 complete(Objects.requireNonNullElseGet(merged, Responses.NOT_FOUND::toResponse));
                 return;
             }
-        } else if (response == null) {
-            if (exception instanceof IOException ioException) {
-                logIO(ioException);
-            }
+        } else if (response == null && exception instanceof IOException ioException) {
+            logIO(ioException);
         }
 
         if (totalCount.get() == 0) {

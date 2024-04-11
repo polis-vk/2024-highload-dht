@@ -5,27 +5,24 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.ServiceFactory;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServerManager implements Service {
 
     public HttpServerImpl server;
     private final ServiceConfig config;
+    private final PartitionMetaInfo info;
 
     public ServerManager(ServiceConfig conf) {
-        try {
-            this.server = new HttpServerImpl(conf);
+            info = new PartitionMetaInfo(conf.clusterUrls(), 3);
             this.config = conf;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        this.server = new HttpServerImpl(config);
+        server = new HttpServerImpl(config, info);
         server.start();
+
         return CompletableFuture.completedFuture(null);
     }
 
@@ -36,9 +33,8 @@ public class ServerManager implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 4)
     public static class ServerFactory implements ServiceFactory.Factory {
-
         @Override
         public Service create(ServiceConfig config) {
             return new ServerManager(config);

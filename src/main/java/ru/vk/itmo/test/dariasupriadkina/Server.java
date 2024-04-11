@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -25,12 +26,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER;
@@ -45,10 +48,14 @@ public class Server extends HttpServer {
     private final String selfUrl;
     private final ShardingPolicy shardingPolicy;
     private final HttpClient httpClient;
-    private static final int REQUEST_TIMEOUT_SEC = 2;
     private final List<String> clusterUrls;
     private final Utils utils;
     private final SelfRequestHandler selfHandler;
+    private final ExecutorService broadcastExecutor = new ThreadPoolExecutor(
+            8, 8, 1000L, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(1024),
+            new CustomThreadFactory("broadcast-thread", true), new ThreadPoolExecutor.AbortPolicy()
+    );
 
     public Server(ServiceConfig config, Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao,
                   ThreadPoolExecutor workerExecutor, ThreadPoolExecutor nodeExecutor, ShardingPolicy shardingPolicy)
@@ -60,7 +67,7 @@ public class Server extends HttpServer {
         this.clusterUrls = config.clusterUrls();
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
-        this.selfHandler = new SelfRequestHandler(dao, utils);
+        this.selfHandler = new SelfRequestHandler(dao, utils, broadcastExecutor);
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
@@ -70,7 +77,7 @@ public class Server extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
 
-        httpServerConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
 
         return httpServerConfig;
@@ -83,7 +90,6 @@ public class Server extends HttpServer {
             response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         } else {
             response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-
         }
         session.sendResponse(response);
     }
@@ -103,11 +109,13 @@ public class Server extends HttpServer {
                         int from = ackFrom.get("from");
                         int ack = ackFrom.get("ack");
 
-                        Response response = mergeResponses(broadcast(
-                                        shardingPolicy.getNodesById(utils.getIdParameter(request), from), request, ack),
-                                ack, from);
-
-                        session.sendResponse(response);
+                        broadcastExecutor.execute(() ->
+                                collectResponsesCallback(
+                                        broadcast(
+                                                shardingPolicy.getNodesById(utils.getIdParameter(request), from),
+                                                request
+                                        ), ack, from, session)
+                        );
 
                     } else {
                         Response resp = selfHandler.handleRequest(request);
@@ -123,8 +131,8 @@ public class Server extends HttpServer {
                         } else {
                             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                         }
-                    } catch (IOException ex) {
-                        logger.error("Failed to send error response", e);
+                    } catch (IOException exception) {
+                        logger.error("Failed to send error response", exception);
                         session.close();
                     }
                 }
@@ -136,31 +144,20 @@ public class Server extends HttpServer {
         }
     }
 
-    private List<Response> broadcast(List<String> nodes, Request request, int ack) {
-        int internalAck = ack;
-        List<Response> responses = new ArrayList<>(ack);
-        Response response;
+    private List<CompletableFuture<Response>> broadcast(List<String> nodes, Request request) {
+        List<CompletableFuture<Response>> futureResponses = new ArrayList<>(nodes.size());
+        CompletableFuture<Response> response;
         if (nodes.contains(selfUrl)) {
-            response = selfHandler.handleRequest(request);
-            checkTimestampHeaderExistenceAndSet(response);
-            responses.add(response);
+            response = selfHandler.handleAsyncRequest(request);
+            futureResponses.add(response);
             nodes.remove(selfUrl);
-            if (--internalAck == 0) {
-                return responses;
-            }
         }
 
         for (String node : nodes) {
             response = handleProxy(utils.getEntryUrl(node, utils.getIdParameter(request)), request);
-            if (response.getStatus() < 500) {
-                checkTimestampHeaderExistenceAndSet(response);
-                responses.add(response);
-                if (--internalAck == 0) {
-                    return responses;
-                }
-            }
+            futureResponses.add(response);
         }
-        return responses;
+        return futureResponses;
     }
 
     private void checkTimestampHeaderExistenceAndSet(Response response) {
@@ -171,58 +168,79 @@ public class Server extends HttpServer {
         }
     }
 
-    private Response mergeResponses(List<Response> responses, int ack, int from) {
-        if (responses.stream().filter(response -> response.getStatus() == 400).count() == from
-                || ack > from
-                || from > clusterUrls.size()
-                || ack <= 0) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private void collectResponsesCallback(List<CompletableFuture<Response>> futureResponses,
+                                          int ack, int from, HttpSession session) {
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        AtomicInteger completedResponses = new AtomicInteger(0);
+        for (CompletableFuture<Response> futureResponse : futureResponses) {
+            futureResponse.whenCompleteAsync((response, exception) -> {
+                completedResponses.incrementAndGet();
+                if (exception == null && response.getStatus() < 500) {
+                    checkTimestampHeaderExistenceAndSet(response);
+                    responses.add(response);
+                }
+                if (responses.size() >= ack || completedResponses.get() == from) {
+                    sendAsyncResponse(responses, ack, from, session);
+                }
+            }, broadcastExecutor).exceptionally(exception -> {
+                logger.error("Unexpected error occurred", exception);
+                session.close();
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            });
         }
-        if (responses.stream().filter(response -> response.getStatus() == 200
-                || response.getStatus() == 404
-                || response.getStatus() == 202
-                || response.getStatus() == 201).count() < ack) {
-            return new Response("504 Not Enough Replicas", Response.EMPTY);
-        }
-        return responses.stream().max((o1, o2) -> {
-            Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
-            Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
-            return header1.compareTo(header2);
-        }).get();
     }
 
-    public Response handleProxy(String redirectedUrl, Request request) {
+    private void sendAsyncResponse(List<Response> responses, int ack,
+                                   int from, HttpSession session) {
         try {
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(redirectedUrl))
-                    .header(FROM_HEADER, selfUrl)
-                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
-                            request.getBody() == null ? new byte[]{} : request.getBody())
-                    ).build();
-            HttpResponse<byte[]> response = httpClient
-                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS);
-            Response response1 = new Response(String.valueOf(response.statusCode()), response.body());
-            if (response.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) == null) {
-                response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
-            } else {
-                response1.addHeader(TIMESTAMP_MILLIS_HEADER
-                        + response.headers().map().get(
-                                TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase(Locale.ROOT)).getFirst()
-                );
+            if (responses.stream().filter(response -> response.getStatus() == 400).count() == from
+                    || ack > from
+                    || from > clusterUrls.size()
+                    || ack <= 0) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                session.close();
+                return;
             }
-
-            return response1;
-        } catch (ExecutionException e) {
-            logger.error("Unexpected error", e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (TimeoutException e) {
-            logger.error("Timeout reached", e);
-            return new Response(Response.REQUEST_TIMEOUT, Response.EMPTY);
-        } catch (InterruptedException e) {
-            logger.error("Service is unavailable", e);
-            Thread.currentThread().interrupt();
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            if (responses.stream().filter(response -> response.getStatus() == 200
+                    || response.getStatus() == 404
+                    || response.getStatus() == 202
+                    || response.getStatus() == 201).count() < ack) {
+                session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
+                session.close();
+                return;
+            }
+            session.sendResponse(responses.stream().max((o1, o2) -> {
+                Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
+                Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
+                return header1.compareTo(header2);
+            }).get());
+            session.close();
+        } catch (IOException e) {
+            logger.error("Failed to send error response", e);
+            session.close();
         }
+    }
+
+    public CompletableFuture<Response> handleProxy(String redirectedUrl, Request request) {
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(redirectedUrl))
+                .header(FROM_HEADER, selfUrl)
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
+                        request.getBody() == null ? new byte[]{} : request.getBody())
+                ).build();
+        return httpClient
+                .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApplyAsync(httpResponse -> {
+                    Response response1 = new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
+                    if (httpResponse.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) == null) {
+                        response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
+                    } else {
+                        response1.addHeader(TIMESTAMP_MILLIS_HEADER
+                                + httpResponse.headers().map().get(
+                                TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase(Locale.ROOT)).getFirst()
+                        );
+                    }
+                    return response1;
+                }, broadcastExecutor);
     }
 
     private Map<String, Integer> getFromAndAck(Request request) {

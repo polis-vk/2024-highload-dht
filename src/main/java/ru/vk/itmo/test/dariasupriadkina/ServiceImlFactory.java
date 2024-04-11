@@ -10,7 +10,7 @@ import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
 
 import java.nio.file.Path;
 
-@ServiceFactory(stage = 4)
+@ServiceFactory(stage = 5)
 public class ServiceImlFactory implements ServiceFactory.Factory {
 
     private static final long FLUSH_THRESHOLD_BYTES = 1024 * 1024;

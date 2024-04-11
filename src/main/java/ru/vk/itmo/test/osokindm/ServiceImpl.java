@@ -144,8 +144,7 @@ public class ServiceImpl implements Service {
 
         for (Node node : targetNodes) {
             if (!node.isAlive()) {
-                LOGGER.info("node is unreachable: " + node.address);
-                failures.incrementAndGet();
+                logFailure("node is unreachable: " + node.address, failures);
                 continue;
             }
             long timestamp = getTimestamp(request);
@@ -158,23 +157,26 @@ public class ServiceImpl implements Service {
                             checkAck(session, failures, ack, from);
                         } else {
                             updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
-                            if (responseIsGood(resp)
-                                    && successes.incrementAndGet() >= ack
-                                    && !responseSent.getAndSet(true)) {
+                            if (canEarlyResponse(resp, successes, ack, responseSent)) {
                                 try {
                                     session.sendResponse(latestResponse.get());
                                 } catch (IOException e) {
-                                    throw new RuntimeException(e);
+                                    logFailure(e.getMessage(), failures);
                                 }
                             }
                         }
                     }, responseExecutor)
                     .exceptionally(ex -> {
-                        failures.incrementAndGet();
-                        LOGGER.error(ex.toString());
+                        logFailure(ex.getMessage(), failures);
                         return null;
                     });
         }
+    }
+
+    private boolean canEarlyResponse(Response resp, AtomicInteger successes, Integer ack, AtomicBoolean responseSent) {
+        return responseIsGood(resp)
+                && successes.incrementAndGet() >= ack
+                && !responseSent.getAndSet(true);
     }
 
     private void checkAck(HttpSession session, AtomicInteger failures, Integer ack, Integer from) {
@@ -197,6 +199,11 @@ public class ServiceImpl implements Service {
                 || response.getStatus() == HttpURLConnection.HTTP_BAD_METHOD;
     }
 
+    private void logFailure(String e, AtomicInteger failures) {
+        failures.incrementAndGet();
+        LOGGER.error(e);
+    }
+
     private long getTimestamp(Request request) throws NumberFormatException {
         // check if the request has been forwarded, so we can use given timestamp
         String timestamp = request.getHeader(TIMESTAMP_HEADER);
@@ -209,6 +216,15 @@ public class ServiceImpl implements Service {
         }
 
         return System.currentTimeMillis();
+    }
+
+    private long extractTimestampFromResponse(Response response) {
+        String timestamp = response.getHeaders()[2];
+        if (timestamp == null) {
+            return -1;
+        }
+        String timestampValue = timestamp.substring(TIMESTAMP_HEADER.length() + 2).trim();
+        return Long.parseLong(timestampValue);
     }
 
     private void updateLatestResponse(
@@ -229,15 +245,6 @@ public class ServiceImpl implements Service {
             } while (!responseTime.compareAndSet(currentResponseTime, timestamp));
         }
         latestResponse.set(response);
-    }
-
-    private long extractTimestampFromResponse(Response response) {
-        String timestamp = response.getHeaders()[2];
-        if (timestamp == null) {
-            return -1;
-        }
-        String timestampValue = timestamp.substring(TIMESTAMP_HEADER.length() + 2).trim();
-        return Long.parseLong(timestampValue);
     }
 
     private static HttpServerConfig createServerConfig(int port) {

@@ -38,6 +38,7 @@ public class LSMServiceImpl implements Service {
     private final ConsistentHashingManager consistentHashingManager;
     private HttpClient clusterClient;
     private ExecutorService clusterClientExecutorService;
+    private ExecutorService clusterResponseProcessor;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         Path baseWorkingDir = Path.of("daoWorkingDir");
@@ -101,9 +102,10 @@ public class LSMServiceImpl implements Service {
             Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao,
             ExecutorService executorService,
             ConsistentHashingManager consistentHashingManager,
-            HttpClient clusterClient
+            HttpClient clusterClient,
+            ExecutorService clusterResponseProcessor
     ) throws IOException {
-        return new LSMServerImpl(serviceConfig, dao, executorService, consistentHashingManager, clusterClient);
+        return new LSMServerImpl(serviceConfig, dao, executorService, consistentHashingManager, clusterClient, clusterResponseProcessor);
     }
 
     private static Dao<MemorySegment, TimestampedEntry<MemorySegment>> createLSMDao(Path workingDir) {
@@ -148,12 +150,20 @@ public class LSMServiceImpl implements Service {
 
         executorService = createExecutorService(16, 1024, "worker");
         clusterClientExecutorService = createExecutorService(16, 1024, "cluster-worker");
+        clusterResponseProcessor = createExecutorService(16, 1024, "cluster-response");
 
         clusterClient = HttpClient.newBuilder()
                 .executor(clusterClientExecutorService)
                 .build();
 
-        httpServer = createServer(serviceConfig, dao, executorService, consistentHashingManager, clusterClient);
+        httpServer = createServer(
+                serviceConfig,
+                dao,
+                executorService,
+                consistentHashingManager,
+                clusterClient,
+                clusterResponseProcessor
+        );
         httpServer.start();
 
         isRunning = true;
@@ -167,6 +177,7 @@ public class LSMServiceImpl implements Service {
 
         shutdownHttpClient(clusterClient);
         shutdownExecutorService(clusterClientExecutorService);
+        shutdownExecutorService(clusterResponseProcessor);
         shutdownExecutorService(executorService);
         executorService = null;
         clusterClient = null;

@@ -5,8 +5,6 @@ import one.nio.http.Response;
 import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.http.LSMConstantResponse;
 
-import java.util.List;
-
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_ENTITY_TOO_LARGE;
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
@@ -26,7 +24,7 @@ public class LsmServerUtil {
 
     public static Response mergeReplicasResponses(
             final Request originalRequest,
-            final List<NodeResponse> responses,
+            final NodeResponse[] responses,
             final int ack
     ) {
         switch (originalRequest.getMethod()) {
@@ -43,7 +41,7 @@ public class LsmServerUtil {
         }
     }
 
-    private static Response mergeGetResponses(Request originalRequest, List<NodeResponse> responses, int ack) {
+    private static Response mergeGetResponses(Request originalRequest, NodeResponse[] responses, int ack) {
         long maxTimestamp = -1;
         NodeResponse lastValue = null;
         int successfulResponses = 0;
@@ -61,7 +59,7 @@ public class LsmServerUtil {
             return LSMConstantResponse.notEnoughReplicas(originalRequest);
         }
         if (lastValue == null) {
-            lastValue = responses.getFirst();
+            lastValue = responses[0];
         }
         return switch (lastValue.statusCode()) {
             case HTTP_OK -> Response.ok(lastValue.body());
@@ -76,7 +74,7 @@ public class LsmServerUtil {
 
     private static Response mergePutResponses(
             Request originalRequest,
-            List<NodeResponse> responses,
+            NodeResponse[] responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -87,7 +85,7 @@ public class LsmServerUtil {
 
     private static Response mergeDeleteResponses(
             Request originalRequest,
-            List<NodeResponse> responses,
+            NodeResponse[] responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -96,7 +94,7 @@ public class LsmServerUtil {
         return LSMConstantResponse.accepted(originalRequest);
     }
 
-    private static boolean hasNotEnoughReplicas(List<NodeResponse> responses, int ack) {
+    private static boolean hasNotEnoughReplicas(NodeResponse[] responses, int ack) {
         int successfulResponses = 0;
         for (NodeResponse response : responses) {
             if (response.statusCode() >= 200 && response.statusCode() < 300) {

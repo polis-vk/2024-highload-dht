@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
-import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -26,13 +25,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER;
@@ -51,11 +47,6 @@ public class Server extends HttpServer {
     private final List<String> clusterUrls;
     private final Utils utils;
     private final SelfRequestHandler selfHandler;
-    private final ExecutorService broadcastExecutor = new ThreadPoolExecutor(
-            8, 8, 1000L, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(1024),
-            new CustomThreadFactory("broadcast-thread", true), new ThreadPoolExecutor.AbortPolicy()
-    );
 
     public Server(ServiceConfig config, Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao,
                   ThreadPoolExecutor workerExecutor, ThreadPoolExecutor nodeExecutor, ShardingPolicy shardingPolicy)
@@ -108,14 +99,11 @@ public class Server extends HttpServer {
                     }
                     if (request.getHeader(FROM_HEADER) == null) {
                         request.addHeader(FROM_HEADER + selfUrl);
-                        broadcastExecutor.execute(() ->
-                                collectResponsesCallback(
-                                        broadcast(
-                                                shardingPolicy.getNodesById(utils.getIdParameter(request), from),
-                                                request
-                                        ), ack, from, session)
-                        );
-
+                        collectResponsesCallback(
+                                broadcast(
+                                        shardingPolicy.getNodesById(utils.getIdParameter(request), from),
+                                        request
+                                ), ack, from, session);
                     } else {
                         Response resp = selfHandler.handleRequest(request);
                         checkTimestampHeaderExistenceAndSet(resp);
@@ -174,7 +162,7 @@ public class Server extends HttpServer {
 
     private void collectResponsesCallback(List<CompletableFuture<Response>> futureResponses,
                                           int ack, int from, HttpSession session) {
-        List<Response> responses = new CopyOnWriteArrayList<>();
+        List<Response> responses = new ArrayList<>();
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger exceptionCount = new AtomicInteger(0);
         for (CompletableFuture<Response> futureResponse : futureResponses) {
@@ -190,15 +178,17 @@ public class Server extends HttpServer {
                 }
                 Response response1;
                 if (successCount.get() == ack) {
-                    response1 =chooseResponse(responses);
+                    response1 = chooseResponse(responses);
                     sendAsyncResponse(response1, session);
                     future.complete(response1);
-                } else if (exceptionCount.get() == from - ack + 1) {
+                    return;
+                }
+                if (exceptionCount.get() == from - ack + 1) {
                     response1 = new Response("504 Not enough replicas", Response.EMPTY);
                     sendAsyncResponse(response1, session);
                     future.complete(response1);
                 }
-
+                future.complete(response);
             }).exceptionally(exception -> {
                 logger.error("Unexpected error", exception);
                 future.completeExceptionally(exception);

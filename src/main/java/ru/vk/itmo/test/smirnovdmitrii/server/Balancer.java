@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
@@ -54,8 +55,46 @@ public class Balancer {
         logger.info("creating key map for nodes is done.");
     }
 
-    public String getNodeUrl(final String key) {
+    public String[] getNodeUrls(final String key, final int from) {
+        if (from >= clusterSize()) {
+            return clusterUrls.toArray(new String[0]);
+        }
+        final int[] set = new int[from];
+        Arrays.fill(set, -1);
+        final String[] result = new String[from];
         final int hash = Math.abs(Hash.murmur3(key));
-        return clusterUrls.get(partitionMapping[hash % partitionMapping.length]);
+        int cur = hash % partitionMapping.length;
+        int size = 0;
+        while (size < from) {
+            if (add(set, partitionMapping[cur])) {
+                result[size] = clusterUrls.get(partitionMapping[cur]);
+                size++;
+            }
+            cur++;
+        }
+        return result;
+    }
+
+    private boolean add(final int[] set, final int element) {
+        for (int i = 0; i < set.length; i++) {
+            final int index = (element + i) % set.length;
+            final int cur = set[index];
+            if (cur == -1) {
+                set[index] = element;
+                return true;
+            }
+            if (element == cur) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    public int clusterSize() {
+        return clusterUrls.size();
+    }
+
+    public int quorum(final int from) {
+        return from / 2 + 1;
     }
 }

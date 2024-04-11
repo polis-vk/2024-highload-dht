@@ -38,6 +38,7 @@ public class ServiceImpl implements Service {
     private static final int CONNECTION_TIMEOUT_MS = 250;
     private static final String DEFAULT_PATH = "/v0/entity";
     private static final String TIMESTAMP_HEADER = "Request-timestamp";
+    private static final String WRONG_ACK = "wrong 'ack' value";
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ServiceConfig config;
     private final Executor responseExecutor;
@@ -93,23 +94,9 @@ public class ServiceImpl implements Service {
             session.sendResponse(new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8)));
             return;
         }
-        AtomicInteger successes = new AtomicInteger();
-        AtomicInteger failures = new AtomicInteger();
-        AtomicLong responseTime = new AtomicLong();
-        AtomicReference<Response> latestResponse = new AtomicReference<>();
 
-        if (request.getHeader(TIMESTAMP_HEADER) != null) {
-            String timestamp = request.getHeader(TIMESTAMP_HEADER + ": ");
-            try {
-                if (timestamp != null && !timestamp.isBlank()) {
-                    long parsedTimestamp = Long.parseLong(timestamp);
-                    session.sendResponse(requestHandler.handleRequestLocally(request, id, parsedTimestamp));
-                    return;
-                }
-            } catch (NumberFormatException e) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
+        if (!handleTimestampHeader(request, session, id)) {
+            return;
         }
 
         if (from == null) {
@@ -121,17 +108,47 @@ public class ServiceImpl implements Service {
         }
 
         if (ack > from || ack == 0) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, "wrong 'ack' value".getBytes(StandardCharsets.UTF_8)));
+            session.sendResponse(new Response(Response.BAD_REQUEST, WRONG_ACK.getBytes(StandardCharsets.UTF_8)));
             return;
         }
 
+
         List<Node> targetNodes = router.getNodes(id, from);
-        sendRequestsToNodes(request, session, targetNodes, id, ack, from, successes, failures, responseTime, latestResponse);
+        dispatchRequestsToNodes(request, session, targetNodes, id, ack, from);
     }
 
-    private void sendRequestsToNodes(Request request, HttpSession session, List<Node> nodes, String id, int ack, int from, AtomicInteger successes, AtomicInteger failures, AtomicLong responseTime, AtomicReference<Response> latestResponse) {
+    private boolean handleTimestampHeader(Request request, HttpSession session, String id) throws IOException {
+        if (request.getHeader(TIMESTAMP_HEADER) != null) {
+            String timestamp = request.getHeader(TIMESTAMP_HEADER + ": ");
+            try {
+                if (timestamp != null && !timestamp.isBlank()) {
+                    long parsedTimestamp = Long.parseLong(timestamp);
+                    session.sendResponse(requestHandler.handleRequestLocally(request, id, parsedTimestamp));
+                    return false;
+                }
+            } catch (NumberFormatException e) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void dispatchRequestsToNodes(
+            Request request,
+            HttpSession session,
+            List<Node> targetNodes,
+            String id,
+            Integer ack,
+            Integer from
+    ) {
+        AtomicInteger successes = new AtomicInteger();
+        AtomicInteger failures = new AtomicInteger();
+        AtomicLong responseTime = new AtomicLong();
+        AtomicReference<Response> latestResponse = new AtomicReference<>();
         AtomicBoolean responseSent = new AtomicBoolean();
-        for (Node node : nodes) {
+
+        for (Node node : targetNodes) {
             if (!node.isAlive()) {
                 LOGGER.info("node is unreachable: " + node.address);
                 failures.incrementAndGet();
@@ -141,12 +158,14 @@ public class ServiceImpl implements Service {
                 long timestamp = getTimestamp(request);
                 CompletableFuture<Response> futureResponse;
                 if (node.address.equals(config.selfUrl())) {
-                    futureResponse = CompletableFuture.supplyAsync(() -> requestHandler.handleRequestLocally(request, id, timestamp));
+                    futureResponse = CompletableFuture.supplyAsync(
+                            () -> requestHandler.handleRequestLocally(request, id, timestamp)
+                    );
                 } else {
                     futureResponse = requestHandler.forwardRequestToNode(request, node, timestamp);
                 }
                 futureResponse
-                        .whenCompleteAsync((resp, _) -> {
+                        .whenCompleteAsync((resp, ex) -> {
                             if (resp != null) {
                                 updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
                                 if (responseIsGood(resp)) {
@@ -163,7 +182,8 @@ public class ServiceImpl implements Service {
                                     String message = "Not enough replicas responded";
                                     LOGGER.info(message);
                                     try {
-                                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, message.getBytes(StandardCharsets.UTF_8)));
+                                        byte[] mes = message.getBytes(StandardCharsets.UTF_8);
+                                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, mes));
                                     } catch (IOException e) {
                                         throw new RuntimeException(e);
                                     }
@@ -172,7 +192,7 @@ public class ServiceImpl implements Service {
                         }, responseExecutor)
                         .exceptionally(ex -> {
                             failures.incrementAndGet();
-                            LOGGER.error("NIGGA " + ex.toString());
+                            LOGGER.error(ex.toString());
                             return null;
                         });
             } catch (NumberFormatException e) {
@@ -242,7 +262,6 @@ public class ServiceImpl implements Service {
 
     @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
-
         @Override
         public Service create(ServiceConfig config) {
             return new ServiceImpl(config);

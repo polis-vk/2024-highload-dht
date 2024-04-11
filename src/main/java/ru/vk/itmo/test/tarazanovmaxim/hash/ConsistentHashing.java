@@ -28,7 +28,7 @@ public class ConsistentHashing {
             shards.add(getShardByKey(key + i));
         }
 
-        return List.copyOf(ring.values());
+        return List.copyOf(shards);
     }
 
     public void addShard(String newShard, Set<Integer> nodeHashes) {

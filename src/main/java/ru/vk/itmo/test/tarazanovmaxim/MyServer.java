@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.tarazanovmaxim;
 
-import one.nio.http.HttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -9,7 +8,6 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
@@ -24,19 +22,26 @@ import ru.vk.itmo.test.tarazanovmaxim.hash.ConsistentHashing;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
 
@@ -50,7 +55,7 @@ public class MyServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
-    private final Map<String, HttpClient> httpClients = new HashMap<>();
+    private final HttpClient client;
     private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
     private final String selfUrl;
@@ -74,6 +79,10 @@ public class MyServer extends HttpServer {
                 new ThreadPoolExecutor.AbortPolicy()
         );
 
+        client = HttpClient.newBuilder()
+                .executor(executorService)
+                .build();
+
         int nodeCount = 1;
         HashSet<Integer> nodeSet = new HashSet<>(nodeCount);
         for (String url : config.clusterUrls()) {
@@ -81,8 +90,6 @@ public class MyServer extends HttpServer {
                 nodeSet.add(Hash.murmur3(url));
             }
             shards.addShard(url, nodeSet);
-
-            httpClients.put(url, new HttpClient(new ConnectionString(url)));
         }
     }
 
@@ -104,12 +111,13 @@ public class MyServer extends HttpServer {
     }
 
     public void close() throws IOException {
+        client.close();
+
         executorService.shutdown();
         executorService.shutdownNow();
 
-        for (HttpClient httpClient : httpClients.values()) {
-            httpClient.close();
-        }
+        client.shutdown();
+        client.shutdownNow();
         dao.close();
     }
 
@@ -125,14 +133,51 @@ public class MyServer extends HttpServer {
     private Response shardLookup(final Request request, final String shard) {
         Response response;
         try {
-            response = httpClients.get(shard).invoke(request, 500);
+            response = convertResponse(
+                    client.send(
+                            convertRequest(request, shard),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    )
+            );
         } catch (Exception e) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
         return response;
     }
 
-    private Response getGoodGet(List<Response> responses) {
+    private static HttpRequest convertRequest(Request request, String url) {
+        return HttpRequest.newBuilder(URI.create(url + request.getURI()))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .header("Redirected", "true")
+                .build();
+    }
+
+    private static Response convertResponse(HttpResponse<byte[]> response) {
+        String status = switch (response.statusCode()) {
+            case HttpURLConnection.HTTP_OK -> Response.OK;
+            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
+            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
+            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
+            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
+            case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
+            case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
+            case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
+            default -> throw new IllegalArgumentException(response.statusCode() + "Unknown status code");
+        };
+        Response convertedResponse = new Response(status, response.body());
+        response.headers().firstValue("Timestamp").ifPresent((timestamp) ->
+                convertedResponse.addHeader(TIMESTAMP_HEADER + timestamp)
+        );
+        return convertedResponse;
+    }
+
+    private Response getGoodGet(final List<Response> responses) {
         List<Response> responses200 = new ArrayList<>();
         for (final var resp : responses) {
             if (resp.getStatus() == 200) {
@@ -164,101 +209,160 @@ public class MyServer extends HttpServer {
         return tsTombstone > tsLatest200 ? tombstone : latest200;
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
-    public final Response get(@Param(value = "id", required = true) String id,
-                              @Param(value = "ack") String ack,
-                              @Param(value = "from") String from,
-                              Request request) {
+    public final void get(@Param(value = "id", required = true) String id,
+                          @Param(value = "ack") String ack,
+                          @Param(value = "from") String from,
+                          Request request,
+                          HttpSession session) {
         int fromV = from == null ? clusterSize : Integer.parseInt(from);
         int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
         if (isParamsBad(id, ackV, fromV)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
-        if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(REDIRECT_HEADER + "true");
-            List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, fromV);
-            for (String sendTo : shardToRequest) {
-                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
-                    responses.addLast(answer);
-                }
-            }
-            if (responses.size() >= ackV) {
-                return getGoodGet(responses);
-            }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        if (request.getHeader(REDIRECT_HEADER) != null) {
+            sendResponse(responseLocal(request, id), session);
+            return;
         }
-        return responseLocal(request, id);
+
+        request.addHeader(REDIRECT_HEADER + "true");
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        List<String> shardToRequest = shards.getNShardByKey(id, fromV);
+        AtomicInteger fails = new AtomicInteger(0);
+        AtomicBoolean sent = new AtomicBoolean(false);
+        for (String sendTo : shardToRequest) {
+            CompletableFuture
+                    .supplyAsync(
+                            () -> sendTo.equals(selfUrl)
+                                    ? responseLocal(request, id)
+                                    : shardLookup(request, sendTo),
+                            executorService)
+                    .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                    .whenCompleteAsync((response, _) -> {
+                        if (response.getStatus() < 500) {
+                            responses.addLast(response);
+                        } else {
+                            fails.incrementAndGet();
+                        }
+
+                        if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                            sendResponse(getGoodGet(responses), session);
+                            return;
+                        }
+
+                        if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                            sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                        }
+                    }, executorService);
+        }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
-    public final Response put(@Param(value = "id", required = true) String id,
-                              @Param(value = "ack") String ack,
-                              @Param(value = "from") String from,
-                              Request request) {
+    public final void put(@Param(value = "id", required = true) String id,
+                          @Param(value = "ack") String ack,
+                          @Param(value = "from") String from,
+                          Request request,
+                          HttpSession session) {
         int fromV = from == null ? clusterSize : Integer.parseInt(from);
         int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
         if (isParamsBad(id, ackV, fromV)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
+        if (request.getHeader(REDIRECT_HEADER) != null) {
+            sendResponse(responseLocal(request, id), session);
+            return;
+        }
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        List<String> shardToRequest = shards.getNShardByKey(id, fromV);
+        AtomicInteger fails = new AtomicInteger(0);
+        AtomicBoolean sent = new AtomicBoolean(false);
+        for (String sendTo : shardToRequest) {
+            CompletableFuture
+                .supplyAsync(
+                        () -> sendTo.equals(selfUrl)
+                                ? responseLocal(request, id)
+                                : shardLookup(request, sendTo),
+                        executorService)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .whenCompleteAsync((response, _) -> {
+                    if (response.getStatus() < 500) {
+                        responses.addLast(response);
+                    } else {
+                        fails.incrementAndGet();
+                    }
 
-        if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(REDIRECT_HEADER + "true");
-            List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, ackV);
-            for (String sendTo : shardToRequest) {
-                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
-                    responses.addLast(answer);
-                }
-                if (responses.size() == ackV) {
-                    return responses.getFirst();
-                }
-            }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(responses.getFirst(), session);
+                        return;
+                    }
+
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
         }
-        return responseLocal(request, id);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public final Response delete(@Param(value = "id", required = true) String id,
-                                 @Param(value = "ack") String ack,
-                                 @Param(value = "from") String from,
-                                 Request request) {
+    public final void delete(@Param(value = "id", required = true) String id,
+                             @Param(value = "ack") String ack,
+                             @Param(value = "from") String from,
+                             Request request,
+                             HttpSession session) {
         int fromV = from == null ? clusterSize : Integer.parseInt(from);
         int ackV = ack == null ? quorum(fromV) : Integer.parseInt(ack);
         if (isParamsBad(id, ackV, fromV)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+            return;
         }
 
-        if (request.getHeader(REDIRECT_HEADER) == null) {
-            request.addHeader(REDIRECT_HEADER + "true");
-            List<Response> responses = new ArrayList<>();
-            List<String> shardToRequest = shards.getNShardByKey(id, ackV);
-            for (String sendTo : shardToRequest) {
-                Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
-                    responses.addLast(answer);
-                }
-                if (responses.size() == ackV) {
-                    return responses.getFirst();
-                }
-            }
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        if (request.getHeader(REDIRECT_HEADER) != null) {
+            sendResponse(responseLocal(request, id), session);
+            return;
         }
-        return responseLocal(request, id);
+        request.addHeader(REDIRECT_HEADER + "true");
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        List<String> shardToRequest = shards.getNShardByKey(id, fromV);
+        AtomicInteger fails = new AtomicInteger(0);
+        AtomicBoolean sent = new AtomicBoolean(false);
+        for (String sendTo : shardToRequest) {
+            CompletableFuture
+                .supplyAsync(
+                        () -> sendTo.equals(selfUrl)
+                                ? responseLocal(request, id)
+                                : shardLookup(request, sendTo),
+                        executorService)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .whenCompleteAsync((response, _) -> {
+                    if (response.getStatus() < 500) {
+                        responses.addLast(response);
+                    } else {
+                        fails.incrementAndGet();
+                    }
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(responses.getFirst(), session);
+                        return;
+                    }
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
+        }
     }
 
     @Path(PATH)
     public Response otherMethod() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
-
     @Override
     public void handleDefault(Request request, HttpSession session) {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -281,11 +385,11 @@ public class MyServer extends HttpServer {
                     logger.error("IOException in handleRequest->executorService.execute(): "
                             + e + " M" + request.getMethod());
                     sendResponse(
-                        new Response(
-                            e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
-                            Response.EMPTY
-                        ),
-                        session
+                            new Response(
+                                    e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
+                                    Response.EMPTY
+                            ),
+                            session
                     );
                 }
             });

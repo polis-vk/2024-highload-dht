@@ -134,13 +134,16 @@ public class MyServer extends HttpServer {
         Response response;
         try {
             response = convertResponse(
-                    client.send(
-                            convertRequest(request, shard),
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    )
+                client.send(
+                    convertRequest(request, shard),
+                    HttpResponse.BodyHandlers.ofByteArray()
+                )
             );
-        } catch (Exception e) {
+        } catch (IOException e) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        } catch (InterruptedException e) {
+            response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+            Thread.currentThread().interrupt();
         }
         return response;
     }
@@ -190,23 +193,31 @@ public class MyServer extends HttpServer {
         }
 
         Response tombstone = Collections.min(
-                responses,
-                Comparator.comparingLong(
-                        response -> Long.parseLong(response.getHeader(TIMESTAMP_HEADER))
-                )
+            responses,
+            Comparator.comparingLong(
+                    response -> Long.parseLong(response.getHeader(TIMESTAMP_HEADER))
+            )
         );
 
         Response latest200 = Collections.max(
-                responses200,
-                Comparator.comparingLong(
-                        response -> Long.parseLong(response.getHeader(TIMESTAMP_HEADER))
-                )
+            responses200,
+            Comparator.comparingLong(
+                    response -> Long.parseLong(response.getHeader(TIMESTAMP_HEADER))
+            )
         );
 
         long tsTombstone = -Long.parseLong(tombstone.getHeader(TIMESTAMP_HEADER));
         long tsLatest200 = Long.parseLong(latest200.getHeader(TIMESTAMP_HEADER));
 
         return tsTombstone > tsLatest200 ? tombstone : latest200;
+    }
+
+    private Response supplyAsync(final String sendTo, final Request request, final String id) {
+        if (sendTo.equals(selfUrl)) {
+            return responseLocal(request, id);
+        } else {
+            return shardLookup(request, sendTo);
+        }
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
@@ -236,28 +247,24 @@ public class MyServer extends HttpServer {
         AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
             CompletableFuture
-                    .supplyAsync(
-                            () -> sendTo.equals(selfUrl)
-                                    ? responseLocal(request, id)
-                                    : shardLookup(request, sendTo),
-                            executorService)
-                    .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
-                    .whenCompleteAsync((response, throwable) -> {
-                        if (response.getStatus() < 500) {
-                            responses.addLast(response);
-                        } else {
-                            fails.incrementAndGet();
-                        }
+                .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .whenCompleteAsync((response, throwable) -> {
+                    if (response.getStatus() < 500) {
+                        responses.addLast(response);
+                    } else {
+                        fails.incrementAndGet();
+                    }
 
-                        if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
-                            sendResponse(getGoodGet(responses), session);
-                            return;
-                        }
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(getGoodGet(responses), session);
+                        return;
+                    }
 
-                        if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
-                            sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
-                        }
-                    }, executorService);
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
         }
     }
 
@@ -285,28 +292,24 @@ public class MyServer extends HttpServer {
         AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
             CompletableFuture
-                    .supplyAsync(
-                            () -> sendTo.equals(selfUrl)
-                                    ? responseLocal(request, id)
-                                    : shardLookup(request, sendTo),
-                            executorService)
-                    .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
-                    .whenCompleteAsync((response, throwable) -> {
-                        if (response.getStatus() < 500) {
-                            responses.addLast(response);
-                        } else {
-                            fails.incrementAndGet();
-                        }
+                .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .whenCompleteAsync((response, throwable) -> {
+                    if (response.getStatus() < 500) {
+                        responses.addLast(response);
+                    } else {
+                        fails.incrementAndGet();
+                    }
 
-                        if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
-                            sendResponse(responses.getFirst(), session);
-                            return;
-                        }
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(responses.getFirst(), session);
+                        return;
+                    }
 
-                        if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
-                            sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
-                        }
-                    }, executorService);
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
         }
     }
 
@@ -336,26 +339,22 @@ public class MyServer extends HttpServer {
         AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
             CompletableFuture
-                    .supplyAsync(
-                            () -> sendTo.equals(selfUrl)
-                                    ? responseLocal(request, id)
-                                    : shardLookup(request, sendTo),
-                            executorService)
-                    .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
-                    .whenCompleteAsync((response, throwable) -> {
-                        if (response.getStatus() < 500) {
-                            responses.addLast(response);
-                        } else {
-                            fails.incrementAndGet();
-                        }
-                        if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
-                            sendResponse(responses.getFirst(), session);
-                            return;
-                        }
-                        if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
-                            sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
-                        }
-                    }, executorService);
+                .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .whenCompleteAsync((response, throwable) -> {
+                    if (response.getStatus() < 500) {
+                        responses.addLast(response);
+                    } else {
+                        fails.incrementAndGet();
+                    }
+                    if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(responses.getFirst(), session);
+                        return;
+                    }
+                    if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
+                        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                    }
+                }, executorService);
         }
     }
 

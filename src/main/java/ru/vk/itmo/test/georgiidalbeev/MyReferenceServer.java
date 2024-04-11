@@ -40,7 +40,7 @@ public class MyReferenceServer extends HttpServer {
     private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-server-to-node-by-paschenko2";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final Logger log = LoggerFactory.getLogger(MyReferenceServer.class);
-    private final static int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final int THREADS = Runtime.getRuntime().availableProcessors();
 
     private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2,
             new CustomThreadFactory("local-work"));

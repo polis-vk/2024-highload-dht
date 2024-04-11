@@ -148,50 +148,41 @@ public class ServiceImpl implements Service {
                 failures.incrementAndGet();
                 continue;
             }
-            try {
-                long timestamp = getTimestamp(request);
-                CompletableFuture<Response> futureResponse;
-                if (node.address.equals(config.selfUrl())) {
-                    futureResponse = CompletableFuture.supplyAsync(
-                            () -> requestHandler.handleRequestLocally(request, id, timestamp)
-                    );
-                } else {
-                    futureResponse = requestHandler.forwardRequestToNode(request, node, timestamp);
-                }
-                futureResponse
-                        .whenCompleteAsync((resp, ex) -> {
-                            if (resp != null) {
-                                updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
-                                if (responseIsGood(resp)
-                                        && successes.incrementAndGet() >= ack
-                                        && !responseSent.getAndSet(true)) {
-                                    try {
-                                        session.sendResponse(latestResponse.get());
-                                    } catch (IOException e) {
-                                        throw new RuntimeException(e);
-                                    }
-                                }
-                            } else {
-                                if (failures.incrementAndGet() > from - ack) {
-                                    String message = "Not enough replicas responded";
-                                    LOGGER.info(message);
-                                    try {
-                                        byte[] mes = message.getBytes(StandardCharsets.UTF_8);
-                                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, mes));
-                                    } catch (IOException e) {
-                                        throw new RuntimeException(e);
-                                    }
+            long timestamp = getTimestamp(request);
+            CompletableFuture<Response> futureResponse =
+                    requestHandler.processRequest(request, id, node ,timestamp, config.selfUrl());
+
+            futureResponse
+                    .whenCompleteAsync((resp, ex) -> {
+                        if (resp != null) {
+                            updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
+                            if (responseIsGood(resp)
+                                    && successes.incrementAndGet() >= ack
+                                    && !responseSent.getAndSet(true)) {
+                                try {
+                                    session.sendResponse(latestResponse.get());
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
                                 }
                             }
-                        }, responseExecutor)
-                        .exceptionally(ex -> {
-                            failures.incrementAndGet();
-                            LOGGER.error(ex.toString());
-                            return null;
-                        });
-            } catch (NumberFormatException e) {
-                LOGGER.error(e.toString());
-            }
+                        } else {
+                            if (failures.incrementAndGet() > from - ack) {
+                                String message = "Not enough replicas responded";
+                                LOGGER.info(message);
+                                try {
+                                    byte[] mes = message.getBytes(StandardCharsets.UTF_8);
+                                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, mes));
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                        }
+                    }, responseExecutor)
+                    .exceptionally(ex -> {
+                        failures.incrementAndGet();
+                        LOGGER.error(ex.toString());
+                        return null;
+                    });
         }
     }
 
@@ -205,9 +196,14 @@ public class ServiceImpl implements Service {
     private long getTimestamp(Request request) throws NumberFormatException {
         // check if the request has been forwarded, so we can use given timestamp
         String timestamp = request.getHeader(TIMESTAMP_HEADER);
-        if (timestamp != null && !timestamp.isBlank()) {
-            return Long.parseLong(timestamp);
+        try {
+            if (timestamp != null && !timestamp.isBlank()) {
+                return Long.parseLong(timestamp);
+            }
+        } catch (NumberFormatException e) {
+            LOGGER.error("Error while parsing request header");
         }
+
         return System.currentTimeMillis();
     }
 

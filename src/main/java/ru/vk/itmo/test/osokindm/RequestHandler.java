@@ -32,6 +32,22 @@ public class RequestHandler {
         this.daoWrapper = daoWrapper;
     }
 
+    public CompletableFuture<Response> processRequest(
+            Request request,
+            String id,
+            Node node,
+            long timestamp,
+            String selfUrl
+    ) {
+        if (node.address.equals(selfUrl)) {
+            return CompletableFuture.supplyAsync(
+                    () -> handleRequestLocally(request, id, timestamp)
+            );
+        } else {
+            return forwardRequestToNode(request, node, timestamp);
+        }
+    }
+
     public Response handleRequestLocally(Request request, String id, long timestamp) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
@@ -63,7 +79,7 @@ public class RequestHandler {
         }
     }
 
-    public CompletableFuture<Response> forwardRequestToNode(Request request, Node node, long timestamp) {
+    private CompletableFuture<Response> forwardRequestToNode(Request request, Node node, long timestamp) {
         try {
             return makeProxyRequest(request, node.address, timestamp);
         } catch (TimeoutException e) {
@@ -121,4 +137,5 @@ public class RequestHandler {
         }
         return result;
     }
+
 }

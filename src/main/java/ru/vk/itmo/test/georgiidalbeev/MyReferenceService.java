@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.georgiidalbeev;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -21,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class MyReferenceService implements Service {
+    private static final Logger log = LoggerFactory.getLogger(MyReferenceService.class);
 
     private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
 
@@ -52,7 +55,6 @@ public class MyReferenceService implements Service {
     }
 
     public static void main(String[] args) throws IOException {
-        //port -> url
         Map<Integer, String> nodes = new HashMap<>();
         int nodePort = 8080;
         for (int i = 0; i < 3; i++) {
@@ -78,8 +80,11 @@ public class MyReferenceService implements Service {
             MyReferenceService instance = new MyReferenceService(serviceConfig);
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException(e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("Interrupted exception while start instance");
+            } catch (ExecutionException | TimeoutException e) {
+                throw new IllegalArgumentException();
             }
         }
     }

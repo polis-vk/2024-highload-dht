@@ -143,9 +143,7 @@ public class ServiceImpl implements Service {
         AtomicBoolean responseSent = new AtomicBoolean();
 
         for (Node node : targetNodes) {
-            if (!node.isAlive()) {
-                logFailure("node is unreachable: " + node.address, failures);
-            }
+
             long timestamp = getTimestamp(request);
             CompletableFuture<Response> futureResponse =
                     requestHandler.processRequest(request, id, node, timestamp, config.selfUrl());
@@ -155,8 +153,14 @@ public class ServiceImpl implements Service {
                         if (resp == null) {
                             checkAck(session, failures, ack, from);
                         } else {
-                            processResponse(resp, session, request.getMethod(), responseTime,
-                                    latestResponse, successes, failures, responseSent, ack);
+                            updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
+                            if (canEarlyResponse(resp, successes, ack, responseSent)) {
+                                try {
+                                    session.sendResponse(latestResponse.get());
+                                } catch (IOException e) {
+                                    logFailure(e.getMessage(), failures);
+                                }
+                            }
                         }
                     }, responseExecutor)
                     .exceptionally(ex -> {
@@ -165,26 +169,6 @@ public class ServiceImpl implements Service {
                     });
 
         }
-    }
-
-    private void processResponse(Response resp,
-                                 HttpSession session,
-                                 int method,
-                                 AtomicLong responseTime,
-                                 AtomicReference<Response> latestResponse,
-                                 AtomicInteger successes,
-                                 AtomicInteger failures,
-                                 AtomicBoolean responseSent,
-                                 Integer ack) {
-        updateLatestResponse(resp, method, responseTime, latestResponse);
-        if (canEarlyResponse(resp, successes, ack, responseSent)) {
-            try {
-                session.sendResponse(latestResponse.get());
-            } catch (IOException e) {
-                logFailure(e.getMessage(), failures);
-            }
-        }
-
     }
 
     private boolean canEarlyResponse(Response resp, AtomicInteger successes, Integer ack, AtomicBoolean responseSent) {

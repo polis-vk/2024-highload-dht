@@ -114,7 +114,7 @@ public class PlyasovService implements Service {
             PlyasovService instance = new PlyasovService(serviceConfig);
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException _) {
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
                 Thread.currentThread().interrupt();
             }
         }

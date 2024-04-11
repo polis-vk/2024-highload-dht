@@ -154,7 +154,6 @@ public class PlyasovServer extends HttpServer {
         }
     }
 
-
     private CompletableFuture<HandleResult> handleRemoteAsync(final Request request, final String executorNode) {
         return CompletableFuture.supplyAsync(() -> {
             try {

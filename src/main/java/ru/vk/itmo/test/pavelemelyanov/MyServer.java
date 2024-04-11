@@ -114,13 +114,14 @@ public class MyServer extends HttpServer {
                 return;
             }
             sendResponse(session, requestHandler.handle(request, paramId));
-        } catch (Exception e) {
-            if (e instanceof HttpException) {
+        }
+        catch (Exception e) {
+            if (e.getClass() == HttpException.class) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            } else {
-                LOG.error("Exception during handleRequest: ", e);
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                return;
             }
+            LOG.error("Exception during handleRequest: ", e);
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }
 

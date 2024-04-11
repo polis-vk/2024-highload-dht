@@ -20,7 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-public class ReferenceService implements Service {
+public class MyReferenceService implements Service {
 
     private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
 
@@ -29,10 +29,10 @@ public class ReferenceService implements Service {
     private final ServiceConfig config;
 
     private ReferenceDao dao;
-    private ReferenceServer server;
+    private MyReferenceServer server;
     private boolean stopped;
 
-    public ReferenceService(ServiceConfig config) {
+    public MyReferenceService(ServiceConfig config) {
         this.config = config;
     }
 
@@ -75,7 +75,7 @@ public class ReferenceService implements Service {
         }
 
         for (ServiceConfig serviceConfig : clusterConfs) {
-            ReferenceService instance = new ReferenceService(serviceConfig);
+            MyReferenceService instance = new MyReferenceService(serviceConfig);
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
@@ -87,7 +87,7 @@ public class ReferenceService implements Service {
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
-        server = new ReferenceServer(config, dao);
+        server = new MyReferenceServer(config, dao);
         server.start();
         stopped = false;
         return CompletableFuture.completedFuture(null);
@@ -113,7 +113,7 @@ public class ReferenceService implements Service {
 
         @Override
         public Service create(ServiceConfig config) {
-            return new ReferenceService(config);
+            return new MyReferenceService(config);
         }
     }
 }

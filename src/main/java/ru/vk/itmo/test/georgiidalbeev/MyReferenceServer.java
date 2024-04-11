@@ -31,13 +31,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
-public class ReferenceServer extends HttpServer {
+public class MyReferenceServer extends HttpServer {
 
     private static final String HEADER_REMOTE = "X-flag-remote-reference-server-to-node-by-paschenko";
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": da";
     private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-server-to-node-by-paschenko2";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
-    private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
+    private static final Logger log = LoggerFactory.getLogger(MyReferenceServer.class);
     private final static int THREADS = Runtime.getRuntime().availableProcessors();
 
     private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2,
@@ -48,8 +48,8 @@ public class ReferenceServer extends HttpServer {
     private final ServiceConfig config;
     private final HttpClient httpClient;
 
-    public ReferenceServer(ServiceConfig config,
-                           ReferenceDao dao) throws IOException {
+    public MyReferenceServer(ServiceConfig config,
+                             ReferenceDao dao) throws IOException {
         super(createServerConfigWithPort(config.selfPort()));
         this.dao = dao;
         this.config = config;
@@ -99,7 +99,7 @@ public class ReferenceServer extends HttpServer {
         if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
             executorLocal.execute(() -> {
                 try {
-                    HandleResult local = local(request, id);
+                    MyHandleResult local = local(request, id);
                     Response response = new Response(String.valueOf(local.status()), local.data());
                     response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
                     session.sendResponse(response);
@@ -128,7 +128,7 @@ public class ReferenceServer extends HttpServer {
 
 
         int[] indexes = getIndexes(id, from);
-        MergeHandleResult mergeHandleResult = new MergeHandleResult(session, indexes.length, ack);
+        MyMergeHandleResult mergeHandleResult = new MyMergeHandleResult(session, indexes.length, ack);
         for (int i = 0; i < indexes.length; i++) {
             int index = indexes[i];
             String executorNode = config.clusterUrls().get(index);
@@ -157,12 +157,12 @@ public class ReferenceServer extends HttpServer {
         return ack;
     }
 
-    private void handleAsync(int index, MergeHandleResult mergeHandleResult,
-                             Supplier<CompletableFuture<HandleResult>> supplier) {
+    private void handleAsync(int index, MyMergeHandleResult mergeHandleResult,
+                             Supplier<CompletableFuture<MyHandleResult>> supplier) {
         supplier.get().thenAccept(handleResult -> mergeHandleResult.add(index, handleResult))
                 .exceptionally(e -> {
                     log.error("Exception during handleRequest", e);
-                    mergeHandleResult.add(index, new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
+                    mergeHandleResult.add(index, new MyHandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
                     return null;
                 });
     }
@@ -177,7 +177,7 @@ public class ReferenceServer extends HttpServer {
         return Response.ok("OK");
     }
 
-    private CompletableFuture<HandleResult> invokeRemote(String executorNode, Request request) {
+    private CompletableFuture<MyHandleResult> invokeRemote(String executorNode, Request request) {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
                 .method(
                         request.getMethodName(),
@@ -203,42 +203,42 @@ public class ReferenceServer extends HttpServer {
                     } else {
                         timestamp = 0;
                     }
-                    return new HandleResult(httpResponse.statusCode(), httpResponse.body(), timestamp);
+                    return new MyHandleResult(httpResponse.statusCode(), httpResponse.body(), timestamp);
                 })
                 .exceptionally(e -> {
                     log.info("I/O exception while calling remote node", e);
-                    return new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);
+                    return new MyHandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);
                 });
     }
 
-    private HandleResult local(Request request, String id) {
+    private MyHandleResult local(Request request, String id) {
         long currentTimeMillis = System.currentTimeMillis();
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
                 ReferenceBaseEntry<MemorySegment> entry = dao.get(key);
                 if (entry == null) {
-                    return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY);
+                    return new MyHandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY);
                 }
                 if (entry.value() == null) {
-                    return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY, entry.timestamp());
+                    return new MyHandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY, entry.timestamp());
                 }
 
-                return new HandleResult(HttpURLConnection.HTTP_OK, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp());
+                return new MyHandleResult(HttpURLConnection.HTTP_OK, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp());
             }
             case Request.METHOD_PUT -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
                 MemorySegment value = MemorySegment.ofArray(request.getBody());
                 dao.upsert(new ReferenceBaseEntry<>(key, value, currentTimeMillis));
-                return new HandleResult(HttpURLConnection.HTTP_CREATED, Response.EMPTY);
+                return new MyHandleResult(HttpURLConnection.HTTP_CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
                 dao.upsert(new ReferenceBaseEntry<>(key, null, currentTimeMillis));
-                return new HandleResult(HttpURLConnection.HTTP_ACCEPTED, Response.EMPTY);
+                return new MyHandleResult(HttpURLConnection.HTTP_ACCEPTED, Response.EMPTY);
             }
             default -> {
-                return new HandleResult(HttpURLConnection.HTTP_BAD_METHOD, Response.EMPTY);
+                return new MyHandleResult(HttpURLConnection.HTTP_BAD_METHOD, Response.EMPTY);
             }
         }
     }
@@ -275,7 +275,7 @@ public class ReferenceServer extends HttpServer {
     @Override
     public synchronized void stop() {
         super.stop();
-        ReferenceService.shutdownAndAwaitTermination(executorLocal);
-        ReferenceService.shutdownAndAwaitTermination(executorRemote);
+        MyReferenceService.shutdownAndAwaitTermination(executorLocal);
+        MyReferenceService.shutdownAndAwaitTermination(executorRemote);
     }
 }

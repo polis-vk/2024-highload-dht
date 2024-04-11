@@ -9,24 +9,24 @@ import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class MergeHandleResult {
-    private static final Logger log = LoggerFactory.getLogger(MergeHandleResult.class);
-    private final HandleResult[] handleResults;
+public class MyMergeHandleResult {
+    private static final Logger log = LoggerFactory.getLogger(MyMergeHandleResult.class);
+    private final MyHandleResult[] handleResults;
     private final AtomicInteger count;
     private final int ack;
     private final int from;
     private final HttpSession session;
 
-    public MergeHandleResult(HttpSession session, int size, int ack) {
+    public MyMergeHandleResult(HttpSession session, int size, int ack) {
         this.session = session;
-        this.handleResults = new HandleResult[size];
+        this.handleResults = new MyHandleResult[size];
         this.count = new AtomicInteger();
         this.ack = ack;
         this.from = size;
     }
 
 
-    public void add(int index, HandleResult handleResult) {
+    public void add(int index, MyHandleResult handleResult) {
         handleResults[index] = handleResult;
         int get = count.incrementAndGet();
 
@@ -37,10 +37,10 @@ public class MergeHandleResult {
 
 
     private void sendResult() {
-        HandleResult mergedResult = new HandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
+        MyHandleResult mergedResult = new MyHandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
 
         int count = 0;
-        for (HandleResult handleResult : handleResults) {
+        for (MyHandleResult handleResult : handleResults) {
             if (handleResult.status() == HttpURLConnection.HTTP_OK
                     || handleResult.status() == HttpURLConnection.HTTP_CREATED
                     || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED

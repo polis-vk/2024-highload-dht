@@ -12,7 +12,12 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
 
+import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
+import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,8 +44,9 @@ public class ReferenceServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
     private final static int THREADS = Runtime.getRuntime().availableProcessors();
 
-    private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("local-work"));
-    private final ExecutorService executorRemote = Executors.newFixedThreadPool(THREADS / 2, new CustomThreadFactory("remote-work"));
+    private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS, new CustomThreadFactory("local-work"));
+    private final ExecutorService executorRemote = Executors.newFixedThreadPool(THREADS, new CustomThreadFactory("remote-work"));
+    ExecutorService executorService;
     private final ReferenceDao dao;
     private final ServiceConfig config;
     private final HttpClient httpClient;
@@ -50,6 +56,8 @@ public class ReferenceServer extends HttpServer {
         super(createServerConfigWithPort(config.selfPort()));
         this.dao = dao;
         this.config = config;
+
+        executorService = Executors.newSingleThreadExecutor();
 
 
         this.httpClient = HttpClient.newBuilder()
@@ -66,6 +74,7 @@ public class ReferenceServer extends HttpServer {
         acceptorConfig.reusePort = true;
 //        acceptorConfig.threads = Runtime.getRuntime().availableProcessors() / 2;
         serverConfig.selectors = Runtime.getRuntime().availableProcessors() / 2;
+//        serverConfig.keepAlive = 60_000;
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
@@ -73,7 +82,10 @@ public class ReferenceServer extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public void handleRequest(Request request, HttpSession sessionI) throws IOException {
+        if (!(sessionI instanceof ReferenceHttpSession session)) {
+            throw new IllegalArgumentException("this method support only ReferenceHttpSession");
+        }
         if (!"/v0/entity".equals(request.getPath())) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
@@ -101,14 +113,7 @@ public class ReferenceServer extends HttpServer {
                     response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
                     session.sendResponse(response);
                 } catch (Exception e) {
-                    //todo дублирование кода
-                    log.error("Exception during handleRequest", e);
-                    try {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                    } catch (IOException ex) {
-                        log.error("Exception while sending close connection", e);
-                        session.scheduleClose();
-                    }
+                    session.sendError(e);
                 }
             });
             return;
@@ -118,8 +123,7 @@ public class ReferenceServer extends HttpServer {
         int from = getInt(request, "from=", config.clusterUrls().size());
 
         if (from <= 0 || from > config.clusterUrls().size() || ack > from || ack <= 0) {
-            //todo другая ошибка
-            session.sendError(Response.BAD_REQUEST, null);
+            session.sendError(Response.BAD_REQUEST, "Illegal argument ack/from " + ack + "/" + from);
             return;
         }
 
@@ -191,11 +195,6 @@ public class ReferenceServer extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-    }
-
-    @Path("/v0/status")
-    public Response status() {
-        return Response.ok("OK");
     }
 
     private HandleResult invokeRemote(String executorNode, Request request) throws IOException, InterruptedException {
@@ -296,5 +295,10 @@ public class ReferenceServer extends HttpServer {
         super.stop();
         ReferenceService.shutdownAndAwaitTermination(executorLocal);
         ReferenceService.shutdownAndAwaitTermination(executorRemote);
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new ReferenceHttpSession(socket, this);
     }
 }

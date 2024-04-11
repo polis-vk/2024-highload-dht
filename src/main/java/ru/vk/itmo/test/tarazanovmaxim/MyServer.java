@@ -8,6 +8,7 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
@@ -112,10 +113,6 @@ public class MyServer extends HttpServer {
         return MemorySegment.ofArray(string.getBytes(StandardCharsets.UTF_8));
     }
 
-    public synchronized Dao getDao() {
-        return dao;
-    }
-
     @Override
     public synchronized void stop() {
         executorService.shutdown();
@@ -126,6 +123,8 @@ public class MyServer extends HttpServer {
         }
         super.stop();
         executorService.shutdownNow();
+        client.close();
+        client.shutdownNow();
     }
 
     private int quorum(final int from) {

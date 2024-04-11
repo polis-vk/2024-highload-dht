@@ -14,8 +14,14 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
 
 import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -181,10 +187,10 @@ public class ServerImpl extends HttpServer {
             }
         }
 
-        if (lastResponse != null) {
-            session.sendResponse(lastResponse);
-        } else {
+        if (lastResponse == null) {
             sendNotEnoughReplicasResponse(session);
+        } else {
+            session.sendResponse(lastResponse);
         }
     }
 

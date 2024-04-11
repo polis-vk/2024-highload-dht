@@ -12,7 +12,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -31,7 +34,7 @@ public class ProxyRequestHandler {
             }
         }
         this.urlHashes = serviceConfig.clusterUrls().stream()
-                .collect(Collectors.toMap(url -> url, Hash::murmur3));
+            .collect(Collectors.toMap(url -> url, Hash::murmur3));
     }
 
     public synchronized void close() {
@@ -39,12 +42,12 @@ public class ProxyRequestHandler {
     }
 
     public void proxyRequests(
-            Request request,
-            List<String> nodeUrls,
-            int ack,
-            List<CompletableFuture<Response>> futures,
-            List<Response> collectedResponses,
-            AtomicInteger unsuccessfulResponsesCount
+        Request request,
+        List<String> nodeUrls,
+        int ack,
+        List<CompletableFuture<Response>> futures,
+        List<Response> collectedResponses,
+        AtomicInteger unsuccessfulResponsesCount
     ) {
         AtomicInteger responsesCollected = new AtomicInteger();
 
@@ -73,16 +76,24 @@ public class ProxyRequestHandler {
         URI uri = URI.create(proxiedNodeUrl + request.getPath() + "?id=" + id);
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(uri)
-                .method(request.getMethodName(), body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(body))
-                .header(RequestWrapper.SELF_HEADER, "true");
+            .uri(uri)
+            .method(
+                request.getMethodName(),
+                body == null ? HttpRequest.BodyPublishers.noBody()
+                    : HttpRequest.BodyPublishers.ofByteArray(body)
+            )
+            .header(RequestWrapper.SELF_HEADER, "true");
 
         CompletableFuture<HttpResponse<byte[]>> httpResponseFuture = clients.get(proxiedNodeUrl)
-                .sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            .sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
 
         return httpResponseFuture.thenApply(httpResponse -> {
             Response response = new Response(proxyResponseCode(httpResponse), httpResponse.body());
-            long timestamp = Long.parseLong(httpResponse.headers().firstValue(RequestWrapper.NIO_TIMESTAMP_HEADER).orElse("0"));
+            long timestamp = Long.parseLong(
+                httpResponse.headers()
+                    .firstValue(RequestWrapper.NIO_TIMESTAMP_HEADER)
+                    .orElse("0")
+            );
             response.addHeader(RequestWrapper.NIO_TIMESTAMP_STRING_HEADER + timestamp);
             return response;
         }).exceptionally(ex -> {
@@ -104,9 +115,9 @@ public class ProxyRequestHandler {
 
     public List<String> getNodesByHash(int numOfNodes) {
         return urlHashes.entrySet().stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(numOfNodes)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .limit(numOfNodes)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toList());
     }
 }

@@ -34,10 +34,13 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
 
@@ -153,29 +156,17 @@ public class MyServer extends HttpServer {
             case HttpURLConnection.HTTP_OK -> Response.OK;
             case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
             case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
-            case HttpURLConnection.HTTP_NO_CONTENT -> Response.NO_CONTENT;
-            case HttpURLConnection.HTTP_SEE_OTHER -> Response.SEE_OTHER;
-            case HttpURLConnection.HTTP_NOT_MODIFIED -> Response.NOT_MODIFIED;
-            case HttpURLConnection.HTTP_USE_PROXY -> Response.USE_PROXY;
             case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
-            case HttpURLConnection.HTTP_UNAUTHORIZED -> Response.UNAUTHORIZED;
-            case HttpURLConnection.HTTP_PAYMENT_REQUIRED -> Response.PAYMENT_REQUIRED;
-            case HttpURLConnection.HTTP_FORBIDDEN -> Response.FORBIDDEN;
             case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
-            case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> Response.NOT_ACCEPTABLE;
-            case HttpURLConnection.HTTP_CONFLICT -> Response.CONFLICT;
-            case HttpURLConnection.HTTP_GONE -> Response.GONE;
-            case HttpURLConnection.HTTP_LENGTH_REQUIRED -> Response.LENGTH_REQUIRED;
             case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
-            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
             case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
             case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
             default -> throw new IllegalArgumentException(response.statusCode() + "Unknown status code");
         };
         Response convertedResponse = new Response(status, response.body());
-        response.headers().firstValue("Timestamp").ifPresent((ts) -> {
-            convertedResponse.addHeader(TIMESTAMP_HEADER + ts);
-        });
+        response.headers().firstValue("Timestamp").ifPresent((ts) ->
+            convertedResponse.addHeader(TIMESTAMP_HEADER + ts)
+        );
         return convertedResponse;
     }
 
@@ -246,6 +237,7 @@ public class MyServer extends HttpServer {
         sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public final void put(@Param(value = "id", required = true) String id,
@@ -266,19 +258,40 @@ public class MyServer extends HttpServer {
         }
 
         request.addHeader(REDIRECT_HEADER + "true");
-        List<Response> responses = new ArrayList<>();
+        List<Response> responses = new CopyOnWriteArrayList<>();
         List<String> shardToRequest = shards.getNShardByKey(id, ackV);
+        AtomicInteger fails = new AtomicInteger(0);
         for (String sendTo : shardToRequest) {
-            Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-            if (answer.getStatus() < 500) {
-                responses.addLast(answer);
-            }
-            if (responses.size() == ackV) {
-                sendResponse(responses.getFirst(), session);
-                return;
-            }
+            CompletableFuture<Response> answer =
+                    CompletableFuture.supplyAsync(
+                            () -> sendTo.equals(selfUrl)
+                                    ? responseLocal(request, id)
+                                    : shardLookup(request, sendTo),
+                            executorService
+                    );
+
+            answer.whenCompleteAsync((response, throwable) -> {
+                if (throwable == null) {
+                    if (response.getStatus() < 500) {
+                        responses.addLast(response);
+                    } else {
+                        fails.incrementAndGet();
+                    }
+                } else {
+                    fails.incrementAndGet();
+                }
+
+                if (responses.size() == ackV) {
+                    sendResponse(responses.getFirst(), session);
+                    return;
+                }
+
+                if (fails.get() > fromV - ackV) {
+                    sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
+                }
+
+            }, executorService);
         }
-        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
     }
 
     @Path(PATH)

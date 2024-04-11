@@ -155,14 +155,8 @@ public class ServiceImpl implements Service {
                         if (resp == null) {
                             checkAck(session, failures, ack, from);
                         } else {
-                            updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
-                            if (canEarlyResponse(resp, successes, ack, responseSent)) {
-                                try {
-                                    session.sendResponse(latestResponse.get());
-                                } catch (IOException e) {
-                                    logFailure(e.getMessage(), failures);
-                                }
-                            }
+                            processResponse(resp, session, request.getMethod(), responseTime,
+                                    latestResponse, successes, failures, responseSent, ack);
                         }
                     }, responseExecutor)
                     .exceptionally(ex -> {
@@ -171,6 +165,26 @@ public class ServiceImpl implements Service {
                     });
 
         }
+    }
+
+    private void processResponse(Response resp,
+                                 HttpSession session,
+                                 int method,
+                                 AtomicLong responseTime,
+                                 AtomicReference<Response> latestResponse,
+                                 AtomicInteger successes,
+                                 AtomicInteger failures,
+                                 AtomicBoolean responseSent,
+                                 Integer ack) {
+        updateLatestResponse(resp, method, responseTime, latestResponse);
+        if (canEarlyResponse(resp, successes, ack, responseSent)) {
+            try {
+                session.sendResponse(latestResponse.get());
+            } catch (IOException e) {
+                logFailure(e.getMessage(), failures);
+            }
+        }
+
     }
 
     private boolean canEarlyResponse(Response resp, AtomicInteger successes, Integer ack, AtomicBoolean responseSent) {

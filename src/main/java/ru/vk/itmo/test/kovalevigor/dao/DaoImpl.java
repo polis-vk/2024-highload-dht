@@ -3,9 +3,15 @@ package ru.vk.itmo.test.kovalevigor.dao;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kovalevigor.dao.entry.DaoEntry;
+import ru.vk.itmo.test.kovalevigor.dao.iterators.MemEntryPriorityIterator;
+import ru.vk.itmo.test.kovalevigor.dao.iterators.MergeEntryIterator;
+import ru.vk.itmo.test.kovalevigor.dao.iterators.PriorityShiftedIterator;
+import ru.vk.itmo.test.kovalevigor.utils.IOFunction;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -25,13 +31,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class DaoImpl<T extends DaoEntry<MemorySegment>> implements Dao<MemorySegment, T> {
 
-    private final SSTableManager ssManager;
-    private static final ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> EMPTY_MAP =
+    private final SSTableManager<T> ssManager;
+    private final ConcurrentNavigableMap<MemorySegment, T> emptyMap =
             new ConcurrentSkipListMap<>(SSTable.COMPARATOR);
-    private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> flushedStorage;
-    private ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> currentStorage;
+    private ConcurrentNavigableMap<MemorySegment, T> flushedStorage;
+    private ConcurrentNavigableMap<MemorySegment, T> currentStorage;
     private final AtomicLong currentMemoryByteSize;
     private final long flushThresholdBytes;
     private final ExecutorService flushService;
@@ -39,10 +45,10 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     private Future<Void> flushFuture;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
-    public DaoImpl(final Config config) throws IOException {
-        ssManager = new SSTableManager(config.basePath());
+    public DaoImpl(final Config config, IOFunction<Path, SSTableManager<T>> tableManagerFunction) throws IOException {
+        ssManager = tableManagerFunction.apply(config.basePath());
         currentStorage = new ConcurrentSkipListMap<>(SSTable.COMPARATOR);
-        flushedStorage = EMPTY_MAP;
+        flushedStorage = emptyMap;
         flushThresholdBytes = config.flushThresholdBytes();
         flushService = Executors.newSingleThreadExecutor();
         compactService = Executors.newSingleThreadExecutor();
@@ -53,8 +59,8 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         return map.values().iterator();
     }
 
-    private static Iterator<Entry<MemorySegment>> getIterator(
-            final SortedMap<MemorySegment, Entry<MemorySegment>> sortedMap,
+    private static <E extends Entry<MemorySegment>> Iterator<E> getIterator(
+            final SortedMap<MemorySegment, E> sortedMap,
             final MemorySegment from,
             final MemorySegment to
     ) {
@@ -72,39 +78,41 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
-        final List<PriorityShiftedIterator<Entry<MemorySegment>>> iterators = new ArrayList<>(3);
+    public Iterator<T> get(final MemorySegment from, final MemorySegment to) {
+        final List<PriorityShiftedIterator<T>> iterators = new ArrayList<>(3);
         lock.readLock().lock();
         try {
-            iterators.add(new MemEntryPriorityIterator(0, getIterator(currentStorage, from, to)));
-            iterators.add(new MemEntryPriorityIterator(1, getIterator(flushedStorage, from, to)));
+            iterators.add(new MemEntryPriorityIterator<>(0, getIterator(currentStorage, from, to)));
+            iterators.add(new MemEntryPriorityIterator<>(1, getIterator(flushedStorage, from, to)));
         } finally {
             lock.readLock().unlock();
         }
         try {
-            iterators.add(new MemEntryPriorityIterator(2, ssManager.get(from, to)));
+            iterators.add(new MemEntryPriorityIterator<>(2, ssManager.get(from, to)));
         } catch (IOException e) {
             log(e);
         }
-        return new MergeEntryIterator(iterators);
+        return new MergeEntryIterator<>(iterators);
     }
 
     private static long getMemorySegmentSize(final MemorySegment memorySegment) {
         return memorySegment == null ? 0 : memorySegment.byteSize();
     }
 
-    private static long getEntrySize(final Entry<MemorySegment> entry) {
+    private static <E extends Entry<MemorySegment>> long getTimeEntrySize(final E entry) {
         return getMemorySegmentSize(entry.key()) + getMemorySegmentSize(entry.value());
     }
 
     @Override
-    public void upsert(final Entry<MemorySegment> entry) {
+    public void upsert(final T entry) {
         Objects.requireNonNull(entry);
-        final long entrySize = getEntrySize(entry);
+        final long entrySize = getTimeEntrySize(entry);
 
         lock.readLock().lock();
         try {
-            currentStorage.put(entry.key(), entry);
+            currentStorage.merge(
+                    entry.key(), entry, ssManager::mergeEntries
+            );
             currentMemoryByteSize.addAndGet(entrySize);
         } finally {
             lock.readLock().unlock();
@@ -119,9 +127,9 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> get(final MemorySegment key) {
+    public T get(final MemorySegment key) {
         Objects.requireNonNull(key);
-        Entry<MemorySegment> result;
+        T result;
         lock.readLock().lock();
         try {
             result = currentStorage.get(key);
@@ -133,7 +141,7 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         }
 
         if (result != null) {
-            if (result.value() == null) {
+            if (ssManager.shouldBeNull(result)) {
                 return null;
             }
             return result;
@@ -152,7 +160,7 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
             return;
         }
 
-        final ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>> storage =
+        final ConcurrentNavigableMap<MemorySegment, T> storage =
                 new ConcurrentSkipListMap<>(SSTable.COMPARATOR);
         lock.writeLock().lock();
         try {
@@ -180,7 +188,7 @@ public class DaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
                     if (name != null) {
                         ssManager.addSSTable(name);
                     }
-                    flushedStorage = EMPTY_MAP;
+                    flushedStorage = emptyMap;
                 } catch (IOException e) {
                     log(e);
                 } finally {

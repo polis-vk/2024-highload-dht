@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.kislovdanil.dao;
 
-import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.kislovdanil.dao.exceptions.DBException;
 import ru.vk.itmo.test.kislovdanil.dao.exceptions.OverloadException;
 import ru.vk.itmo.test.kislovdanil.dao.iterators.DatabaseIterator;
@@ -30,7 +27,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, Iterable<Entry<MemorySegment>> {
+public class PersistentDao implements Iterable<Entry<MemorySegment>> {
 
     public static final MemorySegment DELETED_VALUE = null;
     private final Config config;
@@ -51,6 +48,8 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
     // Have to take read while upsert and write while flushing (to prevent data loss)
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
     private final Arena filesArena = Arena.ofShared();
+    // Limit for SSTables on drive
+    private static final int COMPACTION_THRESHOLD = 5;
 
     private long getMaxTablesId(Iterable<SSTable> tableIterable) {
         long curMaxId = -1;
@@ -74,7 +73,6 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
         tables.sort(SSTable::compareTo);
     }
 
-    @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         List<DatabaseIterator> iterators = new ArrayList<>(tables.size() + 2);
         for (SSTable table : tables) {
@@ -87,30 +85,22 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
         return new MergeIterator(iterators, comparator);
     }
 
-    private static Entry<MemorySegment> wrapEntryIfDeleted(Entry<MemorySegment> entry) {
-        if (entry.value() == DELETED_VALUE) return null;
-        return entry;
-    }
-
     private long getNextId() {
         return nextId.getAndIncrement();
     }
 
     // Return null if it doesn't find
-    @Override
     public Entry<MemorySegment> get(MemorySegment key) {
         Entry<MemorySegment> ans = memTable.getStorage().get(key);
-        if (ans != null) return wrapEntryIfDeleted(ans);
+        if (ans != null) return ans;
         if (additionalStorage != null) {
             ans = additionalStorage.getStorage().get(key);
-            if (ans != null) return wrapEntryIfDeleted(ans);
+            if (ans != null) return ans;
         }
         try {
             for (SSTable table : tables.reversed()) {
                 ans = table.find(key);
-                if (ans != null) {
-                    return wrapEntryIfDeleted(ans);
-                }
+                if (ans != null) return ans;
             }
         } catch (IOException e) {
             throw new DBException(e);
@@ -118,7 +108,6 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
         return null;
     }
 
-    @Override
     public void upsert(Entry<MemorySegment> entry) {
         upsertLock.readLock().lock();
         try {
@@ -146,13 +135,16 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
             // SSTable constructor with entries iterator writes MemTable data on disk deleting old data if it exists
             tables.add(new SSTable(config.basePath(), comparator,
                     getNextId(), additionalStorage.getStorage().values().iterator(), filesArena));
+            if (tables.size() > COMPACTION_THRESHOLD) {
+                compact();
+            }
+
             additionalStorage = null;
         } finally {
             compactionLock.unlock();
         }
     }
 
-    @Override
     public void flush() {
         upsertLock.writeLock().lock();
         try {
@@ -185,7 +177,6 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
         }
     }
 
-    @Override
     public void close() {
         if (!filesArena.scope().isAlive()) {
             return;
@@ -221,7 +212,6 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>>, 
         }
     }
 
-    @Override
     public void compact() {
         if (compcatFuture != null && !compcatFuture.isDone()) {
             compcatFuture.cancel(false);

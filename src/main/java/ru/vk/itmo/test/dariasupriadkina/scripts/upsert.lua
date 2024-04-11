@@ -1,6 +1,8 @@
-id = 0
+math.randomseed(os.time())
+
 headers = {}
 headers["Host"] = "localhost:8080"
+id = 0
 
 function strand(length)
     local res = ""

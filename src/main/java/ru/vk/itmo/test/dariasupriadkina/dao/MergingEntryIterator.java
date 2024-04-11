@@ -14,7 +14,7 @@ import java.util.Queue;
  *
  * @author incubos
  */
-final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
+final class MergingEntryIterator implements Iterator<ExtendedEntry<MemorySegment>> {
     private final Queue<WeightedPeekingEntryIterator> iterators;
 
     MergingEntryIterator(final List<WeightedPeekingEntryIterator> iterators) {
@@ -29,13 +29,13 @@ final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public ExtendedEntry<MemorySegment> next() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
 
         final WeightedPeekingEntryIterator top = iterators.remove();
-        final Entry<MemorySegment> result = top.next();
+        final ExtendedEntry<MemorySegment> result = top.next();
 
         if (top.hasNext()) {
             // Not exhausted

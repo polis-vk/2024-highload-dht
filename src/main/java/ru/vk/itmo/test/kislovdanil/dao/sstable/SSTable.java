@@ -1,14 +1,13 @@
 package ru.vk.itmo.test.kislovdanil.dao.sstable;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kislovdanil.dao.BaseEntry;
+import ru.vk.itmo.test.kislovdanil.dao.Entry;
 import ru.vk.itmo.test.kislovdanil.dao.iterators.DatabaseIterator;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -167,11 +166,6 @@ public class SSTable implements Comparable<SSTable>, Iterable<Entry<MemorySegmen
         Files.delete(ssTablePath);
     }
 
-    Range readRange(MemorySegment segment, long offset) {
-        return new Range(segment.get(ValueLayout.JAVA_LONG_UNALIGNED, offset),
-                segment.get(ValueLayout.JAVA_LONG_UNALIGNED, offset + Long.BYTES));
-    }
-
     /* Binary search in summary and index files. Returns index of least record greater than key or equal.
     Returns -1 if no such key */
     long findByKey(MemorySegment key) {
@@ -179,8 +173,7 @@ public class SSTable implements Comparable<SSTable>, Iterable<Entry<MemorySegmen
         long right = size; // Always greater or equal than key
         while (right - left > 1) {
             long middle = (right + left) / 2;
-            Metadata currentEntryMetadata = new Metadata(middle, this);
-            MemorySegment curKey = currentEntryMetadata.readKey();
+            MemorySegment curKey = Metadata.readKey(this, middle);
             int compRes = memSegComp.compare(key, curKey);
             if (compRes <= 0) {
                 right = middle;
@@ -198,10 +191,9 @@ public class SSTable implements Comparable<SSTable>, Iterable<Entry<MemorySegmen
     }
 
     Entry<MemorySegment> readEntry(long index) {
-        Metadata metadata = new Metadata(index, this);
-        MemorySegment key = metadata.readKey();
-        MemorySegment value = metadata.readValue();
-        return new BaseEntry<>(key, value);
+        MemorySegment key = Metadata.readKey(this, index);
+        MemorySegment value = Metadata.readValue(this, index);
+        return new BaseEntry<>(key, value, Metadata.readTimestamp(this, index));
     }
 
     public Entry<MemorySegment> find(MemorySegment key) throws IOException {
@@ -227,16 +219,5 @@ public class SSTable implements Comparable<SSTable>, Iterable<Entry<MemorySegmen
     @Override
     public int compareTo(SSTable o) {
         return Long.compare(this.tableId, o.tableId);
-    }
-
-    // Describes offset and size of any data segment
-    static class Range {
-        public long offset;
-        public long length;
-
-        public Range(long offset, long length) {
-            this.offset = offset;
-            this.length = length;
-        }
     }
 }

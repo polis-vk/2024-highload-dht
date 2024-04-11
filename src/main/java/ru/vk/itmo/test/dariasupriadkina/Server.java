@@ -98,16 +98,18 @@ public class Server extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
             workerExecutor.execute(() -> {
+                Map<String, Integer> ackFrom = getFromAndAck(request);
+                int from = ackFrom.get("from");
+                int ack = ackFrom.get("ack");
                 try {
-                    if (!permittedMethods.contains(request.getMethod())) {
+                    if (!permittedMethods.contains(request.getMethod()) || ack > from || ack <= 0 ||
+                            from > clusterUrls.size()) {
                         handleDefault(request, session);
+
+                        return;
                     }
                     if (request.getHeader(FROM_HEADER) == null) {
                         request.addHeader(FROM_HEADER + selfUrl);
-
-                        Map<String, Integer> ackFrom = getFromAndAck(request);
-                        int from = ackFrom.get("from");
-                        int ack = ackFrom.get("ack");
 
                         broadcastExecutor.execute(() ->
                                 collectResponsesCallback(
@@ -180,7 +182,7 @@ public class Server extends HttpServer {
                     responses.add(response);
                 }
                 if (responses.size() >= ack || completedResponses.get() == from) {
-                    sendAsyncResponse(responses, ack, from, session);
+                    sendAsyncResponse(responses, ack, session);
                 }
             }, broadcastExecutor).exceptionally(exception -> {
                 logger.error("Unexpected error occurred", exception);
@@ -190,23 +192,14 @@ public class Server extends HttpServer {
         }
     }
 
-    private void sendAsyncResponse(List<Response> responses, int ack,
-                                   int from, HttpSession session) {
-        try {
-            if (responses.stream().filter(response -> response.getStatus() == 400).count() == from
-                    || ack > from
-                    || from > clusterUrls.size()
-                    || ack <= 0) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                session.close();
-                return;
-            }
+    private void sendAsyncResponse(List<Response> responses, int ack, HttpSession session) {
+        try (session) {
             if (responses.stream().filter(response -> response.getStatus() == 200
                     || response.getStatus() == 404
                     || response.getStatus() == 202
-                    || response.getStatus() == 201).count() < ack) {
+                    || response.getStatus() == 201
+                    || response.getStatus() == 400).count() < ack) {
                 session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
-                session.close();
                 return;
             }
             session.sendResponse(responses.stream().max((o1, o2) -> {
@@ -214,10 +207,8 @@ public class Server extends HttpServer {
                 Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
                 return header1.compareTo(header2);
             }).get());
-            session.close();
         } catch (IOException e) {
             logger.error("Failed to send error response", e);
-            session.close();
         }
     }
 

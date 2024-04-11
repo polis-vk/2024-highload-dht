@@ -8,8 +8,6 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ClusterResponseMerger {
@@ -20,7 +18,6 @@ public class ClusterResponseMerger {
     private final HttpSession session;
     private final NodeResponse[] nodeResponses;
     private final AtomicInteger count;
-
 
     public ClusterResponseMerger(int ack, int from, Request originalRequest, HttpSession session) {
         this.ack = ack;

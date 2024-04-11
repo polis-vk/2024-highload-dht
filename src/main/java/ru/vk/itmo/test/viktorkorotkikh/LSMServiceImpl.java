@@ -105,7 +105,14 @@ public class LSMServiceImpl implements Service {
             HttpClient clusterClient,
             ExecutorService clusterResponseProcessor
     ) throws IOException {
-        return new LSMServerImpl(serviceConfig, dao, executorService, consistentHashingManager, clusterClient, clusterResponseProcessor);
+        return new LSMServerImpl(
+                serviceConfig,
+                dao,
+                executorService,
+                consistentHashingManager,
+                clusterClient,
+                clusterResponseProcessor
+        );
     }
 
     private static Dao<MemorySegment, TimestampedEntry<MemorySegment>> createLSMDao(Path workingDir) {

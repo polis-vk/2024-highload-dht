@@ -67,7 +67,7 @@ public class Server extends HttpServer {
         this.clusterUrls = config.clusterUrls();
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
-        this.selfHandler = new SelfRequestHandler(dao, utils, broadcastExecutor);
+        this.selfHandler = new SelfRequestHandler(dao, utils);
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {

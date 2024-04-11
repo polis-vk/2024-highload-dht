@@ -10,20 +10,16 @@ import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 
 public class SelfRequestHandler {
 
     private static final String TIMESTAMP_MILLIS_HEADER = "X-TIMESTAMP-MILLIS: ";
     private final Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
     private final Utils utils;
-    private final ExecutorService delegateExecutor;
 
-    public SelfRequestHandler(Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao,
-                              Utils utils, ExecutorService delegateExecutor) {
+    public SelfRequestHandler(Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao, Utils utils) {
         this.dao = dao;
         this.utils = utils;
-        this.delegateExecutor = delegateExecutor;
     }
 
     public Response handleRequest(Request request) {
@@ -39,12 +35,16 @@ public class SelfRequestHandler {
     public CompletableFuture<Response> handleAsyncRequest(Request request) {
         String id = utils.getIdParameter(request);
         return switch (request.getMethodName()) {
-            case "GET" -> CompletableFuture.supplyAsync(() -> get(id), delegateExecutor);
-            case "PUT" -> CompletableFuture.supplyAsync(() -> put(id, request), delegateExecutor);
-            case "DELETE" -> CompletableFuture.supplyAsync(() -> delete(id), delegateExecutor);
-            default -> CompletableFuture.supplyAsync(() ->
-                    new Response(Response.NOT_FOUND, Response.EMPTY), delegateExecutor);
+            case "GET" -> composeFuture(get(id));
+            case "PUT" -> composeFuture(put(id, request));
+            case "DELETE" -> composeFuture(delete(id));
+            default -> composeFuture(new Response(Response.NOT_FOUND, Response.EMPTY));
         };
+    }
+
+    private CompletableFuture<Response> composeFuture(Response response) {
+
+        return CompletableFuture.completedFuture(response);
     }
 
     public Response get(String id) {

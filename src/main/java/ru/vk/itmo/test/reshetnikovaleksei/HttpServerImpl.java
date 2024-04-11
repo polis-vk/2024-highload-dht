@@ -22,8 +22,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -39,6 +39,7 @@ public class HttpServerImpl extends HttpServer {
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService executorService;
+    private final ExecutorService localExecutorService;
     private final RequestRouter requestRouter;
     private final String selfUrl;
     private final int clusterSize;
@@ -46,10 +47,12 @@ public class HttpServerImpl extends HttpServer {
     public HttpServerImpl(ServiceConfig config,
                           Dao<MemorySegment, Entry<MemorySegment>> dao,
                           ExecutorService executorService,
+                          ExecutorService localExecutorService,
                           RequestRouter requestRouter) throws IOException {
         super(createConfig(config));
         this.dao = dao;
         this.executorService = executorService;
+        this.localExecutorService = localExecutorService;
         this.requestRouter = requestRouter;
         this.selfUrl = config.selfUrl();
         this.clusterSize = config.clusterUrls().size();
@@ -117,63 +120,75 @@ public class HttpServerImpl extends HttpServer {
         }
 
         if (request.getHeader(REDIRECTED_REQUEST_HEADER_NAME) == null) {
-            List<Response> not5xxResponses = getNot5xxResponses(
-                    sendRequestsAndGetResponses(
-                            request, id, requestRouter.getNodesByEntityId(id, from)
-                    )
-            );
-
-            if (not5xxResponses.size() >= ack) {
-                if (request.getMethod() == Request.METHOD_GET) {
-                    not5xxResponses.sort(Comparator.comparingLong(r ->
-                            Long.parseLong(r.getHeader(TIMESTAMP_HEADER_NAME + ": "))));
-                    return not5xxResponses.getLast();
-                } else {
-                    return not5xxResponses.getFirst();
+            List<Response> responses = sendRequestsAndGetResponses(
+                    request, id, requestRouter.getNodesByEntityId(id, from)
+            ).stream().map(future -> {
+                try {
+                    return future.get();
+                } catch (InterruptedException | ExecutionException e) {
+                    LOGGER.error("Got error while redirecting request: {} with errors: {}", request, e.getMessage());
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                 }
+            }).toList();
+
+            List<Response> notErrorResponses = getNotErrorResponses(responses);
+            if (notErrorResponses.size() >= ack) {
+                return request.getMethod() == Request.METHOD_GET
+                        ? getLastResponse(notErrorResponses)
+                        : notErrorResponses.getFirst();
             }
 
             return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
 
-        return invokeLocal(request, id);
-    }
-
-    private Response invokeLocal(Request request, String id) {
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-                Entry<MemorySegment> entry = dao.get(key);
-                if (entry == null || entry.value() == null) {
-                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                    response.addHeader(TIMESTAMP_HEADER_NAME + ": " + (entry != null ? entry.timestamp() : 0));
-
-                    return response;
-                }
-
-                Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-                response.addHeader(TIMESTAMP_HEADER_NAME + ": " + entry.timestamp());
-                return response;
-            }
-            case Request.METHOD_PUT -> {
-                MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-                MemorySegment value = MemorySegment.ofArray(request.getBody());
-                dao.upsert(new BaseEntry<>(key, value, System.currentTimeMillis()));
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-                dao.upsert(new BaseEntry<>(key, null, System.currentTimeMillis()));
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
+        try {
+            return invokeLocal(request, id).get();
+        } catch (InterruptedException | ExecutionException e) {
+            LOGGER.error("Got error while process request locally: {} with errors: {}", request, e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
-    private List<Response> sendRequestsAndGetResponses(Request request, String id, List<String> nodes) {
-        List<Response> responses = new ArrayList<>();
+    private CompletableFuture<Response> invokeLocal(Request request, String id) {
+        CompletableFuture<Response> completableFuture = new CompletableFuture<>();
+
+        localExecutorService.execute(() -> {
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+                    Entry<MemorySegment> entry = dao.get(key);
+                    if (entry == null || entry.value() == null) {
+                        Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                        response.addHeader(TIMESTAMP_HEADER_NAME + ": " + (entry != null ? entry.timestamp() : 0));
+
+                        completableFuture.complete(response);
+                        return;
+                    }
+
+                    Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
+                    response.addHeader(TIMESTAMP_HEADER_NAME + ": " + entry.timestamp());
+                    completableFuture.complete(response);
+                }
+                case Request.METHOD_PUT -> {
+                    MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+                    MemorySegment value = MemorySegment.ofArray(request.getBody());
+                    dao.upsert(new BaseEntry<>(key, value, System.currentTimeMillis()));
+                    completableFuture.complete(new Response(Response.CREATED, Response.EMPTY));
+                }
+                case Request.METHOD_DELETE -> {
+                    MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+                    dao.upsert(new BaseEntry<>(key, null, System.currentTimeMillis()));
+                    completableFuture.complete(new Response(Response.ACCEPTED, Response.EMPTY));
+                }
+                default -> completableFuture.complete(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            }
+        });
+
+        return completableFuture;
+    }
+
+    private List<CompletableFuture<Response>> sendRequestsAndGetResponses(Request request, String id, List<String> nodes) {
+        List<CompletableFuture<Response>> responses = new ArrayList<>();
         for (String node : nodes) {
             if (node.equals(selfUrl)) {
                 responses.add(invokeLocal(request, id));
@@ -184,29 +199,46 @@ public class HttpServerImpl extends HttpServer {
                 responses.add(requestRouter.redirect(node, request, id));
             } catch (TimeoutException e) {
                 LOGGER.error("timeout while invoking remote node");
-                responses.add(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+                responses.add(CompletableFuture.completedFuture(
+                        new Response(Response.REQUEST_TIMEOUT, Response.EMPTY)));
             } catch (ExecutionException | IOException e) {
                 LOGGER.error("I/O exception while calling remote node");
-                responses.add(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                responses.add(CompletableFuture.completedFuture(
+                        new Response(Response.INTERNAL_ERROR, Response.EMPTY)));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 LOGGER.error("Thread interrupted");
-                responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                responses.add(CompletableFuture.completedFuture(
+                        new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)));
             }
         }
 
         return responses;
     }
 
-    private List<Response> getNot5xxResponses(List<Response> responses) {
+    private List<Response> getNotErrorResponses(List<Response> responses) {
         List<Response> not5xxResponses = new ArrayList<>();
         for (Response response : responses) {
-            if (response.getStatus() < 500) {
+            if (response.getStatus() < 500 && response.getStatus() != 429) {
                 not5xxResponses.add(response);
             }
         }
 
         return not5xxResponses;
+    }
+
+    private Response getLastResponse(List<Response> notErrorResponses) {
+        Response lastResponse = null;
+        long maxTimestamp = Long.MIN_VALUE;
+
+        for (Response response : notErrorResponses) {
+            long timestamp = Long.parseLong(response.getHeader(TIMESTAMP_HEADER_NAME + ": "));
+            if (timestamp > maxTimestamp) {
+                maxTimestamp = timestamp;
+                lastResponse = response;
+            }
+        }
+        return lastResponse;
     }
 
     private void processIOException(Request request, HttpSession session, IOException e) {

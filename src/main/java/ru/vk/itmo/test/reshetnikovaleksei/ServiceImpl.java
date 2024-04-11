@@ -23,6 +23,7 @@ public class ServiceImpl implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private HttpServerImpl server;
     private ExecutorService executorService;
+    private ExecutorService localExecutorService;
     private RequestRouter requestRouter;
     private boolean stopped;
 
@@ -34,9 +35,10 @@ public class ServiceImpl implements Service {
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        executorService = ExecutorServiceFactory.createExecutorService();
+        executorService = ExecutorServiceFactory.createExecutorService("main-thread-");
+        localExecutorService = ExecutorServiceFactory.createExecutorService("local-thread-");
         requestRouter = new RequestRouter(serviceConfig);
-        server = new HttpServerImpl(serviceConfig, dao, executorService, requestRouter);
+        server = new HttpServerImpl(serviceConfig, dao, executorService, localExecutorService, requestRouter);
         server.start();
         stopped = false;
         return CompletableFuture.completedFuture(null);
@@ -48,11 +50,20 @@ public class ServiceImpl implements Service {
             return CompletableFuture.completedFuture(null);
         }
 
-        internalStop();
+        try {
+            server.stop();
+            requestRouter.close();
+            shutdownGracefully(executorService);
+            shutdownGracefully(localExecutorService);
+        } finally {
+            dao.close();
+        }
+
+        stopped = true;
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 4)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -65,10 +76,7 @@ public class ServiceImpl implements Service {
         return new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES);
     }
 
-    private void internalStop() throws IOException {
-        server.stop();
-        requestRouter.close();
-        dao.close();
+    private void shutdownGracefully(ExecutorService executorService) {
         executorService.shutdown();
 
         try {
@@ -79,7 +87,5 @@ public class ServiceImpl implements Service {
             executorService.shutdownNow();
             Thread.currentThread().interrupt();
         }
-
-        stopped = true;
     }
 }

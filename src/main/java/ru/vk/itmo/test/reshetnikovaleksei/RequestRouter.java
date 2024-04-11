@@ -11,10 +11,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
 
 import static ru.vk.itmo.test.reshetnikovaleksei.HttpServerImpl.HTTP_TIMESTAMP_HEADER_NAME;
@@ -29,10 +31,13 @@ public class RequestRouter implements Closeable {
 
     public RequestRouter(ServiceConfig config) {
         this.nodes = config.clusterUrls();
-        this.httpClient = HttpClient.newHttpClient();
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(500))
+                .executor(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()))
+                .build();
     }
 
-    public Response redirect(String node, Request request, String entryId)
+    public CompletableFuture<Response> redirect(String node, Request request, String entryId)
             throws IOException, InterruptedException, ExecutionException, TimeoutException {
         HttpRequest redirectRequest = HttpRequest.newBuilder(URI.create(node + REQUEST_PARAMS + entryId))
                 .method(request.getMethodName(),
@@ -42,15 +47,14 @@ public class RequestRouter implements Closeable {
                 .header(REDIRECTED_REQUEST_HEADER_NAME, "true")
                 .build();
 
-        HttpResponse<byte[]> httpResponse = httpClient
-                .sendAsync(redirectRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .get(500, TimeUnit.MILLISECONDS);
+        return httpClient.sendAsync(redirectRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApplyAsync(resp -> {
+                    Response response = new Response(Integer.toString(resp.statusCode()), resp.body());
+                    long timestamp = resp.headers().firstValueAsLong(HTTP_TIMESTAMP_HEADER_NAME).orElse(0);
+                    response.addHeader(TIMESTAMP_HEADER_NAME + ": " + timestamp);
 
-        Response response = new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
-        long timestamp = httpResponse.headers().firstValueAsLong(HTTP_TIMESTAMP_HEADER_NAME).orElse(0);
-        response.addHeader(TIMESTAMP_HEADER_NAME + ": " + timestamp);
-
-        return response;
+                    return response;
+                });
     }
 
     public List<String> getNodesByEntityId(String id, int from) {

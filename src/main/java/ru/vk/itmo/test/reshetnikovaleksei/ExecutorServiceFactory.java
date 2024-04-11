@@ -18,10 +18,10 @@ public final class ExecutorServiceFactory {
 
     }
 
-    public static ExecutorService createExecutorService() {
+    public static ExecutorService createExecutorService(String threadNamePrefix) {
         return new ThreadPoolExecutor(
                 CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, KEEP_ALIVE_TIME_SECONDS,
-                UNIT, QUEUE, new CustomThreadFactory(), new ThreadPoolExecutor.AbortPolicy()
+                UNIT, QUEUE, new CustomThreadFactory(threadNamePrefix), new ThreadPoolExecutor.AbortPolicy()
         );
     }
 }

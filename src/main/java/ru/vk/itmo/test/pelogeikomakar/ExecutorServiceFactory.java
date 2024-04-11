@@ -20,7 +20,7 @@ public final class ExecutorServiceFactory {
         throw new UnsupportedOperationException("cannot be instantiated");
     }
 
-    public static ExecutorService newExecutorService() {
+    public static ExecutorService newExecutorService(String threadPrefix) {
 
         BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
         ThreadPoolExecutor tpe = new ThreadPoolExecutor(CORE_POOL_SIZE, CORE_POOL_SIZE,
@@ -29,7 +29,7 @@ public final class ExecutorServiceFactory {
                     private final AtomicInteger id = new AtomicInteger(0);
                     @Override
                     public Thread newThread(Runnable r) {
-                        return new Thread(r, "ExecutorServiceThread-" + id.incrementAndGet());
+                        return new Thread(r, threadPrefix + id.incrementAndGet());
                     }
                 }, new ThreadPoolExecutor.AbortPolicy());
         tpe.prestartAllCoreThreads();

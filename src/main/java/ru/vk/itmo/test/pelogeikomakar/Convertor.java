@@ -67,8 +67,9 @@ public final class Convertor {
         if (inputString == null) {
             return result;
         }
+        String clearString = inputString.replaceAll("[^0-9]", "");
         try {
-            result = Long.parseLong(inputString);
+            result = Long.parseLong(clearString);
         } catch (NumberFormatException e) {
             log.warn("Can not parse Log number", e);
         }

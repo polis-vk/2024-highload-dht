@@ -35,8 +35,7 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> start() throws IOException {
         isStopped.set(false);
         Dao<MemorySegment, Entry<MemorySegment>> dao = new ReferenceDaoPel(daoConfig);
-        server = new DaoHttpServer(serviceConfig, dao, ExecutorServiceFactory.newExecutorService());
-        server.startHttpClients();
+        server = new DaoHttpServer(serviceConfig, dao);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -45,14 +44,12 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> stop() throws IOException {
         if (!isStopped.getAndSet(true)) {
             server.stop();
-            shutdownAndAwaitTermination(server.getExecutorService());
-            server.stopHttpClients();
             server.getDao().close();
         }
         return CompletableFuture.completedFuture(null);
     }
 
-    private static void shutdownAndAwaitTermination(ExecutorService pool) {
+    public static void shutdownAndAwaitTermination(ExecutorService pool) {
         pool.shutdown();
         try {
           if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
@@ -67,7 +64,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 4)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

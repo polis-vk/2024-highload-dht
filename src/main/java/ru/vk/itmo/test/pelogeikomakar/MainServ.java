@@ -35,10 +35,9 @@ public final class MainServ {
         }
 
         for (ServiceConfig config: configs) {
-            ExecutorService execServ = ExecutorServiceFactory.newExecutorService();
+            //ExecutorService execServ = ExecutorServiceFactory.newExecutorService("mainServ");
             Config daoConfig = new Config(config.workingDir(), 1_048_576L);
-            DaoHttpServer server = new DaoHttpServer(config, new ReferenceDaoPel(daoConfig), execServ);
-            server.startHttpClients();
+            DaoHttpServer server = new DaoHttpServer(config, new ReferenceDaoPel(daoConfig));
             server.start();
         }
     }

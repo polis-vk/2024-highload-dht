@@ -68,6 +68,7 @@ public class Server extends HttpServer {
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
         this.selfHandler = new SelfRequestHandler(dao, utils, broadcastExecutor);
+        this.closeSessions = true;
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
@@ -204,7 +205,6 @@ public class Server extends HttpServer {
     private void sendAsyncResponse(Response resp, HttpSession session) {
         try {
             session.sendResponse(resp);
-            session.close();
         } catch (IOException e) {
             logger.error("Failed to send error response", e);
             session.close();
@@ -225,6 +225,7 @@ public class Server extends HttpServer {
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
                         request.getBody() == null ? new byte[]{} : request.getBody())
                 ).build();
+
         return httpClient
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .thenApplyAsync(httpResponse -> {

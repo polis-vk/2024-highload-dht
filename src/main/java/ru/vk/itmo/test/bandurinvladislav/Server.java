@@ -236,7 +236,6 @@ public class Server extends HttpServer {
         super.stop();
 
         workerPool.gracefulShutdown();
-
         try {
             dao.close();
         } catch (IOException e) {

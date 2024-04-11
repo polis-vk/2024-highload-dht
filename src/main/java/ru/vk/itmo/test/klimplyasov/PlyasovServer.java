@@ -191,7 +191,7 @@ public class PlyasovServer extends HttpServer {
                     );
         }
 
-        futureResult.whenCompleteAsync((handleResult, throwable) -> {
+        futureResult = futureResult.whenCompleteAsync((handleResult, throwable) -> {
             if (throwable != null) {
                 log.error("Exception during handleAsync", throwable);
                 handleResult = new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);

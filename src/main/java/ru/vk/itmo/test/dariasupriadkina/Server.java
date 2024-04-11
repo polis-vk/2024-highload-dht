@@ -98,10 +98,10 @@ public class Server extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
             workerExecutor.execute(() -> {
-                Map<String, Integer> ackFrom = getFromAndAck(request);
-                int from = ackFrom.get("from");
-                int ack = ackFrom.get("ack");
                 try {
+                    Map<String, Integer> ackFrom = getFromAndAck(request);
+                    int from = ackFrom.get("from");
+                    int ack = ackFrom.get("ack");
                     if (!permittedMethods.contains(request.getMethod()) || checkBadRequest(ack, from)) {
                         handleDefault(request, session);
                         return;
@@ -196,19 +196,22 @@ public class Server extends HttpServer {
 
     private void sendAsyncResponse(List<Response> responses, int ack, HttpSession session) {
         try (session) {
+            Response resp;
             if (responses.stream().filter(response -> response.getStatus() == 200
                     || response.getStatus() == 404
                     || response.getStatus() == 202
                     || response.getStatus() == 201
                     || response.getStatus() == 400).count() < ack) {
-                session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
-                return;
+                resp = new Response("504 Not Enough Replicas", Response.EMPTY);
+            } else {
+                resp = responses.stream().max((o1, o2) -> {
+                    Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
+                    Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
+                    return header1.compareTo(header2);
+                }).get();
             }
-            session.sendResponse(responses.stream().max((o1, o2) -> {
-                Long header1 = Long.parseLong(o1.getHeader(TIMESTAMP_MILLIS_HEADER));
-                Long header2 = Long.parseLong(o2.getHeader(TIMESTAMP_MILLIS_HEADER));
-                return header1.compareTo(header2);
-            }).get());
+            session.sendResponse(resp);
+
         } catch (IOException e) {
             logger.error("Failed to send error response", e);
         }

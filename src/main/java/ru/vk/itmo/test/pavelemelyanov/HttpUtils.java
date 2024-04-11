@@ -13,7 +13,7 @@ public final class HttpUtils {
             Request.METHOD_PUT,
             Request.METHOD_DELETE
     );
-    public static final int REQUEST_TIMEOUT = 300;
+    public static final int REQUEST_TIMEOUT = 3000;
     public static final Map<Integer, String> HTTP_CODE = Map.of(
             HttpURLConnection.HTTP_OK, Response.OK,
             HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,

@@ -120,17 +120,12 @@ public class MyServer extends HttpServer {
     public synchronized void stop() {
         executorService.shutdown();
         try {
-            if (!executorService.awaitTermination(1, TimeUnit.MINUTES)) {
-                executorService.shutdownNow();
-                if (!executorService.awaitTermination(1, TimeUnit.MINUTES)) {
-                    logger.error("Pool did not terminate");
-                }
-            }
-        } catch (InterruptedException ex) {
-            executorService.shutdownNow();
-            Thread.currentThread().interrupt();
+            dao.close();
+        } catch (IOException e) {
+            logger.error("dao.close() -> exception()");
         }
         super.stop();
+        executorService.shutdownNow();
     }
 
     private int quorum(final int from) {

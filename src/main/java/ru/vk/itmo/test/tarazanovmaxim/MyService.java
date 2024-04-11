@@ -32,7 +32,6 @@ public class MyService implements Service {
         }
 
         server.stop();
-        server.getDao().close();
         stopped = true;
         return CompletableFuture.completedFuture(null);
     }

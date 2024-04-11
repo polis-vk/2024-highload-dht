@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServerImpl extends HttpServer {
@@ -297,10 +298,24 @@ public class ServerImpl extends HttpServer {
         CompletableFuture<HandleResult> run() throws IOException;
     }
 
+    private void shutdownAndAwaitTermination(ExecutorService pool) {
+        try {
+            if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+                pool.shutdownNow();
+                if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+                    log.info("Pool did not terminate");
+                }
+            }
+        } catch (InterruptedException ie) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
     @Override
     public synchronized void stop() {
         super.stop();
-        ServiceImpl.shutdownAndAwaitTermination(executorLocal);
-        ServiceImpl.shutdownAndAwaitTermination(executorRemote);
+        shutdownAndAwaitTermination(executorLocal);
+        shutdownAndAwaitTermination(executorRemote);
     }
 }

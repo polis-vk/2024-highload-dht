@@ -7,6 +7,10 @@ import org.slf4j.Logger;
 import java.io.IOException;
 
 public final class Utils {
+
+    private Utils() {
+    }
+
     public static void sendEmptyInternal(final HttpSession session, final Logger logger) {
         try {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));

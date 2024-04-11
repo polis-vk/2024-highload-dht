@@ -2,8 +2,6 @@ package ru.vk.itmo.test.pelogeikomakar;
 
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
@@ -25,7 +23,6 @@ import java.util.List;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -41,10 +38,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     private final ExecutorService localExecutorService;
     private final ExecutorService remoteExecutorService;
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
-            Request.METHOD_DELETE);
-
-    private static final Set<String> GOOD_STATUSES = Set.of("202", "201", "200", "404");
     private static final String TIME_HEADER = "X-VALUE_TIME";
     private static final String TIME_HEADER_ONENIO = TIME_HEADER + ": ";
     private static final String INTERNAL_RQ_HEADER = "X-INTERNAL_RQ";
@@ -91,39 +84,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         return dao;
     }
 
-    @Path("/v0/entity")
-    public Response processEntityDaoMethod(@Param(value = "id", required = false) String id,
-                                    @Param(value = "ack", required = false) String ack,
-                                    @Param(value = "from", required = false) String from,
-                                    Request request) {
-
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        Response subResponse;
-        long time = System.currentTimeMillis();
-
-        if (request.getHeader(INTERNAL_RQ_HEADER) == null) {
-            // Request from outside
-            int currAck = Convertor.intOfString(ack, defaultAck, log);
-            int currFrom = Convertor.intOfString(from, defaultFrom, log);
-
-            if (currFrom > clusterUrls.size() || currAck > currFrom || currAck < 1) {
-                log.error("BAD ack or from parameter: [ack: {}, from: {}]", currAck, currFrom);
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-
-            String[] urls = getServerUrlsForKey(id, currFrom);
-            subResponse = executeAllRequests(id, request, urls, currAck, time);
-
-        } else {
-            // Redirected request
-            time = Convertor.longOfString(request.getHeader(TIME_HEADER_ONENIO), time, log);
-            subResponse = executeMethodLocal(id, request, time);
-        }
-        return subResponse;
-    }
 
     private List<CompletableFuture<Response>> invokeAsyncAllRequests(String id, Request request, String[] urls,
                                                                      long time) {
@@ -134,11 +94,11 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             CompletableFuture<Response> futureResponse;
             if (url.equals(selfUrl)) {
                 futureResponse = CompletableFuture.supplyAsync(
-                        () -> executeMethodLocal(id, request, time),
+                        () -> executeLocalMethod(id, request, time),
                         localExecutorService);
             } else {
                 futureResponse = CompletableFuture.supplyAsync(
-                        () -> invokeRemoteMethod(url, request, time),
+                        () -> executeRemoteMethod(url, request, time),
                         remoteExecutorService);
             }
             futureResponses.add(futureResponse);
@@ -146,8 +106,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         return futureResponses;
     }
 
-    private void accomulateResults(List<CompletableFuture<Response>> responses, HttpSession session,
-                                   int currAck, int currFrom) {
+    private void accumulateAndSendResults(List<CompletableFuture<Response>> responses, HttpSession session,
+                                          int currAck, int currFrom) {
 
         AtomicInteger doneResponses = new AtomicInteger(0);
         AtomicInteger successResponses = new AtomicInteger(0);
@@ -171,7 +131,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
                 if (doneResponses.get() == currFrom && successResponses.get() < currAck &&
                         queryProcessed.compareAndSet(false, true)) {
-                    sendResponse(session, new Response(NOT_REPLICAS_HEADER, Response.EMPTY));
+                    sendResponseWithError(session, new Response(NOT_REPLICAS_HEADER, Response.EMPTY));
                 }
                 }, localExecutorService)
                     .exceptionally(exception -> {
@@ -194,10 +154,10 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
             }
         }
 
-        sendResponse(session, youngestResponse);
+        sendResponseWithError(session, youngestResponse);
     }
 
-    private void sendResponse(HttpSession session, Response response) {
+    private void sendResponseWithError(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
         } catch (IOException ex) {
@@ -206,48 +166,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         }
     }
 
-    private Response executeAllRequests(String id, Request request, String[] urls, int currAck, long timeSt) {
-        int succeededReq = 0;
-        long oldestTime = -2;
-        Response oldestResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-
-        for (String url : urls) {
-            Response currResp = executeMethod(url, id, request, timeSt);
-            String status = currResp.getHeaders()[0];
-            if (GOOD_STATUSES.contains(status)) {
-                succeededReq++;
-                long curTime = -1;
-                curTime = Convertor.longOfString(currResp.getHeader(TIME_HEADER_ONENIO), curTime, log);
-
-                if (oldestTime == -2 || oldestTime < curTime) {
-                    oldestTime = curTime;
-                    oldestResponse = currResp;
-                }
-            }
-
-            if (status.equals("405")) {
-                return currResp;
-            }
-        }
-
-        if (succeededReq >= currAck) {
-            return oldestResponse;
-        }
-
-        return new Response(NOT_REPLICAS_HEADER, Response.EMPTY);
-    }
-
-    private Response executeMethod(String url, String id, Request request, long timeSt) {
-        Response result;
-        if (url.equals(selfUrl)) {
-            result = executeMethodLocal(id, request, timeSt);
-        } else {
-            result = invokeRemoteMethod(url, request, timeSt);
-        }
-        return result;
-    }
-
-    private Response executeMethodLocal(String id, Request request, long timeSt) {
+    private Response executeLocalMethod(String id, Request request, long timeSt) {
         switch (request.getMethod()) {
             case Request.METHOD_GET:
                 Entry<MemorySegment> result = dao.get(Convertor.stringToMemorySegment(id));
@@ -297,6 +216,44 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         }
     }
 
+    private Response executeRemoteMethod(String executorNode, Request request, long givenTime) {
+        HttpRequest.Builder httpRequestBuilder = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .header(INTERNAL_RQ_HEADER, "true")
+                .timeout(Duration.ofSeconds(1));
+
+        if (givenTime >= 0) {
+            httpRequestBuilder = httpRequestBuilder.header(TIME_HEADER, Long.toString(givenTime));
+        }
+
+        HttpRequest httpRequest = httpRequestBuilder.build();
+
+
+
+        try {
+            HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+            Response response = new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
+
+            Optional<String> timeStamp = httpResponse.headers().firstValue(TIME_HEADER);
+            timeStamp.ifPresent(s -> response.addHeader(TIME_HEADER_ONENIO + s));
+
+            return response;
+
+        } catch (IOException e) {
+            log.error("Error in internal request", e);
+            return new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        } catch (InterruptedException e) {
+            log.error("Error in internal request (INTERRUPTION)", e);
+            Thread.currentThread().interrupt();
+            return new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        }
+    }
+
     private void applyRequestToExecutor(HttpSession session, ExecutorService executor,
                                         Callable<Response> method) throws IOException {
         try {
@@ -306,12 +263,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                     session.sendResponse(r);
                 } catch (Exception e) {
                     log.error("Exception during handleRequest", e);
-                    try {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                    } catch (IOException ex) {
-                        log.error("IOException while sendResponse applyRequestToExecutor", ex);
-                        session.scheduleClose();
-                    }
+                    sendResponseWithError(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -350,14 +302,14 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
             String[] urls = getServerUrlsForKey(id, currFrom);
             List<CompletableFuture<Response>> responses = invokeAsyncAllRequests(id, request, urls, time);
-            accomulateResults(responses, session, currAck, currFrom);
+            accumulateAndSendResults(responses, session, currAck, currFrom);
 
         } else {
             // Redirected request
             time = Convertor.longOfString(request.getHeader(TIME_HEADER_ONENIO), time, log);
 
             final long finalTime = time;
-            applyRequestToExecutor(session, localExecutorService, () -> executeMethodLocal(id, request, finalTime));
+            applyRequestToExecutor(session, localExecutorService, () -> executeLocalMethod(id, request, finalTime));
         }
     }
 
@@ -371,18 +323,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
     public synchronized void stop() {
         super.stop();
         ServiceImpl.shutdownAndAwaitTermination(localExecutorService);
-    }
-
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-
-        Response response;
-        if (ALLOWED_METHODS.contains(request.getMethod())) {
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } else {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        }
-        session.sendResponse(response);
+        ServiceImpl.shutdownAndAwaitTermination(remoteExecutorService);
     }
 
     private String[] getServerUrlsForKey(String key, int from) {
@@ -400,44 +341,6 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         }
 
         return resultUrls;
-    }
-
-    private Response invokeRemoteMethod(String executorNode, Request request, long givenTime) {
-        HttpRequest.Builder httpRequestBuilder = HttpRequest.newBuilder(URI.create(executorNode + request.getURI()))
-                .method(
-                        request.getMethodName(),
-                        request.getBody() == null
-                                ? HttpRequest.BodyPublishers.noBody()
-                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-                )
-                .header(INTERNAL_RQ_HEADER, "true")
-                .timeout(Duration.ofSeconds(1));
-
-        if (givenTime >= 0) {
-            httpRequestBuilder = httpRequestBuilder.header(TIME_HEADER, Long.toString(givenTime));
-        }
-
-        HttpRequest httpRequest = httpRequestBuilder.build();
-
-
-
-        try {
-            HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-            Response response = new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
-
-            Optional<String> timeStamp = httpResponse.headers().firstValue(TIME_HEADER);
-            timeStamp.ifPresent(s -> response.addHeader(TIME_HEADER_ONENIO + s));
-
-            return response;
-
-        } catch (IOException e) {
-            log.error("Error in internal request", e);
-            return new Response(Response.BAD_GATEWAY, Response.EMPTY);
-        } catch (InterruptedException e) {
-            log.error("Error in internal request (INTERRUPTION)", e);
-            Thread.currentThread().interrupt();
-            return new Response(Response.BAD_GATEWAY, Response.EMPTY);
-        }
     }
 
 }

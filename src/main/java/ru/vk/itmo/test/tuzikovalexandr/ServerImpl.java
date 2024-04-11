@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -119,11 +120,7 @@ public class ServerImpl extends HttpServer {
 
         try {
             if (request.getHeader(Constants.HTTP_TERMINATION_HEADER) == null) {
-                CompletableFuture<Response> handleProxyResponse =
-                        handleProxyRequest(request, session, paramId, from, ack);
-                handleProxyResponse = handleProxyResponse.whenComplete((response, throwable) ->
-                        sendResponse(session, response));
-                checkCompletableFuture(handleProxyResponse);
+                sendResponse(session, handleProxyRequest(request, session, paramId, from, ack));
             } else {
                 sendResponse(session, requestHandler.handle(request, paramId));
             }
@@ -185,7 +182,7 @@ public class ServerImpl extends HttpServer {
         return responses;
     }
 
-    private CompletableFuture<Response> handleProxyRequest(Request request, HttpSession session,
+    private Response handleProxyRequest(Request request, HttpSession session,
                                                            String paramId, int from, int ack) {
         List<String> nodeUrls = consistentHashing.getNodes(paramId, clusterUrls, from);
 
@@ -209,7 +206,7 @@ public class ServerImpl extends HttpServer {
         return getQuorumResult(request, from, ack, responses);
     }
 
-    private CompletableFuture<Response> getQuorumResult(Request request, int from, int ack,
+    private Response getQuorumResult(Request request, int from, int ack,
                                                         List<CompletableFuture<Response>> responses) {
         List<Response> successResponses = new ArrayList<>();
         CompletableFuture<Response> result = new CompletableFuture<>();
@@ -217,7 +214,7 @@ public class ServerImpl extends HttpServer {
         AtomicInteger errorResponseCount = new AtomicInteger();
 
         for (CompletableFuture<Response> responseFuture : responses) {
-            responseFuture = responseFuture.whenComplete((response, throwable) -> {
+            responseFuture.whenCompleteAsync((response, throwable) -> {
                 if (throwable == null || (response != null && response.getStatus() < Constants.SERVER_ERROR)) {
                     successResponseCount.incrementAndGet();
                     successResponses.add(response);
@@ -232,12 +229,14 @@ public class ServerImpl extends HttpServer {
                 if (errorResponseCount.get() == from - ack + 1) {
                     result.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
-            });
-
-            checkCompletableFuture(responseFuture);
+            }).exceptionally(e -> new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
 
-        return result;
+        try {
+            return result.get();
+        } catch (InterruptedException | ExecutionException e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
     }
 
     private Response getResult(Request request, List<Response> successResponses) {
@@ -254,11 +253,5 @@ public class ServerImpl extends HttpServer {
             String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
             return timestamp == null ? 0 : Long.parseLong(timestamp);
         }));
-    }
-
-    private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
-        if (completableFuture == null) {
-            log.error("Error CompletableFuture");
-        }
     }
 }

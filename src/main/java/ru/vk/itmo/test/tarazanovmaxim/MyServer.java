@@ -8,7 +8,9 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,10 +57,10 @@ public class MyServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
     private final ReferenceDao dao;
     private final ExecutorService executorService;
-    private final HttpClient client;
     private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
     private final String selfUrl;
+    private HttpClient client;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
@@ -111,8 +113,26 @@ public class MyServer extends HttpServer {
     }
 
     public void close() throws IOException {
-        executorService.shutdownNow();
-        client.shutdownNow();
+        for (SelectorThread selector : selectors) {
+            for (Session session : selector.selector) {
+                session.close();
+            }
+        }
+
+        super.stop();
+
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+                if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                    logger.error("Pool did not terminate");
+                }
+            }
+        } catch (InterruptedException ex) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         dao.close();
     }
 

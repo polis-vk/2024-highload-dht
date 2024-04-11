@@ -30,8 +30,6 @@ public class MyService implements Service {
     public CompletableFuture<Void> stop() throws IOException {
         if (stopped.compareAndSet(false, true)) {
             server.close();
-            server.stop();
-            return CompletableFuture.completedFuture(null);
         }
 
         return CompletableFuture.completedFuture(null);

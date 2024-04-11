@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.reference;
+package ru.vk.itmo.test.osipovdaniil;
 
 public record HandleResult(int status, byte[] data, long timestamp) {
 

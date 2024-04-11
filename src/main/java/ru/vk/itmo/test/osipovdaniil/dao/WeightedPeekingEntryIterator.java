@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.reference.dao;
+package ru.vk.itmo.test.osipovdaniil.dao;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;

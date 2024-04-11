@@ -24,27 +24,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.METHODS;
-import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.REQUEST_TIMEOUT;
 
 public class MyServer extends HttpServer {
     private static final String V0_PATH = "/v0/entity";
     private static final String ID_PARAM = "id=";
     private static final String FROM_PARAM = "from=";
     private static final String ACK_PARAM = "ack=";
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-    public static final int SERVER_ERROR = 500;
-    private static final Logger log = LoggerFactory.getLogger(MyServer.class);
+    private static final int SERVER_ERROR = 500;
+    private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
 
     private final ExecutorService workersPool;
     private final HttpClient httpClient;
     private final ConsistentHashing shards;
-    private final List<String> clusterUrls;
     private final RequestHandler requestHandler;
     private final String selfUrl;
     private final int clusterSize;
@@ -57,7 +54,6 @@ public class MyServer extends HttpServer {
         this.requestHandler = new RequestHandler(dao);
         this.workersPool = worker.getExecutorService();
         this.clusterSize = config.clusterUrls().size();
-        this.clusterUrls = config.clusterUrls();
 
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(2)).build();
@@ -65,7 +61,7 @@ public class MyServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = METHODS.contains(request.getMethod())
+        Response response = HttpUtils.SUPPORTED_METHODS.contains(request.getMethod())
                 ? new Response(Response.BAD_REQUEST, Response.EMPTY)
                 : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         session.sendResponse(response);
@@ -74,13 +70,13 @@ public class MyServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            if (!request.getURI().startsWith(getPathWithIdParam()) || !METHODS.contains(request.getMethod())) {
+            if (!request.getURI().startsWith(getPathWithIdParam())
+                    || !HttpUtils.SUPPORTED_METHODS.contains(request.getMethod())) {
                 handleDefault(request, session);
                 return;
             }
 
             String paramId = request.getParameter(ID_PARAM);
-
             String fromStr = request.getParameter(FROM_PARAM);
             String ackStr = request.getParameter(ACK_PARAM);
 
@@ -97,7 +93,7 @@ public class MyServer extends HttpServer {
                 try {
                     processingRequest(request, session, processingStartTime, paramId, from, ack);
                 } catch (IOException e) {
-                    log.error("Exception while sending close connection", e);
+                    LOG.error("Exception while sending close connection", e);
                     session.scheduleClose();
                 }
             });
@@ -108,25 +104,21 @@ public class MyServer extends HttpServer {
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime,
                                    String paramId, int from, int ack) throws IOException {
-        if (System.currentTimeMillis() - processingStartTime > REQUEST_TIMEOUT) {
+        if (System.currentTimeMillis() - processingStartTime > HttpUtils.REQUEST_TIMEOUT_IN_MILLIS) {
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
         try {
-            if (request.getHeader(HeaderUtils.HTTP_TERMINATION_HEADER) == null) {
-                CompletableFuture<Response> handleProxyResponse =
-                        handleProxyRequest(request, session, paramId, from, ack);
-                handleProxyResponse = handleProxyResponse.whenComplete((response, throwable) ->
-                        sendResponse(session, response));
-                checkCompletableFuture(handleProxyResponse);
-            } else {
-                sendResponse(session, requestHandler.handle(request, paramId));
+            if (request.getHeader(HttpUtils.HTTP_TERMINATION_HEADER) == null) {
+                sendResponse(session, handleProxyRequest(request, paramId, from, ack));
+                return;
             }
+            sendResponse(session, requestHandler.handle(request, paramId));
         } catch (Exception e) {
-            if (e.getClass() == HttpException.class) {
+            if (e instanceof HttpException) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             } else {
-                log.error("Exception during handleRequest: ", e);
+                LOG.error("Exception during handleRequest: ", e);
                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
         }
@@ -136,7 +128,7 @@ public class MyServer extends HttpServer {
         try {
             session.sendResponse(response);
         } catch (IOException e) {
-            log.error("Error sending response", e);
+            LOG.error("Error sending response", e);
             session.scheduleClose();
         }
     }
@@ -147,7 +139,7 @@ public class MyServer extends HttpServer {
                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
         return HttpRequest.newBuilder(URI.create(nodeUrl + getPathWithIdParam() + params))
                 .method(request.getMethodName(), bodyPublisher)
-                .setHeader(HeaderUtils.HTTP_TERMINATION_HEADER, "true")
+                .setHeader(HttpUtils.HTTP_TERMINATION_HEADER, "true")
                 .build();
     }
 
@@ -163,8 +155,9 @@ public class MyServer extends HttpServer {
         }
         Response newResponse = new Response(statusCode, response.body());
         long timestamp = response.headers()
-                .firstValueAsLong(HeaderUtils.HTTP_TIMESTAMP_HEADER).orElse(0);
-        newResponse.addHeader(HeaderUtils.NIO_TIMESTAMP_HEADER + timestamp);
+                .firstValueAsLong(HttpUtils.HTTP_TIMESTAMP_HEADER)
+                .orElse(0);
+        newResponse.addHeader(HttpUtils.NIO_TIMESTAMP_HEADER + timestamp);
         return newResponse;
     }
 
@@ -180,22 +173,21 @@ public class MyServer extends HttpServer {
         return responses;
     }
 
-    private CompletableFuture<Response> handleProxyRequest(Request request, HttpSession session,
-                                                           String paramId, int from, int ack) {
-        List<String> nodeUrls = shards.getNodes(paramId, clusterUrls, from);
+    private Response handleProxyRequest(Request request, String paramId, int from, int ack) {
+        List<String> nodeUrls = shards.getNodes(paramId, from);
 
         if (nodeUrls.size() < from) {
-            sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            return new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
 
         HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
-        for (String nodeUrl : nodeUrls) {
+        for (var nodeUrl : nodeUrls) {
             httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
         }
 
         List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
 
-        if (httpRequests.get(selfUrl) != null) {
+        if (httpRequests.containsKey(selfUrl)) {
             responses.add(
                     CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId))
             );
@@ -204,15 +196,15 @@ public class MyServer extends HttpServer {
         return getQuorumResult(request, from, ack, responses);
     }
 
-    private CompletableFuture<Response> getQuorumResult(Request request, int from, int ack,
-                                                        List<CompletableFuture<Response>> responses) {
-        List<Response> successResponses = new ArrayList<>();
+    private Response getQuorumResult(Request request, int from, int ack,
+                                     List<CompletableFuture<Response>> responses) {
+        List<Response> successResponses = new CopyOnWriteArrayList<>();
         CompletableFuture<Response> result = new CompletableFuture<>();
         AtomicInteger successResponseCount = new AtomicInteger();
         AtomicInteger errorResponseCount = new AtomicInteger();
 
-        for (CompletableFuture<Response> responseFuture : responses) {
-            responseFuture = responseFuture.whenComplete((response, throwable) -> {
+        for (var responseFuture : responses) {
+            responseFuture.whenCompleteAsync((response, throwable) -> {
                 if (throwable == null || (response != null && response.getStatus() < SERVER_ERROR)) {
                     successResponseCount.incrementAndGet();
                     successResponses.add(response);
@@ -225,14 +217,19 @@ public class MyServer extends HttpServer {
                 }
 
                 if (errorResponseCount.get() == from - ack + 1) {
-                    result.complete(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                    result.complete(new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
-            });
-
-            checkCompletableFuture(responseFuture);
+            }).exceptionally(e -> new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
 
-        return result;
+        try {
+            return result.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (ExecutionException e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -246,27 +243,19 @@ public class MyServer extends HttpServer {
         return serverConfig;
     }
 
-
     private Response getResult(Request request, List<Response> successResponses) {
         if (request.getMethod() == Request.METHOD_GET) {
             sortResponses(successResponses);
             return successResponses.getLast();
-        } else {
-            return successResponses.getFirst();
         }
+        return successResponses.getFirst();
     }
 
     private void sortResponses(List<Response> successResponses) {
         successResponses.sort(Comparator.comparingLong(r -> {
-            String timestamp = r.getHeader(HeaderUtils.NIO_TIMESTAMP_HEADER);
+            String timestamp = r.getHeader(HttpUtils.NIO_TIMESTAMP_HEADER);
             return timestamp == null ? 0 : Long.parseLong(timestamp);
         }));
-    }
-
-    private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
-        if (completableFuture == null) {
-            log.error("Error CompletableFuture");
-        }
     }
 
     private static String getPathWithIdParam() {

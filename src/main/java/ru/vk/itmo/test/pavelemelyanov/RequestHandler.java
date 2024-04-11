@@ -10,7 +10,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
-import static ru.vk.itmo.test.pavelemelyanov.HeaderUtils.HTTP_TIMESTAMP_HEADER;
+import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.HTTP_TIMESTAMP_HEADER;
 
 public class RequestHandler {
     private final Dao dao;

@@ -10,8 +10,10 @@ import java.util.concurrent.TimeUnit;
 import static ru.vk.itmo.test.pavelemelyanov.ExecutorServiceConfig.KEEP_ALIVE_TIME;
 
 public class ExecutorServiceWrapper {
+    public static final int TERMINATION_TIMEOUT = 60;
+    private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
+
     private final ExecutorService workingPool;
-    private static final Logger log = LoggerFactory.getLogger(MyServer.class);
 
     public ExecutorServiceWrapper() {
         workingPool = new ThreadPoolExecutor(
@@ -31,10 +33,10 @@ public class ExecutorServiceWrapper {
     public void shutdownAndAwaitTermination() {
         workingPool.shutdown();
         try {
-            if (!workingPool.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!workingPool.awaitTermination(TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
                 workingPool.shutdownNow();
-                if (!workingPool.awaitTermination(60, TimeUnit.SECONDS)) {
-                    log.error("ExecutorService error with stopping");
+                if (!workingPool.awaitTermination(TERMINATION_TIMEOUT, TimeUnit.SECONDS)) {
+                    LOG.error("ExecutorService error with stopping");
                 }
             }
         } catch (InterruptedException ex) {

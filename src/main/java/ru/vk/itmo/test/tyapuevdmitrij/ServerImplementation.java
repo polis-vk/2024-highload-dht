@@ -24,16 +24,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static one.nio.util.Hash.murmur3;
 
 public class ServerImplementation extends HttpServer {
 
-    private static final Logger logger = LoggerFactory.getLogger(ServerImplementation.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServerImplementation.class);
 
     private static final String ENTITY_PATH = "/v0/entity";
 
@@ -50,10 +54,14 @@ public class ServerImplementation extends HttpServer {
     private static final int POOL_KEEP_ALIVE_SECONDS = 10;
 
     private static final int THREAD_POOL_QUEUE_SIZE = 64;
+    private static final int INTERNAL_ERROR_STATUS = 500;
 
     private final MemorySegmentDao memorySegmentDao;
 
     private final ExecutorService executor;
+    private final ExecutorService aggregator;
+
+    private final ExecutorService proxyExecutor;
 
     private final ServiceConfig config;
     private final Client client;
@@ -61,22 +69,40 @@ public class ServerImplementation extends HttpServer {
     public ServerImplementation(ServiceConfig config, MemorySegmentDao memorySegmentDao) throws IOException {
         super(createServerConfig(config));
         this.config = config;
-        this.client = new Client();
         this.memorySegmentDao = memorySegmentDao;
-        this.executor = new ThreadPoolExecutor(THREAD_POOL_SIZE,
-                THREAD_POOL_SIZE,
+        this.executor = new ThreadPoolExecutor(THREAD_POOL_SIZE / 2,
+                THREAD_POOL_SIZE / 2,
                 POOL_KEEP_ALIVE_SECONDS,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
                 new CustomThreadFactory("worker", true),
                 new ThreadPoolExecutor.AbortPolicy());
         ((ThreadPoolExecutor) executor).prestartAllCoreThreads();
+        this.proxyExecutor = new ThreadPoolExecutor(THREAD_POOL_SIZE / 2,
+                THREAD_POOL_SIZE / 2,
+                POOL_KEEP_ALIVE_SECONDS,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
+                new CustomThreadFactory("proxy-worker", true),
+                new ThreadPoolExecutor.AbortPolicy());
+        ((ThreadPoolExecutor) proxyExecutor).prestartAllCoreThreads();
+        this.client = new Client(proxyExecutor);
+        this.aggregator = new ThreadPoolExecutor(1,
+                1,
+                POOL_KEEP_ALIVE_SECONDS,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 4),
+                new CustomThreadFactory("aggregator", true),
+                new ThreadPoolExecutor.AbortPolicy());
+        ((ThreadPoolExecutor) aggregator).prestartAllCoreThreads();
     }
 
     @Override
     public synchronized void stop() {
         super.stop();
         executor.close();
+        proxyExecutor.close();
+        aggregator.close();
     }
 
     @Override
@@ -100,25 +126,24 @@ public class ServerImplementation extends HttpServer {
                         session.sendResponse(response);
                         return;
                     }
-                    int from = getValueFromRequest(request, FROM_PARAMETER, config.clusterUrls().size());
-                    int ack = getValueFromRequest(request, ACK_PARAMETER, (config.clusterUrls().size()
-                            / 2) + 1);
+                    int from = getValueFromRequest(request, FROM_PARAMETER);
+                    int ack = getValueFromRequest(request, ACK_PARAMETER);
                     if (ack == 0 || ack > from || from > config.clusterUrls().size()) {
                         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
                     long timeNow = System.currentTimeMillis();
                     List<String> url = getTargetNodesUrls(id, from);
-                    List<Response> responses = collectResponses(request, from, url, id, timeNow);
-                    Response finalResponse = aggregateResponses(responses, ack);
-                    session.sendResponse(finalResponse);
+                    List<CompletableFuture<Response>> responses = collectResponses(request, from, url, id, timeNow);
+                    AtomicReference<Response> finalResponse = new AtomicReference<>(null);
+                    aggregateResponses(responses, ack, finalResponse, session);
                 } catch (Exception e) {
-                    logger.error("Exception in request method", e);
+                    LOGGER.error("Exception in request method", e);
                     sendErrorResponse(session, Response.INTERNAL_ERROR);
                 }
             });
         } catch (RejectedExecutionException exception) {
-            logger.error("ThreadPool queue overflow", exception);
+            LOGGER.error("ThreadPool queue overflow", exception);
             sendErrorResponse(session, Response.SERVICE_UNAVAILABLE);
         }
 
@@ -134,7 +159,7 @@ public class ServerImplementation extends HttpServer {
         try {
             session.sendResponse(new Response(error, Response.EMPTY));
         } catch (IOException ex) {
-            logger.error("can't send response", ex);
+            LOGGER.error("can't send response", ex);
             session.close();
         }
     }
@@ -215,25 +240,31 @@ public class ServerImplementation extends HttpServer {
         for (int i = 0; i < config.clusterUrls().size(); i++) {
             treeMap.put(getCustomHashCode(key, i), config.clusterUrls().get(i));
         }
-        return new ArrayList<>(treeMap.values()).subList(0, size);
+        return new ArrayList<>(treeMap.values().stream().limit(size).toList());
     }
 
     private int getCustomHashCode(String key, int nodeNumber) {
         return murmur3(key + nodeNumber);
     }
 
-    private int getValueFromRequest(Request request, String parameter, int defaultValue) {
+    private int getValueFromRequest(Request request, String parameter) {
         String value = request.getParameter(parameter);
         if (value == null) {
-            return defaultValue;
+            if (parameter.equals(FROM_PARAMETER)) {
+                return config.clusterUrls().size();
+            } else if (parameter.equals(ACK_PARAMETER)) {
+                return (config.clusterUrls().size() / 2) + 1;
+            }
         } else return Integer.parseInt(value);
+        return 0;
     }
 
-    private List<Response> collectResponses(Request request, int from, List<String> url, String id, long timeNow) {
-        List<Response> responses = new ArrayList<>(from);
+    private List<CompletableFuture<Response>> collectResponses(Request request, int from, List<String> url, String id,
+                                                               long timeNow) {
+        List<CompletableFuture<Response>> responses = new ArrayList<>(from);
         for (int i = 0; i < from; i++) {
             if (url.get(i).equals(config.selfUrl())) {
-                responses.add(handleNodeRequest(request, id, timeNow));
+                responses.add(CompletableFuture.completedFuture(handleNodeRequest(request, id, timeNow)));
             } else {
                 client.setUrl(url.get(i));
                 client.setTimeStamp(timeNow);
@@ -243,32 +274,58 @@ public class ServerImplementation extends HttpServer {
         return responses;
     }
 
-    private Response aggregateResponses(List<Response> responses, int ack) {
-        int successResponses = 0;
-        Response finalResponse = null;
-        long finalTime = 0;
-        for (Response response : responses) {
-            if (response == null) {
-                continue;
-            }
-            String dataHeader = response.getHeader(Client.NODE_TIMESTAMP_HEADER + ":");
-            if (dataHeader != null) {
-                long headerTime = Long.parseLong(dataHeader);
-                if (headerTime >= finalTime) {
-                    finalTime = headerTime;
-                    finalResponse = response;
+    private void aggregateResponses(List<CompletableFuture<Response>> responses, int ack,
+                                    AtomicReference<Response> finalResponse, HttpSession session) {
+        AtomicInteger successResponses = new AtomicInteger(0);
+        AtomicLong finalTime = new AtomicLong(0);
+        AtomicInteger completedFuture = new AtomicInteger(0);
+        for (CompletableFuture<Response> responseFuture : responses) {
+            responseFuture.whenCompleteAsync((response, throwable) -> {
+                if (throwable != null) {
+                    LOGGER.error("error complete future", throwable);
+                    return;
                 }
-            } else {
-                if (finalResponse == null) {
-                    finalResponse = response;
+                if (completedFuture.get() == responses.size() || ack == successResponses.get()) {
+                    return;
                 }
-            }
-            successResponses++;
-        }
-        if (successResponses >= ack) {
-            return finalResponse;
-        } else {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+                String dataHeader = response.getHeader(Client.NODE_TIMESTAMP_HEADER + ":");
+                if (dataHeader != null) {
+                    long headerTime = Long.parseLong(dataHeader);
+                    if (headerTime >= finalTime.get()) {
+                        finalTime.set(headerTime);
+                        finalResponse.set(response);
+                        successResponses.incrementAndGet();
+                    }
+                } else {
+                    if (response.getStatus() != INTERNAL_ERROR_STATUS) {
+                        finalResponse.set(response);
+                        successResponses.incrementAndGet();
+                    }
+                }
+                if (successResponses.get() == ack) {
+                    try {
+                        session.sendResponse(finalResponse.get());
+                        return;
+                    } catch (IOException e) {
+                        LOGGER.error("error sent final response", e);
+                        session.close();
+                        return;
+                    }
+                }
+                completedFuture.incrementAndGet();
+                if (successResponses.get() < ack && completedFuture.get() == responses.size()) {
+                    finalResponse.set(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                    try {
+                        session.sendResponse(finalResponse.get());
+                    } catch (IOException e) {
+                        LOGGER.error("error sent final response", e);
+                        session.close();
+                    }
+                }
+            }, aggregator).exceptionally(throwable -> {
+                LOGGER.error("future exception", throwable);
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            });
         }
     }
 }

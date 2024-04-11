@@ -1,16 +1,12 @@
-package ru.vk.itmo.test.reference;
+package ru.vk.itmo.test.georgiidalbeev;
 
-import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.georgiidalbeev.dao.ReferenceDao;
 
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -18,14 +14,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReferenceService implements Service {
 
@@ -35,35 +28,12 @@ public class ReferenceService implements Service {
 
     private final ServiceConfig config;
 
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private ReferenceDao dao;
     private ReferenceServer server;
     private boolean stopped;
+
     public ReferenceService(ServiceConfig config) {
         this.config = config;
-    }
-
-    @Override
-    public synchronized CompletableFuture<Void> start() throws IOException {
-        dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
-        server = new ReferenceServer(config, dao);
-        server.start();
-        stopped = false;
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public synchronized CompletableFuture<Void> stop() throws IOException {
-        if (stopped) {
-            return CompletableFuture.completedFuture(null);
-        }
-        try {
-            server.stop();
-
-        } finally {
-            dao.close();
-        }
-        stopped = true;
-        return CompletableFuture.completedFuture(null);
     }
 
     public static void shutdownAndAwaitTermination(ExecutorService pool) {
@@ -78,15 +48,6 @@ public class ReferenceService implements Service {
         } catch (InterruptedException ex) {
             pool.shutdownNow();
             Thread.currentThread().interrupt();
-        }
-    }
-
-    @ServiceFactory(stage = 3)
-    public static class Factory implements ServiceFactory.Factory {
-
-        @Override
-        public Service create(ServiceConfig config) {
-            return new ReferenceService(config);
         }
     }
 
@@ -120,6 +81,39 @@ public class ReferenceService implements Service {
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
                 throw new RuntimeException(e);
             }
+        }
+    }
+
+    @Override
+    public synchronized CompletableFuture<Void> start() throws IOException {
+        dao = new ReferenceDao(new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES));
+        server = new ReferenceServer(config, dao);
+        server.start();
+        stopped = false;
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public synchronized CompletableFuture<Void> stop() throws IOException {
+        if (stopped) {
+            return CompletableFuture.completedFuture(null);
+        }
+        try {
+            server.stop();
+
+        } finally {
+            dao.close();
+        }
+        stopped = true;
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @ServiceFactory(stage = 5)
+    public static class Factory implements ServiceFactory.Factory {
+
+        @Override
+        public Service create(ServiceConfig config) {
+            return new ReferenceService(config);
         }
     }
 }

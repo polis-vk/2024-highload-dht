@@ -12,7 +12,7 @@ import java.util.Queue;
  *
  * @author incubos
  */
-final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
+final class MergingEntryIterator implements Iterator<ReferenceBaseEntry<MemorySegment>> {
     private final Queue<WeightedPeekingEntryIterator> iterators;
 
     MergingEntryIterator(final List<WeightedPeekingEntryIterator> iterators) {
@@ -27,13 +27,13 @@ final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public ReferenceBaseEntry<MemorySegment> next() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
 
         final WeightedPeekingEntryIterator top = iterators.remove();
-        final Entry<MemorySegment> result = top.next();
+        final ReferenceBaseEntry<MemorySegment> result = top.next();
 
         if (top.hasNext()) {
             // Not exhausted
@@ -49,7 +49,7 @@ final class MergingEntryIterator implements Iterator<Entry<MemorySegment>> {
             }
 
             // Skip entries with the same key
-            final Entry<MemorySegment> entry = iterator.peek();
+            final ReferenceBaseEntry<MemorySegment> entry = iterator.peek();
             if (MemorySegmentComparator.INSTANCE.compare(result.key(), entry.key()) != 0) {
                 // Reached another key
                 break;

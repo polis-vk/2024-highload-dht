@@ -1,5 +1,9 @@
 package ru.vk.itmo.test.georgiidalbeev.dao;
 
+import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.dao.Entry;
+
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -18,7 +22,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * @author incubos
  */
-public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class ReferenceDao implements Dao<MemorySegment, ReferenceBaseEntry<MemorySegment>> {
     private final Config config;
     private final Arena arena;
 
@@ -59,7 +63,7 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(
+    public Iterator<ReferenceBaseEntry<MemorySegment>> get(
             final MemorySegment from,
             final MemorySegment to) {
         return new LiveFilteringIterator(
@@ -69,13 +73,13 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> get(final MemorySegment key) {
+    public ReferenceBaseEntry<MemorySegment> get(final MemorySegment key) {
         // Without lock, just snapshot of table set
         return tableSet.get(key);
     }
 
     @Override
-    public void upsert(final Entry<MemorySegment> entry) {
+    public void upsert(final ReferenceBaseEntry<MemorySegment> entry) {
         final boolean autoFlush;
         lock.readLock().lock();
         try {
@@ -105,10 +109,10 @@ public class ReferenceDao implements Dao<MemorySegment, Entry<MemorySegment>> {
         }
 
         if (entry.value() == null) {
-            return entry.key().byteSize() + Long.BYTES;
+            return entry.key().byteSize();
         }
 
-        return entry.key().byteSize() + entry.value().byteSize() + Long.BYTES;
+        return entry.key().byteSize() + entry.value().byteSize();
     }
 
     private void initiateFlush(final boolean auto) {

@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.khadyrovalmasgali.replication;
+package ru.vk.itmo.test.georgiidalbeev;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
@@ -10,23 +10,23 @@ import java.net.HttpURLConnection;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MergeHandleResult {
-
     private static final Logger log = LoggerFactory.getLogger(MergeHandleResult.class);
-    private final AtomicInteger count;
-    private final int from;
-    private final int ack;
-    private final HttpSession session;
     private final HandleResult[] handleResults;
+    private final AtomicInteger count;
+    private final int ack;
+    private final int from;
+    private final HttpSession session;
 
-    public MergeHandleResult(int from, int ack, HttpSession session) {
-        handleResults = new HandleResult[from];
+    public MergeHandleResult(HttpSession session, int size, int ack) {
+        this.session = session;
+        this.handleResults = new HandleResult[size];
         this.count = new AtomicInteger();
         this.ack = ack;
-        this.from = from;
-        this.session = session;
+        this.from = size;
     }
 
-    public void add(HandleResult handleResult, int index) {
+
+    public void add(int index, HandleResult handleResult) {
         handleResults[index] = handleResult;
         int get = count.incrementAndGet();
 
@@ -35,16 +35,17 @@ public class MergeHandleResult {
         }
     }
 
+
     private void sendResult() {
         HandleResult mergedResult = new HandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
 
-        int accepted = 0;
+        int count = 0;
         for (HandleResult handleResult : handleResults) {
             if (handleResult.status() == HttpURLConnection.HTTP_OK
                     || handleResult.status() == HttpURLConnection.HTTP_CREATED
                     || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
                     || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND) {
-                accepted++;
+                count++;
                 if (mergedResult.timestamp() <= handleResult.timestamp()) {
                     mergedResult = handleResult;
                 }
@@ -52,7 +53,7 @@ public class MergeHandleResult {
         }
 
         try {
-            if (accepted < ack) {
+            if (count < ack) {
                 session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
             } else {
                 session.sendResponse(new Response(String.valueOf(mergedResult.status()), mergedResult.data()));

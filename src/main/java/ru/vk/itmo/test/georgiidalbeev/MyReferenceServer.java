@@ -229,7 +229,9 @@ public class MyReferenceServer extends HttpServer {
                     return new MyHandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY, entry.timestamp());
                 }
 
-                return new MyHandleResult(HttpURLConnection.HTTP_OK, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp());
+                return new MyHandleResult(HttpURLConnection.HTTP_OK,
+                        entry.value().toArray(ValueLayout.JAVA_BYTE),
+                        entry.timestamp());
             }
             case Request.METHOD_PUT -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));

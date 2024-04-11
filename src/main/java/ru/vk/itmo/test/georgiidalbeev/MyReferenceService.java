@@ -45,7 +45,7 @@ public class MyReferenceService implements Service {
             if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
                 if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                    System.err.println("Pool did not terminate");
+                    log.error("Pool did not terminate");
                 }
             }
         } catch (InterruptedException ex) {
@@ -84,7 +84,7 @@ public class MyReferenceService implements Service {
                 Thread.currentThread().interrupt();
                 log.error("Interrupted exception while start instance");
             } catch (ExecutionException | TimeoutException e) {
-                throw new IllegalArgumentException();
+                throw new IllegalArgumentException(e);
             }
         }
     }

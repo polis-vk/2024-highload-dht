@@ -43,20 +43,20 @@ public class MergeHandleResult {
 
     private void sendResult() {
         HandleResult mergedResult = new HandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
-        int validCount = 0;
+        int localValidCount = 0;
         for (HandleResult handleResult : handleResults) {
             if (handleResult.status() == HttpURLConnection.HTTP_OK
                     || handleResult.status() == HttpURLConnection.HTTP_CREATED
                     || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
                     || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND) {
-                validCount++;
+                localValidCount++;
                 if (mergedResult.timestamp() <= handleResult.timestamp()) {
                     mergedResult = handleResult;
                 }
             }
         }
         try {
-            if (validCount < ackThreshold) {
+            if (localValidCount < ackThreshold) {
                 currentSession.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
             } else {
                 currentSession.sendResponse(new Response(String.valueOf(mergedResult.status()), mergedResult.data()));

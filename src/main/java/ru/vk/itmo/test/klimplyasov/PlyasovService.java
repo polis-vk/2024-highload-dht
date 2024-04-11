@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.klimplyasov;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -23,6 +25,7 @@ import java.util.concurrent.TimeoutException;
 public class PlyasovService implements Service {
 
     private static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
+    private static final Logger logger = LoggerFactory.getLogger(PlyasovServer.class);
 
     private static final String LOCALHOST_PREFIX = "http://localhost:";
 
@@ -66,7 +69,7 @@ public class PlyasovService implements Service {
             if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
                 if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                    System.err.println("Pool did not terminate");
+                    logger.error("Pool did not terminate");
                 }
             }
         } catch (InterruptedException ex) {
@@ -111,8 +114,8 @@ public class PlyasovService implements Service {
             PlyasovService instance = new PlyasovService(serviceConfig);
             try {
                 instance.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new RuntimeException(e);
+            } catch (InterruptedException | ExecutionException | TimeoutException _) {
+                Thread.currentThread().interrupt();
             }
         }
     }

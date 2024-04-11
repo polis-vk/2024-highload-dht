@@ -73,50 +73,31 @@ public class PlyasovServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!"/v0/entity".equals(request.getPath())) {
+        if (!isValidPath(request.getPath())) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
         }
 
-        if (request.getMethod() != Request.METHOD_GET
-        && request.getMethod() != Request.METHOD_DELETE
-        && request.getMethod() != Request.METHOD_PUT) {
+        if (!isValidMethod(request.getMethod())) {
             session.sendError(Response.METHOD_NOT_ALLOWED, null);
             return;
         }
 
         String id = request.getParameter("id=");
-        if (id == null || id.isBlank()) {
+        if (isInvalidId(id)) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
         }
 
         if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
-            executorLocal.execute(() -> {
-                try {
-                    HandleResult local = local(request, id);
-                    Response response = new Response(String.valueOf(local.status()), local.data());
-                    response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
-                    session.sendResponse(response);
-                } catch (Exception e) {
-                    //todo дублирование кода
-                    log.error("Exception during handleRequest", e);
-                    try {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                    } catch (IOException ex) {
-                        log.error("Exception while sending close connection", e);
-                        session.scheduleClose();
-                    }
-                }
-            });
+            handleRemoteRequest(request, session, id);
             return;
         }
 
         int ack = getInt(request, "ack=", config.clusterUrls().size() / 2 + 1);
         int from = getInt(request, "from=", config.clusterUrls().size());
 
-        if (from <= 0 || from > config.clusterUrls().size() || ack > from || ack <= 0) {
-            //todo другая ошибка
+        if (isInvalidFromOrAck(from, ack)) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
         }
@@ -132,8 +113,47 @@ public class PlyasovServer extends HttpServer {
                 handleAsync(executorRemote, i, mergeHandleResult, () -> handleRemoteAsync(request, executorNode));
             }
         }
-
     }
+
+    private boolean isValidPath(String path) {
+        return "/v0/entity".equals(path);
+    }
+
+    private boolean isValidMethod(int method) {
+        return method == Request.METHOD_GET || method == Request.METHOD_DELETE || method == Request.METHOD_PUT;
+    }
+
+    private boolean isInvalidId(String id) {
+        return id == null || id.isBlank();
+    }
+
+    private void handleRemoteRequest(Request request, HttpSession session, String id) {
+        executorLocal.execute(() -> {
+            try {
+                HandleResult local = local(request, id);
+                Response response = new Response(String.valueOf(local.status()), local.data());
+                response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
+                session.sendResponse(response);
+            } catch (Exception e) {
+                logErrorAndHandleIOException(session, e);
+            }
+        });
+    }
+
+    private boolean isInvalidFromOrAck(int from, int ack) {
+        return from <= 0 || from > config.clusterUrls().size() || ack > from || ack <= 0;
+    }
+
+    private void logErrorAndHandleIOException(HttpSession session, Exception e) {
+        log.error("Exception during handleRequest", e);
+        try {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (IOException ex) {
+            log.error("Exception while sending close connection", ex);
+            session.scheduleClose();
+        }
+    }
+
 
     private CompletableFuture<HandleResult> handleRemoteAsync(final Request request, final String executorNode) {
         return CompletableFuture.supplyAsync(() -> {
@@ -172,7 +192,7 @@ public class PlyasovServer extends HttpServer {
                     );
         }
 
-        futureResult = futureResult.whenCompleteAsync((handleResult, throwable) -> {
+        futureResult.whenCompleteAsync((handleResult, throwable) -> {
             if (throwable != null) {
                 log.error("Exception during handleAsync", throwable);
                 handleResult = new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);
@@ -317,7 +337,7 @@ public class PlyasovServer extends HttpServer {
     }
 
     private interface ERunnable {
-        CompletableFuture<HandleResult> run() throws Exception;
+        CompletableFuture<HandleResult> run();
     }
 
     @Override

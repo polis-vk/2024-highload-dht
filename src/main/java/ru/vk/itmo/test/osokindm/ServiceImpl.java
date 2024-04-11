@@ -88,8 +88,8 @@ public class ServiceImpl implements Service {
     @Path(DEFAULT_PATH)
     public void entity(Request request, HttpSession session,
                        @Param(value = "id", required = true) String id,
-                       @Param(value = "ack") Integer ack,
-                       @Param(value = "from") Integer from) throws TimeoutException, IOException {
+                       @Param(value = "ack") Integer ackNumber,
+                       @Param(value = "from") Integer fromNumber) throws TimeoutException, IOException {
         if (id == null || id.isBlank()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8)));
             return;
@@ -99,19 +99,13 @@ public class ServiceImpl implements Service {
             return;
         }
 
-        if (from == null) {
-            from = config.clusterUrls().size();
-        }
-
-        if (ack == null) {
-            ack = calculateAck(from);
-        }
+        int from = fromNumber == null ? config.clusterUrls().size() : fromNumber;
+        int ack = ackNumber == null ? calculateAck(from) : ackNumber;
 
         if (ack > from || ack == 0) {
             session.sendResponse(new Response(Response.BAD_REQUEST, WRONG_ACK.getBytes(StandardCharsets.UTF_8)));
             return;
         }
-
 
         List<Node> targetNodes = router.getNodes(id, from);
         dispatchRequestsToNodes(request, session, targetNodes, id, ack, from);
@@ -168,13 +162,13 @@ public class ServiceImpl implements Service {
                         .whenCompleteAsync((resp, ex) -> {
                             if (resp != null) {
                                 updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
-                                if (responseIsGood(resp)) {
-                                    if (successes.incrementAndGet() >= ack && !responseSent.getAndSet(true)) {
-                                        try {
-                                            session.sendResponse(latestResponse.get());
-                                        } catch (IOException e) {
-                                            throw new RuntimeException(e);
-                                        }
+                                if (responseIsGood(resp)
+                                        && successes.incrementAndGet() >= ack
+                                        && !responseSent.getAndSet(true)) {
+                                    try {
+                                        session.sendResponse(latestResponse.get());
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
                                     }
                                 }
                             } else {
@@ -217,7 +211,12 @@ public class ServiceImpl implements Service {
         return System.currentTimeMillis();
     }
 
-    private void updateLatestResponse(Response response, int method, AtomicLong responseTime, AtomicReference<Response> latestResponse) {
+    private void updateLatestResponse(
+            Response response,
+            int method,
+            AtomicLong responseTime,
+            AtomicReference<Response> latestResponse
+    ) {
         latestResponse.compareAndSet(null, response);
         if (method == Request.METHOD_GET) {
             long timestamp = extractTimestampFromResponse(response);
@@ -258,7 +257,6 @@ public class ServiceImpl implements Service {
         }
         return (int) floor(clusterSize * 0.75);
     }
-
 
     @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {

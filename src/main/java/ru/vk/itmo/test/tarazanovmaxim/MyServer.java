@@ -118,8 +118,19 @@ public class MyServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        super.stop();
         executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                    logger.error("Pool did not terminate");
+                }
+            }
+        } catch (InterruptedException ex) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        super.stop();
     }
 
     private int quorum(final int from) {

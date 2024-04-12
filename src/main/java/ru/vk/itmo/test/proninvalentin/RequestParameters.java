@@ -4,7 +4,6 @@ public final class RequestParameters {
     private final String key;
     private int from;
     private int ack;
-
     private boolean isValid = true;
 
     public RequestParameters(String keyString, String fromString, String ackString, int clusterSize) {

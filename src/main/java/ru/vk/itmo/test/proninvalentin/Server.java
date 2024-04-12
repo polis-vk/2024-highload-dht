@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.proninvalentin;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -49,7 +50,7 @@ public class Server extends HttpServer {
         this.shardingAlgorithm = shardingAlgorithm;
         this.workerPool = workerPool.pool;
         this.httpClient = HttpClient.newBuilder()
-                .executor(Executors.newFixedThreadPool(serverConfig.getMaxWorkersNumber()))
+                .executor(workerPool.pool)
                 .build();
         this.selfUrl = config.selfUrl();
         this.clusterUrls = config.clusterUrls();
@@ -104,8 +105,8 @@ public class Server extends HttpServer {
 
         if (request.getHeader(Constants.TERMINATION_HEADER) == null) {
             CompletableFuture<Response> handleLeaderRequestFuture = handleLeaderRequest(request, parameters);
-            handleLeaderRequestFuture.whenComplete(((response, throwable) -> safetySendResponse(session, response)));
-            checkForTimeout(handleLeaderRequestFuture);
+            handleLeaderRequestFuture.whenComplete((response, throwable) -> safetySendResponse(session, response));
+//            checkForTimeout(handleLeaderRequestFuture);
         } else {
             safetySendResponse(session, safetyHandleRequest(request, parameters.key()));
         }
@@ -203,8 +204,8 @@ public class Server extends HttpServer {
         return sendRequestFuture;
     }
 
-    private static CompletableFuture<Response> getWaitQuorumFuture(Request request, int from, int ack,
-                                                                   List<CompletableFuture<Response>> requestsFutures) {
+    private CompletableFuture<Response> getWaitQuorumFuture(Request request, int from, int ack,
+                                                            List<CompletableFuture<Response>> requestsFutures) {
         List<Response> positiveResponses = new ArrayList<>();
         CompletableFuture<Response> waitQuorumFuture = new CompletableFuture<>();
         AtomicInteger remainingFailures = new AtomicInteger(from - ack + 1);
@@ -213,7 +214,7 @@ public class Server extends HttpServer {
         for (CompletableFuture<Response> requestFuture : requestsFutures) {
             requestFuture.whenComplete((response, throwable) -> {
                 boolean positiveResponse = throwable == null
-                        || response != null && response.getStatus() < Constants.SERVER_ERRORS;
+                        || (response != null && response.getStatus() < Constants.SERVER_ERRORS);
                 if (positiveResponse) {
                     remainingAcks.decrementAndGet();
                     positiveResponses.add(response);
@@ -221,7 +222,7 @@ public class Server extends HttpServer {
                     remainingFailures.decrementAndGet();
                 }
 
-                if (remainingAcks.get() == 0) {
+                if (remainingAcks.get() <= 0) {
                     processResponse(request, positiveResponses, waitQuorumFuture);
                 } else if (remainingFailures.get() == 0) {
                     waitQuorumFuture.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));

@@ -77,6 +77,7 @@ public class Server extends HttpServer {
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void processRequest(Request request, HttpSession session, long createdAt) {
         boolean timeoutExpired = System.currentTimeMillis() - createdAt > requestMaxTimeToTakeInWorkInMillis;
         if (timeoutExpired) {
@@ -146,6 +147,7 @@ public class Server extends HttpServer {
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void checkForTimeout(CompletableFuture<Response> requestFuture) {
         timeoutChecker.schedule(() -> {
             if (!requestFuture.isDone()) {
@@ -184,6 +186,7 @@ public class Server extends HttpServer {
         return responses;
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private CompletableFuture<Response> sendRequestToProxyAsync(HttpRequest httpRequest, String nodeUrl) {
         logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, httpRequest.method(),
                 httpRequest.uri()));
@@ -204,6 +207,7 @@ public class Server extends HttpServer {
         return sendRequestFuture;
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private CompletableFuture<Response> getWaitQuorumFuture(Request request, int from, int ack,
                                                             List<CompletableFuture<Response>> requestsFutures) {
         List<Response> positiveResponses = new ArrayList<>();

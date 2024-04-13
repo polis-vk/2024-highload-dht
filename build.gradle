@@ -61,7 +61,7 @@ compileJava {
     options.compilerArgs += ["--enable-preview"]
 
     // Enforce errors
-//    options.compilerArgs += ["-Werror"]
+    options.compilerArgs += ["-Werror"]
 }
 
 compileTestJava {
@@ -73,10 +73,4 @@ application {
     applicationDefaultJvmArgs = ['-Xmx128m', '--enable-preview', '-Xlog:gc']
     // + ['-XX:+UseSerialGC']
 //
-}
-
-run {
-    maxHeapSize = "128m"
-    mainClass = "ru.vk.itmo.test.proninvalentin.StartServer"
-    jvmArgs += ["--enable-preview"]
 }

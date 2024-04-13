@@ -137,8 +137,8 @@ public class Server extends HttpServer {
     }
 
     private Response safetyHandleRequest(Request request, String entryId) {
-        logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
-                request.getURI()));
+//        logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
+//                request.getURI()));
         try {
             return requestHandler.handle(request, entryId);
         } catch (Exception e) {
@@ -185,8 +185,8 @@ public class Server extends HttpServer {
     }
 
     private CompletableFuture<Response> sendRequestToProxyAsync(HttpRequest httpRequest, String nodeUrl) {
-        logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, httpRequest.method(),
-                httpRequest.uri()));
+//        logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, httpRequest.method(),
+//                httpRequest.uri()));
 
         final CompletableFuture<Response> sendRequestFuture = new CompletableFuture<>();
         httpClient
@@ -246,8 +246,8 @@ public class Server extends HttpServer {
     private CompletableFuture<Response> safetyHandleRequestFuture(Request request, String entryId) {
         final CompletableFuture<Response> handleLocalRequestFuture = new CompletableFuture<>();
         workerPool.execute(() -> {
-            logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
-                    request.getURI()));
+//            logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
+//                    request.getURI()));
             try {
                 handleLocalRequestFuture.complete(requestHandler.handle(request, entryId));
             } catch (Exception e) {

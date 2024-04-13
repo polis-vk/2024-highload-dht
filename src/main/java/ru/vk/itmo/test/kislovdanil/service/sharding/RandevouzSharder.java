@@ -1,14 +1,14 @@
 package ru.vk.itmo.test.kislovdanil.service.sharding;
 
-import ru.vk.itmo.test.kislovdanil.service.InvalidTopologyError;
-
 import java.net.http.HttpClient;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.stream.Collectors;
 
-public class RandevouzSharder extends BaseSharder {
+public class RandevouzSharder extends ReplicativeBaseSharder {
     private final List<String> urls;
     private final Map<String, Integer> urlsHash = new HashMap<>();
 
@@ -17,7 +17,20 @@ public class RandevouzSharder extends BaseSharder {
         this.urls = urls;
         final Random random = new Random(urls.getFirst().hashCode());
         for (String url : urls) {
-            urlsHash.put(url, random.nextInt(100000));
+            this.urlsHash.put(url, random.nextInt(100000));
+        }
+    }
+
+    private class HashComparator implements Comparator<String> {
+        private final String key;
+
+        public HashComparator(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public int compare(String o1, String o2) {
+            return Integer.compare(getHash(o1, key), getHash(o2, key));
         }
     }
 
@@ -27,19 +40,8 @@ public class RandevouzSharder extends BaseSharder {
     }
 
     @Override
-    public String defineRequestProxyUrl(String entityKey) {
-        int maxHash = Integer.MIN_VALUE;
-        String maxHashUrl = null;
-        for (String url : urls) {
-            int hash = getHash(url, entityKey);
-            if (hash >= maxHash) {
-                maxHash = hash;
-                maxHashUrl = url;
-            }
-        }
-        if (maxHashUrl == null) {
-            throw new InvalidTopologyError();
-        }
-        return maxHashUrl;
+    public List<String> defineRequestProxyUrls(String entityKey, int from) {
+        // Looks nice, I just hope it won't consume too much memory...
+        return urls.stream().sorted(new HashComparator(entityKey)).limit(from).collect(Collectors.toList());
     }
 }

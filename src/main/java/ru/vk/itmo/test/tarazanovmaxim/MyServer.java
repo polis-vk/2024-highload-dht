@@ -8,9 +8,7 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +20,7 @@ import ru.vk.itmo.test.tarazanovmaxim.dao.TimestampEntry;
 import ru.vk.itmo.test.tarazanovmaxim.hash.ConsistentHashing;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
@@ -60,7 +59,7 @@ public class MyServer extends HttpServer {
     private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
     private final String selfUrl;
-    private HttpClient client;
+    private final HttpClient client;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));

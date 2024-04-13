@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
+    public static final String FUTURE_RETURN_VALUE_IGNORED = "FutureReturnValueIgnored";
     private final ExecutorService workerPool;
     private final ShardingAlgorithm shardingAlgorithm;
     private final HttpClient httpClient;
@@ -77,7 +78,7 @@ public class Server extends HttpServer {
         }
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     private void processRequest(Request request, HttpSession session, long createdAt) {
         boolean timeoutExpired = System.currentTimeMillis() - createdAt > requestMaxTimeToTakeInWorkInMillis;
         if (timeoutExpired) {
@@ -147,7 +148,7 @@ public class Server extends HttpServer {
         }
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     private void checkForTimeout(CompletableFuture<Response> requestFuture) {
         timeoutChecker.schedule(() -> {
             if (!requestFuture.isDone()) {
@@ -186,7 +187,7 @@ public class Server extends HttpServer {
         return responses;
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     private CompletableFuture<Response> sendRequestToProxyAsync(HttpRequest httpRequest, String nodeUrl) {
         logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, httpRequest.method(),
                 httpRequest.uri()));
@@ -207,7 +208,7 @@ public class Server extends HttpServer {
         return sendRequestFuture;
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     private CompletableFuture<Response> getWaitQuorumFuture(Request request, int from, int ack,
                                                             List<CompletableFuture<Response>> requestsFutures) {
         List<Response> positiveResponses = new ArrayList<>();
@@ -226,7 +227,8 @@ public class Server extends HttpServer {
                     remainingFailures.decrementAndGet();
                 }
 
-                logger.debug("[%s] Remaining acks = %d ; Remaining failures = %d".formatted(selfUrl, remainingAcks.get(), remainingFailures.get()));
+                logger.debug("[%s] Remaining acks = %d ; Remaining failures = %d"
+                        .formatted(selfUrl, remainingAcks.get(), remainingFailures.get()));
                 if (remainingAcks.get() <= 0) {
                     mergeResponses(request, positiveResponses, waitQuorumFuture);
                 } else if (remainingFailures.get() == 0) {

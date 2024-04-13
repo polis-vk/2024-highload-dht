@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.kislovdanil.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
 import java.util.concurrent.ConcurrentSkipListMap;

@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.proninvalentin;
 
-import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -106,7 +105,7 @@ public class Server extends HttpServer {
         if (request.getHeader(Constants.TERMINATION_HEADER) == null) {
             CompletableFuture<Response> handleLeaderRequestFuture = handleLeaderRequest(request, parameters);
             handleLeaderRequestFuture.whenComplete((response, throwable) -> safetySendResponse(session, response));
-//            checkForTimeout(handleLeaderRequestFuture);
+            checkForTimeout(handleLeaderRequestFuture);
         } else {
             safetySendResponse(session, safetyHandleRequest(request, parameters.key()));
         }
@@ -137,8 +136,8 @@ public class Server extends HttpServer {
     }
 
     private Response safetyHandleRequest(Request request, String entryId) {
-//        logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
-//                request.getURI()));
+        logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
+                request.getURI()));
         try {
             return requestHandler.handle(request, entryId);
         } catch (Exception e) {
@@ -161,6 +160,7 @@ public class Server extends HttpServer {
         int from = parameters.from();
         int ack = parameters.ack();
 
+        logger.debug("[%s] Handle leader request from/ack %d/%d".formatted(selfUrl, from, ack));
         List<String> nodeUrls = shardingAlgorithm.getNodesByKey(entryId, from);
         Map<String, HttpRequest> requests = Utils.buildRequests(request, nodeUrls, entryId);
         List<CompletableFuture<Response>> requestsFutures = getRequestsFutures(requests, nodeUrls);
@@ -185,8 +185,8 @@ public class Server extends HttpServer {
     }
 
     private CompletableFuture<Response> sendRequestToProxyAsync(HttpRequest httpRequest, String nodeUrl) {
-//        logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, httpRequest.method(),
-//                httpRequest.uri()));
+        logger.debug("[%s] Send request to node [%s]: %s %s".formatted(selfUrl, nodeUrl, httpRequest.method(),
+                httpRequest.uri()));
 
         final CompletableFuture<Response> sendRequestFuture = new CompletableFuture<>();
         httpClient
@@ -222,8 +222,9 @@ public class Server extends HttpServer {
                     remainingFailures.decrementAndGet();
                 }
 
+                logger.debug("[%s] Remaining acks = %d ; Remaining failures = %d".formatted(selfUrl, remainingAcks.get(), remainingFailures.get()));
                 if (remainingAcks.get() <= 0) {
-                    processResponse(request, positiveResponses, waitQuorumFuture);
+                    mergeResponses(request, positiveResponses, waitQuorumFuture);
                 } else if (remainingFailures.get() == 0) {
                     waitQuorumFuture.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
@@ -232,8 +233,8 @@ public class Server extends HttpServer {
         return waitQuorumFuture;
     }
 
-    private static void processResponse(Request request, List<Response> positiveResponses,
-                                        CompletableFuture<Response> waitQuorumFuture) {
+    private static void mergeResponses(Request request, List<Response> positiveResponses,
+                                       CompletableFuture<Response> waitQuorumFuture) {
         if (request.getMethod() == Request.METHOD_GET) {
             positiveResponses.sort(Comparator.comparingLong(r ->
                     Long.parseLong(r.getHeader(Constants.NIO_TIMESTAMP_HEADER))));
@@ -246,8 +247,8 @@ public class Server extends HttpServer {
     private CompletableFuture<Response> safetyHandleRequestFuture(Request request, String entryId) {
         final CompletableFuture<Response> handleLocalRequestFuture = new CompletableFuture<>();
         workerPool.execute(() -> {
-//            logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
-//                    request.getURI()));
+            logger.debug("[%s] Process request: %s %s".formatted(selfUrl, request.getMethodName(),
+                    request.getURI()));
             try {
                 handleLocalRequestFuture.complete(requestHandler.handle(request, entryId));
             } catch (Exception e) {

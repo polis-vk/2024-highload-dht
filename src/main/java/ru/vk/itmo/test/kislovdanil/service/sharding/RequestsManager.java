@@ -26,6 +26,7 @@ public class RequestsManager {
     private final int ack;
     private final int method;
     private final int from;
+    private final Iterable<CompletableFuture<Response>> futures;
     private final AtomicBoolean hasResponseSent = new AtomicBoolean(false);
     private static final Comparator<Response> timestampComparator = Comparator
             .comparingLong(RequestsManager::extractTimestampHeader).reversed();
@@ -37,6 +38,7 @@ public class RequestsManager {
         this.ack = ack;
         this.method = method;
         this.from = futures.size();
+        this.futures = futures;
         for (CompletableFuture<Response> future : futures) {
             future.thenAccept(this::makeDecision);
         }
@@ -86,6 +88,12 @@ public class RequestsManager {
     private void sendSingleResponse(Response response) {
         if (hasResponseSent.compareAndSet(false, true)) {
             sendResponse(response, session);
+            // No need to wait for all get requests
+            if (method == Request.METHOD_GET) {
+                for (CompletableFuture<Response> future : futures) {
+                    future.cancel(true);
+                }
+            }
         }
     }
 

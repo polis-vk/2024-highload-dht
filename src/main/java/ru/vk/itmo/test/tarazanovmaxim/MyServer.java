@@ -29,6 +29,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -82,6 +83,8 @@ public class MyServer extends HttpServer {
 
         client = HttpClient.newBuilder()
                 .executor(executorService)
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
 
         int nodeCount = 1;
@@ -266,7 +269,7 @@ public class MyServer extends HttpServer {
         for (String sendTo : shardToRequest) {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                //.completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 500, TimeUnit.MILLISECONDS)
                 .whenCompleteAsync((response, throwable) -> {
                     actionOnResponse(response, throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
@@ -306,7 +309,7 @@ public class MyServer extends HttpServer {
         for (String sendTo : shardToRequest) {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                //.completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 500, TimeUnit.MILLISECONDS)
                 .whenCompleteAsync((response, throwable) -> {
                     actionOnResponse(response, throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
@@ -348,7 +351,7 @@ public class MyServer extends HttpServer {
         for (String sendTo : shardToRequest) {
             CompletableFuture
                 .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                //.completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 1, TimeUnit.SECONDS)
+                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 500, TimeUnit.MILLISECONDS)
                 .whenCompleteAsync((response, throwable) -> {
                     actionOnResponse(response, throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {

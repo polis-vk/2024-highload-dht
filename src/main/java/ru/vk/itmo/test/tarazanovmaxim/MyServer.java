@@ -30,13 +30,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -59,12 +54,10 @@ public class MyServer extends HttpServer {
     private final ExecutorService executorService;
     private final ConsistentHashing shards = new ConsistentHashing();
     private final int clusterSize;
-    private final String selfUrl;
     private final HttpClient client;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createServerConfig(config));
-        selfUrl = config.selfUrl();
         clusterSize = config.clusterUrls().size();
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
 
@@ -135,24 +128,6 @@ public class MyServer extends HttpServer {
                 || from > clusterSize || ack > from;
     }
 
-    private Response shardLookup(final Request request, final String shard) {
-        Response response;
-        try {
-            response = convertResponse(
-                client.send(
-                    convertRequest(request, shard),
-                    HttpResponse.BodyHandlers.ofByteArray()
-                )
-            );
-        } catch (IOException e) {
-            response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
-        } catch (InterruptedException e) {
-            response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
-            Thread.currentThread().interrupt();
-        }
-        return response;
-    }
-
     private static HttpRequest convertRequest(Request request, String url) {
         return HttpRequest.newBuilder(URI.create(url + request.getURI()))
                 .method(
@@ -166,6 +141,10 @@ public class MyServer extends HttpServer {
     }
 
     private static Response convertResponse(HttpResponse<byte[]> response) {
+        if (response == null) {
+            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+        }
+
         String status = switch (response.statusCode()) {
             case HttpURLConnection.HTTP_OK -> Response.OK;
             case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
@@ -217,14 +196,6 @@ public class MyServer extends HttpServer {
         return tsTombstone > tsLatest200 ? tombstone : latest200;
     }
 
-    private Response supplyAsync(final String sendTo, final Request request, final String id) {
-        if (sendTo.equals(selfUrl)) {
-            return responseLocal(request, id);
-        } else {
-            return shardLookup(request, sendTo);
-        }
-    }
-
     private void actionOnResponse(
             final Response response,
             final Throwable throwable,
@@ -267,11 +238,13 @@ public class MyServer extends HttpServer {
         AtomicInteger fails = new AtomicInteger(0);
         AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
-            CompletableFuture
-                .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 500, TimeUnit.MILLISECONDS)
+            client.sendAsync(
+                                convertRequest(request, sendTo),
+                                HttpResponse.BodyHandlers.ofByteArray()
+                            )
+                .completeOnTimeout(null, 500, TimeUnit.MILLISECONDS)
                 .whenCompleteAsync((response, throwable) -> {
-                    actionOnResponse(response, throwable, responses, fails);
+                    actionOnResponse(convertResponse(response), throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
                         sendResponse(getGoodGet(responses), session);
                         return;
@@ -307,13 +280,15 @@ public class MyServer extends HttpServer {
         AtomicInteger fails = new AtomicInteger(0);
         AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
-            CompletableFuture
-                .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 500, TimeUnit.MILLISECONDS)
+            client.sendAsync(
+                                convertRequest(request, sendTo),
+                                HttpResponse.BodyHandlers.ofByteArray()
+                            )
+                .completeOnTimeout(null, 500, TimeUnit.MILLISECONDS)
                 .whenCompleteAsync((response, throwable) -> {
-                    actionOnResponse(response, throwable, responses, fails);
+                    actionOnResponse(convertResponse(response), throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
-                        sendResponse(responses.getFirst(), session);
+                        sendResponse(getGoodGet(responses), session);
                         return;
                     }
 
@@ -349,15 +324,18 @@ public class MyServer extends HttpServer {
         AtomicInteger fails = new AtomicInteger(0);
         AtomicBoolean sent = new AtomicBoolean(false);
         for (String sendTo : shardToRequest) {
-            CompletableFuture
-                .supplyAsync(() -> supplyAsync(sendTo, request, id), executorService)
-                .completeOnTimeout(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY), 500, TimeUnit.MILLISECONDS)
+            client.sendAsync(
+                                convertRequest(request, sendTo),
+                                HttpResponse.BodyHandlers.ofByteArray()
+                            )
+                .completeOnTimeout(null, 500, TimeUnit.MILLISECONDS)
                 .whenCompleteAsync((response, throwable) -> {
-                    actionOnResponse(response, throwable, responses, fails);
+                    actionOnResponse(convertResponse(response), throwable, responses, fails);
                     if (responses.size() >= ackV && sent.compareAndSet(false, true)) {
-                        sendResponse(responses.getFirst(), session);
+                        sendResponse(getGoodGet(responses), session);
                         return;
                     }
+
                     if (fails.get() > fromV - ackV && sent.compareAndSet(false, true)) {
                         sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY), session);
                     }

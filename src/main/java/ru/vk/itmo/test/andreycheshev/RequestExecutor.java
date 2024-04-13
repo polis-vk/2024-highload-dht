@@ -8,7 +8,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.SocketTimeoutException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -16,11 +15,12 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static one.nio.http.Response.INTERNAL_ERROR;
-import static one.nio.http.Response.SERVICE_UNAVAILABLE;
 
 public class RequestExecutor {
-    private static final String TOO_MANY_REQUESTS = "429 Too many requests";
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
+
+    private static final String TOO_MANY_REQUESTS = "429 Too many requests";
+
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
     private static final int MAX_CPU_THREADS_TIMES = 1;
     private static final int KEEPALIVE_MILLIS = 3000;
@@ -32,7 +32,6 @@ public class RequestExecutor {
 
     public RequestExecutor(RequestHandler requestHandler) {
         this.requestHandler = requestHandler;
-
         this.executor = new ThreadPoolExecutor(
                 CPU_THREADS_COUNT,
                 CPU_THREADS_COUNT * MAX_CPU_THREADS_TIMES,
@@ -58,9 +57,6 @@ public class RequestExecutor {
                 } else {
                     try {
                         response = requestHandler.handle(request);
-                    } catch (SocketTimeoutException e) {
-                        LOGGER.error("Processing time exceeded on another node in the cluster", e);
-                        response = new Response(SERVICE_UNAVAILABLE, Response.EMPTY);
                     } catch (Exception ex) {
                         LOGGER.error("Internal error of the DAO operation", ex);
                         response = new Response(INTERNAL_ERROR, Response.EMPTY);

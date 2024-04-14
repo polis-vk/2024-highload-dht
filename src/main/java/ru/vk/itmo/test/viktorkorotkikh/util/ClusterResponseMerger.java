@@ -5,7 +5,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;

@@ -2,8 +2,6 @@ package ru.vk.itmo.test.viktorkorotkikh.util;
 
 import one.nio.http.Request;
 import one.nio.http.Response;
-import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
-import ru.vk.itmo.test.viktorkorotkikh.util.http.LSMConstantResponse;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_ENTITY_TOO_LARGE;

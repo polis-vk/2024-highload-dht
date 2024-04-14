@@ -146,7 +146,7 @@ public class MyServer extends HttpServer {
                     }
                 }
         );
-        chechFuture(responses);
+        checkFuture(responses);
     }
 
     private void mergeGetResponses(HttpSession session, List<Response> responses) throws IOException {
@@ -200,7 +200,7 @@ public class MyServer extends HttpServer {
                         }
                     }
             );
-            chechFuture(cfResponse);
+            checkFuture(cfResponse);
         }
         return result;
     }
@@ -241,11 +241,11 @@ public class MyServer extends HttpServer {
                                     );
                                 }
                         );
-        chechFuture(response);
+        checkFuture(response);
         return cfResponse;
     }
 
-    private void chechFuture(CompletableFuture<?> cf) {
+    private void checkFuture(CompletableFuture<?> cf) {
         if (cf == null) {
             log.error("Error while working with CompletableFuture");
         }

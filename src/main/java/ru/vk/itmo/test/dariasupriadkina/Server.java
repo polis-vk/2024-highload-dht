@@ -26,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -162,36 +163,41 @@ public class Server extends HttpServer {
 
     private void collectResponsesCallback(List<CompletableFuture<Response>> futureResponses,
                                           int ack, int from, HttpSession session) {
-        List<Response> responses = new ArrayList<>();
+        List<Response> responses = new CopyOnWriteArrayList<>();
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger exceptionCount = new AtomicInteger(0);
         for (CompletableFuture<Response> futureResponse : futureResponses) {
-            CompletableFuture<Response> future = new CompletableFuture<>();
             futureResponse.whenComplete((response, exception) -> {
 
-                if (exception == null && response.getStatus() < 500) {
+                Response response1;
+
+                if (exception != null) {
+                    exceptionCount.incrementAndGet();
+                    if (exceptionCount.get() == from - ack + 1) {
+                        response1 = new Response("504 Not enough replicas", Response.EMPTY);
+                        sendAsyncResponse(response1, session);
+                    }
+                    return;
+                }
+
+                if (response != null && response.getStatus() < 500) {
                     checkTimestampHeaderExistenceAndSet(response);
                     responses.add(response);
                     successCount.incrementAndGet();
                 } else {
                     exceptionCount.incrementAndGet();
                 }
-                Response response1;
                 if (successCount.get() == ack) {
                     response1 = chooseResponse(responses);
                     sendAsyncResponse(response1, session);
-                    future.complete(response1);
                     return;
                 }
                 if (exceptionCount.get() == from - ack + 1) {
                     response1 = new Response("504 Not enough replicas", Response.EMPTY);
                     sendAsyncResponse(response1, session);
-                    future.complete(response1);
                 }
-                future.complete(response);
             }).exceptionally(exception -> {
                 logger.error("Unexpected error", exception);
-                future.completeExceptionally(exception);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             });
         }
@@ -219,8 +225,7 @@ public class Server extends HttpServer {
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
                         request.getBody() == null ? new byte[]{} : request.getBody())
                 ).build();
-        CompletableFuture<Response> future = new CompletableFuture<>();
-        httpClient
+        return httpClient
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .thenApply(httpResponse -> {
                     Response response1 = new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
@@ -232,13 +237,11 @@ public class Server extends HttpServer {
                                 TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase(Locale.ROOT)).getFirst()
                         );
                     }
-                    future.complete(response1);
                     return response1;
-                }).exceptionally(throwable -> {
-                    future.completeExceptionally(throwable);
+                }).exceptionally(exception -> {
+                    logger.error("Unexpected error", exception);
                     return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                 });
-        return future;
     }
 
     private Map<String, Integer> getFromAndAck(Request request) {

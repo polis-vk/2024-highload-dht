@@ -2,8 +2,6 @@ package ru.vk.itmo.test.viktorkorotkikh.util;
 
 import one.nio.http.Request;
 import one.nio.http.Response;
-import ru.vk.itmo.test.viktorkorotkikh.http.NodeResponse;
-import ru.vk.itmo.test.viktorkorotkikh.util.http.LSMConstantResponse;
 
 import java.util.List;
 
@@ -64,7 +62,7 @@ public class LsmServerUtil {
             lastValue = responses.getFirst();
         }
         return switch (lastValue.statusCode()) {
-            case HTTP_OK -> Response.ok(lastValue.body());
+            case HTTP_OK -> lastValue.okResponse();
             case HTTP_BAD_REQUEST -> LSMConstantResponse.badRequest(originalRequest);
             case HTTP_NOT_FOUND -> LSMConstantResponse.notFound(originalRequest);
             case HTTP_ENTITY_TOO_LARGE -> LSMConstantResponse.entityTooLarge(originalRequest);

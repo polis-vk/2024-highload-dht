@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.viktorkorotkikh.http;
+package ru.vk.itmo.test.viktorkorotkikh.util;
 
 import one.nio.http.Response;
 
@@ -19,6 +19,11 @@ public class OneNioNodeResponse implements NodeResponse {
     @Override
     public byte[] body() {
         return response.getBody();
+    }
+
+    @Override
+    public Response okResponse() {
+        return statusCode >= 200 && statusCode < 300 ? response : null;
     }
 
     @Override

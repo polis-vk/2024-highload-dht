@@ -1,4 +1,6 @@
-package ru.vk.itmo.test.viktorkorotkikh.http;
+package ru.vk.itmo.test.viktorkorotkikh.util;
+
+import one.nio.http.Response;
 
 import java.net.http.HttpResponse;
 import java.util.List;
@@ -18,6 +20,11 @@ public class HttpResponseNodeResponse implements NodeResponse {
     @Override
     public byte[] body() {
         return httpResponse.body();
+    }
+
+    @Override
+    public Response okResponse() {
+        return statusCode() >= 200 && statusCode() < 300 ? Response.ok(body()) : null;
     }
 
     @Override

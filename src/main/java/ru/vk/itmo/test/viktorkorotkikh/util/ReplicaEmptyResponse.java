@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.viktorkorotkikh.http;
+package ru.vk.itmo.test.viktorkorotkikh.util;
 
 import one.nio.http.Response;
 
@@ -17,6 +17,11 @@ public class ReplicaEmptyResponse implements NodeResponse {
     @Override
     public byte[] body() {
         return Response.EMPTY;
+    }
+
+    @Override
+    public Response okResponse() {
+        return null;
     }
 
     @Override

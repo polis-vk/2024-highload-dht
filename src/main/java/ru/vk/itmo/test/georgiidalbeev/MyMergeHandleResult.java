@@ -13,9 +13,12 @@ public class MyMergeHandleResult {
     private static final Logger log = LoggerFactory.getLogger(MyMergeHandleResult.class);
     private final MyHandleResult[] handleResults;
     private final AtomicInteger count;
+    private final AtomicInteger success;
     private final int ack;
     private final int from;
     private final HttpSession session;
+    private boolean isSent = false;
+    MyHandleResult mergedResult = new MyHandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
 
     public MyMergeHandleResult(HttpSession session, int size, int ack) {
         this.session = session;
@@ -23,35 +26,35 @@ public class MyMergeHandleResult {
         this.count = new AtomicInteger();
         this.ack = ack;
         this.from = size;
+        this.success = new AtomicInteger();
     }
 
     public void add(int index, MyHandleResult handleResult) {
         handleResults[index] = handleResult;
         int get = count.incrementAndGet();
 
-        if (get == from) {
+        if (handleResult.status() == HttpURLConnection.HTTP_OK
+                || handleResult.status() == HttpURLConnection.HTTP_CREATED
+                || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
+                || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND) {
+            success.incrementAndGet();
+            if (mergedResult.timestamp() <= handleResult.timestamp()) {
+                mergedResult = handleResult;
+            }
+            if (success.get() >= ack && !isSent) {
+                isSent = true;
+                sendResult();
+            }
+        }
+
+        if (get == from && success.get() < ack && !isSent) {
             sendResult();
         }
     }
 
     private void sendResult() {
-        MyHandleResult mergedResult = new MyHandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
-
-        int counter = 0;
-        for (MyHandleResult handleResult : handleResults) {
-            if (handleResult.status() == HttpURLConnection.HTTP_OK
-                    || handleResult.status() == HttpURLConnection.HTTP_CREATED
-                    || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
-                    || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND) {
-                counter++;
-                if (mergedResult.timestamp() <= handleResult.timestamp()) {
-                    mergedResult = handleResult;
-                }
-            }
-        }
-
         try {
-            if (counter < ack) {
+            if (success.get() < ack) {
                 session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
             } else {
                 session.sendResponse(new Response(String.valueOf(mergedResult.status()), mergedResult.data()));

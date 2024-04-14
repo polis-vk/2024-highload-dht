@@ -27,7 +27,7 @@ public class MyMergeHandleResult {
         this.success = new AtomicInteger();
     }
 
-    public void add(int index, MyHandleResult handleResult) {
+    public void add(MyHandleResult handleResult) {
         int get = count.incrementAndGet();
 
         if (handleResult.status() == HttpURLConnection.HTTP_OK

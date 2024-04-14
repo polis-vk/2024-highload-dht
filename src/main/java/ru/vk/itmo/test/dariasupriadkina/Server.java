@@ -169,35 +169,22 @@ public class Server extends HttpServer {
         for (CompletableFuture<Response> futureResponse : futureResponses) {
             futureResponse.whenComplete((response, exception) -> {
 
-                Response response1;
-
-                if (exception != null) {
-                    exceptionCount.incrementAndGet();
-                    if (exceptionCount.get() == from - ack + 1) {
-                        response1 = new Response("504 Not enough replicas", Response.EMPTY);
-                        sendAsyncResponse(response1, session);
-                    }
-                    return;
-                }
-
-                if (response != null && response.getStatus() < 500) {
+                if (exception == null && response.getStatus() < 500) {
                     checkTimestampHeaderExistenceAndSet(response);
                     responses.add(response);
                     successCount.incrementAndGet();
+                    if (successCount.get() == ack) {
+                        sendAsyncResponse(chooseResponse(responses), session);
+                    }
                 } else {
                     exceptionCount.incrementAndGet();
+                    if (exceptionCount.get() > from - ack) {
+                        sendAsyncResponse(new Response("504 Not enough replicas", Response.EMPTY), session);
+                    }
                 }
-                if (successCount.get() == ack) {
-                    response1 = chooseResponse(responses);
-                    sendAsyncResponse(response1, session);
-                    return;
-                }
-                if (exceptionCount.get() == from - ack + 1) {
-                    response1 = new Response("504 Not enough replicas", Response.EMPTY);
-                    sendAsyncResponse(response1, session);
-                }
+
             }).exceptionally(exception -> {
-                logger.error("Unexpected error", exception);
+                logger.error("Error happened while collecting responses from nodes", exception);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             });
         }
@@ -239,7 +226,7 @@ public class Server extends HttpServer {
                     }
                     return response1;
                 }).exceptionally(exception -> {
-                    logger.error("Unexpected error", exception);
+                    logger.error("Error happened while sending async requests", exception);
                     return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                 });
     }

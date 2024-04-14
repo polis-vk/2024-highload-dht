@@ -135,13 +135,12 @@ public class MyReferenceServer extends HttpServer {
     private void handleRemoteRequest(Request request, HttpSession session, String id, int ack, int from) {
         int[] indexes = getIndexes(id, from);
         MyMergeHandleResult mergeHandleResult = new MyMergeHandleResult(session, indexes.length, ack);
-        for (int i = 0; i < indexes.length; i++) {
-            int index = indexes[i];
+        for (int index : indexes) {
             String executorNode = config.clusterUrls().get(index);
             if (executorNode.equals(config.selfUrl())) {
-                handleAsync(i, mergeHandleResult, () -> CompletableFuture.completedFuture(local(request, id)));
+                handleAsync(mergeHandleResult, () -> CompletableFuture.completedFuture(local(request, id)));
             } else {
-                handleAsync(i, mergeHandleResult, () -> invokeRemote(executorNode, request));
+                handleAsync(mergeHandleResult, () -> invokeRemote(executorNode, request));
             }
         }
     }
@@ -171,11 +170,11 @@ public class MyReferenceServer extends HttpServer {
         return ack;
     }
 
-    private void handleAsync(int index, MyMergeHandleResult mergeHandleResult,
+    private void handleAsync(MyMergeHandleResult mergeHandleResult,
                              Supplier<CompletableFuture<MyHandleResult>> supplier) {
-        supplier.get().thenAccept(handleResult -> mergeHandleResult.add(index, handleResult)).exceptionally(e -> {
+        supplier.get().thenAccept(mergeHandleResult::add).exceptionally(e -> {
             log.error("Exception during handleRequest", e);
-            mergeHandleResult.add(index, new MyHandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
+            mergeHandleResult.add(new MyHandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY));
             return null;
         });
     }

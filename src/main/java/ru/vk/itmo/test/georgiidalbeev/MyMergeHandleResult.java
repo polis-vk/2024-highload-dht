@@ -65,6 +65,5 @@ public class MyMergeHandleResult {
                 session.scheduleClose();
             }
         }
-
     }
 }

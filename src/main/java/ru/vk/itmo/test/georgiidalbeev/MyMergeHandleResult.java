@@ -11,18 +11,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyMergeHandleResult {
     private static final Logger log = LoggerFactory.getLogger(MyMergeHandleResult.class);
-    private final MyHandleResult[] handleResults;
     private final AtomicInteger count;
     private final AtomicInteger success;
     private final int ack;
     private final int from;
     private final HttpSession session;
-    private boolean isSent = false;
+    private boolean isSent;
     MyHandleResult mergedResult = new MyHandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
 
     public MyMergeHandleResult(HttpSession session, int size, int ack) {
         this.session = session;
-        this.handleResults = new MyHandleResult[size];
         this.count = new AtomicInteger();
         this.ack = ack;
         this.from = size;
@@ -30,7 +28,6 @@ public class MyMergeHandleResult {
     }
 
     public void add(int index, MyHandleResult handleResult) {
-        handleResults[index] = handleResult;
         int get = count.incrementAndGet();
 
         if (handleResult.status() == HttpURLConnection.HTTP_OK

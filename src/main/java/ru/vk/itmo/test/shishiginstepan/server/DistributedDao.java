@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.shishiginstepan.server;
 
+import one.nio.http.HttpSession;
 import one.nio.util.Hash;
 import org.apache.log4j.Logger;
 import ru.vk.itmo.dao.Dao;
@@ -8,77 +9,48 @@ import ru.vk.itmo.test.shishiginstepan.dao.EntryWithTimestamp;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.PriorityQueue;
-import java.util.Set;
-import java.util.SortedMap;
-import java.util.concurrent.ConcurrentSkipListMap;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
 
-public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> {
+public class DistributedDao {
 
-    private final Logger logger = Logger.getLogger("lsm-db-server");
+    private static final String BASE_REQUEST_PATH = "/v0/entity?id=";
+    private static final String TIMESTAMP_HEADER = "X-timestamp";
+    private static final String INNER_HEADER = "X-inner-request";
     private static final int MULTIPLICATION_FACTOR = 128;
-    private final NodeWrapper localDao;
-    private final SortedMap<Integer, NodeWrapper> nodeRing = new ConcurrentSkipListMap<>();
+    private final Logger logger = Logger.getLogger("lsm-db-server");
+    private final Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao;
+    private final String selfUrl;
 
-    private final List<NodeWrapper> nodesUnique = new ArrayList<>();
+    private final ExecutorService callbackExecutor = Executors.newSingleThreadExecutor();
+
+    private final SortedMap<Integer, String> nodeRing = new ConcurrentSkipListMap<>();
+
+    private final HttpClient httpClient;
     private int totalNodes;
     private int quorum;
 
     public DistributedDao(Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao, String selfUrl) {
-        this.localDao = new NodeWrapper(localDao, selfUrl);
+        this.localDao = localDao;
+        this.selfUrl = selfUrl;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(100))
+                .executor(Executors.newFixedThreadPool(12))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
-    private static final class NotEnoughUniqueNodes extends RuntimeException {
-    }
-
-    public static final class NoConsensus extends RuntimeException {
-    }
-
-    public static final class ClusterLimitExceeded extends RuntimeException {
-    }
-
-    private static class NodeWrapper implements Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> {
-        Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao;
-        String realNodeKey;
-
-        public NodeWrapper(Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao, String key) {
-            this.dao = dao;
-            this.realNodeKey = key;
-        }
-
-        @Override
-        public Iterator<EntryWithTimestamp<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-            return dao.get(from, to);
-        }
-
-        @Override
-        public EntryWithTimestamp<MemorySegment> get(MemorySegment key) {
-            return dao.get(key);
-        }
-
-        @Override
-        public void upsert(EntryWithTimestamp<MemorySegment> entry) {
-            dao.upsert(entry);
-        }
-
-        @Override
-        public void close() throws IOException {
-            dao.close();
-        }
-    }
-
-    public void addNode(Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> daoNode, String token) {
-        NodeWrapper wrapper = new NodeWrapper(daoNode, token);
-        nodesUnique.add(wrapper);
+    public void addNode(String token) {
         for (int i = 0; i < MULTIPLICATION_FACTOR; i++) {
             nodeRing.put(
                     Hash.murmur3((token + i)),
-                    wrapper
+                    token
             );
         }
         totalNodes++;
@@ -87,28 +59,28 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
 
     // Здесь мы будем итерироваться по кольцу и выбирать ноды, причем не просто первые N,
     // а первые N которые памятся на уникальные реальные ноды
-    private List<NodeWrapper> selectMultipleNodes(String key, int n) {
+    private List<String> selectMultipleNodes(String key, int n) {
         int numberOfNodes = n;
         int keyHash = Hash.murmur3(key);
-        List<NodeWrapper> chosenNodes = new ArrayList<>(numberOfNodes);
-        SortedMap<Integer, NodeWrapper> ringPart = this.nodeRing.tailMap(keyHash);
+        List<String> chosenNodes = new ArrayList<>(numberOfNodes);
+        SortedMap<Integer, String> ringPart = this.nodeRing.tailMap(keyHash);
         Set<String> tokensOfChosenNodes = new HashSet<>();
-        for (NodeWrapper node : ringPart.values()) {
+        for (String node : ringPart.values()) {
             if (numberOfNodes == 0) {
                 break;
             }
-            if (tokensOfChosenNodes.add(node.realNodeKey)) {
+            if (tokensOfChosenNodes.add(node)) {
                 chosenNodes.add(node);
                 numberOfNodes--;
             }
         } // здесь мы можем дойти до конца мапы которая является кольцом нод. если мы до сих пор не набрали нужное
         // кол-во нод, нужно теперь посмотреть другую часть кольца.
         ringPart = this.nodeRing.headMap(keyHash);
-        for (NodeWrapper node : ringPart.values()) {
+        for (String node : ringPart.values()) {
             if (numberOfNodes == 0) {
                 break;
             }
-            if (tokensOfChosenNodes.add(node.realNodeKey)) {
+            if (tokensOfChosenNodes.add(node)) {
                 chosenNodes.add(node);
                 numberOfNodes--;
             }
@@ -121,94 +93,131 @@ public class DistributedDao implements Dao<MemorySegment, EntryWithTimestamp<Mem
         return chosenNodes;
     }
 
-    @Override
-    public Iterator<EntryWithTimestamp<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        return null;
-    }
-
-    @Override
-    public EntryWithTimestamp<MemorySegment> get(MemorySegment key) {
+    public EntryWithTimestamp<MemorySegment> getLocal(MemorySegment key) {
         return localDao.get(key);
     }
 
-    @Override
-    public void upsert(EntryWithTimestamp<MemorySegment> entry) {
+    public void upsertLocal(EntryWithTimestamp<MemorySegment> entry) {
         localDao.upsert(entry);
     }
 
-    @Override
     public void close() throws IOException {
-        for (Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao : nodesUnique) {
-            dao.close();
-        }
+        this.localDao.close();
+        httpClient.close();
     }
 
-    public EntryWithTimestamp<MemorySegment> get(MemorySegment key, Integer from, Integer ack) {
+    public void getByQuorum(MemorySegment key, Integer ack, Integer from, HttpSession session) {
         Integer shouldAck = ack;
         Integer requestFrom = from;
-        if (shouldAck == null) {
+        if (shouldAck == 0) {
             shouldAck = quorum;
         }
-        if (requestFrom == null) {
+        if (requestFrom == 0) {
             requestFrom = totalNodes;
         }
         if (shouldAck > totalNodes || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
         }
-        List<NodeWrapper> nodesToPoll =
+        List<String> nodesToPoll =
                 selectMultipleNodes(
                         new String(key.toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
                         requestFrom
                 );
-        PriorityQueue<EntryWithTimestamp<MemorySegment>> entries = new PriorityQueue<>(
-                requestFrom,
-                (e1, e2) -> -e1.timestamp().compareTo(e2.timestamp())
-        );
 
+
+        var resultHandler = new MergeResultHandler(shouldAck, requestFrom, session);
         for (var node : nodesToPoll) {
-            try {
-                entries.add(
-                        node.get(key)
-                );
-            } catch (Exception e) {
-                logger.error(e);
+            if (node.equals(this.selfUrl)) {
+                EntryWithTimestamp<MemorySegment> entry = localDao.get(key);
+                if (entry.value() == null) {
+                    new ResponseWrapper(404, new byte[]{}, entry.timestamp());
+                } else {
+                    resultHandler.add(
+                            new ResponseWrapper(200, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp())
+                    );
+                }
+
+            } else {
+                HttpRequest request = HttpRequest
+                        .newBuilder(URI.create("http://" + node + BASE_REQUEST_PATH + segmentToString(key)))
+                        .GET()
+                        .header(INNER_HEADER, "1")
+                        .timeout(Duration.ofMillis(500))
+                        .build();
+                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+                Future<?> unused = future.whenCompleteAsync((r, e) -> {
+                            if (e != null) {
+                                resultHandler.add(new ResponseWrapper(500, null));
+                                logger.error(e);
+                            } else {
+                                Long timestamp = Long.parseLong(r.headers().firstValue(TIMESTAMP_HEADER).get());
+                                resultHandler.add(new ResponseWrapper(r.statusCode(), r.body(), timestamp));
+                            }
+                        },
+                        callbackExecutor);
             }
         }
-        if (entries.size() < shouldAck) {
-            throw new NoConsensus();
-        }
-        return entries.peek();
     }
 
-    public void upsert(EntryWithTimestamp<MemorySegment> entry, Integer from, Integer ack) {
+    private String segmentToString(MemorySegment source) {
+        return new String(source.toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+    }
+
+
+    private static final class NotEnoughUniqueNodes extends RuntimeException {
+    }
+
+    public void upsertByQuorum(EntryWithTimestamp<MemorySegment> entry, Integer ack, Integer from, HttpSession session) {
         Integer shouldAck = ack;
         Integer requestFrom = from;
-        if (shouldAck == null) {
+        if (shouldAck == 0) {
             shouldAck = quorum;
         }
-        if (requestFrom == null) {
+        if (requestFrom == 0) {
             requestFrom = totalNodes;
         }
-        if (shouldAck > totalNodes || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
+        if (shouldAck > requestFrom || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
         }
-        List<NodeWrapper> nodesToPoll =
+        List<String> nodesToPoll =
                 selectMultipleNodes(
                         new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
                         requestFrom
                 );
-        Integer n = 0;
 
+
+        var resultHandler = new MergeResultHandler(shouldAck, requestFrom, session);
         for (var node : nodesToPoll) {
-            try {
-                node.upsert(entry);
-                n++;
-            } catch (Exception e) {
-                logger.error(e);
+            if (node.equals(this.selfUrl)) {
+                localDao.upsert(entry);
+                resultHandler.add(
+                        new ResponseWrapper(202, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp())
+                );
+            } else {
+                HttpRequest request = HttpRequest
+                        .newBuilder(URI.create("http://" + node + BASE_REQUEST_PATH + segmentToString(entry.key())))
+                        .PUT(HttpRequest.BodyPublishers.ofByteArray(entry.value().toArray(ValueLayout.JAVA_BYTE)))
+                        .header(INNER_HEADER, "1")
+                        .header(TIMESTAMP_HEADER, String.valueOf(entry.timestamp()))
+                        .timeout(Duration.ofMillis(500))
+                        .build();
+                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+                Future<?> unused = future.whenCompleteAsync((r, e) -> {
+                    if (e != null) {
+                        resultHandler.add(new ResponseWrapper(500, null));
+                        logger.error(e);
+                    } else {
+                        resultHandler.add(new ResponseWrapper(r.statusCode(), r.body()));
+                    }
+                }, callbackExecutor);
             }
         }
-        if (n < shouldAck) {
-            throw new NoConsensus();
-        }
     }
+
+    public static final class NoConsensus extends RuntimeException {
+    }
+
+    public static final class ClusterLimitExceeded extends RuntimeException {
+    }
+
 }

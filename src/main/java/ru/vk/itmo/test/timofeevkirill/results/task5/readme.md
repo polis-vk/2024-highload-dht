@@ -68,9 +68,9 @@ ALLOC (async)
 HttpClientFacade.send для синк подхода ~23000 сэмплов (44.45%), для асинк подхода HttpClientFacade.sendAsync ~8000 (12.14%).
 
 LOCK (sync)
-![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/put/lock/png/sync.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/put/lock/png/sync_4.png)
 LOCK (async)
-![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/put/lock/png/sync.png)
+![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/put/lock/png/qsync_4.png)
 
 HttpClientFacade.send для синк подхода ~1_300_000 сэмплов (37.37%), для асинк подхода HttpClientFacade.sendAsync ~1_130_000 (25.29%).
 

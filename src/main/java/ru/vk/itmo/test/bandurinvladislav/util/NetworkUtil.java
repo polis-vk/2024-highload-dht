@@ -9,7 +9,6 @@ import ru.vk.itmo.test.bandurinvladislav.RequestProcessingState;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Comparator;
 import java.util.List;
 
 public class NetworkUtil {
@@ -23,20 +22,31 @@ public class NetworkUtil {
         return parameter == null ? defaultValue : Integer.parseInt(parameter);
     }
 
-    public static boolean isMethodNotAllowed(Request request) {
+    public static boolean isMethodAllowed(Request request) {
         return switch (request.getMethod()) {
             case Request.METHOD_CONNECT, Request.METHOD_OPTIONS,
-                    Request.METHOD_TRACE, Request.METHOD_HEAD,
-                    Request.METHOD_POST -> true;
-            default -> false;
+                 Request.METHOD_TRACE, Request.METHOD_HEAD,
+                 Request.METHOD_POST -> false;
+            default -> true;
         };
     }
 
-    @SuppressWarnings("OptionalGetWithoutIsPresent")
     public static Response successResponse(List<Response> responses) {
-        return responses.stream()
-                .max(Comparator.comparingLong(NetworkUtil::getTimestampHeader))
-                .get();
+        if (responses == null || responses.isEmpty()) {
+            return new Response(Response.INTERNAL_ERROR,
+                        "Unable to create a successful response from the received data."
+                                .getBytes(StandardCharsets.UTF_8));
+        }
+        Response response = responses.getFirst();
+        long maxTimestamp = getTimestampHeader(response);
+        for (int i = 1; i < responses.size(); i++) {
+            long timestamp = getTimestampHeader(responses.get(i));
+            if (Math.max(maxTimestamp, timestamp) == timestamp) {
+                response = responses.get(i);
+                maxTimestamp = timestamp;
+            }
+        }
+        return response;
     }
 
     public static Long getTimestampHeader(Response response) {

@@ -20,11 +20,11 @@ public final class ServerLauncher {
 
     public static void main(String[] args)
             throws IOException, ExecutionException, InterruptedException, TimeoutException {
+        int[] nodePorts = new int[]{8080, 8090, 8100};
         Map<Integer, String> nodes = new HashMap<>();
-        int nodePort = 8080;
-        for (int i = 0; i < 3; i++) {
+
+        for (int nodePort : nodePorts) {
             nodes.put(nodePort, "http://localhost:" + nodePort);
-            nodePort += 10;
         }
 
         List<String> clusterUrls = new ArrayList<>(nodes.values());
@@ -32,8 +32,9 @@ public final class ServerLauncher {
         for (Map.Entry<Integer, String> entry : nodes.entrySet()) {
             int port = entry.getKey();
             String url = entry.getValue();
-            Path path = Path.of("/home/vbandurin/github/tmp/db/" + port);
-            Files.createDirectories(path);
+//            Path path = Path.of("/home/vbandurin/github/tmp/db/" + port); // for local testing
+//            Files.createDirectories(path);
+            Path path = Files.createTempDirectory("tmp-db-" + port);
             ServiceConfig serviceConfig = new ServiceConfig(port,
                     url,
                     clusterUrls,

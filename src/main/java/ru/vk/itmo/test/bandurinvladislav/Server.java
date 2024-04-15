@@ -23,17 +23,16 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.net.HttpURLConnection;
+import java.net.http.HttpResponse;
+import java.util.*;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class Server extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
     private final Map<String, HttpClient> clients;
+    private final int clusterSize;
     private final DaoWorkerPool workerPool;
     private final DhtServerConfig serverConfig;
     private final ReferenceDao dao;
@@ -43,7 +42,7 @@ public class Server extends HttpServer {
         workerPool = new DaoWorkerPool(
                 Constants.THREADS,
                 Constants.THREADS,
-                60,
+                Constants.THREAD_KEEP_ALIVE_TIME,
                 TimeUnit.SECONDS
         );
 
@@ -52,11 +51,12 @@ public class Server extends HttpServer {
         Config daoConfig = new Config(workingDir, Constants.FLUSH_THRESHOLD_BYTES);
         dao = new ReferenceDao(daoConfig);
         clients = new HashMap<>();
+        clusterSize = serverConfig.clusterUrls.size();
         config.clusterUrls.stream()
                 .filter(url -> !url.equals(config.selfUrl))
                 .forEach(u -> {
                     HttpClient client = new HttpClient(new ConnectionString(u));
-                    client.setTimeout(100);
+                    client.setTimeout(Constants.CLIENT_RESPONSE_TIMEOUT_MILLIS);
                     clients.put(u, client);
                 });
         logger.info("Server started");
@@ -132,18 +132,18 @@ public class Server extends HttpServer {
             return;
         }
 
-        if (NetworkUtil.isMethodNotAllowed(request)) {
+        if (!NetworkUtil.isMethodAllowed(request)) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
             return;
         }
 
         int ack = NetworkUtil.getParameterAsInt(request.getParameter(Constants.PARAMETER_ACK),
-                serverConfig.clusterUrls.size() / 2 + 1);
+                clusterSize/ 2 + 1);
         int from = NetworkUtil.getParameterAsInt(
-                request.getParameter(Constants.PARAMETER_FROM), serverConfig.clusterUrls.size());
+                request.getParameter(Constants.PARAMETER_FROM), clusterSize);
         String key = request.getParameter(Constants.PARAMETER_ID);
 
-        Response validationResponse = NetworkUtil.validateParams(key, ack, from, serverConfig.clusterUrls.size());
+        Response validationResponse = NetworkUtil.validateParams(key, ack, from, clusterSize);
         if (validationResponse != null) {
             session.sendResponse(validationResponse);
             return;
@@ -166,7 +166,8 @@ public class Server extends HttpServer {
             } else {
                 response = invokeRemote(request, client);
             }
-            if (response.getStatus() < 300 || response.getStatus() == 404) {
+            if (response.getStatus() < HttpURLConnection.HTTP_MULT_CHOICE
+                    || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
                 responses.add(response);
             }
         }
@@ -194,13 +195,10 @@ public class Server extends HttpServer {
         return response;
     }
 
-    private Response invokeRemote(Request request, HttpClient client) {
+    private static Response invokeRemote(Request request, HttpClient client) {
         Response response;
         try {
-            response = switch (request.getMethod()) {
-                case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE -> client.invoke(request);
-                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            };
+            response = client.invoke(request);
         } catch (Exception e) {
             logger.error("Internal error during request handling: " + e.getMessage());
             response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -211,18 +209,18 @@ public class Server extends HttpServer {
     private List<HttpClient> getClientsByKey(String key, int from) {
         TreeMap<Integer, String> hashUrlSorted = new TreeMap<>();
 
-        for (int i = 0; i < serverConfig.clusterUrls.size(); i++) {
+        for (int i = 0; i < clusterSize; i++) {
             String currentNodeUrl = serverConfig.clusterUrls.get(i);
             int currentHash = Hash.murmur3(currentNodeUrl + key);
             hashUrlSorted.put(currentHash, currentNodeUrl);
         }
 
-        return hashUrlSorted
-                .values()
-                .stream()
-                .limit(from)
-                .map(clients::get)
-                .toList();
+        List<HttpClient> res = new ArrayList<>();
+        Iterator<String> iterator = hashUrlSorted.values().iterator();
+        while (from-- > 0) {
+            res.add(clients.get(iterator.next()));
+        }
+        return res;
     }
 
     @Override

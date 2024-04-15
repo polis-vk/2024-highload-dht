@@ -46,8 +46,8 @@ public class Server extends HttpServer {
     public Server(DhtServerConfig config, java.nio.file.Path workingDir) throws IOException {
         super(config);
         workerPool = new DaoWorkerPool(
-                Constants.THREADS,
-                Constants.THREADS,
+                Constants.ACCEPTOR_THREADS,
+                Constants.ACCEPTOR_THREADS,
                 Constants.THREAD_KEEP_ALIVE_TIME,
                 TimeUnit.SECONDS
         );
@@ -178,8 +178,13 @@ public class Server extends HttpServer {
                         100, TimeUnit.MILLISECONDS
                 );
                 CompletableFuture<Void> responseAction = remote.thenAccept(r -> {
-                    if (r.getStatus() == 500 || r.getStatus() == 504) {
-                        NetworkUtil.trySendResponse(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                    if ((r.getStatus() == HttpURLConnection.HTTP_INTERNAL_ERROR
+                            || r.getStatus() == HttpURLConnection.HTTP_GATEWAY_TIMEOUT)) {
+                        rs.getFailedResponseCount().getAndIncrement();
+                        if (from - rs.getFailedResponseCount().get() < ack) {
+                            NetworkUtil.trySendResponse(session,
+                                    new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                        }
                     } else {
                         NetworkUtil.handleResponse(session, rs, r, ack, from);
                     }

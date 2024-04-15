@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.bandurinvladislav.RequestProcessingState;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -78,7 +79,8 @@ public class NetworkUtil {
     }
 
     public static boolean shouldHandle(Response r) {
-        return r.getStatus() < 300 || r.getStatus() == 404;
+        return r.getStatus() < HttpURLConnection.HTTP_MULT_CHOICE
+                || r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
     public static void handleResponse(HttpSession session, RequestProcessingState rs, Response r, int ack, int from) {

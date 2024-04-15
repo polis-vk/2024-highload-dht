@@ -10,6 +10,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -22,50 +23,44 @@ import ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class HttpServerImpl extends HttpServer {
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private static final Logger log = LoggerFactory.getLogger(HttpServerImpl.class);
-    private final Executor executor;
-    private static final Integer KEEP_ALIVE = 30;
-    private static final Integer QUEUE_SIZE = 1500;
-    private static final Integer POOL_SIZE = 8;
+    private final ExecutorService executor;
     static final Set<String> METHODS = Set.of(
             "GET",
             "PUT",
             "DELETE"
     );
     private static final ZoneId SERVER_ZONE = ZoneId.of("UTC");
+    private static final String PATH_NAME = "/v0/entity";
 
-    public HttpServerImpl(ServiceConfig config, ReferenceDao dao) throws IOException {
+    private final HttpClient client;
+    private final List<String> nodes;
+    private final String selfUrl;
+
+    public HttpServerImpl(ServiceConfig config, ReferenceDao dao, ExecutorService executorService) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
-        AtomicInteger threadCounter = new AtomicInteger(0);
-        ThreadFactory threadFactory = r ->
-                new Thread(r, "HttpServerImplThread: " + threadCounter.getAndIncrement());
-
-        this.executor = new ThreadPoolExecutor(
-                POOL_SIZE,
-                POOL_SIZE,
-                KEEP_ALIVE,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(QUEUE_SIZE),
-                threadFactory,
-                new ThreadPoolExecutor.AbortPolicy()
-        );
+        this.selfUrl = config.selfUrl();
+        this.nodes = config.clusterUrls();
+        this.client = HttpClient.newHttpClient();
+        executor = executorService;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -79,41 +74,54 @@ public class HttpServerImpl extends HttpServer {
         return serverConfig;
     }
 
-    @Path(value = "/v0/status")
-    public Response status() {
-        return Response.ok("OK");
-    }
-
-    @Path(value = "/v0/entity")
+    @Path(value = PATH_NAME)
     @RequestMethod(Request.METHOD_GET)
-    public Response getEntry(@Param(value = "id", required = true) String id) {
+    public Response getEntry(@Param(value = "id", required = true) String id, Request request) {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        String clusterUrl = hash(id);
+        if (!Objects.equals(clusterUrl, selfUrl)) {
+            return forwardRequest(request, clusterUrl, id);
+        }
+
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         Entry<MemorySegment> entry = dao.get(key);
         return entry == null ? new Response(Response.NOT_FOUND, Response.EMPTY) :
                 new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
     }
 
-    @Path(value = "/v0/entity")
+    @Path(value = PATH_NAME)
     @RequestMethod(Request.METHOD_PUT)
     public Response putEntry(@Param(value = "id", required = true) String id, Request request) {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        String clusterUrl = hash(id);
+        if (!Objects.equals(clusterUrl, selfUrl)) {
+            return forwardRequest(request, clusterUrl, id);
+        }
+
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         MemorySegment value = MemorySegment.ofArray(request.getBody());
         dao.upsert(new BaseEntry<>(key, value));
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(value = "/v0/entity")
+    @Path(value = PATH_NAME)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteEntry(@Param(value = "id", required = true) String id) {
+    public Response deleteEntry(@Param(value = "id", required = true) String id, Request request) {
         if (isIdIncorrect(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
+        String clusterUrl = hash(id);
+        if (!Objects.equals(clusterUrl, selfUrl)) {
+            return forwardRequest(request, clusterUrl, id);
+        }
+
         MemorySegment key = MemorySegment.ofArray(id.toCharArray());
         dao.upsert(new BaseEntry<>(key, null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -164,8 +172,35 @@ public class HttpServerImpl extends HttpServer {
 
     }
 
+    private Response forwardRequest(Request request, String clusterUrl, String id) {
+        URI uri = URI.create(clusterUrl + PATH_NAME + "?id=" + id);
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(uri);
+
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> requestBuilder.GET();
+            case Request.METHOD_PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
+            case Request.METHOD_DELETE -> requestBuilder.DELETE();
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
+        }
+
+        try {
+            HttpResponse<byte[]> httpResponse =
+                    client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (IOException e) {
+            log.error("Exception in forward request at sending request", e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
     private boolean isIdIncorrect(String id) {
-        return id == null || id.isEmpty() || id.isBlank();
+        return id == null || id.isEmpty();
     }
 
     private void sendResponse(HttpSession session, Response response) {
@@ -174,5 +209,18 @@ public class HttpServerImpl extends HttpServer {
         } catch (IOException e) {
             session.handleException(e);
         }
+    }
+
+    private String hash(String id) {
+        int maxHash = Integer.MIN_VALUE;
+        String nodeUrl = null;
+        for (String node : nodes) {
+            int hash = Hash.murmur3(id + node);
+            if (hash > maxHash) {
+                maxHash = hash;
+                nodeUrl = node;
+            }
+        }
+        return nodeUrl;
     }
 }

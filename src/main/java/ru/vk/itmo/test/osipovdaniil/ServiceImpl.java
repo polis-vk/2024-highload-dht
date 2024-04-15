@@ -6,6 +6,7 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.osipovdaniil.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
@@ -35,9 +36,13 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public CompletableFuture<Void> stop() {
         server.stop();
-        dao.close();
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         return CompletableFuture.completedFuture(null);
     }
 }

@@ -24,8 +24,12 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
-import java.net.http.HttpResponse;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -138,7 +142,7 @@ public class Server extends HttpServer {
         }
 
         int ack = NetworkUtil.getParameterAsInt(request.getParameter(Constants.PARAMETER_ACK),
-                clusterSize/ 2 + 1);
+                clusterSize / 2 + clusterSize % 2);
         int from = NetworkUtil.getParameterAsInt(
                 request.getParameter(Constants.PARAMETER_FROM), clusterSize);
         String key = request.getParameter(Constants.PARAMETER_ID);
@@ -173,6 +177,7 @@ public class Server extends HttpServer {
         }
         if (responses.size() < ack) {
             session.sendResponse(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            return;
         }
 
         session.sendResponse(NetworkUtil.successResponse(responses));

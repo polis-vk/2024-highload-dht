@@ -4,7 +4,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Comparator;
 import java.util.List;
 
 public class NetworkUtil {

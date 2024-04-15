@@ -7,11 +7,11 @@ function build_query_param(param, value)
 end
 
 function generateKey()
-    return math.random(0, 100000)
+    return math.random(0, 100)
 end
 
 function generateValue()
-    key_part = math.random(10000000000, 25000000000)
+    key_part = math.random(10000, 25000)
     key = ""
     for i = 0, 20, 1 do
         key = key .. key_part

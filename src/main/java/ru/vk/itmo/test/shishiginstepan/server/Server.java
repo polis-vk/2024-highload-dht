@@ -1,12 +1,12 @@
 package ru.vk.itmo.test.shishiginstepan.server;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import org.apache.log4j.Logger;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.shishiginstepan.dao.EntryWithTimestamp;
 
-import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -16,7 +16,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
     private final DistributedDao dao;
@@ -30,28 +29,20 @@ public class Server extends HttpServer {
     private static final Duration defaultTimeout = Duration.of(200, ChronoUnit.MILLIS);
     private static final ZoneId ServerZoneId = ZoneId.of("+0");
 
-    private static final ThreadFactory threadFactory = new ThreadFactory() {
-        private final AtomicInteger workerNamingCounter = new AtomicInteger(0);
-
-        @Override
-        public Thread newThread(@Nonnull Runnable r) {
-            return new Thread(r, "lsm-db-worker-" + workerNamingCounter.getAndIncrement());
-        }
-    };
 
     public Server(ServiceConfig config, DistributedDao dao) throws IOException {
         super(configFromServiceConfig(config));
         this.dao = dao;
         //TODO подумать какое значение будет разумным
         BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100);
-        int processors = Runtime.getRuntime().availableProcessors();
+        int processors = Runtime.getRuntime().availableProcessors()/2;
         this.executor = new ThreadPoolExecutor(
-                processors,
-                processors,
+                processors/2,
+                processors/2,
                 32,
                 TimeUnit.SECONDS,
                 requestQueue,
-                threadFactory
+                new CustomThreadFactory("lsm-db-workers")
         );
     }
 
@@ -60,6 +51,7 @@ public class Server extends HttpServer {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.reusePort = true;
         acceptorConfig.port = serviceConfig.selfPort();
+        serverConfig.selectors = Runtime.getRuntime().availableProcessors()/2;
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
@@ -107,6 +99,7 @@ public class Server extends HttpServer {
             LocalDateTime requestExpirationDate
     ) throws IOException, HttpException {
         if (LocalDateTime.now(ServerZoneId).isAfter(requestExpirationDate)) {
+            logger.info("Too bad request timing, skipped");
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         } else {
             MemorySegment key = MemorySegment.ofArray(request.getParameter("id=").getBytes(StandardCharsets.UTF_8));

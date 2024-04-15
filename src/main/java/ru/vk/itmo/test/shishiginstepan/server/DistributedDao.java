@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.shishiginstepan.server;
 
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpSession;
 import one.nio.util.Hash;
 import org.apache.log4j.Logger;
@@ -28,7 +29,8 @@ public class DistributedDao {
     private final Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao;
     private final String selfUrl;
 
-    private final ExecutorService callbackExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService callbackExecutor = Executors.newFixedThreadPool(6, new CustomThreadFactory("callback-workers"));
+    private final ExecutorService remoteExecutor = Executors.newFixedThreadPool(6, new CustomThreadFactory("remote-workers"));
 
     private final SortedMap<Integer, String> nodeRing = new ConcurrentSkipListMap<>();
 
@@ -41,8 +43,9 @@ public class DistributedDao {
         this.selfUrl = selfUrl;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(100))
-                .executor(Executors.newFixedThreadPool(12))
+                .executor(Executors.newFixedThreadPool(1))
                 .version(HttpClient.Version.HTTP_1_1)
+                .executor(remoteExecutor)
                 .build();
     }
 
@@ -191,7 +194,7 @@ public class DistributedDao {
             if (node.equals(this.selfUrl)) {
                 localDao.upsert(entry);
                 resultHandler.add(
-                        new ResponseWrapper(202, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp())
+                        new ResponseWrapper(202, new byte[]{}, entry.timestamp())
                 );
             } else {
                 HttpRequest request = HttpRequest
@@ -207,7 +210,7 @@ public class DistributedDao {
                         resultHandler.add(new ResponseWrapper(500, null));
                         logger.error(e);
                     } else {
-                        resultHandler.add(new ResponseWrapper(r.statusCode(), r.body()));
+                        resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
                     }
                 }, callbackExecutor);
             }

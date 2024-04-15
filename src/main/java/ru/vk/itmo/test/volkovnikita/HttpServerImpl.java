@@ -38,6 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.NOT_ENOUGH_REPLICAS;
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.TOO_MANY_REQUESTS;
@@ -351,7 +352,7 @@ public class HttpServerImpl extends HttpServer {
         return nodes.stream()
                 .sorted(Comparator.comparingInt(node -> Hash.murmur3(node + key)))
                 .limit(from)
-                .toList();
+                .collect(Collectors.toList());
     }
 
     @Override

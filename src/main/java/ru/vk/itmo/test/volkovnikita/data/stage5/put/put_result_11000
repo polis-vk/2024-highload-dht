@@ -1,20 +1,4 @@
-ravenhub@ravenhub-Virtual-Machine:~$ wrk -d 160 -c 16 -t 4 -R 11000 -L -s /home/ravenhub/IdeaProjects/2024-highload-dht/src/main/java/ru/vk/itmo/test/volkovnikita/lua/stage1/put.lua http://127.0.0.1:8080
-Running 160s test @ http://127.0.0.1:8080
-  4 threads and 16 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    85.16ms   41.33ms 198.27ms   62.25%
-    Req/Sec       -nan      -nan   0.00      0.00%
-  Latency Distribution (HdrHistogram - Recorded Latency)
- 50.000%   80.57ms
- 75.000%  115.01ms
- 90.000%  142.08ms
- 99.000%  184.96ms
- 99.900%  194.94ms
- 99.990%  196.86ms
- 99.999%  197.76ms
-100.000%  198.40ms
-
-  Detailed Percentile spectrum:
+   Detailed Percentile spectrum:
        Value   Percentile   TotalCount 1/(1-Percentile)
 
        0.829     0.000000            1         1.00
@@ -103,10 +87,3 @@ Running 160s test @ http://127.0.0.1:8080
      197.759     0.999989       108333     93622.86
      198.399     0.999991       108334    109226.67
      198.399     1.000000       108334          inf
-#[Mean    =       85.164, StdDeviation   =       41.334]
-#[Max     =      198.272, Total count    =       108334]
-#[Buckets =           27, SubBuckets     =         2048]
-----------------------------------------------------------
-  108338 requests in 10.00s, 6.92MB read
-Requests/sec:  10834.14
-Transfer/sec:    708.87KB

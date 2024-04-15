@@ -28,15 +28,16 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.NOT_ENOUGH_REPLICAS;
 import static ru.vk.itmo.test.volkovnikita.util.CustomHttpStatus.TOO_MANY_REQUESTS;
@@ -46,8 +47,10 @@ import static ru.vk.itmo.test.volkovnikita.util.Settings.TIMESTAMP_HEADER;
 public class HttpServerImpl extends HttpServer {
 
     private static final String PATH_NAME = "/v0/entity";
+    private static final String TIMESTAMP = "X-timestamp";
     private final Dao<MemorySegment, TimestampEntry<MemorySegment>> dao;
     private static final Logger log = LoggerFactory.getLogger(HttpServerImpl.class);
+    private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executor;
     private final HttpClient client;
     private final List<String> nodes;
@@ -73,7 +76,11 @@ public class HttpServerImpl extends HttpServer {
         this.executor = executorService;
         this.selfUrl = config.selfUrl();
         this.nodes = config.clusterUrls();
-        this.client = HttpClient.newHttpClient();
+        this.client = HttpClient.newBuilder()
+                .executor(Executors.newFixedThreadPool(THREADS))
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -296,7 +303,7 @@ public class HttpServerImpl extends HttpServer {
                 .method(method, HttpRequest.BodyPublishers
                         .ofByteArray(Optional.ofNullable(request.getBody()).orElse(new byte[0])))
                 .header(REDIRECTED_HEADER, "true")
-                .header("X-timestamp", Optional.ofNullable(request.getHeader(TIMESTAMP_HEADER)).orElse(""));
+                .header(TIMESTAMP, Optional.ofNullable(request.getHeader(TIMESTAMP_HEADER)).orElse(""));
 
         final CompletableFuture<Response> futureResponse = new CompletableFuture<>();
 
@@ -308,7 +315,7 @@ public class HttpServerImpl extends HttpServer {
                     }
                     Response newResponse = new Response(getProxyResponse(response.statusCode()), response.body());
 
-                    response.headers().firstValue("X-timestamp")
+                    response.headers().firstValue(TIMESTAMP)
                             .ifPresent(ts -> newResponse.addHeader(TIMESTAMP_HEADER + ts));
 
                     futureResponse.complete(newResponse);
@@ -344,7 +351,7 @@ public class HttpServerImpl extends HttpServer {
         return nodes.stream()
                 .sorted(Comparator.comparingInt(node -> Hash.murmur3(node + key)))
                 .limit(from)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override

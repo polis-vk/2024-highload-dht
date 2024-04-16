@@ -18,7 +18,6 @@ class MergeResultHandler {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-
     MergeResultHandler(Integer ack, Integer from, HttpSession session) {
         this.session = session;
         this.totalResponseCounter = new AtomicInteger(from);
@@ -26,9 +25,8 @@ class MergeResultHandler {
         this.results = new ConcurrentSkipListSet<>((r1, r2) -> Long.compare(r2.timestamp(), r1.timestamp()));
     }
 
-
     public synchronized void add(ResponseWrapper response) {
-            if (closed.get()){
+        if (closed.get()) {
             return;
         }
         int total = this.totalResponseCounter.decrementAndGet();
@@ -51,7 +49,6 @@ class MergeResultHandler {
         }
 
     }
-
 
     private void sendResponse() {
         try {

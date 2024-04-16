@@ -16,8 +16,16 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 public class DistributedDao {
 
@@ -133,19 +141,18 @@ public class DistributedDao {
                         requestFrom
                 );
 
-
         var resultHandler = new MergeResultHandler(shouldAck, requestFrom, session);
         for (var node : nodesToPoll) {
             if (node.equals(this.selfUrl)) {
                 EntryWithTimestamp<MemorySegment> entry = localDao.get(key);
                 ResponseWrapper response;
                 if (entry.value() == null) {
-                        response = new ResponseWrapper(404, new byte[]{}, entry.timestamp());
+                    response = new ResponseWrapper(404, new byte[]{}, entry.timestamp());
                 } else {
-                        response = new ResponseWrapper(
-                                200,
-                                entry.value().toArray(ValueLayout.JAVA_BYTE),
-                                entry.timestamp());
+                    response = new ResponseWrapper(
+                            200,
+                            entry.value().toArray(ValueLayout.JAVA_BYTE),
+                            entry.timestamp());
                 }
                 resultHandler.add(response);
 
@@ -178,7 +185,6 @@ public class DistributedDao {
         return new String(source.toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
     }
 
-
     private static final class NotEnoughUniqueNodes extends RuntimeException {
     }
 
@@ -204,7 +210,6 @@ public class DistributedDao {
                         new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
                         requestFrom
                 );
-
 
         var resultHandler = new MergeResultHandler(shouldAck, requestFrom, session);
         for (var node : nodesToPoll) {

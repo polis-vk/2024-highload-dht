@@ -15,20 +15,23 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class Server extends HttpServer {
     private final DistributedDao dao;
     private static final String INNER_REQUEST_HEADER = "X-inner-request: ";
     private static final String TIMESTAMP_HEADER = "X-timestamp: ";
 
-
     private final Logger logger = Logger.getLogger("lsm-db-server");
 
     private final ExecutorService executor;
     private static final Duration defaultTimeout = Duration.of(200, ChronoUnit.MILLIS);
     private static final ZoneId ServerZoneId = ZoneId.of("+0");
-
 
     public Server(ServiceConfig config, DistributedDao dao) throws IOException {
         super(configFromServiceConfig(config));
@@ -106,7 +109,7 @@ public class Server extends HttpServer {
             if (rawKey == null || rawKey.isEmpty()) {
                 throw new HttpException("parameter id is unfilled");
             }
-            MemorySegment key = MemorySegment.ofArray(request.getParameter("id=").getBytes(StandardCharsets.UTF_8));
+            MemorySegment key = MemorySegment.ofArray(rawKey.getBytes(StandardCharsets.UTF_8));
             String rawAck = request.getParameter("ack=");
             String rawFrom = request.getParameter("from=");
             Integer ack = rawAck == null ? null : Integer.parseInt(rawAck);
@@ -134,18 +137,29 @@ public class Server extends HttpServer {
                 }
                 case Request.METHOD_PUT -> {
                     if (request.getHeader(INNER_REQUEST_HEADER) == null) {
-                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(key, MemorySegment.ofArray(request.getBody()), System.currentTimeMillis());
+                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
+                                key,
+                                MemorySegment.ofArray(request.getBody()),
+                                System.currentTimeMillis()
+                        );
                         dao.upsertByQuorum(entry, ack, from, session);
                     } else {
                         Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
-                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(key, MemorySegment.ofArray(request.getBody()), timestamp);
+                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
+                                key,
+                                MemorySegment.ofArray(request.getBody()), timestamp
+                        );
                         dao.upsertLocal(entry);
                         session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
                     }
                 }
                 case Request.METHOD_DELETE -> {
                     if (request.getHeader(INNER_REQUEST_HEADER) == null) {
-                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(key, null, System.currentTimeMillis());
+                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
+                                key,
+                                null,
+                                System.currentTimeMillis()
+                        );
                         dao.upsertByQuorum(entry, ack, from, session);
                     } else {
                         Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
@@ -158,7 +172,6 @@ public class Server extends HttpServer {
             }
         }
     }
-
 
     public Response notAllowed() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);

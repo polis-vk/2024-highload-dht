@@ -10,6 +10,9 @@ import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
 
 public final class ServerUtil {
 
+    public static final TimeUnit SHUTDOWN_TIMEOUT_TIME_UNIT = TimeUnit.SECONDS;
+    public static final int SHUTDOWN_TIMEOUT = 60;
+
     private ServerUtil() {
     }
 
@@ -34,10 +37,10 @@ public final class ServerUtil {
         pool.shutdown(); // Disable new tasks from being submitted
         try {
             // Wait a while for existing tasks to terminate
-            if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!pool.awaitTermination(SHUTDOWN_TIMEOUT, SHUTDOWN_TIMEOUT_TIME_UNIT)) {
                 pool.shutdownNow(); // Cancel currently executing tasks
                 // Wait a while for tasks to respond to being cancelled
-                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                if (!pool.awaitTermination(SHUTDOWN_TIMEOUT, SHUTDOWN_TIMEOUT_TIME_UNIT)) {
                     log.severe("Pool did not terminate");
                 }
             }

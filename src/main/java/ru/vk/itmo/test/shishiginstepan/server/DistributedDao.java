@@ -29,8 +29,14 @@ public class DistributedDao {
     private final Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao;
     private final String selfUrl;
 
-    private final ExecutorService callbackExecutor = Executors.newFixedThreadPool(6, new CustomThreadFactory("callback-workers"));
-    private final ExecutorService remoteExecutor = Executors.newFixedThreadPool(6, new CustomThreadFactory("remote-workers"));
+    private final ExecutorService callbackExecutor = Executors.newFixedThreadPool(
+            1,
+            new CustomThreadFactory("callback-workers")
+    );
+    private final ExecutorService remoteExecutor = Executors.newFixedThreadPool(
+            Runtime.getRuntime().availableProcessors() / 2,
+            new CustomThreadFactory("remote-workers")
+    );
 
     private final SortedMap<Integer, String> nodeRing = new ConcurrentSkipListMap<>();
 
@@ -132,15 +138,16 @@ public class DistributedDao {
         for (var node : nodesToPoll) {
             if (node.equals(this.selfUrl)) {
                 EntryWithTimestamp<MemorySegment> entry = localDao.get(key);
+                ResponseWrapper response;
                 if (entry.value() == null) {
-                    resultHandler.add(
-                    new ResponseWrapper(404, new byte[]{}, entry.timestamp())
-                    );
+                        response = new ResponseWrapper(404, new byte[]{}, entry.timestamp());
                 } else {
-                    resultHandler.add(
-                            new ResponseWrapper(200, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp())
-                    );
+                        response = new ResponseWrapper(
+                                200,
+                                entry.value().toArray(ValueLayout.JAVA_BYTE),
+                                entry.timestamp());
                 }
+                resultHandler.add(response);
 
             } else {
                 HttpRequest request = HttpRequest
@@ -149,7 +156,10 @@ public class DistributedDao {
                         .header(INNER_HEADER, "1")
                         .timeout(Duration.ofMillis(500))
                         .build();
-                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(
+                        request,
+                        HttpResponse.BodyHandlers.ofByteArray()
+                );
                 Future<?> unused = future.whenCompleteAsync((r, e) -> {
                             if (e != null) {
                                 resultHandler.add(new ResponseWrapper(500, new byte[]{}));
@@ -172,7 +182,12 @@ public class DistributedDao {
     private static final class NotEnoughUniqueNodes extends RuntimeException {
     }
 
-    public void upsertByQuorum(EntryWithTimestamp<MemorySegment> entry, Integer ack, Integer from, HttpSession session) {
+    public void upsertByQuorum(
+            EntryWithTimestamp<MemorySegment> entry,
+            Integer ack,
+            Integer from,
+            HttpSession session
+    ) {
         Integer shouldAck = ack;
         Integer requestFrom = from;
         if (shouldAck == null) {
@@ -210,9 +225,15 @@ public class DistributedDao {
                 if (entry.value() == null) {
                     request = requestBuilder.DELETE().build();
                 } else {
-                    request = requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(entry.value().toArray(ValueLayout.JAVA_BYTE))).build();
+                    request = requestBuilder.PUT(
+                                    HttpRequest.BodyPublishers.ofByteArray(entry.value().toArray(ValueLayout.JAVA_BYTE))
+                            )
+                            .build();
                 }
-                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(
+                        request,
+                        HttpResponse.BodyHandlers.ofByteArray()
+                );
                 Future<?> unused = future.whenCompleteAsync((r, e) -> {
                     if (e != null) {
                         resultHandler.add(new ResponseWrapper(500, new byte[]{}));

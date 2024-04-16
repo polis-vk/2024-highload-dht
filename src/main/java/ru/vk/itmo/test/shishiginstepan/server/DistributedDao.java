@@ -139,41 +139,45 @@ public class DistributedDao {
 
         for (var node : nodesToPoll) {
             if (node.equals(this.selfUrl)) {
-                EntryWithTimestamp<MemorySegment> entry = localDao.get(key);
-                ResponseWrapper response;
-                if (entry.value() == null) {
-                    response = new ResponseWrapper(404, new byte[]{}, entry.timestamp());
-                } else {
-                    response = new ResponseWrapper(
-                            200,
-                            entry.value().toArray(ValueLayout.JAVA_BYTE),
-                            entry.timestamp());
-                }
-                resultHandler.add(response);
-
+                getLocalAsync(resultHandler, key);
             } else {
-                HttpRequest request = HttpRequest
-                        .newBuilder(URI.create(node + BASE_REQUEST_PATH + segmentToString(key)))
-                        .GET()
-                        .header(INNER_HEADER, "1")
-                        .timeout(Duration.ofMillis(500))
-                        .build();
-                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(
-                        request,
-                        HttpResponse.BodyHandlers.ofByteArray()
-                );
-                future = future.whenCompleteAsync((r, e) -> {
-                            if (e == null) {
-                                Long timestamp = Long.parseLong(r.headers().firstValue(TIMESTAMP_HEADER).get());
-                                resultHandler.add(new ResponseWrapper(r.statusCode(), r.body(), timestamp));
-                            } else {
-                                resultHandler.add(new ResponseWrapper(500, new byte[]{}));
-                                logger.error(e);
-                            }
-                        },
-                        callbackExecutor);
+                getRemoteAsync(key, node, resultHandler);
             }
         }
+    }
+
+    private void getLocalAsync(MergeResultHandler resultHandler, MemorySegment key) {
+        EntryWithTimestamp<MemorySegment> entry = localDao.get(key);
+        ResponseWrapper response;
+        if (entry.value() == null) {
+            response = new ResponseWrapper(404, new byte[]{}, entry.timestamp());
+        } else {
+            response = new ResponseWrapper(
+                    200,
+                    entry.value().toArray(ValueLayout.JAVA_BYTE),
+                    entry.timestamp());
+        }
+        resultHandler.add(response);
+    }
+
+    private void getRemoteAsync(MemorySegment key, String node, MergeResultHandler resultHandler) {
+        HttpRequest request = request(node, segmentToString(key))
+                .GET()
+                .build();
+        CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(
+                request,
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+        CompletableFuture<HttpResponse<byte[]>> unused = future.whenCompleteAsync((r, e) -> {
+                    if (e == null) {
+                        Long timestamp = Long.parseLong(r.headers().firstValue(TIMESTAMP_HEADER).get());
+                        resultHandler.add(new ResponseWrapper(r.statusCode(), r.body(), timestamp));
+                    } else {
+                        resultHandler.add(new ResponseWrapper(500, new byte[]{}));
+                        logger.error(e);
+                    }
+                },
+                callbackExecutor);
     }
 
     private String segmentToString(MemorySegment source) {
@@ -204,41 +208,48 @@ public class DistributedDao {
         var resultHandler = new MergeResultHandler(shouldAck, requestFrom, session);
         for (var node : nodesToPoll) {
             if (node.equals(this.selfUrl)) {
-                localDao.upsert(entry);
-                Integer status = 201;
-                if (entry.value() == null) {
-                    status = 202;
-                }
-                resultHandler.add(
-                        new ResponseWrapper(status, new byte[]{}, entry.timestamp())
-                );
-
+                upsertLocalAsync(entry, resultHandler);
             } else {
-                HttpRequest.Builder requestBuilder = request(node, segmentToString(entry.key()))
-                        .header(TIMESTAMP_HEADER, String.valueOf(entry.timestamp()));
-                HttpRequest request;
-                if (entry.value() == null) {
-                    request = requestBuilder.DELETE().build();
-                } else {
-                    request = requestBuilder.PUT(
-                                    HttpRequest.BodyPublishers.ofByteArray(entry.value().toArray(ValueLayout.JAVA_BYTE))
-                            )
-                            .build();
-                }
-                CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(
-                        request,
-                        HttpResponse.BodyHandlers.ofByteArray()
-                );
-                future = future.whenCompleteAsync((r, e) -> {
-                    if (e == null) {
-                        resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
-                    } else {
-                        resultHandler.add(new ResponseWrapper(500, new byte[]{}));
-                        logger.error(e);
-                    }
-                }, callbackExecutor);
+                upsertRemoteASync(entry, node, resultHandler);
             }
         }
+    }
+
+    private void upsertRemoteASync(EntryWithTimestamp<MemorySegment> entry, String node, MergeResultHandler resultHandler) {
+        HttpRequest.Builder requestBuilder = request(node, segmentToString(entry.key()))
+                .header(TIMESTAMP_HEADER, String.valueOf(entry.timestamp()));
+        HttpRequest request;
+        if (entry.value() == null) {
+            request = requestBuilder.DELETE().build();
+        } else {
+            request = requestBuilder.PUT(
+                            HttpRequest.BodyPublishers.ofByteArray(entry.value().toArray(ValueLayout.JAVA_BYTE))
+                    )
+                    .build();
+        }
+        CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(
+                request,
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+        CompletableFuture<HttpResponse<byte[]>> unused = future.whenCompleteAsync((r, e) -> {
+            if (e == null) {
+                resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
+            } else {
+                resultHandler.add(new ResponseWrapper(500, new byte[]{}));
+                logger.error(e);
+            }
+        }, callbackExecutor);
+    }
+
+    private void upsertLocalAsync(EntryWithTimestamp<MemorySegment> entry, MergeResultHandler resultHandler) {
+        localDao.upsert(entry);
+        Integer status = 201;
+        if (entry.value() == null) {
+            status = 202;
+        }
+        resultHandler.add(
+                new ResponseWrapper(status, new byte[]{}, entry.timestamp())
+        );
     }
 
     public static final class NoConsensus extends RuntimeException {

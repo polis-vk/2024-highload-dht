@@ -53,7 +53,7 @@ public class ServerImplementation extends HttpServer {
 
     private static final int POOL_KEEP_ALIVE_SECONDS = 10;
 
-    private static final int THREAD_POOL_QUEUE_SIZE = 64;
+    private static final int THREAD_POOL_QUEUE_SIZE = 512;
     private static final int INTERNAL_ERROR_STATUS = 500;
 
     private final MemorySegmentDao memorySegmentDao;
@@ -74,27 +74,25 @@ public class ServerImplementation extends HttpServer {
                 THREAD_POOL_SIZE / 2,
                 POOL_KEEP_ALIVE_SECONDS,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
                 new CustomThreadFactory("worker", true),
-                new ThreadPoolExecutor.AbortPolicy());
+                new ThreadPoolExecutor.CallerRunsPolicy());
         ((ThreadPoolExecutor) executor).prestartAllCoreThreads();
         this.proxyExecutor = new ThreadPoolExecutor(THREAD_POOL_SIZE / 2,
                 THREAD_POOL_SIZE / 2,
                 POOL_KEEP_ALIVE_SECONDS,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
                 new CustomThreadFactory("proxy-worker", true),
-                new ThreadPoolExecutor.AbortPolicy());
-        ((ThreadPoolExecutor) proxyExecutor).prestartAllCoreThreads();
+                new ThreadPoolExecutor.CallerRunsPolicy());
         this.client = new Client(proxyExecutor);
-        this.aggregator = new ThreadPoolExecutor(1,
-                1,
+        this.aggregator = new ThreadPoolExecutor(THREAD_POOL_SIZE / 4,
+                THREAD_POOL_SIZE / 4,
                 POOL_KEEP_ALIVE_SECONDS,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 4),
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
                 new CustomThreadFactory("aggregator", true),
                 new ThreadPoolExecutor.AbortPolicy());
-        ((ThreadPoolExecutor) aggregator).prestartAllCoreThreads();
     }
 
     @Override
@@ -264,7 +262,7 @@ public class ServerImplementation extends HttpServer {
         List<CompletableFuture<Response>> responses = new ArrayList<>(from);
         for (int i = 0; i < from; i++) {
             if (url.get(i).equals(config.selfUrl())) {
-                responses.add(CompletableFuture.completedFuture(handleNodeRequest(request, id, timeNow)));
+                responses.add(CompletableFuture.supplyAsync(() -> handleNodeRequest(request, id, timeNow), executor));
             } else {
                 client.setUrl(url.get(i));
                 client.setTimeStamp(timeNow);
@@ -278,18 +276,18 @@ public class ServerImplementation extends HttpServer {
                                     AtomicReference<Response> finalResponse, HttpSession session) {
         AtomicInteger successResponses = new AtomicInteger(0);
         AtomicLong finalTime = new AtomicLong(0);
-        AtomicInteger completedFuture = new AtomicInteger(0);
+        AtomicInteger completedFuturesCount = new AtomicInteger(0);
         for (CompletableFuture<Response> responseFuture : responses) {
             responseFuture.whenCompleteAsync((response, throwable) -> {
                 if (throwable != null) {
                     LOGGER.error("error complete future", throwable);
                     return;
                 }
-                if (completedFuture.get() == responses.size() || ack == successResponses.get()) {
+                if (ack == successResponses.get()) {
                     return;
                 }
                 validateResponse(finalResponse, response, finalTime, successResponses);
-                sentFinalResponse(responses, ack, finalResponse, session, successResponses, completedFuture);
+                handleResponses(responses, ack, finalResponse, session, successResponses, completedFuturesCount);
             }, aggregator).exceptionally(throwable -> {
                 LOGGER.error("future exception", throwable);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -302,11 +300,10 @@ public class ServerImplementation extends HttpServer {
         String dataHeader = response.getHeader(Client.NODE_TIMESTAMP_HEADER + ":");
         if (dataHeader != null) {
             long headerTime = Long.parseLong(dataHeader);
-            if (headerTime >= finalTime.get()) {
-                finalTime.set(headerTime);
-                finalResponse.set(response);
-                successResponses.incrementAndGet();
+            if (finalTime.compareAndSet(finalTime.get(), headerTime)) {
+                finalResponse.compareAndSet(finalResponse.get(), response);
             }
+            successResponses.incrementAndGet();
         } else {
             if (response.getStatus() != INTERNAL_ERROR_STATUS) {
                 finalResponse.set(response);
@@ -315,18 +312,17 @@ public class ServerImplementation extends HttpServer {
         }
     }
 
-    private static void sentFinalResponse(List<CompletableFuture<Response>> responses, int ack,
-                                          AtomicReference<Response> finalResponse, HttpSession session,
-                                          AtomicInteger successResponses, AtomicInteger completedFuture) {
+    private static void handleResponses(List<CompletableFuture<Response>> responses, int ack,
+                                        AtomicReference<Response> finalResponse, HttpSession session,
+                                        AtomicInteger successResponses, AtomicInteger completedFuture) {
         if (successResponses.get() == ack) {
             try {
                 session.sendResponse(finalResponse.get());
-                return;
             } catch (IOException e) {
                 LOGGER.error("error sent final response", e);
                 session.close();
-                return;
             }
+            return;
         }
         completedFuture.incrementAndGet();
         if (successResponses.get() < ack && completedFuture.get() == responses.size()) {

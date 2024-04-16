@@ -2,6 +2,7 @@ package ru.vk.itmo.test.tarazanovmaxim.hash;
 
 import one.nio.util.Hash;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -22,10 +23,14 @@ public class ConsistentHashing {
     }
 
     public List<String> getNShardByKey(final String key, final int n) {
-        Set<String> shards = new HashSet<>();
-        shards.add(getShardByKey(key));
-        for (int i = 0; shards.size() < n; ++i) {
-            shards.add(getShardByKey(key + i));
+        List<String> shards = new ArrayList<>();
+        List<String> allShards = ring.values().stream().toList();
+        for (int i = allShards.indexOf(getShardByKey(key)); shards.size() < n; ++i) {
+            if (i == allShards.size()) {
+                i = 0;
+            }
+
+            shards.add(allShards.get(i));
         }
 
         return List.copyOf(ring.values());

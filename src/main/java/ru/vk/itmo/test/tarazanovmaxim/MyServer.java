@@ -48,6 +48,9 @@ public class MyServer extends HttpServer {
     private static final String REDIRECT_HEADER = "Redirected: ";
     private static final String TIMESTAMP_HEADER = "Timestamp: ";
     private static final Logger logger = LoggerFactory.getLogger(MyServer.class);
+    private static final int CODE_OK = 200;
+    private static final int CODE_INTERNAL_ERROR = 500;
+    private static final int RESPONSE_TIMEOUT = 500;
     private final ReferenceDao dao;
     private final ExecutorService executorService;
     private final Map<String, HttpClient> httpClients = new HashMap<>();
@@ -125,7 +128,7 @@ public class MyServer extends HttpServer {
     private Response shardLookup(final Request request, final String shard) {
         Response response;
         try {
-            response = httpClients.get(shard).invoke(request, 500);
+            response = httpClients.get(shard).invoke(request, RESPONSE_TIMEOUT);
         } catch (Exception e) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
@@ -135,7 +138,7 @@ public class MyServer extends HttpServer {
     private Response getGoodGet(List<Response> responses) {
         List<Response> responses200 = new ArrayList<>();
         for (final var resp : responses) {
-            if (resp.getStatus() == 200) {
+            if (resp.getStatus() == CODE_OK) {
                 responses200.addLast(resp);
             }
         }
@@ -182,7 +185,7 @@ public class MyServer extends HttpServer {
             List<String> shardToRequest = shards.getNShardByKey(id, fromV);
             for (String sendTo : shardToRequest) {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
+                if (answer.getStatus() < CODE_INTERNAL_ERROR) {
                     responses.addLast(answer);
                 }
             }
@@ -212,7 +215,7 @@ public class MyServer extends HttpServer {
             List<String> shardToRequest = shards.getNShardByKey(id, ackV);
             for (String sendTo : shardToRequest) {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
+                if (answer.getStatus() < CODE_INTERNAL_ERROR) {
                     responses.addLast(answer);
                 }
                 if (responses.size() == ackV) {
@@ -242,7 +245,7 @@ public class MyServer extends HttpServer {
             List<String> shardToRequest = shards.getNShardByKey(id, ackV);
             for (String sendTo : shardToRequest) {
                 Response answer = sendTo.equals(selfUrl) ? responseLocal(request, id) : shardLookup(request, sendTo);
-                if (answer.getStatus() < 500) {
+                if (answer.getStatus() < CODE_INTERNAL_ERROR) {
                     responses.addLast(answer);
                 }
                 if (responses.size() == ackV) {
@@ -278,19 +281,19 @@ public class MyServer extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
-                    logger.error("IOException in handleRequest->executorService.execute(): "
-                            + e + " M" + request.getMethod());
+                    logger.error("IOException in handleRequest->executorService.execute(): {} M{}",
+                            e, request.getMethod());
                     sendResponse(
-                        new Response(
-                            e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
-                            Response.EMPTY
-                        ),
-                        session
+                            new Response(
+                                    e.getClass() == IOException.class ? Response.INTERNAL_ERROR : Response.BAD_REQUEST,
+                                    Response.EMPTY
+                            ),
+                            session
                     );
                 }
             });
         } catch (RejectedExecutionException e) {
-            logger.error("RejectedExecutionException in handleRequest: " + request + session);
+            logger.error("RejectedExecutionException in handleRequest: {} {}", request, session);
             sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY), session);
         }
     }
@@ -299,7 +302,7 @@ public class MyServer extends HttpServer {
         try {
             session.sendResponse(response);
         } catch (IOException e) {
-            logger.error("IOException in sendResponse: " + response + session);
+            logger.error("IOException in sendResponse: {} {}", response, session);
         }
     }
 

@@ -41,7 +41,7 @@ import java.util.stream.Stream;
 @ParameterizedTest
 @ArgumentsSource(ServiceTest.ServiceList.class)
 @ExtendWith(ServiceTest.ServiceList.class)
-@Timeout(value = 1, unit = TimeUnit.HOURS)
+@Timeout(value = 1, unit = TimeUnit.MINUTES)
 public @interface ServiceTest {
     int stage();
     int clusterSize() default 1;

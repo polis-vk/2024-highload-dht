@@ -1,6 +1,6 @@
 base_url = "/v0/entity?"
 headers = {}
-headers["Host"] = "localhost:8080"
+headers["Host"] = "localhost:8083"
 wrk.port = 8080
 function build_query_param(param, value)
     return param .. "=" .. value
@@ -34,9 +34,9 @@ end
 request = function()
     --    magic_selector = math.random(0,3)
     --    if magic_selector < 2 then
-    --  return getOneRandom()
+      return getOneRandom()
     --    elseif magic_selector == 3 then
-      return putOneRandom()
+    -- return putOneRandom()
     --    else
     --        return deleteOneRandom()
     --    end

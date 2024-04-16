@@ -2,6 +2,7 @@ package ru.vk.itmo.test.kovalevigor.server.strategy.decorators;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.SelectorThread;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerFull;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
@@ -67,8 +68,9 @@ public class ServerExecutorStrategyDecorator extends ServerStrategyDecorator imp
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
+    public Response handleRequest(Request request, HttpSession session) {
         executors.get(Thread.currentThread()).execute(new ServerTask(request, session, super::handleRequest));
+        return null;
     }
 
     @Override

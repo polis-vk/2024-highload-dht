@@ -2,6 +2,7 @@ package ru.vk.itmo.test.kovalevigor.server.strategy.decorators;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
 
 import java.io.IOException;
@@ -15,8 +16,8 @@ public class ServerStrategyDecorator implements ServerStrategy {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        serverStrategy.handleRequest(request, session);
+    public Response handleRequest(Request request, HttpSession session) throws IOException {
+        return serverStrategy.handleRequest(request, session);
     }
 
     @Override

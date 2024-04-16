@@ -8,11 +8,11 @@ import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public class SStorageDumper extends Dumper {
+public abstract class SStorageDumper<T extends Entry<MemorySegment>> extends Dumper {
 
     protected final IndexDumper indexDumper;
-    private final SegmentWriter keysWriter;
-    private final SegmentWriter valuesWriter;
+    protected final SegmentWriter keysWriter;
+    protected final SegmentWriter valuesWriter;
 
     protected SStorageDumper(
             final SizeInfo sizeInfo,
@@ -69,20 +69,7 @@ public class SStorageDumper extends Dumper {
         indexDumper.writeHead();
     }
 
-    public void writeEntry(final Entry<MemorySegment> entry) {
-        final long keyOffset = keysWriter.offset;
-        keysWriter.writeMemorySegment(entry.key());
-
-        final long valueOffset;
-        final MemorySegment valueSegment = entry.value();
-        if (valueSegment == null) {
-            valueOffset = -1;
-        } else {
-            valueOffset = valuesWriter.offset;
-            valuesWriter.writeMemorySegment(valueSegment);
-        }
-        indexDumper.writeEntry(keyOffset, valueOffset);
-    }
+    public abstract void writeEntry(final T entry);
 
     private void deleteSupportFiles() throws IOException {
         try {

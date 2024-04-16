@@ -2,6 +2,7 @@ package ru.vk.itmo.test.kovalevigor.server.strategy;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.util.Responses;
 
 import java.io.IOException;
@@ -10,8 +11,9 @@ import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.sendResponseWit
 
 public class ServerRejectStrategy implements ServerStrategy {
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public Response handleRequest(Request request, HttpSession session) throws IOException {
         handleDefault(request, session);
+        return null;
     }
 
     @Override

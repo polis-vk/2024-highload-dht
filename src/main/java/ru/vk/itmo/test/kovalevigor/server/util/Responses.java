@@ -9,7 +9,8 @@ public enum Responses {
     BAD_REQUEST(Response.BAD_REQUEST),
     NOT_ALLOWED(Response.METHOD_NOT_ALLOWED),
     INTERNAL_ERROR(Response.INTERNAL_ERROR),
-    SERVICE_UNAVAILABLE(Response.SERVICE_UNAVAILABLE);
+    SERVICE_UNAVAILABLE(Response.SERVICE_UNAVAILABLE),
+    NOT_ENOUGH_REPLICAS("504 Not Enough Replicas");
 
     private final String responseCode;
 

@@ -2,8 +2,12 @@ package ru.vk.itmo.test.kovalevigor.server.util;
 
 import one.nio.http.Request;
 
+import java.util.function.Function;
+
 public enum Parameters {
-    ID("id");
+    ID("id"),
+    ACK("ack"),
+    FROM("from");
 
     private final String name;
 
@@ -11,7 +15,28 @@ public enum Parameters {
         this.name = name + "=";
     }
 
+    public static <T> T getParameter(
+            Request request,
+            Parameters parameter,
+            Function<String, T> conv,
+            T defaultValue
+    ) {
+        String value = request.getParameter(parameter.name);
+        if (value == null) {
+            return defaultValue;
+        }
+        return conv.apply(request.getParameter(parameter.name));
+    }
+
+    public static <T> T getParameter(
+            Request request,
+            Parameters parameter,
+            Function<String, T> conv
+    ) {
+        return getParameter(request, parameter, conv, null);
+    }
+
     public static String getParameter(Request request, Parameters parameter) {
-        return request.getParameter(parameter.name);
+        return getParameter(request, parameter, Function.identity());
     }
 }

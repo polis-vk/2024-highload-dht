@@ -31,6 +31,7 @@ public class ServerTask implements Runnable {
         try {
             task.accept(request, session);
         } catch (IOException ioException) {
+            log.log(Level.SEVERE, "IO while executing", ioException);
             closeSession(session, ioException);
         } catch (Exception exception) {
             log.log(Level.SEVERE, "Exception while executing", exception);

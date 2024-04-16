@@ -9,7 +9,7 @@ import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
 
 import java.io.IOException;
-import java.util.logging.Level;
+import java.net.ConnectException;
 
 import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
 
@@ -23,17 +23,16 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public Response handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            Response response = remoteClient.invoke(new Request(request), REMOTE_TIMEOUT);
-            session.sendResponse(new Response(response));
-        } catch (HttpException | PoolException e) {
-            log.log(Level.SEVERE, "Exception while redirection", e);
-            session.sendError(Response.SERVICE_UNAVAILABLE, null);
+            Response response = remoteClient.invoke(request, REMOTE_TIMEOUT);
+            return new Response(response);
+        } catch (HttpException | PoolException | ConnectException e) {
+            log.severe("Exception while redirection");
         } catch (InterruptedException e) {
-            session.sendError(Response.INTERNAL_ERROR, null);
             Thread.currentThread().interrupt();
         }
+        return null;
     }
 
     @Override

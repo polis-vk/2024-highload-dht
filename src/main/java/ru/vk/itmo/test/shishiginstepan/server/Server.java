@@ -113,62 +113,73 @@ public class Server extends HttpServer {
             Integer ack = rawAck == null ? null : Integer.parseInt(rawAck);
             Integer from = rawFrom == null ? null : Integer.parseInt(rawFrom);
 
+            final boolean innerRequest = request.getHeader(INNER_REQUEST_HEADER) == null;
             switch (request.getMethod()) {
-                case Request.METHOD_GET -> {
-                    if (request.getHeader(INNER_REQUEST_HEADER) == null) {
-                        dao.getByQuorum(key, ack, from, session);
-                    } else {
-                        EntryWithTimestamp<MemorySegment> entry = dao.getLocal(key);
-                        Response response;
-                        if (entry.value() == null) {
-                            response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
-                            session.sendResponse(
-                                    response
-                            );
-                            return;
-                        }
-                        response = new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
-                        response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
-                        session.sendResponse(response);
-                    }
-                }
-                case Request.METHOD_PUT -> {
-                    if (request.getHeader(INNER_REQUEST_HEADER) == null) {
-                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
-                                key,
-                                MemorySegment.ofArray(request.getBody()),
-                                System.currentTimeMillis()
-                        );
-                        dao.upsertByQuorum(entry, ack, from, session);
-                    } else {
-                        Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
-                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
-                                key,
-                                MemorySegment.ofArray(request.getBody()), timestamp
-                        );
-                        dao.upsertLocal(entry);
-                        session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
-                    }
-                }
-                case Request.METHOD_DELETE -> {
-                    if (request.getHeader(INNER_REQUEST_HEADER) == null) {
-                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
-                                key,
-                                null,
-                                System.currentTimeMillis()
-                        );
-                        dao.upsertByQuorum(entry, ack, from, session);
-                    } else {
-                        Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
-                        EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(key, null, timestamp);
-                        dao.upsertLocal(entry);
-                        session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
-                    }
-                }
+                case Request.METHOD_GET -> handleGet(session, innerRequest, key, ack, from);
+                case Request.METHOD_PUT -> handlePut(request, session, innerRequest, key, ack, from);
+                case Request.METHOD_DELETE -> handleDelete(request, session, innerRequest, key, ack, from);
                 default -> session.sendResponse(notAllowed());
             }
         }
+    }
+
+    private void handleDelete(Request request, HttpSession session, boolean innerRequest, MemorySegment key, Integer ack, Integer from) throws IOException {
+        if (innerRequest) {
+            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
+                    key,
+                    null,
+                    System.currentTimeMillis()
+            );
+            dao.upsertByQuorum(entry, ack, from, session);
+        } else {
+            Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
+            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(key, null, timestamp);
+            dao.upsertLocal(entry);
+            session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+        }
+    }
+
+    private void handlePut(Request request, HttpSession session, boolean innerRequest, MemorySegment key, Integer ack, Integer from) throws IOException {
+        if (innerRequest) {
+            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
+                    key,
+                    MemorySegment.ofArray(request.getBody()),
+                    System.currentTimeMillis()
+            );
+            dao.upsertByQuorum(entry, ack, from, session);
+        } else {
+            Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
+            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
+                    key,
+                    MemorySegment.ofArray(request.getBody()), timestamp
+            );
+            dao.upsertLocal(entry);
+            session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+        }
+    }
+
+    private void handleGet(HttpSession session, boolean innerRequest, MemorySegment key, Integer ack, Integer from) throws IOException {
+        if (innerRequest) {
+            dao.getByQuorum(key, ack, from, session);
+        } else {
+            handleRemoteGet(session, key);
+        }
+    }
+
+    private void handleRemoteGet(HttpSession session, MemorySegment key) throws IOException {
+        EntryWithTimestamp<MemorySegment> entry = dao.getLocal(key);
+        Response response;
+        if (entry.value() == null) {
+            response = new Response(Response.NOT_FOUND, Response.EMPTY);
+            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+            session.sendResponse(
+                    response
+            );
+            return;
+        }
+        response = new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
+        response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+        session.sendResponse(response);
     }
 
     public Response notAllowed() {

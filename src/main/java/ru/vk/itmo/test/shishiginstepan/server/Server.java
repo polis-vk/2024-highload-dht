@@ -114,6 +114,7 @@ public class Server extends HttpServer {
             Integer from = rawFrom == null ? null : Integer.parseInt(rawFrom);
 
             final boolean innerRequest = request.getHeader(INNER_REQUEST_HEADER) == null;
+
             switch (request.getMethod()) {
                 case Request.METHOD_GET -> handleGet(session, innerRequest, key, ack, from);
                 case Request.METHOD_PUT -> handlePut(request, session, innerRequest, key, ack, from);
@@ -123,7 +124,14 @@ public class Server extends HttpServer {
         }
     }
 
-    private void handleDelete(Request request, HttpSession session, boolean innerRequest, MemorySegment key, Integer ack, Integer from) throws IOException {
+    private void handleDelete(
+            Request request,
+            HttpSession session,
+            boolean innerRequest,
+            MemorySegment key,
+            Integer ack,
+            Integer from
+    ) throws IOException {
         if (innerRequest) {
             EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
                     key,
@@ -139,7 +147,14 @@ public class Server extends HttpServer {
         }
     }
 
-    private void handlePut(Request request, HttpSession session, boolean innerRequest, MemorySegment key, Integer ack, Integer from) throws IOException {
+    private void handlePut(
+            Request request,
+            HttpSession session,
+            boolean innerRequest,
+            MemorySegment key,
+            Integer ack,
+            Integer from
+    ) throws IOException {
         if (innerRequest) {
             EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
                     key,
@@ -158,7 +173,12 @@ public class Server extends HttpServer {
         }
     }
 
-    private void handleGet(HttpSession session, boolean innerRequest, MemorySegment key, Integer ack, Integer from) throws IOException {
+    private void handleGet(
+            HttpSession session, boolean innerRequest,
+            MemorySegment key,
+            Integer ack,
+            Integer from
+    ) throws IOException {
         if (innerRequest) {
             dao.getByQuorum(key, ack, from, session);
         } else {

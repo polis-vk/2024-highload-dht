@@ -215,7 +215,8 @@ public class DistributedDao {
         }
     }
 
-    private void upsertRemoteASync(EntryWithTimestamp<MemorySegment> entry, String node, MergeResultHandler resultHandler) {
+    private void upsertRemoteASync(EntryWithTimestamp<MemorySegment> entry, String node,
+                                   MergeResultHandler resultHandler) {
         HttpRequest.Builder requestBuilder = request(node, segmentToString(entry.key()))
                 .header(TIMESTAMP_HEADER, String.valueOf(entry.timestamp()));
         HttpRequest request;

@@ -6,6 +6,7 @@ import one.nio.http.Response;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 class MergeResultHandler {
@@ -14,6 +15,8 @@ class MergeResultHandler {
     private final AtomicInteger successCounter;
 
     private final ConcurrentSkipListSet<ResponseWrapper> results;
+
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
 
     MergeResultHandler(Integer ack, Integer from, HttpSession session) {
@@ -25,6 +28,9 @@ class MergeResultHandler {
 
 
     public synchronized void add(ResponseWrapper response) {
+        if (closed.get()){
+            return;
+        }
         int total = this.totalResponseCounter.decrementAndGet();
         int success;
         if ((response.status() == HttpURLConnection.HTTP_OK
@@ -34,10 +40,12 @@ class MergeResultHandler {
             success = successCounter.decrementAndGet();
             results.add(response);
             if (success == 0) {
+                closed.set(true);
                 sendResponse();
             }
         }
         if (total == 0) {
+            closed.set(true);
             sendError();
         }
 
@@ -54,6 +62,7 @@ class MergeResultHandler {
                     )
             );
         } catch (IOException e) {
+            System.out.println(e);
             session.close();
         }
     }
@@ -62,6 +71,7 @@ class MergeResultHandler {
         try {
             session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         } catch (IOException e) {
+            System.out.println(e);
             session.close();
         }
     }

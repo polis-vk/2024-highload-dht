@@ -35,10 +35,10 @@ public class Server extends HttpServer {
         this.dao = dao;
         //TODO подумать какое значение будет разумным
         BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100);
-        int processors = Runtime.getRuntime().availableProcessors()/2;
+        int processors = Runtime.getRuntime().availableProcessors() / 2;
         this.executor = new ThreadPoolExecutor(
-                processors/2,
-                processors/2,
+                processors / 2,
+                processors / 2,
                 32,
                 TimeUnit.SECONDS,
                 requestQueue,
@@ -51,7 +51,7 @@ public class Server extends HttpServer {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.reusePort = true;
         acceptorConfig.port = serviceConfig.selfPort();
-        serverConfig.selectors = Runtime.getRuntime().availableProcessors()/2;
+        serverConfig.selectors = Runtime.getRuntime().availableProcessors() / 2;
 
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
@@ -62,14 +62,14 @@ public class Server extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         LocalDateTime requestExpirationDate = LocalDateTime.now(ServerZoneId).plus(defaultTimeout);
         try {
-            executor.execute(() -> {
-                try {
-                    handleRequestWithExceptions(request, session, requestExpirationDate);
-                } catch (IOException exceptionHandlingException) {
-                    logger.error(exceptionHandlingException.initCause(exceptionHandlingException));
-                    session.scheduleClose();
-                }
-            });
+
+            try {
+                handleRequestWithExceptions(request, session, requestExpirationDate);
+            } catch (IOException exceptionHandlingException) {
+                logger.error(exceptionHandlingException.initCause(exceptionHandlingException));
+                session.scheduleClose();
+            }
+
         } catch (RejectedExecutionException e) {
             logger.error(e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -115,16 +115,16 @@ public class Server extends HttpServer {
                     } else {
                         EntryWithTimestamp<MemorySegment> entry = dao.getLocal(key);
                         Response response;
-                        if (entry.value()==null) {
+                        if (entry.value() == null) {
                             response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                            response.addHeader(TIMESTAMP_HEADER+entry.timestamp());
+                            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
                             session.sendResponse(
-                                   response
+                                    response
                             );
                             return;
                         }
-                        response = new Response(Response.OK,entry.value().toArray(ValueLayout.JAVA_BYTE));
-                        response.addHeader(TIMESTAMP_HEADER+entry.timestamp());
+                        response = new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
+                        response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
                         session.sendResponse(response);
                     }
                 }

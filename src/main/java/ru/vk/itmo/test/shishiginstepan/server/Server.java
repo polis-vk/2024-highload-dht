@@ -102,11 +102,15 @@ public class Server extends HttpServer {
             logger.info("Too bad request timing, skipped");
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         } else {
+            String rawKey = request.getParameter("id=");
+            if (rawKey == null || rawKey.isEmpty()) {
+                throw new HttpException("parameter id is unfilled");
+            }
             MemorySegment key = MemorySegment.ofArray(request.getParameter("id=").getBytes(StandardCharsets.UTF_8));
             String rawAck = request.getParameter("ack=");
             String rawFrom = request.getParameter("from=");
-            Integer ack = rawAck == null ? 0 : Integer.parseInt(rawAck);
-            Integer from = rawFrom == null ? 0 : Integer.parseInt(rawFrom);
+            Integer ack = rawAck == null ? null : Integer.parseInt(rawAck);
+            Integer from = rawFrom == null ? null : Integer.parseInt(rawFrom);
 
             switch (request.getMethod()) {
                 case Request.METHOD_GET -> {

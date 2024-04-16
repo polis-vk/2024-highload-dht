@@ -42,7 +42,7 @@ public class DistributedDao {
         this.localDao = localDao;
         this.selfUrl = selfUrl;
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(100))
+                .connectTimeout(Duration.ofMillis(300))
                 .executor(Executors.newFixedThreadPool(1))
                 .version(HttpClient.Version.HTTP_1_1)
                 .executor(remoteExecutor)
@@ -112,10 +112,10 @@ public class DistributedDao {
     public void getByQuorum(MemorySegment key, Integer ack, Integer from, HttpSession session) {
         Integer shouldAck = ack;
         Integer requestFrom = from;
-        if (shouldAck == 0) {
+        if (shouldAck == null) {
             shouldAck = quorum;
         }
-        if (requestFrom == 0) {
+        if (requestFrom == null) {
             requestFrom = totalNodes;
         }
         if (shouldAck > totalNodes || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
@@ -133,7 +133,9 @@ public class DistributedDao {
             if (node.equals(this.selfUrl)) {
                 EntryWithTimestamp<MemorySegment> entry = localDao.get(key);
                 if (entry.value() == null) {
-                    new ResponseWrapper(404, new byte[]{}, entry.timestamp());
+                    resultHandler.add(
+                    new ResponseWrapper(404, new byte[]{}, entry.timestamp())
+                    );
                 } else {
                     resultHandler.add(
                             new ResponseWrapper(200, entry.value().toArray(ValueLayout.JAVA_BYTE), entry.timestamp())
@@ -142,7 +144,7 @@ public class DistributedDao {
 
             } else {
                 HttpRequest request = HttpRequest
-                        .newBuilder(URI.create("http://" + node + BASE_REQUEST_PATH + segmentToString(key)))
+                        .newBuilder(URI.create(node + BASE_REQUEST_PATH + segmentToString(key)))
                         .GET()
                         .header(INNER_HEADER, "1")
                         .timeout(Duration.ofMillis(500))
@@ -150,7 +152,7 @@ public class DistributedDao {
                 CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
                 Future<?> unused = future.whenCompleteAsync((r, e) -> {
                             if (e != null) {
-                                resultHandler.add(new ResponseWrapper(500, null));
+                                resultHandler.add(new ResponseWrapper(500, new byte[]{}));
                                 logger.error(e);
                             } else {
                                 Long timestamp = Long.parseLong(r.headers().firstValue(TIMESTAMP_HEADER).get());
@@ -173,10 +175,10 @@ public class DistributedDao {
     public void upsertByQuorum(EntryWithTimestamp<MemorySegment> entry, Integer ack, Integer from, HttpSession session) {
         Integer shouldAck = ack;
         Integer requestFrom = from;
-        if (shouldAck == 0) {
+        if (shouldAck == null) {
             shouldAck = quorum;
         }
-        if (requestFrom == 0) {
+        if (requestFrom == null) {
             requestFrom = totalNodes;
         }
         if (shouldAck > requestFrom || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
@@ -193,21 +195,27 @@ public class DistributedDao {
         for (var node : nodesToPoll) {
             if (node.equals(this.selfUrl)) {
                 localDao.upsert(entry);
+                Integer status = 201;
+                if (entry.value() == null) {
+                    status = 202;
+                }
                 resultHandler.add(
-                        new ResponseWrapper(202, new byte[]{}, entry.timestamp())
+                        new ResponseWrapper(status, new byte[]{}, entry.timestamp())
                 );
+
             } else {
-                HttpRequest request = HttpRequest
-                        .newBuilder(URI.create("http://" + node + BASE_REQUEST_PATH + segmentToString(entry.key())))
-                        .PUT(HttpRequest.BodyPublishers.ofByteArray(entry.value().toArray(ValueLayout.JAVA_BYTE)))
-                        .header(INNER_HEADER, "1")
-                        .header(TIMESTAMP_HEADER, String.valueOf(entry.timestamp()))
-                        .timeout(Duration.ofMillis(500))
-                        .build();
+                HttpRequest.Builder requestBuilder = request(node, segmentToString(entry.key()))
+                        .header(TIMESTAMP_HEADER, String.valueOf(entry.timestamp()));
+                HttpRequest request;
+                if (entry.value() == null) {
+                    request = requestBuilder.DELETE().build();
+                } else {
+                    request = requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(entry.value().toArray(ValueLayout.JAVA_BYTE))).build();
+                }
                 CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
                 Future<?> unused = future.whenCompleteAsync((r, e) -> {
                     if (e != null) {
-                        resultHandler.add(new ResponseWrapper(500, null));
+                        resultHandler.add(new ResponseWrapper(500, new byte[]{}));
                         logger.error(e);
                     } else {
                         resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
@@ -221,6 +229,13 @@ public class DistributedDao {
     }
 
     public static final class ClusterLimitExceeded extends RuntimeException {
+    }
+
+    private HttpRequest.Builder request(String node, String key) {
+        return HttpRequest
+                .newBuilder(URI.create(node + BASE_REQUEST_PATH + key))
+                .header(INNER_HEADER, "1")
+                .timeout(Duration.ofMillis(500));
     }
 
 }

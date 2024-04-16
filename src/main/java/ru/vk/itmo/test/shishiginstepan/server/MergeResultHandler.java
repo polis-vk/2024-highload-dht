@@ -28,7 +28,7 @@ class MergeResultHandler {
 
 
     public synchronized void add(ResponseWrapper response) {
-        if (closed.get()){
+            if (closed.get()){
             return;
         }
         int total = this.totalResponseCounter.decrementAndGet();
@@ -42,6 +42,7 @@ class MergeResultHandler {
             if (success == 0) {
                 closed.set(true);
                 sendResponse();
+                return;
             }
         }
         if (total == 0) {

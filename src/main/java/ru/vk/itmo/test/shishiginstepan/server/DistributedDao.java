@@ -25,7 +25,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 public class DistributedDao {
 
@@ -123,11 +122,9 @@ public class DistributedDao {
         httpClient.close();
     }
 
-
-
     public void getByQuorum(MemorySegment key, Integer ack, Integer from, HttpSession session) {
-        Integer shouldAck = ack == null? quorum : ack;
-        Integer requestFrom = from == null? totalNodes: from;
+        Integer shouldAck = ack == null ? quorum : ack;
+        Integer requestFrom = from == null ? totalNodes : from;
 
         if (shouldAck > totalNodes || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
@@ -165,7 +162,7 @@ public class DistributedDao {
                         request,
                         HttpResponse.BodyHandlers.ofByteArray()
                 );
-                CompletableFuture unused = future.whenCompleteAsync((r, e) -> {
+                future = future.whenCompleteAsync((r, e) -> {
                             if (e == null) {
                                 Long timestamp = Long.parseLong(r.headers().firstValue(TIMESTAMP_HEADER).get());
                                 resultHandler.add(new ResponseWrapper(r.statusCode(), r.body(), timestamp));
@@ -192,8 +189,8 @@ public class DistributedDao {
             Integer from,
             HttpSession session
     ) {
-        Integer shouldAck = ack == null? quorum : ack;
-        Integer requestFrom = from == null? totalNodes: from;
+        Integer shouldAck = ack == null ? quorum : ack;
+        Integer requestFrom = from == null ? totalNodes : from;
 
         if (shouldAck > requestFrom || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
@@ -232,7 +229,7 @@ public class DistributedDao {
                         request,
                         HttpResponse.BodyHandlers.ofByteArray()
                 );
-                CompletableFuture unused = future.whenCompleteAsync((r, e) -> {
+                future = future.whenCompleteAsync((r, e) -> {
                     if (e == null) {
                         resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
                     } else {

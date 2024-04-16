@@ -70,14 +70,7 @@ public class Server extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         LocalDateTime requestExpirationDate = LocalDateTime.now(ServerZoneId).plus(defaultTimeout);
         try {
-
-            try {
-                handleRequestWithExceptions(request, session, requestExpirationDate);
-            } catch (IOException exceptionHandlingException) {
-                logger.error(exceptionHandlingException.initCause(exceptionHandlingException));
-                session.scheduleClose();
-            }
-
+            handleRequestWithExceptions(request, session, requestExpirationDate);
         } catch (RejectedExecutionException e) {
             logger.error(e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));

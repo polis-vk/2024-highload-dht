@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
@@ -12,7 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.OptionalLong;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 
 public class RedirectService {
 
@@ -20,17 +21,19 @@ public class RedirectService {
     private static int REDIRECT_TIMEOUT;
     @DhtValue("server.connection.timeout.millis:100")
     private static int CONNECTION_TIMEOUT;
-    @DhtValue("server.redirect.pool.size:100")
-    private static int REDIRECT_POOL_SIZE;
-    private final HttpClient client = HttpClient.newBuilder()
-            .executor(Executors.newFixedThreadPool(REDIRECT_POOL_SIZE))
-            .connectTimeout(Duration.ofMillis(CONNECTION_TIMEOUT))
-            .version(HttpClient.Version.HTTP_1_1)
-            .build();
+    private final HttpClient client;
     private static final Logger logger = LoggerFactory.getLogger(RedirectService.class);
 
+    public RedirectService(final Executor asyncExecutor) {
+        this.client = HttpClient.newBuilder()
+                .executor(asyncExecutor)
+                .connectTimeout(Duration.ofMillis(CONNECTION_TIMEOUT))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+    }
+
     @SuppressWarnings("FutureReturnValueIgnored")
-    public void redirect(
+    public void redirectAsync(
             final String url,
             final Request request,
             final ProcessResultHandler handler
@@ -40,6 +43,16 @@ public class RedirectService {
         client.sendAsync(redirectRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .thenApply(this::convert)
                 .whenComplete(handler::add);
+    }
+
+    public void redirectSync(
+            final String url,
+            final Request request,
+            final ProcessResultHandler handler
+    ) throws IOException, InterruptedException {
+        logger.trace("sending redirect to node {}", request.getURI());
+        final HttpRequest redirectRequest = createRequest(url, request);
+        handler.add(convert(client.send(redirectRequest, HttpResponse.BodyHandlers.ofByteArray())));
     }
 
     private ProcessResult convert(final HttpResponse<byte[]> response) {
@@ -71,4 +84,5 @@ public class RedirectService {
     public void close() {
         client.close();
     }
+
 }

@@ -7,16 +7,19 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -34,11 +37,18 @@ import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class DaoHttpServer extends HttpServer {
+
+    @DhtValue("server.use.async:true")
+    private static boolean useAsync;
+    @DhtValue("server.redirect.pool.size:30")
+    private static int REDIRECT_POOL_SIZE;
+
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String SERVER_STOP_PATH = "/stop";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
     private final ExecutorService workerPool;
+    private final ExecutorService redirectPool;
     private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
     private final Balancer balancer;
     private final RedirectService redirectService;
@@ -52,7 +62,8 @@ public class DaoHttpServer extends HttpServer {
         super(config);
         this.dao = dao;
         this.balancer = new Balancer(config.clusterUrls);
-        this.redirectService = new RedirectService();
+        this.redirectPool = Executors.newFixedThreadPool(REDIRECT_POOL_SIZE);
+        this.redirectService = new RedirectService(redirectPool);
         this.selfUrl = config.selfUrl;
         if (config.useWorkers && config.useVirtualThreads) {
             this.workerPool = Executors.newVirtualThreadPerTaskExecutor();
@@ -144,6 +155,9 @@ public class DaoHttpServer extends HttpServer {
             processRequestAck(request, id, handler);
         } catch (final IOException e) {
             logger.error("IOException in send response.");
+        } catch (final InterruptedException e) {
+            logger.error("Interrupted while processing tasks.");
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -151,14 +165,63 @@ public class DaoHttpServer extends HttpServer {
             final Request request,
             final String id,
             final ProcessResultHandler handler
-    ) throws IOException {
+    ) throws IOException, InterruptedException {
         final String[] nodeUrls = balancer.getNodeUrls(id, handler.from());
-        boolean isLocal = false;
+        if (useAsync) {
+            processRequestAckAsync(request, id, handler, nodeUrls);
+        } else {
+            processRequestAckSync(request, id, handler, nodeUrls);
+        }
+    }
+
+    private void processRequestAckSync(
+            final Request request,
+            final String id,
+            final ProcessResultHandler handler,
+            final String[] nodeUrls
+    ) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(nodeUrls.length);
         for (final String url: nodeUrls) {
+            if (url.equals(selfUrl)) {
+                redirectPool.execute(() -> {
+                    try {
+                        handler.add(processRequest(request, handler.method(), id));
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            } else {
+                redirectPool.execute(() -> {
+                    try {
+                        redirectService.redirectSync(url, request, handler);
+                    } catch (final Exception e) {
+                        handler.add(new ProcessResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, Response.EMPTY));
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+        }
+        latch.await();
+        if (handler.isOutcomeSuccess()) {
+            handler.sendResult(handler.outcome.get());
+        } else {
+            handler.sendNotEnoughReplicas();
+        }
+    }
+
+    private void processRequestAckAsync(
+            final Request request,
+            final String id,
+            final ProcessResultHandler handler,
+            final String[] nodeUrls
+    ) {
+        boolean isLocal = false;
+        for (final String url : nodeUrls) {
             if (url.equals(selfUrl)) {
                 isLocal = true;
             } else {
-                redirectService.redirect(url, request, handler);
+                redirectService.redirectAsync(url, request, handler);
             }
         }
         if (isLocal) {
@@ -241,8 +304,12 @@ public class DaoHttpServer extends HttpServer {
         logger.info("server start stop.");
         stopped = true;
         super.stop();
+        redirectService.close();
         if (workerPool != null) {
             gracefulShutdown(workerPool);
+        }
+        if (redirectPool != null) {
+            gracefulShutdown(redirectPool);
         }
         try {
             dao.close();

@@ -5,6 +5,7 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -13,12 +14,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class ProcessResultHandler {
+
+    @DhtValue("server.use.async:true")
+    private static boolean useAsync;
     private static final Logger logger = LoggerFactory.getLogger(ProcessResultHandler.class);
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private final AtomicInteger successes = new AtomicInteger(0);
     private final AtomicInteger fails = new AtomicInteger(0);
     private final AtomicBoolean isClosed = new AtomicBoolean(false);
-    private final AtomicReference<ProcessResult> outcome = new AtomicReference<>(null);
+    public final AtomicReference<ProcessResult> outcome = new AtomicReference<>(null);
     private final HttpSession session;
     private final int method;
     private final int ack;
@@ -41,6 +45,10 @@ public class ProcessResultHandler {
             final int method
     ) {
         this(session, method, 1, 1);
+    }
+
+    public boolean isOutcomeSuccess() {
+        return successes.get() >= ack;
     }
 
     public int method() {
@@ -85,7 +93,9 @@ public class ProcessResultHandler {
                 return;
             }
         }
-        sendResponse(response);
+        if (useAsync) {
+            sendResponse(response);
+        }
     }
 
     private boolean success(final ProcessResult result) {
@@ -103,7 +113,11 @@ public class ProcessResultHandler {
             }
             return isSuccess;
         } else {
-            return status == HttpURLConnection.HTTP_CREATED || status == HttpURLConnection.HTTP_ACCEPTED;
+            if (status == HttpURLConnection.HTTP_CREATED || status == HttpURLConnection.HTTP_ACCEPTED) {
+                outcome.set(result);
+                return true;
+            }
+            return false;
         }
     }
 
@@ -120,6 +134,10 @@ public class ProcessResultHandler {
                 }
             }
         }
+    }
+
+    public void sendNotEnoughReplicas() {
+        sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
     }
 
     public void sendResult(final ProcessResult result) {

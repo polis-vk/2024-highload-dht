@@ -123,15 +123,12 @@ public class DistributedDao {
         httpClient.close();
     }
 
+
+
     public void getByQuorum(MemorySegment key, Integer ack, Integer from, HttpSession session) {
-        Integer shouldAck = ack;
-        Integer requestFrom = from;
-        if (shouldAck == null) {
-            shouldAck = quorum;
-        }
-        if (requestFrom == null) {
-            requestFrom = totalNodes;
-        }
+        Integer shouldAck = ack == null? quorum : ack;
+        Integer requestFrom = from == null? totalNodes: from;
+
         if (shouldAck > totalNodes || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
         }
@@ -142,6 +139,7 @@ public class DistributedDao {
                 );
 
         var resultHandler = new MergeResultHandler(shouldAck, requestFrom, session);
+
         for (var node : nodesToPoll) {
             if (node.equals(this.selfUrl)) {
                 EntryWithTimestamp<MemorySegment> entry = localDao.get(key);
@@ -167,13 +165,13 @@ public class DistributedDao {
                         request,
                         HttpResponse.BodyHandlers.ofByteArray()
                 );
-                Future<?> unused = future.whenCompleteAsync((r, e) -> {
-                            if (e != null) {
-                                resultHandler.add(new ResponseWrapper(500, new byte[]{}));
-                                logger.error(e);
-                            } else {
+                CompletableFuture unused = future.whenCompleteAsync((r, e) -> {
+                            if (e == null) {
                                 Long timestamp = Long.parseLong(r.headers().firstValue(TIMESTAMP_HEADER).get());
                                 resultHandler.add(new ResponseWrapper(r.statusCode(), r.body(), timestamp));
+                            } else {
+                                resultHandler.add(new ResponseWrapper(500, new byte[]{}));
+                                logger.error(e);
                             }
                         },
                         callbackExecutor);
@@ -194,14 +192,9 @@ public class DistributedDao {
             Integer from,
             HttpSession session
     ) {
-        Integer shouldAck = ack;
-        Integer requestFrom = from;
-        if (shouldAck == null) {
-            shouldAck = quorum;
-        }
-        if (requestFrom == null) {
-            requestFrom = totalNodes;
-        }
+        Integer shouldAck = ack == null? quorum : ack;
+        Integer requestFrom = from == null? totalNodes: from;
+
         if (shouldAck > requestFrom || requestFrom > totalNodes || shouldAck == 0 || requestFrom == 0) {
             throw new ClusterLimitExceeded();
         }
@@ -239,12 +232,12 @@ public class DistributedDao {
                         request,
                         HttpResponse.BodyHandlers.ofByteArray()
                 );
-                Future<?> unused = future.whenCompleteAsync((r, e) -> {
-                    if (e != null) {
+                CompletableFuture unused = future.whenCompleteAsync((r, e) -> {
+                    if (e == null) {
+                        resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
+                    } else {
                         resultHandler.add(new ResponseWrapper(500, new byte[]{}));
                         logger.error(e);
-                    } else {
-                        resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
                     }
                 }, callbackExecutor);
             }

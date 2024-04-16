@@ -2,6 +2,7 @@ package ru.vk.itmo.test.shishiginstepan.server;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
+import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -10,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 class MergeResultHandler {
+    private final Logger logger = Logger.getLogger("lsm-db-server");
     private final HttpSession session;
     private final AtomicInteger totalResponseCounter;
     private final AtomicInteger successCounter;
@@ -60,7 +62,7 @@ class MergeResultHandler {
                     )
             );
         } catch (IOException e) {
-            System.out.println(e);
+            logger.error(e);
             session.close();
         }
     }
@@ -69,7 +71,7 @@ class MergeResultHandler {
         try {
             session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         } catch (IOException e) {
-            System.out.println(e);
+            logger.error(e);
             session.close();
         }
     }

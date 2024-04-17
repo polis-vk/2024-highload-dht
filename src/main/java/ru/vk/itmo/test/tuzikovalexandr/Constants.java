@@ -14,7 +14,7 @@ public final class Constants {
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     public static final int SERVER_ERROR = 500;
-    public static final int REQUEST_TIMEOUT = 300;
+    public static final int REQUEST_TIMEOUT = 500;
     public static final Map<Integer, String> HTTP_CODE = Map.of(
             HttpURLConnection.HTTP_OK, Response.OK,
             HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
@@ -26,7 +26,7 @@ public final class Constants {
     public static final String BASE_URL = "http://localhost";
     public static final int BASE_PORT = 8080;
     public static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
-    public static final int NUMBER_OF_VIRTUAL_NODES = 50;
+    public static final int NUMBER_OF_VIRTUAL_NODES = 100;
     public static final String HTTP_TIMESTAMP_HEADER = "X-Timestamp";
     public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
     public static final String HTTP_TERMINATION_HEADER = "X-Termination";

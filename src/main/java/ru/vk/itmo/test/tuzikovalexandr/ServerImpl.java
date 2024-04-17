@@ -27,7 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -51,7 +50,7 @@ public class ServerImpl extends HttpServer {
         this.clusterSize = config.clusterUrls().size();
         this.requestHandler = new RequestHandler(dao);
         this.httpClient = HttpClient.newBuilder()
-                .executor(Executors.newFixedThreadPool(2)).build();
+                .executor(worker.getExecutorService()).build();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -221,7 +220,7 @@ public class ServerImpl extends HttpServer {
                     errorResponseCount.incrementAndGet();
                 }
 
-                if (successResponseCount.get() == ack) {
+                if (successResponseCount.get() >= ack) {
                     result.complete(getResult(request, successResponses));
                 }
 

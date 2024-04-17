@@ -53,7 +53,7 @@ public class MergeDaoMediator extends DaoMediator {
                     thread.setName("Dao-Executor-" + threadCount.getAndIncrement());
                     return thread;
                 },
-                (_, _) -> {
+                (r, t) -> {
                   // ignore, made to not close HttpClient
                 }
         );

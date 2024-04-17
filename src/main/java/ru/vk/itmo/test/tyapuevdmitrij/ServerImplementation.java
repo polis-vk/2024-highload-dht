@@ -53,7 +53,7 @@ public class ServerImplementation extends HttpServer {
 
     private static final int POOL_KEEP_ALIVE_SECONDS = 10;
 
-    private static final int THREAD_POOL_QUEUE_SIZE = 512;
+    private static final int THREAD_POOL_QUEUE_SIZE = 64;
     private static final int INTERNAL_ERROR_STATUS = 500;
 
     private final MemorySegmentDao memorySegmentDao;
@@ -74,7 +74,7 @@ public class ServerImplementation extends HttpServer {
                 THREAD_POOL_SIZE / 2,
                 POOL_KEEP_ALIVE_SECONDS,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
+                new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
                 new CustomThreadFactory("worker", true),
                 new ThreadPoolExecutor.CallerRunsPolicy());
         ((ThreadPoolExecutor) executor).prestartAllCoreThreads();
@@ -85,6 +85,7 @@ public class ServerImplementation extends HttpServer {
                 new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
                 new CustomThreadFactory("proxy-worker", true),
                 new ThreadPoolExecutor.CallerRunsPolicy());
+        ((ThreadPoolExecutor) proxyExecutor).prestartAllCoreThreads();
         this.client = new Client(proxyExecutor);
         this.aggregator = new ThreadPoolExecutor(THREAD_POOL_SIZE / 4,
                 THREAD_POOL_SIZE / 4,
@@ -93,6 +94,7 @@ public class ServerImplementation extends HttpServer {
                 new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
                 new CustomThreadFactory("aggregator", true),
                 new ThreadPoolExecutor.AbortPolicy());
+        ((ThreadPoolExecutor) aggregator).prestartAllCoreThreads();
     }
 
     @Override

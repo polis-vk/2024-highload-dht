@@ -87,8 +87,8 @@ public class ServerImplementation extends HttpServer {
                 new ThreadPoolExecutor.AbortPolicy());
         ((ThreadPoolExecutor) proxyExecutor).prestartAllCoreThreads();
         this.client = new Client(proxyExecutor);
-        this.aggregator = new ThreadPoolExecutor(THREAD_POOL_SIZE / 4,
-                THREAD_POOL_SIZE / 4,
+        this.aggregator = new ThreadPoolExecutor(1,
+                1,
                 POOL_KEEP_ALIVE_SECONDS,
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
@@ -264,7 +264,11 @@ public class ServerImplementation extends HttpServer {
         List<CompletableFuture<Response>> responses = new ArrayList<>(from);
         for (int i = 0; i < from; i++) {
             if (url.get(i).equals(config.selfUrl())) {
-                responses.add(CompletableFuture.completedFuture(handleNodeRequest(request, id, timeNow)));
+                responses.add(CompletableFuture.supplyAsync(() -> handleNodeRequest(request, id, timeNow), executor)
+                        .exceptionally(throwable -> {
+                            LOGGER.error("future exception", throwable);
+                            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                        }));
             } else {
                 client.setUrl(url.get(i));
                 client.setTimeStamp(timeNow);

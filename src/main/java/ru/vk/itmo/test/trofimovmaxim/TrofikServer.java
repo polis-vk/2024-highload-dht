@@ -37,6 +37,7 @@ public class TrofikServer extends HttpServer {
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final Logger log = LoggerFactory.getLogger(TrofikServer.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final int CLIENT_TIMEOUT = 500;
 
     private final ExecutorService executorLocal = Executors.newFixedThreadPool(
             THREADS / 2,
@@ -56,7 +57,7 @@ public class TrofikServer extends HttpServer {
 
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(THREADS))
-                .connectTimeout(Duration.ofMillis(500))
+                .connectTimeout(Duration.ofMillis(CLIENT_TIMEOUT))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
     }

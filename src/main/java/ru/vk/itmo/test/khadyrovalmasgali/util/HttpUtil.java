@@ -7,6 +7,11 @@ import org.slf4j.Logger;
 import java.io.IOException;
 
 public class HttpUtil {
+
+    private HttpUtil() {
+
+    }
+
     public static void sessionSendSafe(HttpSession session, Response r, Logger log) {
         try {
             session.sendResponse(r);

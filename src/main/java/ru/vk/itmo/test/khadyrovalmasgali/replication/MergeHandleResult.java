@@ -38,18 +38,16 @@ public class MergeHandleResult {
                     HttpUtil.sessionSendSafe(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY), log);
                 }
             }
-            if (handleResult != null) {
-                if (handleResult.status() == HttpURLConnection.HTTP_OK
-                        || handleResult.status() == HttpURLConnection.HTTP_CREATED
-                        || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
-                        || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND) {
-                    if (mergedResult.timestamp() <= handleResult.timestamp()) {
-                        mergedResult = handleResult;
-                    }
-                    int get = successCount.incrementAndGet();
-                    if (get == ack) {
-                        HttpUtil.sessionSendSafe(session, new Response(String.valueOf(mergedResult.status()), mergedResult.data()), log);
-                    }
+            if (validateHandleResult(handleResult)) {
+                if (mergedResult.timestamp() <= handleResult.timestamp()) {
+                    mergedResult = handleResult;
+                }
+                int get = successCount.incrementAndGet();
+                if (get == ack) {
+                    HttpUtil.sessionSendSafe(
+                            session,
+                            new Response(String.valueOf(mergedResult.status()), mergedResult.data()),
+                            log);
                 }
             }
             int currentCount = count.incrementAndGet();
@@ -57,5 +55,15 @@ public class MergeHandleResult {
                 HttpUtil.sessionSendSafe(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY), log);
             }
         });
+    }
+
+    private static boolean validateHandleResult(HandleResult handleResult) {
+        if (handleResult == null) {
+            return false;
+        }
+        return handleResult.status() == HttpURLConnection.HTTP_OK
+                || handleResult.status() == HttpURLConnection.HTTP_CREATED
+                || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
+                || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 }

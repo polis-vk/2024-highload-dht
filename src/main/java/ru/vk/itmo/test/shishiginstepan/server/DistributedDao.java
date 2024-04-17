@@ -177,7 +177,10 @@ public class DistributedDao {
                         logger.error(e);
                     }
                 },
-                callbackExecutor).exceptionally((e)->{logger.error(e);return null;});
+                callbackExecutor).exceptionally((e) -> {
+            logger.error(e);
+            return null;
+        });
     }
 
     private String segmentToString(MemorySegment source) {
@@ -232,14 +235,17 @@ public class DistributedDao {
                 request,
                 HttpResponse.BodyHandlers.ofByteArray()
         );
-        CompletableFuture<HttpResponse<byte[]>> unused = future.whenCompleteAsync((r, e) -> {
+        future.whenCompleteAsync((r, e) -> {
             if (e == null) {
                 resultHandler.add(new ResponseWrapper(r.statusCode(), new byte[]{}));
             } else {
                 resultHandler.add(new ResponseWrapper(500, new byte[]{}));
                 logger.error(e);
             }
-        }, callbackExecutor);
+        }, callbackExecutor).exceptionally((e) -> {
+            logger.error(e);
+            return null;
+        });
     }
 
     private void upsertLocalAsync(EntryWithTimestamp<MemorySegment> entry, MergeResultHandler resultHandler) {

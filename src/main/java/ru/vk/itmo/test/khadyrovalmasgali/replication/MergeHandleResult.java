@@ -31,13 +31,7 @@ public class MergeHandleResult {
     @SuppressWarnings("FutureReturnValueIgnored")
     public void add(CompletableFuture<HandleResult> futureHandleResult) {
         futureHandleResult.whenComplete((handleResult, t) -> {
-            if (t != null) {
-                if (t instanceof Exception) {
-                    log.info("Exception in mergeHandleResult", t);
-                } else {
-                    HttpUtil.sessionSendSafe(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY), log);
-                }
-            }
+            checkThrowable(t);
             if (validateHandleResult(handleResult)) {
                 if (mergedResult.timestamp() <= handleResult.timestamp()) {
                     mergedResult = handleResult;
@@ -55,6 +49,16 @@ public class MergeHandleResult {
                 HttpUtil.sessionSendSafe(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY), log);
             }
         });
+    }
+
+    private void checkThrowable(Throwable t) {
+        if (t != null) {
+            if (t instanceof Exception) {
+                log.info("Exception in mergeHandleResult", t);
+            } else {
+                HttpUtil.sessionSendSafe(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY), log);
+            }
+        }
     }
 
     private static boolean validateHandleResult(HandleResult handleResult) {

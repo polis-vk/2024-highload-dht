@@ -6,7 +6,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 
-public class HttpUtil {
+public final class HttpUtil {
 
     private HttpUtil() {
 

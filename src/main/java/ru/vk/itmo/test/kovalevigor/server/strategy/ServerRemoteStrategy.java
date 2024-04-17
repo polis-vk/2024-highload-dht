@@ -41,15 +41,10 @@ public class ServerRemoteStrategy extends ServerRejectStrategy {
     }
 
     @Override
-    public CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session) {
+    public CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session, Executor executor) {
         return httpClient.sendAsync(mapRequest(request), HttpResponse.BodyHandlers.ofByteArray())
                 .orTimeout(REMOTE_TIMEOUT_VALUE, REMOTE_TIMEOUT_TIMEUNIT)
-                .thenApply(ServerRemoteStrategy::mapResponse);
-    }
-
-    @Override
-    public CompletableFuture<Response> handleRequestAsync(Request request, HttpSession session, Executor executor) {
-        return handleRequestAsync(request, session);
+                .thenApplyAsync(ServerRemoteStrategy::mapResponse, executor);
     }
 
     private HttpRequest mapRequest(Request request) {

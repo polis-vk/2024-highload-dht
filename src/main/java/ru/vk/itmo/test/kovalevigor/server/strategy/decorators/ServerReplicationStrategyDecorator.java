@@ -89,7 +89,7 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
                     strategy == this
                             ? super.handleRequestAsync(request, session, executor)
                             : strategy.handleRequestAsync(request, session, executor);
-            future.whenComplete(result::markCompletedFuture);
+            future.whenCompleteAsync(result::markCompletedFuture, executor);
         }
         return result.orTimeout(REMOTE_TIMEOUT_VALUE, TimeUnit.SECONDS);
     }

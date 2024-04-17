@@ -40,7 +40,7 @@ public class ServerSendResponseStrategyDecorator extends ServerStrategyDecorator
             Executor executor
     ) {
         return super.handleRequestAsync(request, session, executor)
-                .whenComplete((response, exception) -> {
+                .whenCompleteAsync((response, exception) -> {
                     if (response == null && exception != null) {
                         if (exception instanceof TimeoutException) {
                             sendErrorWithoutIo(session, Response.GATEWAY_TIMEOUT, "");
@@ -51,7 +51,7 @@ public class ServerSendResponseStrategyDecorator extends ServerStrategyDecorator
                     } else {
                         sendResponse(response, session);
                     }
-                });
+                }, executor);
     }
 
     public void sendResponse(Response response, HttpSession session) {

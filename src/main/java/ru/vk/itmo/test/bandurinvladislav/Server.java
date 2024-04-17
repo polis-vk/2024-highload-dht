@@ -179,7 +179,7 @@ public class Server extends HttpServer {
             CompletableFuture<Void> responseAction = remote.thenAccept(r -> {
                 if (r.getStatus() == HttpURLConnection.HTTP_INTERNAL_ERROR
                         || r.getStatus() == HttpURLConnection.HTTP_GATEWAY_TIMEOUT) {
-                    NetworkUtil.handleTimeout(session, rs, r, ack, from);
+                    NetworkUtil.handleTimeout(session, rs, ack, from);
                 } else {
                     NetworkUtil.handleResponse(session, rs, r, ack, from);
                 }

@@ -44,6 +44,7 @@ public class LsmServerUtil {
         NodeResponse lastValue = null;
         int successfulResponses = 0;
         for (NodeResponse response : responses) {
+            if (response == null) continue;
             final long valueTimestamp = getTimestamp(response);
             if (valueTimestamp > maxTimestamp) {
                 maxTimestamp = valueTimestamp;
@@ -95,6 +96,7 @@ public class LsmServerUtil {
     private static boolean hasNotEnoughReplicas(NodeResponse[] responses, int ack) {
         int successfulResponses = 0;
         for (NodeResponse response : responses) {
+            if (response == null) continue;
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 successfulResponses++;
             }

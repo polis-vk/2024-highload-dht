@@ -84,7 +84,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
                 executor = remoteExecutorService;
             }
 
-            Optional<CompletableFuture<Response>> optionalFuture =  ServerUtils.addTask(supplier, executor, log);
+            Optional<CompletableFuture<Response>> optionalFuture = ServerUtils.addTask(supplier, executor, log);
             optionalFuture.ifPresent(futureResponses::add);
         }
         return futureResponses;

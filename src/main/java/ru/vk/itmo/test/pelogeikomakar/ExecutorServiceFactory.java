@@ -25,9 +25,9 @@ public final class ExecutorServiceFactory {
     }
 
     public static ExecutorService newExecutorService(String threadPrefix,
-                                                     int queuCapasity, int CorePoolSize) {
+                                                     int queuCapasity, int corePoolSize) {
         BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(queuCapasity);
-        ThreadPoolExecutor tpe = new ThreadPoolExecutor(CorePoolSize, CorePoolSize,
+        ThreadPoolExecutor tpe = new ThreadPoolExecutor(corePoolSize, corePoolSize,
                 KEEP_ALIVE_TIME_SEC, UNIT, queue,
                 new ThreadFactory() {
                     private final AtomicInteger id = new AtomicInteger(0);

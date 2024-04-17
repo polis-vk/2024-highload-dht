@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.kislovdanil.dao.sstable;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.kislovdanil.dao.BaseEntry;
+import ru.vk.itmo.test.kislovdanil.dao.Entry;
 import ru.vk.itmo.test.kislovdanil.dao.iterators.DatabaseIterator;
 
 import java.io.IOException;
@@ -193,7 +193,7 @@ public class SSTable implements Comparable<SSTable>, Iterable<Entry<MemorySegmen
     Entry<MemorySegment> readEntry(long index) {
         MemorySegment key = Metadata.readKey(this, index);
         MemorySegment value = Metadata.readValue(this, index);
-        return new BaseEntry<>(key, value);
+        return new BaseEntry<>(key, value, Metadata.readTimestamp(this, index));
     }
 
     public Entry<MemorySegment> find(MemorySegment key) throws IOException {

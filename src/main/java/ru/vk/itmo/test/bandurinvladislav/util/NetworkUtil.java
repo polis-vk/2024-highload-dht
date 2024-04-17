@@ -17,10 +17,9 @@ public class NetworkUtil {
 
     public static boolean isMethodAllowed(Request request) {
         return switch (request.getMethod()) {
-            case Request.METHOD_CONNECT, Request.METHOD_OPTIONS,
-                 Request.METHOD_TRACE, Request.METHOD_HEAD,
-                 Request.METHOD_POST -> false;
-            default -> true;
+            case Request.METHOD_GET, Request.METHOD_PUT,
+                 Request.METHOD_DELETE-> true;
+            default -> false;
         };
     }
 

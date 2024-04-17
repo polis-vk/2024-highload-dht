@@ -41,7 +41,6 @@ public class LocalNode extends VirtualNode {
                 logger.error("Can't get value by key={}", key, e);
                 return new ResultResponse(HttpURLConnection.HTTP_INTERNAL_ERROR, null, 0L);
             }
-            logger.info(entry.toString());
             if (entry.value() == null) {
                 long timestamp = entry.timestamp() == null ? 0L : entry.timestamp();
                 return new ResultResponse(HttpURLConnection.HTTP_NOT_FOUND, null, timestamp);

@@ -90,9 +90,9 @@ public class ShardingDao {
                     countFailures.decrementAndGet();
                 }
 
-                if (countAcks.get() == 0) {
+                if (countAcks.get() <= 0) {
                     waitQuorumFuture.complete(response.get());
-                } else if (countFailures.get() == 0) {
+                } else if (countFailures.get() <= 0) {
                     waitQuorumFuture.completeExceptionally(new FailedSharding());
                 }
             });

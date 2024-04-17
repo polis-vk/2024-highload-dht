@@ -52,6 +52,9 @@ public class MergeDaoMediator extends DaoMediator {
                     Thread thread = new Thread(r);
                     thread.setName("Dao-Executor-" + threadCount.getAndIncrement());
                     return thread;
+                },
+                (_, _) -> {
+                  // ignore, made to not close HttpClient
                 }
         );
         localDaoMediator = new LocalDaoMediator(
@@ -100,7 +103,10 @@ public class MergeDaoMediator extends DaoMediator {
             int currentMediatorIndex = getFirstMediatorIndex(id);
             EntryMerger entryMerger = new EntryMerger(from, ack);
             for (int i = 0; i < from; i++) {
-                daoMediators[currentMediatorIndex].get(request).whenComplete(entryMerger::acceptResult);
+                daoMediators[currentMediatorIndex].get(request).whenCompleteAsync(
+                        entryMerger::acceptResult,
+                        daoExecutor
+                );
                 currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
             }
             return entryMerger.getCompletableFuture();
@@ -116,14 +122,18 @@ public class MergeDaoMediator extends DaoMediator {
                                                  Executor executor) {
         DaoMediator[] mediators = new DaoMediator[urls.size()];
         int cnt = 0;
-        HttpClient httpClient = HttpClient.newBuilder()
-                .executor(executor)
-                .connectTimeout(HTTP_TIMEOUT)
-                .version(HttpClient.Version.HTTP_1_1)
-                .build();
         List<String> tmpList = new ArrayList<>(urls);
         tmpList.sort(String::compareTo);
         for (String url : tmpList) {
+            // create own client for each remote mediator
+            // made to have more independent SelectorManager threads
+            // hypothesis that didn't make things worse,
+            // so I decided to leave it here (｡◕‿‿◕｡)
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .executor(executor)
+                    .connectTimeout(HTTP_TIMEOUT)
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build();
             mediators[cnt] = url.equals(thisUrl) ? localDaoMediator :
                     new RemoteDaoMediator(httpClient, url, HTTP_TIMEOUT);
             cnt++;
@@ -163,7 +173,7 @@ public class MergeDaoMediator extends DaoMediator {
         for (int i = 0; i < from; i++) {
             CompletableFuture<Boolean> res = delete ? daoMediators[currentMediatorIndex].delete(request)
                     : daoMediators[currentMediatorIndex].put(request);
-            res.whenComplete(boolMerger::acceptResult);
+            res.whenCompleteAsync(boolMerger::acceptResult, daoExecutor);
             currentMediatorIndex = (currentMediatorIndex + 1) % daoMediators.length;
         }
         return boolMerger.getCompletableFuture();

@@ -83,7 +83,7 @@ public class DhtServer extends HttpServer {
                 () -> {
                     try {
                         CompletableFuture<TimestampedEntry<MemorySegment>> future = mergeDaoMediator.get(request);
-                        future.whenComplete(
+                        future.whenCompleteAsync(
                                 (entry, ex) -> {
                                     try {
                                         if (entry == null) {
@@ -107,7 +107,7 @@ public class DhtServer extends HttpServer {
                                     } catch (IOException e) {
                                         throw new UncheckedIOException(e);
                                     }
-                                }
+                                }, threadPoolExecutor
                         );
                     } catch (IllegalArgumentException e) {
                         sendBadRequestResponseUnchecked(session);
@@ -123,7 +123,7 @@ public class DhtServer extends HttpServer {
         requestProccessing(id, httpSession,
                 () -> {
                     try {
-                        mergeDaoMediator.put(request).whenComplete(
+                        mergeDaoMediator.put(request).whenCompleteAsync(
                                 (success, ex) -> {
                                     try {
                                         if (success) {
@@ -134,7 +134,7 @@ public class DhtServer extends HttpServer {
                                     } catch (IOException e) {
                                         throw new UncheckedIOException(e);
                                     }
-                                }
+                                }, threadPoolExecutor
                         );
                     } catch (IllegalArgumentException e) {
                         sendBadRequestResponseUnchecked(httpSession);

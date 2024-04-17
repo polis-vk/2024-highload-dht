@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import static ru.vk.itmo.test.emelyanovvitaliy.MergeDaoMediator.FINAL_EXECUTION_HEADER;
 
 public class RemoteDaoMediator extends DaoMediator {
-    protected static final Duration DEFAULT_TIMEOUT = Duration.ofMillis(100);
+    protected static final Duration DEFAULT_TIMEOUT = Duration.ofMillis(250);
     public static final String TIMESTAMP_HEADER = "X-Timestamp";
     protected final HttpClient client;
     protected final String url;

@@ -4,8 +4,8 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.andreycheshev.dao.Dao;
+import ru.vk.itmo.test.andreycheshev.dao.Entry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

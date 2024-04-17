@@ -26,7 +26,7 @@ public class NetworkUtil {
     public static boolean isMethodAllowed(Request request) {
         return switch (request.getMethod()) {
             case Request.METHOD_GET, Request.METHOD_PUT,
-                 Request.METHOD_DELETE-> true;
+                 Request.METHOD_DELETE -> true;
             default -> false;
         };
     }
@@ -34,8 +34,8 @@ public class NetworkUtil {
     public static Response successResponse(List<Response> responses) {
         if (responses == null || responses.isEmpty()) {
             return new Response(Response.INTERNAL_ERROR,
-                        "Unable to create a successful response from the received data."
-                                .getBytes(StandardCharsets.UTF_8));
+                    "Unable to create a successful response from the received data."
+                            .getBytes(StandardCharsets.UTF_8));
         }
         Response response = responses.getFirst();
         long maxTimestamp = getTimestampHeader(response);
@@ -107,6 +107,15 @@ public class NetworkUtil {
                 logger.error("Exception while sending close connection:", e);
                 session.scheduleClose();
             }
+        }
+    }
+
+    public static void handleTimeout(HttpSession session, RequestProcessingState rs, int ack, int from) {
+        rs.getFailedResponseCount().getAndIncrement();
+        if (from - rs.getFailedResponseCount().get() < ack
+                && rs.isResponseSent().compareAndSet(false, true)) {
+            NetworkUtil.trySendResponse(session,
+                    new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         }
     }
 }

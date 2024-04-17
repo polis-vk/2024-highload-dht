@@ -177,19 +177,13 @@ public class Server extends HttpServer {
                     .completeOnTimeout(
                             new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY), 100, TimeUnit.MILLISECONDS);
             CompletableFuture<Void> responseAction = remote.thenAccept(r -> {
-                if ((r.getStatus() == HttpURLConnection.HTTP_INTERNAL_ERROR
-                        || r.getStatus() == HttpURLConnection.HTTP_GATEWAY_TIMEOUT)) {
-                    rs.getFailedResponseCount().getAndIncrement();
-                    if (from - rs.getFailedResponseCount().get() < ack
-                            && rs.responseSent.compareAndSet(false, true)) {
-                        NetworkUtil.trySendResponse(session,
-                                new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                    }
+                if (r.getStatus() == HttpURLConnection.HTTP_INTERNAL_ERROR
+                        || r.getStatus() == HttpURLConnection.HTTP_GATEWAY_TIMEOUT) {
+                    NetworkUtil.handleTimeout(session, rs, r, ack, from);
                 } else {
                     NetworkUtil.handleResponse(session, rs, r, ack, from);
                 }
             });
-
         }
     }
 

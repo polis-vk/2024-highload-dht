@@ -11,8 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.pavelemelyanov.dao.Dao;
+import ru.vk.itmo.test.pavelemelyanov.dao.EntryWithTimestamp;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -45,8 +47,11 @@ public class MyServer extends HttpServer {
     private final String selfUrl;
     private final int clusterSize;
 
-    public MyServer(ServiceConfig config, Dao dao, ExecutorServiceWrapper worker,
-                      ConsistentHashing shards) throws IOException {
+    public MyServer(
+            ServiceConfig config,
+            Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao,
+            ExecutorServiceWrapper worker,
+            ConsistentHashing shards) throws IOException {
         super(createServerConfig(config));
         this.selfUrl = config.selfUrl();
         this.shards = shards;

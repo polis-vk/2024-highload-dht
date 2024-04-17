@@ -14,9 +14,9 @@ import java.nio.charset.StandardCharsets;
 import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.HTTP_TIMESTAMP_HEADER;
 
 public class RequestHandler {
-    private final Dao dao;
+    private final Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao;
 
-    public RequestHandler(Dao dao) {
+    public RequestHandler(Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao) {
         this.dao = dao;
     }
 

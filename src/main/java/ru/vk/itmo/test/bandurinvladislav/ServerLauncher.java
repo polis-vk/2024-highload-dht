@@ -32,9 +32,7 @@ public final class ServerLauncher {
         for (Map.Entry<Integer, String> entry : nodes.entrySet()) {
             int port = entry.getKey();
             String url = entry.getValue();
-            Path path = Path.of("/home/vbandurin/github/tmp/db/" + port);
-            Files.createDirectories(path);
-//            Path path = Files.createTempDirectory("tmp-db-" + port);
+            Path path = Files.createTempDirectory("tmp-db-" + port);
             ServiceConfig serviceConfig = new ServiceConfig(port,
                     url,
                     clusterUrls,

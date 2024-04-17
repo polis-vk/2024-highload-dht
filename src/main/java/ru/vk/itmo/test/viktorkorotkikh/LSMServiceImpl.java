@@ -5,9 +5,9 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
+import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -33,7 +33,7 @@ public class LSMServiceImpl implements Service {
     private final ServiceConfig serviceConfig;
     private LSMServerImpl httpServer;
     private boolean isRunning;
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao;
     private ExecutorService executorService;
     private final ConsistentHashingManager consistentHashingManager;
     private HttpClient clusterClient;
@@ -98,7 +98,7 @@ public class LSMServiceImpl implements Service {
 
     private static LSMServerImpl createServer(
             ServiceConfig serviceConfig,
-            Dao<MemorySegment, Entry<MemorySegment>> dao,
+            Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao,
             ExecutorService executorService,
             ConsistentHashingManager consistentHashingManager,
             HttpClient clusterClient
@@ -106,7 +106,7 @@ public class LSMServiceImpl implements Service {
         return new LSMServerImpl(serviceConfig, dao, executorService, consistentHashingManager, clusterClient);
     }
 
-    private static Dao<MemorySegment, Entry<MemorySegment>> createLSMDao(Path workingDir) {
+    private static Dao<MemorySegment, TimestampedEntry<MemorySegment>> createLSMDao(Path workingDir) {
         Config daoConfig = new Config(
                 workingDir,
                 FLUSH_THRESHOLD
@@ -132,7 +132,7 @@ public class LSMServiceImpl implements Service {
         return executor;
     }
 
-    private static void closeLSMDao(Dao<MemorySegment, Entry<MemorySegment>> dao) {
+    private static void closeLSMDao(Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao) {
         if (dao == null) return;
         try {
             dao.close();
@@ -211,7 +211,7 @@ public class LSMServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 4)
     public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

@@ -262,7 +262,11 @@ public class ServerImplementation extends HttpServer {
         List<CompletableFuture<Response>> responses = new ArrayList<>(from);
         for (int i = 0; i < from; i++) {
             if (url.get(i).equals(config.selfUrl())) {
-                responses.add(CompletableFuture.supplyAsync(() -> handleNodeRequest(request, id, timeNow), executor));
+                responses.add(CompletableFuture.supplyAsync(() -> handleNodeRequest(request, id, timeNow), executor)
+                        .exceptionally(throwable -> {
+                            LOGGER.error("future exception", throwable);
+                            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                        }));
             } else {
                 client.setUrl(url.get(i));
                 client.setTimeStamp(timeNow);

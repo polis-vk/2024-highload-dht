@@ -88,7 +88,7 @@ public class NetworkUtil {
             rs.getResponses().add(r);
             if (rs.getResponses().size() >= ack
                     && rs.isResponseSent().compareAndSet(false, true)) {
-                trySendResponse(session, NetworkUtil.successResponse(rs.getResponses()));
+                trySendResponse(session, successResponse(rs.getResponses()));
             } else if (from - rs.getFailedResponseCount().get() < ack) {
                 trySendResponse(session, new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
             }

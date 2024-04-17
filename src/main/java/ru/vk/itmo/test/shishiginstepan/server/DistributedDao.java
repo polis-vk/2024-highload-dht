@@ -41,7 +41,7 @@ public class DistributedDao {
             new CustomThreadFactory("callback-workers")
     );
     private final ExecutorService remoteExecutor = Executors.newFixedThreadPool(
-            Runtime.getRuntime().availableProcessors() / 2,
+            Runtime.getRuntime().availableProcessors() / 2 + 1,
             new CustomThreadFactory("remote-workers")
     );
 
@@ -168,7 +168,7 @@ public class DistributedDao {
                 request,
                 HttpResponse.BodyHandlers.ofByteArray()
         );
-        CompletableFuture<HttpResponse<byte[]>> unused = future.whenCompleteAsync((r, e) -> {
+        future.whenCompleteAsync((r, e) -> {
                     if (e == null) {
                         Long timestamp = Long.parseLong(r.headers().firstValue(TIMESTAMP_HEADER).get());
                         resultHandler.add(new ResponseWrapper(r.statusCode(), r.body(), timestamp));
@@ -177,7 +177,7 @@ public class DistributedDao {
                         logger.error(e);
                     }
                 },
-                callbackExecutor);
+                callbackExecutor).exceptionally((e)->{logger.error(e);return null;});
     }
 
     private String segmentToString(MemorySegment source) {

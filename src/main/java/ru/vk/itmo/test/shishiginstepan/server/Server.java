@@ -45,8 +45,8 @@ public class Server extends HttpServer {
         BlockingQueue<Runnable> requestQueue = new ArrayBlockingQueue<>(100);
         int processors = Runtime.getRuntime().availableProcessors() / 2;
         this.executor = new ThreadPoolExecutor(
-                processors / 2,
-                processors / 2,
+                processors + 1,
+                processors + 1,
                 32,
                 TimeUnit.SECONDS,
                 requestQueue,

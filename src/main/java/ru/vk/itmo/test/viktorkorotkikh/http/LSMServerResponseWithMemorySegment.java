@@ -12,10 +12,11 @@ public class LSMServerResponseWithMemorySegment extends Response {
     private static final int PROTOCOL_HEADER_LENGTH = 11;
     private final MemorySegment memorySegmentBody;
 
-    public LSMServerResponseWithMemorySegment(String resultCode, MemorySegment body) {
+    public LSMServerResponseWithMemorySegment(String resultCode, MemorySegment body, String timestampHeader) {
         super(resultCode);
         this.memorySegmentBody = body;
         addHeader("Content-Length: " + memorySegmentBody.byteSize());
+        addHeader(timestampHeader);
     }
 
     @Override

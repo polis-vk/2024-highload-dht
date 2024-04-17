@@ -76,7 +76,7 @@ public class ServerImplementation extends HttpServer {
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE / 2),
                 new CustomThreadFactory("worker", true),
-                new ThreadPoolExecutor.CallerRunsPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
         ((ThreadPoolExecutor) executor).prestartAllCoreThreads();
         this.proxyExecutor = new ThreadPoolExecutor(THREAD_POOL_SIZE / 2,
                 THREAD_POOL_SIZE / 2,
@@ -84,7 +84,7 @@ public class ServerImplementation extends HttpServer {
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(THREAD_POOL_QUEUE_SIZE),
                 new CustomThreadFactory("proxy-worker", true),
-                new ThreadPoolExecutor.CallerRunsPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
         ((ThreadPoolExecutor) proxyExecutor).prestartAllCoreThreads();
         this.client = new Client(proxyExecutor);
         this.aggregator = new ThreadPoolExecutor(THREAD_POOL_SIZE / 4,

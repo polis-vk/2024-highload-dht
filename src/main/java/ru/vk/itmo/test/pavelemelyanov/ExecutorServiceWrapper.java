@@ -7,8 +7,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static ru.vk.itmo.test.pavelemelyanov.ExecutorServiceConfig.KEEP_ALIVE_TIME;
-
 public class ExecutorServiceWrapper {
     public static final int TERMINATION_TIMEOUT = 60;
     private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
@@ -19,9 +17,10 @@ public class ExecutorServiceWrapper {
         workingPool = new ThreadPoolExecutor(
                 ExecutorServiceConfig.CORE_POOL_SIZE,
                 ExecutorServiceConfig.MAX_CORE_POOL_SIZE,
-                KEEP_ALIVE_TIME,
-                TimeUnit.MILLISECONDS,
+                ExecutorServiceConfig.KEEP_ALIVE_TIME,
+                ExecutorServiceConfig.UNIT,
                 ExecutorServiceConfig.queue,
+                ExecutorServiceConfig.threadFactory,
                 ExecutorServiceConfig.HANDLER
         );
     }

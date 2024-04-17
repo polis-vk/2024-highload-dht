@@ -5,6 +5,7 @@ import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.pavelemelyanov.dao.ReferenceDao;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +14,6 @@ import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.NUMBER_OF_VIRTUAL_NODES;
 
 public final class ServerStarter {
     private static final String URL = "http://localhost";
-    private static final Path WORKING_DIR = Path.of("./data2/");
     public static final long FLUSHING_THRESHOLD_BYTES = 1024 * 1024;
     private static final int BASE_PORT = 8080;
     private static final int CLUSTER_SIZE = 3;
@@ -28,13 +28,15 @@ public final class ServerStarter {
         ExecutorServiceWrapper worker = new ExecutorServiceWrapper();
 
         for (int i = 0; i < CLUSTER_SIZE; i++) {
-            var dao = new ReferenceDao(new Config(WORKING_DIR, FLUSHING_THRESHOLD_BYTES));
+            Path data = Files.createTempDirectory("data12");
+
+            var dao = new ReferenceDao(new Config(data, FLUSHING_THRESHOLD_BYTES));
 
             ServiceConfig serviceConfig = new ServiceConfig(
                     BASE_PORT + i,
                     clusterUrls.get(i),
                     clusterUrls,
-                    WORKING_DIR
+                    data
             );
 
             ConsistentHashing consistentHashing = new ConsistentHashing(clusterUrls, NUMBER_OF_VIRTUAL_NODES);

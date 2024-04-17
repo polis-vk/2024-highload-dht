@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.pavelemelyanov;
 
+import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.pavelemelyanov.dao.BaseEntryWithTimestamp;
@@ -32,7 +33,7 @@ public class RequestHandler {
         };
     }
 
-    private Response getEntry(String id) {
+    private Response getEntry(@Param(value = "id", required = true) String id) {
         MemorySegment key = convertFromString(id);
         EntryWithTimestamp<MemorySegment> entry = dao.get(key);
 
@@ -52,7 +53,7 @@ public class RequestHandler {
         );
     }
 
-    private Response putEntry(String id, Request request) {
+    private Response putEntry(@Param(value = "id", required = true) String id, Request request) {
         if (request.getBody() == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -65,7 +66,7 @@ public class RequestHandler {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    private Response deleteEntry(String id) {
+    private Response deleteEntry(@Param(value = "id", required = true) String id) {
         MemorySegment key = convertFromString(id);
         dao.upsert(new BaseEntryWithTimestamp<>(key, null, System.currentTimeMillis()));
 

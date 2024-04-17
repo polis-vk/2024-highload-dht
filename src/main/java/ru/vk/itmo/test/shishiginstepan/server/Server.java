@@ -70,7 +70,14 @@ public class Server extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         LocalDateTime requestExpirationDate = LocalDateTime.now(ServerZoneId).plus(defaultTimeout);
         try {
-            handleRequestWithExceptions(request, session, requestExpirationDate);
+            executor.execute(()->{
+                try {
+                    handleRequestWithExceptions(request, session, requestExpirationDate);
+                } catch (IOException e) {
+                    session.close();
+                }
+            });
+
         } catch (RejectedExecutionException e) {
             logger.error(e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -113,7 +120,7 @@ public class Server extends HttpServer {
             Integer ack = rawAck == null ? null : Integer.parseInt(rawAck);
             Integer from = rawFrom == null ? null : Integer.parseInt(rawFrom);
 
-            final boolean innerRequest = request.getHeader(INNER_REQUEST_HEADER) == null;
+            final boolean innerRequest = request.getHeader(INNER_REQUEST_HEADER) != null;
 
             switch (request.getMethod()) {
                 case Request.METHOD_GET -> handleGet(session, innerRequest, key, ack, from);
@@ -133,17 +140,17 @@ public class Server extends HttpServer {
             Integer from
     ) throws IOException {
         if (innerRequest) {
+            Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
+            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(key, null, timestamp);
+            dao.upsertLocal(entry);
+            session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+        } else {
             EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
                     key,
                     null,
                     System.currentTimeMillis()
             );
             dao.upsertByQuorum(entry, ack, from, session);
-        } else {
-            Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
-            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(key, null, timestamp);
-            dao.upsertLocal(entry);
-            session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
         }
     }
 
@@ -156,13 +163,6 @@ public class Server extends HttpServer {
             Integer from
     ) throws IOException {
         if (innerRequest) {
-            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
-                    key,
-                    MemorySegment.ofArray(request.getBody()),
-                    System.currentTimeMillis()
-            );
-            dao.upsertByQuorum(entry, ack, from, session);
-        } else {
             Long timestamp = Long.parseLong(request.getHeader(TIMESTAMP_HEADER));
             EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
                     key,
@@ -170,6 +170,13 @@ public class Server extends HttpServer {
             );
             dao.upsertLocal(entry);
             session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+        } else {
+            EntryWithTimestamp<MemorySegment> entry = new EntryWithTimestamp<>(
+                    key,
+                    MemorySegment.ofArray(request.getBody()),
+                    System.currentTimeMillis()
+            );
+            dao.upsertByQuorum(entry, ack, from, session);
         }
     }
 
@@ -180,13 +187,13 @@ public class Server extends HttpServer {
             Integer from
     ) throws IOException {
         if (innerRequest) {
-            dao.getByQuorum(key, ack, from, session);
+            handleLocalGet(session, key);
         } else {
-            handleRemoteGet(session, key);
+            dao.getByQuorum(key, ack, from, session);
         }
     }
 
-    private void handleRemoteGet(HttpSession session, MemorySegment key) throws IOException {
+    private void handleLocalGet(HttpSession session, MemorySegment key) throws IOException {
         EntryWithTimestamp<MemorySegment> entry = dao.getLocal(key);
         Response response;
         if (entry.value() == null) {

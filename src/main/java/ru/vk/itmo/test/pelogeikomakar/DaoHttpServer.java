@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 public class DaoHttpServer extends one.nio.http.HttpServer {
 
@@ -48,7 +49,7 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         this.clusterUrls = config.clusterUrls();
         this.selfUrl = config.selfUrl();
         this.httpClient = HttpClient.newBuilder()
-                .executor(ExecutorServiceFactory.newExecutorService("javaClientExecutor-"))
+                .executor(ExecutorServiceFactory.newExecutorService("javaClientExecutor-", 512, 6))
                 .connectTimeout(Duration.ofMillis(500))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
@@ -58,8 +59,8 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
 
         this.dao = dao;
 
-        localExecutorService = ExecutorServiceFactory.newExecutorService("localExecutor-");
-        remoteExecutorService = ExecutorServiceFactory.newExecutorService("remoteExecutor-");
+        localExecutorService = ExecutorServiceFactory.newExecutorService("localExecutor-", 512, 6);
+        remoteExecutorService = ExecutorServiceFactory.newExecutorService("remoteExecutor-", 512, 6);
     }
 
     public Dao<MemorySegment, Entry<MemorySegment>> getDao() {
@@ -72,17 +73,19 @@ public class DaoHttpServer extends one.nio.http.HttpServer {
         List<CompletableFuture<Response>> futureResponses = new ArrayList<>(urls.length);
 
         for (String url : urls) {
-            CompletableFuture<Response> futureResponse;
+            Supplier<Response> supplier;
+            ExecutorService executor;
+
             if (url.equals(selfUrl)) {
-                futureResponse = CompletableFuture.supplyAsync(
-                        () -> executeLocalMethod(id, request, time),
-                        localExecutorService);
+                supplier = () -> executeLocalMethod(id, request, time);
+                executor = localExecutorService;
             } else {
-                futureResponse = CompletableFuture.supplyAsync(
-                        () -> executeRemoteMethod(url, request, time),
-                        remoteExecutorService);
+                supplier = () -> executeRemoteMethod(url, request, time);
+                executor = remoteExecutorService;
             }
-            futureResponses.add(futureResponse);
+
+            Optional<CompletableFuture<Response>> optionalFuture =  ServerUtils.addTask(supplier, executor, log);
+            optionalFuture.ifPresent(futureResponses::add);
         }
         return futureResponses;
     }

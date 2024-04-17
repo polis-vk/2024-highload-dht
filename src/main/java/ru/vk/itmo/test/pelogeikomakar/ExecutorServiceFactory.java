@@ -21,9 +21,13 @@ public final class ExecutorServiceFactory {
     }
 
     public static ExecutorService newExecutorService(String threadPrefix) {
+        return newExecutorService(threadPrefix, QUEUE_CAPACITY, CORE_POOL_SIZE);
+    }
 
-        BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
-        ThreadPoolExecutor tpe = new ThreadPoolExecutor(CORE_POOL_SIZE, CORE_POOL_SIZE,
+    public static ExecutorService newExecutorService(String threadPrefix,
+                                                     int queuCapasity, int CorePoolSize) {
+        BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(queuCapasity);
+        ThreadPoolExecutor tpe = new ThreadPoolExecutor(CorePoolSize, CorePoolSize,
                 KEEP_ALIVE_TIME_SEC, UNIT, queue,
                 new ThreadFactory() {
                     private final AtomicInteger id = new AtomicInteger(0);

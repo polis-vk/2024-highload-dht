@@ -2,15 +2,22 @@ package ru.vk.itmo.test.pelogeikomakar;
 
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
+import org.slf4j.Logger;
 import ru.vk.itmo.ServiceConfig;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.time.Duration;
 import java.util.List;
 import java.util.NavigableMap;
+import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
 public final class ServerUtils {
 
@@ -44,6 +51,18 @@ public final class ServerUtils {
         serverConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
+    }
+
+    public static Optional<CompletableFuture<Response>> addTask(Supplier<Response> supplier,
+                                                                ExecutorService executor, Logger log) {
+        CompletableFuture<Response> futureResponse = null;
+        try {
+            futureResponse = CompletableFuture.supplyAsync(supplier, executor);
+        } catch (RejectedExecutionException e) {
+            log.info("not enough queue size while adding task", e);
+        }
+
+        return Optional.ofNullable(futureResponse);
     }
 
     public static HttpRequest buildHttpRequest(String executorNode, Request request, long givenTime,

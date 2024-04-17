@@ -128,8 +128,9 @@ public class Server extends HttpServer {
             } else {
                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
-        } catch (IOException exception) {
+        } catch (Exception exception) {
             logger.error("Failed to send error response", exception);
+            session.scheduleClose();
         }
     }
 
@@ -167,7 +168,7 @@ public class Server extends HttpServer {
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger exceptionCount = new AtomicInteger(0);
         for (CompletableFuture<Response> futureResponse : futureResponses) {
-            futureResponse.whenComplete((response, exception) -> {
+            futureResponse.whenCompleteAsync((response, exception) -> {
 
                 if (exception == null && response.getStatus() < 500) {
                     checkTimestampHeaderExistenceAndSet(response);
@@ -183,7 +184,7 @@ public class Server extends HttpServer {
                     }
                 }
 
-            }).exceptionally(exception -> {
+            }, workerExecutor).exceptionally(exception -> {
                 logger.error("Error happened while collecting responses from nodes", exception);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             });
@@ -195,6 +196,7 @@ public class Server extends HttpServer {
             session.sendResponse(resp);
         } catch (IOException e) {
             logger.error("Failed to send error response", e);
+            session.scheduleClose();
         }
     }
 
@@ -214,7 +216,7 @@ public class Server extends HttpServer {
                 ).build();
         return httpClient
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .thenApply(httpResponse -> {
+                .thenApplyAsync(httpResponse -> {
                     Response response1 = new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
                     if (httpResponse.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) == null) {
                         response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
@@ -225,7 +227,7 @@ public class Server extends HttpServer {
                         );
                     }
                     return response1;
-                }).exceptionally(exception -> {
+                }, workerExecutor).exceptionally(exception -> {
                     logger.error("Error happened while sending async requests", exception);
                     return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                 });

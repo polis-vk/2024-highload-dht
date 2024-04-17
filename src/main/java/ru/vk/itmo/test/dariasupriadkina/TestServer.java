@@ -57,8 +57,8 @@ public final class TestServer {
         for (ServiceConfig serviceConfig : clusterConfs) {
             ServiceIml serviceIml = new ServiceIml(serviceConfig, new Config(serviceConfig.workingDir(),
                     1024 * 1024),
-                    new WorkerConfig(THREADS, THREADS, QUEUE_SIZE, 30),
-                    shardingPolicy);
+                    new WorkerConfig(THREADS * 2, THREADS * 2,
+                            QUEUE_SIZE, 60), shardingPolicy);
             serviceIml.start().get(2, TimeUnit.SECONDS);
         }
     }

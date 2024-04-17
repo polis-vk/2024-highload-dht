@@ -20,15 +20,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServiceIml implements Service {
 
-    private Server server;
-    private Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
     private final Config daoConfig;
     private final ServiceConfig serviceConfig;
     private final WorkerConfig workerConfig;
-    private WorkerThreadPoolExecutor workerThreadPoolExecutor;
-    private NodeThreadPoolExecutor nodeThreadPoolExecutor;
     private final ShardingPolicy shardingPolicy;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
+    private Server server;
+    private Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
+    private WorkerThreadPoolExecutor workerThreadPoolExecutor;
+    private NodeThreadPoolExecutor nodeThreadPoolExecutor;
 
     public ServiceIml(ServiceConfig serviceConfig, Config daoConfig,
                       WorkerConfig workerConfig, ShardingPolicy shardingPolicy) {
@@ -43,11 +43,11 @@ public class ServiceIml implements Service {
         dao = new ReferenceDao(daoConfig);
         workerThreadPoolExecutor = new WorkerThreadPoolExecutor(workerConfig);
         // TODO вынести параметры в отдельную конфигурацию для большей гибкости
-        nodeThreadPoolExecutor = new NodeThreadPoolExecutor(8,
-                8,
+        nodeThreadPoolExecutor = new NodeThreadPoolExecutor(16,
+                16,
                 new ArrayBlockingQueue<>(1024),
                 new CustomThreadFactory("node-executor", true),
-                new ThreadPoolExecutor.AbortPolicy(), 30);
+                new ThreadPoolExecutor.AbortPolicy(), 60);
         nodeThreadPoolExecutor.prestartAllCoreThreads();
         workerThreadPoolExecutor.prestartAllCoreThreads();
 

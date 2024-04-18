@@ -3,6 +3,8 @@ package ru.vk.itmo.test.viktorkorotkikh.util;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
+import java.util.NoSuchElementException;
+
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_ENTITY_TOO_LARGE;
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
@@ -58,7 +60,7 @@ public class LsmServerUtil {
             return LSMConstantResponse.notEnoughReplicas(originalRequest);
         }
         if (lastValue == null) {
-            lastValue = responses[0];
+            lastValue = firstNotNull(responses);
         }
         return switch (lastValue.statusCode()) {
             case HTTP_OK -> Response.ok(lastValue.body());
@@ -110,5 +112,12 @@ public class LsmServerUtil {
             return -1;
         }
         return Long.parseLong(timestamp);
+    }
+
+    private static NodeResponse firstNotNull(NodeResponse[] responses) {
+        for (NodeResponse response : responses) {
+            if (response != null) return response;
+        }
+        throw new NoSuchElementException();
     }
 }

@@ -121,7 +121,7 @@ public class AsyncActions {
                                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 )
                 .header(HttpUtils.TIMESTAMP_JAVA_NET_HEADER, String.valueOf(timestamp))
-                .timeout(Duration.ofMillis(500))
+                .timeout(Duration.ofMillis(1500))
                 .build();
 
         CompletableFuture<Void> future = httpClient

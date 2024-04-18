@@ -37,6 +37,7 @@ public class MergeHandleResult {
         merge(handleResult);
     }
 
+    //FIXME
     @CanIgnoreReturnValue
     private CompletableFuture<HandleResult> merge(CompletableFuture<HandleResult> handleResult) {
         return handleResult.whenCompleteAsync((handleResult1, throwable) -> {

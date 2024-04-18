@@ -32,7 +32,7 @@ public class MergeHandleResult {
 
     public void add(int index, CompletableFuture<HandleResult> handleResult) {
         handleResults[index] = handleResult;
-        handleResult.whenCompleteAsync((handleResult1, throwable) -> {
+        CompletableFuture<HandleResult> future = handleResult.whenCompleteAsync((handleResult1, throwable) -> {
             if (throwable != null) {
                 if (throwable instanceof IOException e) {
                     log.info("I/O exception", e);
@@ -64,6 +64,8 @@ public class MergeHandleResult {
                 session.sendResponseOrClose(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
             }
         }, executorMerge);
+        //FIXME
+        handleResults[index] = future;
 
     }
 

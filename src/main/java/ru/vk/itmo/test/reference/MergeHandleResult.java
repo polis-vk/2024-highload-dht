@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.reference;
 
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +33,13 @@ public class MergeHandleResult {
 
     public void add(int index, CompletableFuture<HandleResult> handleResult) {
         handleResults[index] = handleResult;
-        CompletableFuture<HandleResult> future = handleResult.whenCompleteAsync((handleResult1, throwable) -> {
+
+        merge(handleResult);
+    }
+
+    @CanIgnoreReturnValue
+    private CompletableFuture<HandleResult> merge(CompletableFuture<HandleResult> handleResult) {
+        return handleResult.whenCompleteAsync((handleResult1, throwable) -> {
             if (throwable != null) {
                 if (throwable instanceof IOException e) {
                     log.info("I/O exception", e);
@@ -64,9 +71,6 @@ public class MergeHandleResult {
                 session.sendResponseOrClose(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
             }
         }, executorMerge);
-        //FIXME
-        handleResults[index] = future;
-
     }
 
 

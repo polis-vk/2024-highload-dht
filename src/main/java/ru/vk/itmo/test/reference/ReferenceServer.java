@@ -82,6 +82,9 @@ public class ReferenceServer extends HttpServer {
         if (!(sessionI instanceof ReferenceHttpSession session)) {
             throw new IllegalArgumentException("this method support only ReferenceHttpSession");
         }
+//        if (config.selfPort() == 8100) {
+//            return;
+//        }
         String id = request.getParameter("id=");
         if (id == null || id.isBlank()) {
             session.sendError(Response.BAD_REQUEST, null);

@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServiceImpl implements Service {
 
@@ -19,6 +20,7 @@ public class ServiceImpl implements Service {
     private ExecutorService executorService;
     public static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
     public static final int TERMINATION_TIMEOUT_MS = 500;
+    private final AtomicBoolean isServiceStopped = new AtomicBoolean(false);
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -36,6 +38,9 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<Void> stop() throws IOException {
+        if (isServiceStopped.getAndSet(true)) {
+            return CompletableFuture.completedFuture(null);
+        }
         server.stop();
         executorService.shutdown();
         try {
@@ -49,7 +54,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

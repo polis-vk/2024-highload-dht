@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px 10px 22px 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {position: fixed; bottom: 0; margin: 0; padding: 2px 3px 2px 3px; outline: 1px solid #ffc000; display: none; overflow: hidden; white-space: nowrap; background-color: #ffffe0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {left: 0}
+	#match {right: 0}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 896px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>Lock profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='status'></p>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<script>
+	// Copyright The async-profiler authors
+	// SPDX-License-Identifier: Apache-2.0
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let level0 = 0, left0 = 0, width0 = 0;
+	let reverse = false;
+	const levels = Array(56);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(key, level, left, width, inln, c1, int) {
+		levels[level0 = level].push({left: left0 += left, width: width0 = width || width0,
+			color: getColor(palette[key & 7]), title: cpool[key >>> 3],
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function u(key, width, inln, c1, int) {
+		f(key, level0 + 1, 0, width, inln, c1, int)
+	}
+
+	function n(key, width, inln, c1, int) {
+		f(key, level0, width0, width, inln, c1, int)
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inline-block' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	function unpack(cpool) {
+		for (let i = 1; i < cpool.length; i++) {
+			cpool[i] = cpool[i - 1].substring(0, cpool[i].charCodeAt(0) - 32) + cpool[i].substring(1);
+		}
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f !== root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				status.style.display = 'inline-block';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = null;
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+
+const cpool = [
+'all',
+' java.lang.Class',
+'*Object',
+'%util.concurrent.locks.ReentrantLock$NonfairSync',
+'DReadWriteLock$NonfairSync',
+'$/lang/Thread.run',
+'4With',
+'%net/InetAddress$NameServiceAddresses.get',
+'4.getAllByName',
+'A0',
+'8ByName',
+'-SocketAddress.<init>',
+'%security/AccessController.doPrivileged',
+'?executePrivileged',
+'%util/ArrayList.forEach',
+'*concurrent/ArrayBlockingQueue.offer',
+'Htake',
+'5CompletableFuture$AsyncSupply.run',
+'GCompletion.run',
+'GUniApply.tryFire',
+'JCompletion.claim',
+'Nose.tryFire',
+'F.complete',
+'OAsync',
+'Ghandle',
+'GpostComplete',
+'KFire',
+'GthenCompose',
+'GuniComposeStage',
+'JHandle',
+'PStage',
+'5ThreadPoolExecutor$Worker.run',
+'G.execute',
+'HgetTask',
+'HrunWorker',
+'5locks/AbstractQueuedSynchronizer$ConditionObject.await',
+'U.acquire',
+']Interruptibly',
+';LockSupport.park',
+';ReentrantLock$Sync.lock',
+'RInterruptibly',
+'H.lock',
+'MInterruptibly',
+'DReadWriteLock$WriteLock.lock',
+'!dk.internal.net.http.HttpClientImpl',
+'#/internal/misc/Unsafe.park',
+'-net/http/AsyncTriggerEvent.handle',
+'7uthenticationFilter.getCache',
+'Krequest',
+'Msponse',
+'6ConnectionPool$CleanupTrigger.subscribe',
+'D.getConnection',
+'EpurgeExpiredConnectionsAndReturnNextDeadline',
+'EregisterCleanupTrigger',
+'GturnToPool',
+'6Exchange$$Lambda.0x00007f6cb8160000.apply',
+'Tc18b0.apply',
+'>.checkFor407',
+'?establishExchange',
+'?lambda$responseAsyncImpl0$8',
+'Y9',
+'?readBodyAsync',
+'AsponseAsync',
+'LImpl',
+'P0',
+'>Impl$$Lambda.0x00007f6cb8166798.apply',
+'B.createExchangeImpl',
+'IHttp1Exchange',
+'Cget',
+'Clambda$get$0',
+'6Http1AsyncReceiver$$Lambda.0x00007f6cb81b37c0.run',
+'IHttp1TubeSubscriber.onNext',
+'_Subscribe',
+']requestMore',
+'H.asyncReceive',
+'IcheckRequestMore',
+'Iflush',
+'IhandlePendingDelegate',
+'Isubscribe',
+';Exchange$$Lambda.0x00007f6cb81db0d0.apply',
+'DHttp1Publisher$Http1WriteSubscription.request',
+'SWriteTask.run',
+'R.subscribe',
+'IResponseBodySubscriber.register',
+'C.<init>',
+'DconnectFlows',
+'DgetOutgoing',
+'Dlambda$sendHeadersAsync$4',
+'DreadBodyAsync',
+'FgisterResponseSubscriber',
+'DsendHeadersAsync',
+';Response$$Lambda.0x00007f6cb8211718.run',
+'Z3958.run',
+'DBodyReader.handle',
+'OonSubscribe',
+'OtryAsyncReceive',
+'DHeadersReader.handle',
+'RtryAsyncReceive',
+'DReceiver.accept',
+'C.lambda$readBody$3',
+'DonFinished',
+'DreadBody',
+':2ClientImpl.getConnectionFor',
+'<onnection.keyFor',
+':ClientFacade.sendAsync',
+'@Impl$DelegatingExecutor.ensureExecutedAsync',
+'Yxecute',
+'ESelectorManager$$Lambda.0x00007f6cb81e28b0.accept',
+'T.eventUpdated',
+'UhandleEvent',
+'Ulambda$run$3',
+'Vock',
+'Uregister',
+'Vun',
+'D.eventUpdated',
+'EpurgeTimeoutsAndReturnNextDeadline',
+'EregisterEvent',
+'MSubscriber',
+'EsendAsync',
+';onnection.closeOrReturnToCache',
+'EgetConnection',
+':RequestImpl$$Lambda.0x00007f6cb8165258.run',
+'E.getAddress',
+'Flambda$getAddress$5',
+'6MultiExchange$$Lambda.0x00007f6cb8157a70.apply',
+'Z8470.apply',
+'Ye4000.apply',
+'C.lambda$responseAsync0$2',
+'Z4',
+'XImpl$6',
+'DrequestFilters',
+'FsponseAsync',
+'QImpl',
+'LFilters',
+'6ResponseContent$FixedLengthBodyParser.accept',
+'\\onSubscribe',
+'6SocketTube$InternalReadPublisher$InternalReadSubscription$$Lambda.0x00007f6cb81a2d18.run',
+'f6cb81a93a0.run',
+'o.handlePending',
+'vSubscribeEvent',
+'pread',
+'rquest',
+'rsumeReadEvent',
+'psignalReadable',
+'vSubscribe',
+'WReadEvent.signalEvent',
+'[Subscription.request',
+'hsignalOnSubscribe',
+'V.subscribe',
+'IWriteSubscriber$$Lambda.0x00007f6cb81ad050.run',
+'ne1ab0.run',
+'YWriteSubscription.requestMore',
+'X.onSubscribe',
+'YrequestMore',
+'YstartSubscription',
+'ASocketFlowEvent.handle',
+'KTask.run',
+'@.connectFlows',
+'AonSubscribe',
+'AresumeEvent',
+'Asubscribe',
+'6common/HttpBodySubscriberWrapper.onSubscribe',
+'WtryRegister',
+'=SequentialScheduler$CompleteRestartableTask.run',
+'QLockingRestartableTask.run',
+'QSchedulableTask.run',
+'QTryEndDeferredCompleter.complete',
+'P.runOrSchedule',
+' one/nio/http/HttpSession.handleParsedRequest',
+'9processHttpBuffer',
+'@Read',
+'(net/Session.process',
+'(server/PayloadThread.run',
+'/SelectorThread.run',
+' ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession',
+'"/vk/itmo/test/viktorkorotkikh/LSMServerImpl$$Lambda.0x00007f6cb814e518.run',
+'M.getResponseFromReplicas',
+'NhandleEntityRequest',
+'TPutEntity',
+'TRequest',
+'Nlambda$handleRequest$0',
+'NprocessLocal',
+'URemote',
+'NsendClusterRequest',
+'@dao/LSMDaoImpl.tryToFlush',
+'Oupsert',
+' sun/nio/ch/EPollSelectorImpl.clearInterrupt',
+'=doSelect',
+'=processEvents',
+'=wakeup',
+'+SelectorImpl.lockAndDoSelect',
+'8select',
+'>Now'
+];
+unpack(cpool);
+
+n(3,411327)
+u(905,87185)
+u(113,5424)
+u(857)
+u(881)
+u(873)
+u(1241)
+u(1161)
+u(1145)
+u(1337)
+u(1337)
+u(1321)
+u(1249)
+u(1089)
+u(1121)
+u(569)
+u(569)
+u(593)
+u(1337)
+u(1337)
+u(849)
+u(841)
+u(257)
+u(121)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(329,2,5424,4711)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(369,2,4711,26957)
+u(1097,11220)
+u(1113)
+u(1337)
+u(1337)
+u(1321)
+u(1249)
+u(1089)
+u(1121)
+u(1105)
+u(1177)
+u(577)
+u(1337)
+u(1337)
+u(849)
+u(841)
+u(257)
+u(121)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1193,3,11220,15737)
+u(1233)
+u(849)
+u(841)
+u(257)
+u(121)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(417,2,15737,23739)
+u(417)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(921,2,23739,1)
+u(354)
+f(1529,2,1,25862)
+u(1521)
+u(1497)
+u(1505)
+u(1489)
+u(18)
+f(1537,2,25862,491)
+u(1521)
+u(1497)
+u(1505)
+u(1489)
+u(18)
+f(1377,1,491,323251)
+u(41)
+u(49)
+u(249)
+u(273)
+u(137,71509)
+u(201)
+u(169)
+u(993)
+u(1017)
+u(1057)
+u(497,71481)
+u(505)
+u(513)
+u(193,63336)
+u(241)
+u(233)
+u(449)
+u(481)
+u(457)
+u(441)
+u(473)
+u(721)
+u(217)
+u(225)
+u(633)
+u(697)
+u(681)
+u(1257)
+u(657,22611)
+u(1265)
+u(1217)
+u(929)
+u(897)
+u(329,2712)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1513,35,2712,19899)
+u(18)
+f(1281,30,19899,40725)
+u(1185)
+u(1153)
+u(929)
+u(897)
+u(329,3766)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1513,35,3766,36959)
+u(18)
+f(465,15,36959,8145)
+u(545)
+u(193,8084)
+u(241)
+u(233)
+u(521)
+u(553)
+u(529)
+u(537)
+u(673)
+u(961)
+u(409)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(817,17,8084,61)
+u(329,59)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(825,18,59,2)
+u(977)
+u(97)
+u(105)
+u(969)
+u(985)
+u(89)
+u(81)
+u(65)
+u(73)
+u(57)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1041,12,2,28)
+u(385)
+u(377)
+u(10)
+f(265,6,28,111083)
+u(129)
+u(281,51918)
+u(289)
+u(305)
+u(361)
+u(26)
+f(337,8,51918,59165)
+u(321)
+u(297)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1201,6,59165,1)
+u(1225)
+u(1209)
+u(641)
+u(1337)
+u(1337)
+u(849)
+u(1321)
+u(1305)
+u(1313)
+u(649)
+u(689)
+u(185)
+u(849)
+u(137)
+u(201)
+u(169)
+u(1001)
+u(1025)
+u(489)
+u(705)
+u(809)
+u(849)
+u(729)
+u(793)
+u(625)
+u(1337)
+u(1337)
+u(1321)
+u(1305)
+u(1313)
+u(561)
+u(609)
+u(617)
+u(753)
+u(1081)
+u(737)
+u(801)
+u(953)
+u(433)
+u(433)
+u(425)
+u(1257)
+u(1281)
+u(1185)
+u(1153)
+u(929)
+u(897)
+u(1513)
+u(18)
+f(1321,6,1,131648)
+u(1305)
+u(1313,44665)
+u(561)
+u(609)
+u(601,44643)
+u(585)
+u(1169)
+u(1129)
+u(1137)
+u(1273)
+u(913)
+u(865)
+u(897)
+u(329,7017)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1513,20,7017,37626)
+u(18)
+f(777,11,37626,22)
+u(785)
+u(769)
+u(769)
+u(177)
+u(201)
+u(153)
+u(161)
+u(849)
+u(145)
+u(153)
+u(209)
+u(201)
+u(169)
+u(1009)
+u(1033)
+u(1065)
+u(393)
+u(377)
+u(10)
+f(1329,8,22,86983)
+u(1305)
+u(1313)
+u(561)
+u(609)
+u(617,50898)
+u(753)
+u(1081)
+u(737,45811)
+u(801)
+u(953)
+u(433)
+u(433)
+u(329,10844)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(425,21,10844,34967)
+u(1257)
+u(401,12696)
+u(1265)
+u(1217)
+u(929)
+u(897)
+u(329,3031)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1513,28,3031,9665)
+u(18)
+f(1281,23,9665,22271)
+u(1185)
+u(1153)
+u(929)
+u(897)
+u(329,3566)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1513,28,3566,18705)
+u(18)
+f(1289,16,18705,5087)
+u(1297)
+u(665)
+u(713)
+u(937)
+u(889)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(761,13,5087,36084)
+u(785)
+u(745)
+u(745)
+u(1073)
+u(1073)
+u(737)
+u(801)
+u(953)
+u(433)
+u(433)
+u(329,7988)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(425,24,7988,28096)
+u(1257)
+u(401,10176)
+u(1265)
+u(1217)
+u(929)
+u(897)
+u(329,2174)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1513,31,2174,8002)
+u(18)
+f(1281,26,8002,17920)
+u(1185)
+u(1153)
+u(929)
+u(897)
+u(329,2989)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1513,31,2989,14931)
+u(18)
+f(777,13,14931,1)
+u(785)
+u(769)
+u(769)
+u(177)
+u(201)
+u(153)
+u(161)
+u(849)
+u(145)
+u(153)
+u(209)
+u(201)
+u(169)
+u(1009)
+u(1033)
+u(1065)
+u(393)
+u(377)
+u(10)
+f(1401,6,1,9010)
+u(1441)
+u(1417)
+u(1409)
+u(1449,2)
+u(1425)
+u(1481)
+u(1481)
+u(1473)
+u(345)
+u(289)
+u(289)
+u(305)
+u(361)
+u(34)
+f(1457,10,2,9008)
+u(1465)
+u(833)
+u(945)
+u(945)
+u(945)
+u(354,2)
+n(1049,9006)
+u(185)
+u(257)
+u(121)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1385,1,9006,891)
+u(1369)
+u(1361,776)
+u(1353)
+u(1345)
+u(1433)
+u(257)
+u(121)
+u(329)
+u(313)
+u(289)
+u(289)
+u(305)
+u(361)
+u(26)
+f(1394,3,776,115)
+
+search();
+</script></body></html>

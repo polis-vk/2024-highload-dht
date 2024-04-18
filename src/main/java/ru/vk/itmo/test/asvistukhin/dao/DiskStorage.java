@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.asvistukhin.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
@@ -36,10 +35,10 @@ public class DiskStorage {
         Path file = storagePath.resolve(fileName);
         try (FileChannel fileChannel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
             MemorySegment fileSegment = fileChannel.map(
-                    FileChannel.MapMode.READ_WRITE,
-                    0,
-                    Files.size(file),
-                    arena
+                FileChannel.MapMode.READ_WRITE,
+                0,
+                Files.size(file),
+                arena
             );
             this.segmentList.add(fileSegment);
         }
@@ -50,12 +49,11 @@ public class DiskStorage {
         mapSSTableAfterFlush(storagePath, DATA_FILE_AFTER_COMPACTION, arena);
     }
 
-    public Iterator<Entry<MemorySegment>> range(
-            StorageState storageState,
-            MemorySegment from,
-            MemorySegment to
+    public Iterator<TimestampEntry<MemorySegment>> range(
+        StorageState storageState,
+        MemorySegment from, MemorySegment to
     ) {
-        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
+        List<Iterator<TimestampEntry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
         for (MemorySegment memorySegment : segmentList) {
             iterators.add(iterator(memorySegment, from, to));
         }
@@ -65,19 +63,16 @@ public class DiskStorage {
         }
         iterators.add(storageState.getActiveSSTable().get(from, to));
 
-        return new MergeIterator<>(iterators, Comparator.comparing(Entry::key, MemorySegmentUtils::compare)) {
+        return new MergeIterator<>(iterators, Comparator.comparing(TimestampEntry::key, MemorySegmentUtils::compare)) {
             @Override
-            protected boolean shouldSkip(Entry<MemorySegment> memorySegmentEntry) {
+            protected boolean shouldSkip(TimestampEntry<MemorySegment> memorySegmentEntry) {
                 return memorySegmentEntry.value() == null;
             }
         };
     }
 
-    public Iterator<Entry<MemorySegment>> rangeFromDisk(
-            MemorySegment from,
-            MemorySegment to
-    ) {
-        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
+    public Iterator<TimestampEntry<MemorySegment>> rangeFromDisk(MemorySegment from, MemorySegment to) {
+        List<Iterator<TimestampEntry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
         iterators.add(Collections.emptyIterator());
         for (MemorySegment memorySegment : segmentList) {
             iterators.add(iterator(memorySegment, from, to));
@@ -85,110 +80,86 @@ public class DiskStorage {
 
         return new MergeIterator<>(iterators, Comparator.comparing(Entry::key, MemorySegmentUtils::compare)) {
             @Override
-            protected boolean shouldSkip(Entry<MemorySegment> memorySegmentEntry) {
+            protected boolean shouldSkip(TimestampEntry<MemorySegment> memorySegmentEntry) {
                 return memorySegmentEntry.value() == null;
             }
         };
     }
 
-    public static String save(
-            Path storagePath,
-            Iterable<Entry<MemorySegment>> iterable
-    ) throws IOException {
+    public static String save(Path storagePath, Iterable<TimestampEntry<MemorySegment>> iterable) throws IOException {
         final Path indexTmp = storagePath.resolve("index.tmp");
         final Path indexFile = storagePath.resolve("index.idx");
-
         try {
             Files.createFile(indexFile);
         } catch (FileAlreadyExistsException ignored) {
             // it is ok, actually it is normal state
         }
         List<String> existedFiles = Files.readAllLines(indexFile, StandardCharsets.UTF_8);
-
         String newFileName = String.valueOf(existedFiles.size());
-
         long dataSize = 0;
         long count = 0;
-        for (Entry<MemorySegment> entry : iterable) {
+        for (TimestampEntry<MemorySegment> entry : iterable) {
             dataSize += entry.key().byteSize();
             MemorySegment value = entry.value();
             if (value != null) {
                 dataSize += value.byteSize();
             }
+            dataSize += Long.BYTES;
             count++;
         }
         long indexSize = count * 2 * Long.BYTES;
-
         try (
-                FileChannel fileChannel = FileChannel.open(
-                        storagePath.resolve(newFileName),
-                        StandardOpenOption.WRITE,
-                        StandardOpenOption.READ,
-                        StandardOpenOption.CREATE
-                );
-                Arena writeArena = Arena.ofConfined()
+            FileChannel fileChannel = FileChannel.open(
+                storagePath.resolve(newFileName),
+                StandardOpenOption.WRITE,
+                StandardOpenOption.READ,
+                StandardOpenOption.CREATE
+            );
+            Arena writeArena = Arena.ofConfined()
         ) {
             MemorySegment fileSegment = fileChannel.map(
-                    FileChannel.MapMode.READ_WRITE,
-                    0,
-                    indexSize + dataSize,
-                    writeArena
+                FileChannel.MapMode.READ_WRITE,
+                0,
+                indexSize + dataSize,
+                writeArena
             );
-
-            // index:
-            // |key0_Start|value0_Start|key1_Start|value1_Start|key2_Start|value2_Start|...
-            // key0_Start = data start = end of index
             long dataOffset = indexSize;
             int indexOffset = 0;
-            for (Entry<MemorySegment> entry : iterable) {
+            for (TimestampEntry<MemorySegment> entry : iterable) {
                 fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
                 dataOffset += entry.key().byteSize();
                 indexOffset += Long.BYTES;
-
                 MemorySegment value = entry.value();
                 if (value == null) {
                     fileSegment.set(
-                            ValueLayout.JAVA_LONG_UNALIGNED,
-                            indexOffset,
-                            MemorySegmentUtils.tombstone(dataOffset)
+                        ValueLayout.JAVA_LONG_UNALIGNED,
+                        indexOffset,
+                        MemorySegmentUtils.tombstone(dataOffset)
                     );
                 } else {
                     fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
                     dataOffset += value.byteSize();
                 }
+                dataOffset += Long.BYTES;
                 indexOffset += Long.BYTES;
             }
 
-            // data:
-            // |key0|value0|key1|value1|...
             dataOffset = indexSize;
-            for (Entry<MemorySegment> entry : iterable) {
+            for (TimestampEntry<MemorySegment> entry : iterable) {
                 MemorySegment key = entry.key();
                 MemorySegment.copy(key, 0, fileSegment, dataOffset, key.byteSize());
                 dataOffset += key.byteSize();
-
                 MemorySegment value = entry.value();
                 if (value != null) {
                     MemorySegment.copy(value, 0, fileSegment, dataOffset, value.byteSize());
                     dataOffset += value.byteSize();
                 }
+                fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, dataOffset, entry.timestamp());
+                dataOffset += Long.BYTES;
             }
         }
 
-        Files.move(indexFile, indexTmp, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-
-        List<String> list = new ArrayList<>(existedFiles.size() + 1);
-        list.addAll(existedFiles);
-        list.add(newFileName);
-        Files.write(
-                indexFile,
-                list,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING
-        );
-
-        Files.delete(indexTmp);
+        manageDataFiles(indexFile, indexTmp, newFileName, existedFiles);
         return newFileName;
     }
 
@@ -212,10 +183,10 @@ public class DiskStorage {
             Path file = storagePath.resolve(fileName);
             try (FileChannel fileChannel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
                 MemorySegment fileSegment = fileChannel.map(
-                        FileChannel.MapMode.READ_WRITE,
-                        0,
-                        Files.size(file),
-                        arena
+                    FileChannel.MapMode.READ_WRITE,
+                    0,
+                    Files.size(file),
+                    arena
                 );
                 result.add(fileSegment);
             }
@@ -238,10 +209,35 @@ public class DiskStorage {
         }
     }
 
-    private static Iterator<Entry<MemorySegment>> iterator(MemorySegment page, MemorySegment from, MemorySegment to) {
+    private static void manageDataFiles(
+        Path indexFile,
+        Path indexTmp,
+        String newFileName,
+        List<String> existedFiles
+    ) throws IOException {
+        Files.move(indexFile, indexTmp, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        List<String> list = new ArrayList<>(existedFiles.size() + 1);
+        list.addAll(existedFiles);
+        list.add(newFileName);
+        Files.write(
+            indexFile,
+            list,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING
+        );
+        Files.delete(indexTmp);
+    }
+
+    private static Iterator<TimestampEntry<MemorySegment>> iterator(
+        MemorySegment page,
+        MemorySegment from,
+        MemorySegment to
+    ) {
         long recordIndexFrom = from == null ? 0 : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, from));
-        long recordIndexTo = to == null ? MemorySegmentUtils.recordsCount(page)
-                : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, to));
+        long recordIndexTo = to == null
+            ? MemorySegmentUtils.recordsCount(page)
+            : MemorySegmentUtils.normalize(MemorySegmentUtils.indexOf(page, to));
         long recordsCount = MemorySegmentUtils.recordsCount(page);
 
         return new Iterator<>() {
@@ -253,23 +249,22 @@ public class DiskStorage {
             }
 
             @Override
-            public Entry<MemorySegment> next() {
+            public TimestampEntry<MemorySegment> next() {
                 if (!hasNext()) {
                     throw new NoSuchElementException();
                 }
                 MemorySegment key = MemorySegmentUtils.slice(
-                        page,
-                        MemorySegmentUtils.startOfKey(page, index),
-                        MemorySegmentUtils.endOfKey(page, index)
+                    page,
+                    MemorySegmentUtils.startOfKey(page, index),
+                    MemorySegmentUtils.endOfKey(page, index)
                 );
                 long startOfValue = MemorySegmentUtils.startOfValue(page, index);
-                MemorySegment value = startOfValue < 0 ? null : MemorySegmentUtils.slice(
-                        page,
-                        startOfValue,
-                        MemorySegmentUtils.endOfValue(page, index, recordsCount)
-                );
+                long endOfValue = MemorySegmentUtils.endOfValue(page, index, recordsCount);
+                MemorySegment value = startOfValue < 0
+                    ? null : MemorySegmentUtils.slice(page, startOfValue, endOfValue);
+                long timestamp = page.get(ValueLayout.JAVA_LONG_UNALIGNED, endOfValue);
                 index++;
-                return new BaseEntry<>(key, value);
+                return new TimestampEntry<>(key, value, timestamp);
             }
         };
     }

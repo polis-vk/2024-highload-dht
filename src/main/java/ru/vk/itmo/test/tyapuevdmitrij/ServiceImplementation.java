@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.tyapuevdmitrij;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
@@ -9,13 +11,16 @@ import ru.vk.itmo.test.tyapuevdmitrij.dao.MemorySegmentDao;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImplementation implements ru.vk.itmo.Service {
 
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
+    private static final Logger logger = LoggerFactory.getLogger(ServiceImplementation.class);
     private final ServiceConfig config;
     private ServerImplementation server;
     private MemorySegmentDao memorySegmentDao;
@@ -47,7 +52,7 @@ public class ServiceImplementation implements ru.vk.itmo.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -57,11 +62,31 @@ public class ServiceImplementation implements ru.vk.itmo.Service {
     }
 
     public static void main(String[] args) throws IOException {
-        Path tempPath = new File("/home/dmitrij/Документы/JavaProjects/DaoServerData/").toPath();
-        ServerImplementation server = new ServerImplementation(new ServiceConfig(8080,
-                "http://localhost",
-                List.of("http://localhost"),
-                tempPath), new MemorySegmentDao(new Config(tempPath, FLUSH_THRESHOLD_BYTES)));
-        server.start();
+        int[] ports = new int[3];
+        Path[] paths = new Path[ports.length];
+        List<String> cluster = new ArrayList<>(ports.length);
+        for (int i = 0; i < ports.length; i++) {
+            ports[i] = i + 8080;
+            paths[i] = new File("/home/dmitrij/Documents/javaProjects/DaoServerData/" + ports[i] + '/')
+                    .toPath();
+            if (!Files.exists(paths[i])) {
+                Files.createDirectory(paths[i]);
+            }
+            cluster.add("http://localhost:" + ports[i]);
+        }
+
+        for (int i = 0; i < ports.length; i++) {
+            String url = cluster.get(i);
+            ServiceConfig cfg = new ServiceConfig(
+                    ports[i],
+                    url,
+                    cluster,
+                    Files.createTempDirectory("server")
+            );
+            new ServerImplementation(cfg,
+                    new MemorySegmentDao(new Config(paths[i],
+                            FLUSH_THRESHOLD_BYTES))).start();
+            logger.info("Socket is ready: " + url);
+        }
     }
 }

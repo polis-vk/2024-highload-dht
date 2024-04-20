@@ -176,7 +176,7 @@ public class MyServer extends HttpServer {
         final CompletableFuture<List<Response>> result = new CompletableFuture<>();
         List<Response> responses = new CopyOnWriteArrayList<>();
         AtomicInteger successCounter = new AtomicInteger(ack);
-        AtomicInteger acceptableErrors = new AtomicInteger(requests.size() - ack + 1);
+        AtomicInteger leftErrorsToFail = new AtomicInteger(requests.size() - ack + 1);
         for (HttpRequest httpRequest : requests) {
             CompletableFuture<Response> cfResponse;
             if (httpRequest.headers().map().containsKey(LOCAL_REQUEST)) {
@@ -189,7 +189,7 @@ public class MyServer extends HttpServer {
             cfResponse = cfResponse.whenComplete(
                     (response, throwable) -> {
                         if (response == null) {
-                            if (acceptableErrors.decrementAndGet() == 0) {
+                            if (leftErrorsToFail.decrementAndGet() == 0) {
                                 result.completeExceptionally(new NotEnoughReplicasException());
                             }
                             return;
@@ -207,7 +207,14 @@ public class MyServer extends HttpServer {
 
     private CompletableFuture<Response> getInternalResponse(Request request) {
         final CompletableFuture<Response> cfResponse = new CompletableFuture<>();
-        workerPool.execute(() -> cfResponse.complete(handleInternalRequest(request)));
+        workerPool.execute(
+                () -> {
+                    try {
+                        cfResponse.complete(handleInternalRequest(request));
+                    } catch (IllegalArgumentException e) {
+                        cfResponse.completeExceptionally(e);
+                    }
+                });
         return cfResponse;
     }
 
@@ -233,7 +240,7 @@ public class MyServer extends HttpServer {
                         .whenComplete(
                                 (httpResponse, throwable) -> {
                                     if (throwable != null) {
-                                        cfResponse.completeExceptionally(new IllegalArgumentException());
+                                        cfResponse.completeExceptionally(throwable);
                                         return;
                                     }
                                     cfResponse.complete(

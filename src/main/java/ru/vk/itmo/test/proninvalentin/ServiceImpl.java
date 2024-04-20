@@ -10,6 +10,7 @@ import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
 import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
+import ru.vk.itmo.test.proninvalentin.utils.Utils;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPoolConfig;
 
@@ -70,7 +71,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 5)
+    @ServiceFactory(stage = 6)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

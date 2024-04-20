@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.proninvalentin;
+package ru.vk.itmo.test.proninvalentin.utils;
 
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
@@ -56,7 +56,15 @@ public final class Utils {
     }
 
     public static boolean hasHandler(Request request) {
+        return isSingleRequest(request) || isRangeRequest(request);
+    }
+
+    private static boolean isSingleRequest(Request request) {
         return request.getURI().startsWith(Constants.REQUEST_PATH);
+    }
+
+    public static boolean isRangeRequest(Request request) {
+        return request.getURI().startsWith(Constants.RANGE_REQUEST_PATH);
     }
 
     public static boolean isSupportedMethod(int httpMethod) {

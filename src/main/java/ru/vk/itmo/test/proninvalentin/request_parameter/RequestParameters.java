@@ -1,4 +1,6 @@
-package ru.vk.itmo.test.proninvalentin;
+package ru.vk.itmo.test.proninvalentin.request_parameter;
+
+import ru.vk.itmo.test.proninvalentin.utils.Utils;
 
 public final class RequestParameters {
     private final String key;

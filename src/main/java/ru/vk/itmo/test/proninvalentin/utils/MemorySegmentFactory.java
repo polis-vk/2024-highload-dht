@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.proninvalentin;
+package ru.vk.itmo.test.proninvalentin.utils;
 
 import ru.vk.itmo.test.proninvalentin.dao.ExtendedBaseEntry;
 import ru.vk.itmo.test.proninvalentin.dao.ExtendedEntry;

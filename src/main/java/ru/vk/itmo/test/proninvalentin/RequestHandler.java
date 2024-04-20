@@ -6,8 +6,14 @@ import one.nio.http.Response;
 import ru.vk.itmo.test.proninvalentin.dao.ExtendedBaseEntry;
 import ru.vk.itmo.test.proninvalentin.dao.ExtendedEntry;
 import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
+import ru.vk.itmo.test.proninvalentin.request_parameter.RangeRequestParameters;
+import ru.vk.itmo.test.proninvalentin.streaming.StreamingResponse;
+import ru.vk.itmo.test.proninvalentin.utils.Constants;
+import ru.vk.itmo.test.proninvalentin.utils.MemorySegmentFactory;
+import ru.vk.itmo.test.proninvalentin.utils.Utils;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Iterator;
 
 public class RequestHandler {
     private final ReferenceDao dao;
@@ -65,5 +71,10 @@ public class RequestHandler {
                 MemorySegmentFactory.toDeletedMemorySegment(id, System.currentTimeMillis());
         dao.upsert(deletedMemorySegment);
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    public StreamingResponse getRange(RangeRequestParameters params) {
+        Iterator<ExtendedEntry<MemorySegment>> entryIterator = dao.get(params.start(), params.end());
+        return new StreamingResponse(entryIterator);
     }
 }

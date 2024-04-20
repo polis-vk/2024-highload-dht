@@ -4,28 +4,25 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
+import ru.vk.itmo.test.proninvalentin.request_parameter.RangeRequestParameters;
+import ru.vk.itmo.test.proninvalentin.request_parameter.RequestParameters;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
+import ru.vk.itmo.test.proninvalentin.utils.Constants;
+import ru.vk.itmo.test.proninvalentin.utils.Utils;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
@@ -60,29 +57,24 @@ public class Server extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
+    public void handleRequest(Request request, HttpSession classicSession) {
+        if (!(classicSession instanceof CustomHttpSession session)) {
+            throw new IllegalArgumentException("this method support only SafetyHttpSession");
+        }
         try {
             long createdAt = System.currentTimeMillis();
             workerPool.execute(() -> processRequest(request, session, createdAt));
         } catch (RejectedExecutionException e) {
             logger.error("New request processing task cannot be scheduled for execution", e);
-            safetySendResponse(session, new Response(Constants.TOO_MANY_REQUESTS, Response.EMPTY));
-        }
-    }
-
-    private static void safetySendResponse(HttpSession session, Response response) {
-        try {
-            session.sendResponse(response);
-        } catch (IOException e) {
-            logger.error("Error while sending response", e);
+            session.safetySendResponse(new Response(Constants.TOO_MANY_REQUESTS, Response.EMPTY));
         }
     }
 
     @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
-    private void processRequest(Request request, HttpSession session, long createdAt) {
+    private void processRequest(Request request, CustomHttpSession session, long createdAt) {
         boolean timeoutExpired = System.currentTimeMillis() - createdAt > requestMaxTimeToTakeInWorkInMillis;
         if (timeoutExpired) {
-            safetySendResponse(session, new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            session.safetySendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
 
@@ -92,34 +84,61 @@ public class Server extends HttpServer {
             return;
         }
 
-        RequestParameters parameters = new RequestParameters(
+        if (Utils.isRangeRequest(request)){
+            handleRangeRequest(request, session);
+        }else {
+            handleSingleRequest(request, session);
+        }
+    }
+
+    private void handleRangeRequest(Request request, CustomHttpSession session) {
+        RangeRequestParameters params = new RangeRequestParameters(
+                request.getParameter(Constants.START_REQUEST_PARAMETER_NAME),
+                request.getParameter(Constants.END_REQUEST_PARAMETER_NAME)
+        );
+
+        if (!params.isValid()) {
+            handleDefault(request, session);
+            return;
+        }
+
+        session.safetySendResponse(requestHandler.getRange(params));
+    }
+
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
+    private void handleSingleRequest(Request request, CustomHttpSession session) {
+        RequestParameters params = new RequestParameters(
                 request.getParameter(Constants.ID_PARAMETER_NAME),
                 request.getParameter(Constants.FROM_PARAMETER_NAME),
                 request.getParameter(Constants.ACK_PARAMETER_NAME),
                 clusterUrls.size()
         );
 
-        if (!parameters.isValid()) {
-            safetySendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+        if (!params.isValid()) {
+            session.safetySendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
         if (request.getHeader(Constants.TERMINATION_HEADER) == null) {
-            CompletableFuture<Response> handleLeaderRequestFuture = handleLeaderRequest(request, parameters);
-            handleLeaderRequestFuture.whenComplete((response, throwable) -> safetySendResponse(session, response));
+            CompletableFuture<Response> handleLeaderRequestFuture = handleLeaderRequest(request, params);
+            handleLeaderRequestFuture.whenComplete((response, throwable) -> session.safetySendResponse(response));
             checkForTimeout(handleLeaderRequestFuture);
         } else {
-            safetySendResponse(session, safetyHandleRequest(request, parameters.key()));
+            session.safetySendResponse(safetyHandleRequest(request, params.key()));
         }
     }
 
     @Override
-    public void handleDefault(Request request, HttpSession session) {
+    public void handleDefault(Request request, HttpSession sessionI) {
+        if (!(sessionI instanceof CustomHttpSession session)) {
+            throw new IllegalArgumentException("this method support only CustomHttpSession");
+        }
+
         int httpMethod = request.getMethod();
         Response response = Utils.isSupportedMethod(httpMethod)
                 ? new Response(Response.BAD_REQUEST, Response.EMPTY)
                 : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        safetySendResponse(session, response);
+        session.safetySendResponse(response);
     }
 
     private static Response processProxyResponse(HttpResponse<byte[]> httpResponse) {
@@ -158,10 +177,10 @@ public class Server extends HttpServer {
         }, httpRequestTimeoutInMillis, TimeUnit.MILLISECONDS);
     }
 
-    private CompletableFuture<Response> handleLeaderRequest(Request request, RequestParameters parameters) {
-        String entryId = parameters.key();
-        int from = parameters.from();
-        int ack = parameters.ack();
+    private CompletableFuture<Response> handleLeaderRequest(Request request, RequestParameters params) {
+        String entryId = params.key();
+        int from = params.from();
+        int ack = params.ack();
 
         logger.debug("[%s] Handle leader request from/ack %d/%d".formatted(selfUrl, from, ack));
         List<String> nodeUrls = shardingAlgorithm.getNodesByKey(entryId, from);
@@ -263,5 +282,10 @@ public class Server extends HttpServer {
             }
         });
         return handleLocalRequestFuture;
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomHttpSession(socket, this);
     }
 }

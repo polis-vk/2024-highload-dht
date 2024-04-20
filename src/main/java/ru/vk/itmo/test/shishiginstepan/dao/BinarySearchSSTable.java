@@ -1,8 +1,5 @@
 package ru.vk.itmo.test.shishiginstepan.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -15,7 +12,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class BinarySearchSSTable implements SSTable<MemorySegment, Entry<MemorySegment>> {
+public class BinarySearchSSTable implements SSTable<MemorySegment, EntryWithTimestamp<MemorySegment>> {
     private long tableSize;
     private long indexSize;
     private final MemorySegment tableSegment;
@@ -74,7 +71,8 @@ public class BinarySearchSSTable implements SSTable<MemorySegment, Entry<MemoryS
 
             long keyOffset = getKeyOffset(m);
             long valOffset = normalize(getValOffset(m));
-            long mismatch = MemorySegment.mismatch(key, 0, key.byteSize(), tableSegment, keyOffset, valOffset);
+            long keyEnd = valOffset - ValueLayout.JAVA_LONG_UNALIGNED.byteSize();
+            long mismatch = MemorySegment.mismatch(key, 0, key.byteSize(), tableSegment, keyOffset, keyEnd);
             if (mismatch == -1) {
                 return m;
             }
@@ -99,18 +97,20 @@ public class BinarySearchSSTable implements SSTable<MemorySegment, Entry<MemoryS
     }
 
     @Override
-    public Entry<MemorySegment> get(MemorySegment key) {
+    public EntryWithTimestamp<MemorySegment> get(MemorySegment key) {
         MemorySegment val;
         long m = this.searchEntryPosition(key, true);
         if (m == -1) return null;
         long valOffset = getValOffset(m);
         long recordEnd = getRecordEnd(m);
+        long timestampOffset = getTimestampOffset(valOffset);
         val = valOffset < 0 ? null : tableSegment.asSlice(valOffset, recordEnd - valOffset);
-        return new BaseEntry<>(key, val);
+        long timestamp = tableSegment.get(ValueLayout.JAVA_LONG_UNALIGNED, timestampOffset);
+        return new EntryWithTimestamp<>(key, val, timestamp);
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> scan(MemorySegment keyFrom, MemorySegment keyTo) {
+    public Iterator<EntryWithTimestamp<MemorySegment>> scan(MemorySegment keyFrom, MemorySegment keyTo) {
         long startIndex;
         long endIndex;
         if (keyFrom == null) {
@@ -137,6 +137,10 @@ public class BinarySearchSSTable implements SSTable<MemorySegment, Entry<MemoryS
         return indexSegment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * Long.BYTES * 2);
     }
 
+    private long getTimestampOffset(long valOffset) { // таймстемп - лонг который лежит прямо перед значением record`а.
+        return normalize(valOffset) - ValueLayout.JAVA_LONG_UNALIGNED.byteSize();
+    }
+
     private long getValOffset(long recordIndex) {
         return indexSegment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * Long.BYTES * 2 + Long.BYTES);
     }
@@ -150,7 +154,7 @@ public class BinarySearchSSTable implements SSTable<MemorySegment, Entry<MemoryS
         }
     }
 
-    private Iterator<Entry<MemorySegment>> iterator(long startEntryIndex, long endEntryIndex) {
+    private Iterator<EntryWithTimestamp<MemorySegment>> iterator(long startEntryIndex, long endEntryIndex) {
         return new Iterator<>() {
             long currentEntryIndex = startEntryIndex;
 
@@ -160,12 +164,13 @@ public class BinarySearchSSTable implements SSTable<MemorySegment, Entry<MemoryS
             }
 
             @Override
-            public Entry<MemorySegment> next() {
+            public EntryWithTimestamp<MemorySegment> next() {
                 var keyOffset = getKeyOffset(currentEntryIndex);
                 var valOffset = getValOffset(currentEntryIndex);
+                var timeStampOffset = getTimestampOffset(valOffset);
                 long nextOffset = getRecordEnd(currentEntryIndex);
                 this.currentEntryIndex++;
-                return new BaseEntry<>(
+                return new EntryWithTimestamp<>(
                         tableSegment.asSlice(keyOffset, normalize(valOffset) - keyOffset),
                         valOffset < 0
                                 ?
@@ -174,7 +179,8 @@ public class BinarySearchSSTable implements SSTable<MemorySegment, Entry<MemoryS
                                 tableSegment.asSlice(
                                         normalize(valOffset),
                                         nextOffset - normalize(valOffset)
-                                )
+                                ),
+                        tableSegment.get(ValueLayout.JAVA_LONG_UNALIGNED, timeStampOffset)
                 );
             }
         };

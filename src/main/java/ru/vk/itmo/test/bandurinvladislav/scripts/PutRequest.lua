@@ -7,5 +7,5 @@ function request()
     headers["Content-Type"] = "text/plain"
     headers["Content-Length"] = #{string.byte(body, 1, -1)}
     headers["Host"] = "localhost:8080"
-    return wrk.format("PUT", "/v0/entity?id=" .. tostring(counter), headers, body)
+    return wrk.format("PUT", "/v0/entity?id=" .. tostring(counter) .. "&from=2&ack=2", headers, body)
 end

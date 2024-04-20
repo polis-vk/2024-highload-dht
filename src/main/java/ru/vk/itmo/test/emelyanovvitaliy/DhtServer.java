@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
-import one.nio.http.HttpClient;
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -10,23 +8,15 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
-import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -37,23 +27,22 @@ import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class DhtServer extends HttpServer {
-    protected static final byte[] EMPTY_BODY = new byte[0];
+    public static final String NOT_ENOUGH_REPLICAS_STATUS = "504 Not Enough Replicas";
+    public static final String TIMESTAMP_HEADER = "X-Timestamp: ";
+    public static final String ID_KEY = "id=";
     protected static final int THREADS_PER_PROCESSOR = 2;
-    protected static final int FLUSH_THRESHOLD_BYTES = 1 << 24; // 16 MiB
+    protected static final byte[] EMPTY_BODY = new byte[0];
     protected static final long KEEP_ALIVE_TIME_MILLIS = 1000;
     protected static final int REQUEST_TIMEOUT_MILLIS = 1024;
     protected static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
-    protected static final int REMOTE_CONNECT_TIMEOUT_MILLIS = 100;
     protected static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
-    protected final HttpClient[] httpClients;
-    protected final int[] clientsHashes;
-
+    protected final MergeDaoMediator mergeDaoMediator;
     protected final AtomicInteger threadsInPool;
     protected final ThreadPoolExecutor threadPoolExecutor;
-    protected final ReferenceDao dao;
 
     public DhtServer(ServiceConfig config) throws IOException {
         super(createConfig(config));
+        mergeDaoMediator = new MergeDaoMediator(config.workingDir(), config.selfUrl(), config.clusterUrls());
         threadsInPool = new AtomicInteger(0);
         threadPoolExecutor = new ThreadPoolExecutor(
                 Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
@@ -68,9 +57,6 @@ public class DhtServer extends HttpServer {
                     return t;
                 }
         );
-        httpClients = getHttpClients(config.clusterUrls(), config.selfUrl());
-        clientsHashes = getClientHashes(config.clusterUrls());
-        dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
     }
 
     @Override
@@ -81,14 +67,7 @@ public class DhtServer extends HttpServer {
             if (!threadPoolExecutor.awaitTermination(THREAD_POOL_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 throw new UncheckedTimeoutException("Waited too lot to stop the thread pool");
             }
-            for (HttpClient httpClient : httpClients) {
-                if (httpClient != null && !httpClient.isClosed()) {
-                    httpClient.close();
-                }
-            }
-            dao.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            mergeDaoMediator.stop();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new UncheckedInterruptedException(e);
@@ -97,118 +76,76 @@ public class DhtServer extends HttpServer {
 
     @RequestMethod(METHOD_GET)
     @Path("/v0/entity")
-    public void entity(@Param(value = "id") String id, HttpSession session, Request request) throws IOException {
-        if (isKeyIncorrect(id)) {
-            sendBadRequestResponse(session);
-        } else {
-            long startTimeInMillis = System.currentTimeMillis();
-            threadPoolExecutor.execute(
-                    () -> {
-                        try {
-                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
-                                session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
-                            } else if (!tryForward(session, request, id)) {
-                                Entry<MemorySegment> entry = dao.get(keyFor(id));
-                                if (entry == null) {
-                                    session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
-                                } else {
-                                    session.sendResponse(new Response(Response.OK, valueFor(entry)));
-                                }
+    public void entity(HttpSession session, Request request) throws IOException {
+        String id = request.getParameter(ID_KEY);
+        requestProccessing(id, session,
+                () -> {
+                    try {
+                        TimestampedEntry<MemorySegment> entry = mergeDaoMediator.get(request);
+                        if (entry == null) {
+                            sendNotEnoughReplicas(session);
+                        } else if (entry.timestamp() == DaoMediator.NEVER_TIMESTAMP) {
+                            session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+                        } else {
+                            Response response;
+                            if (entry.value() == null) {
+                                response = new Response(Response.NOT_FOUND, EMPTY_BODY);
+                            } else {
+                                response = new Response(
+                                        Response.OK,
+                                        ((Entry<MemorySegment>) entry).value().toArray(ValueLayout.JAVA_BYTE)
+                                );
                             }
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
+                            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+                            session.sendResponse(response);
                         }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    } catch (IllegalArgumentException e) {
+                        sendBadRequestResponseUnchecked(session);
                     }
-            );
-        }
-    }
-
-    // choose the client by rendezvous hashing
-    private HttpClient getHttpClientByKey(String key) {
-        int maxHash = Integer.MIN_VALUE;
-        HttpClient choosen = httpClients[0];
-        for (int i = 0; i < httpClients.length; i++) {
-            // cantor pairing function works nicely only with non-negatives
-            int keyHash = Math.abs(Hash.murmur3(key));
-            int totalHash = cantorPairingFunction(clientsHashes[i], keyHash);
-            if (totalHash > maxHash) {
-                maxHash = totalHash;
-                choosen = httpClients[i];
-            }
-        }
-        return choosen;
-    }
-
-    private static int cantorPairingFunction(int a, int b) {
-        return (a + b) * (a + b + 1) / 2 + b;
-    }
-
-    private boolean tryForward(HttpSession session, Request request, String key) throws IOException {
-        HttpClient httpClient = getHttpClientByKey(key);
-        if (httpClient == null) {
-            return false;
-        }
-        try {
-            session.sendResponse(httpClient.invoke(request, REMOTE_CONNECT_TIMEOUT_MILLIS));
-        } catch (PoolException | HttpException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, EMPTY_BODY));
-        } catch (InterruptedException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, EMPTY_BODY));
-            Thread.currentThread().interrupt();
-        }
-        return true;
+                }
+        );
     }
 
     @RequestMethod(METHOD_PUT)
     @Path("/v0/entity")
     public void putEntity(@Param(value = "id") String id, HttpSession httpSession, Request request) throws IOException {
-        if (isKeyIncorrect(id) || request.getBody() == null) {
-            sendBadRequestResponse(httpSession);
-        } else {
-            long startTimeInMillis = System.currentTimeMillis();
-            threadPoolExecutor.execute(
-                    () -> {
-                        try {
-                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
-                                httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
-                                return;
-                            }
-                            if (!tryForward(httpSession, request, id)) {
-                                dao.upsert(new BaseEntry<>(keyFor(id), MemorySegment.ofArray(request.getBody())));
-                                httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
-                            }
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
+        requestProccessing(id, httpSession,
+                () -> {
+                    try {
+                        if (mergeDaoMediator.put(request)) {
+                            httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
+                        } else {
+                            sendNotEnoughReplicas(httpSession);
                         }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    } catch (IllegalArgumentException e) {
+                        sendBadRequestResponseUnchecked(httpSession);
                     }
-            );
-        }
+                }
+        );
     }
 
     @RequestMethod(METHOD_DELETE)
     @Path("/v0/entity")
     public void deleteEntity(@Param("id") String id, HttpSession httpSession, Request request) throws IOException {
-        if (isKeyIncorrect(id)) {
-            sendBadRequestResponse(httpSession);
-        } else {
-            long startTimeInMillis = System.currentTimeMillis();
-            threadPoolExecutor.execute(
-                    () -> {
-                        try {
-                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
-                                httpSession.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
-                                return;
-                            }
-                            if (!tryForward(httpSession, request, id)) {
-                                dao.upsert(new BaseEntry<>(keyFor(id), null));
-                                httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
-                            }
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
+        requestProccessing(id, httpSession,
+                () -> {
+                    try {
+                        if (mergeDaoMediator.delete(request)) {
+                            httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
+                        } else {
+                            sendNotEnoughReplicas(httpSession);
                         }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    } catch (IllegalArgumentException e) {
+                        sendBadRequestResponseUnchecked(httpSession);
                     }
-            );
-        }
+                }
+        );
     }
 
     @Override
@@ -221,8 +158,41 @@ public class DhtServer extends HttpServer {
         }
     }
 
+    private void requestProccessing(String id, HttpSession session, Runnable runnable) throws IOException {
+        if (isKeyIncorrect(id)) {
+            sendBadRequestResponse(session);
+        } else {
+            long startTimeInMillis = System.currentTimeMillis();
+            threadPoolExecutor.execute(
+                    () -> {
+                        try {
+                            if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
+                                session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
+                                return;
+                            }
+                            runnable.run();
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+            );
+        }
+    }
+
+    private static void sendNotEnoughReplicas(HttpSession session) throws IOException {
+        session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_STATUS, EMPTY_BODY));
+    }
+
     private static void sendBadRequestResponse(HttpSession httpSession) throws IOException {
         httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+    }
+
+    private void sendBadRequestResponseUnchecked(HttpSession session) {
+        try {
+            sendBadRequestResponse(session);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static boolean isKeyIncorrect(String key) {
@@ -238,36 +208,4 @@ public class DhtServer extends HttpServer {
         config.closeSessions = true;
         return config;
     }
-
-    private static HttpClient[] getHttpClients(List<String> urls, String thisUrl) {
-        HttpClient[] clients = new HttpClient[urls.size()];
-        int cnt = 0;
-        List<String> tmpList = new ArrayList<>(urls);
-        tmpList.sort(String::compareTo);
-        for (String url : tmpList) {
-            clients[cnt++] = url.equals(thisUrl) ? null : new HttpClient(new ConnectionString(url));
-        }
-        return clients;
-    }
-
-    private static int[] getClientHashes(List<String> urls) {
-        int[] hashes = new int[urls.size()];
-        int cnt = 0;
-        List<String> tmpList = new ArrayList<>(urls);
-        tmpList.sort(String::compareTo);
-        for (String url : tmpList) {
-            // cantor pairing function works nicely only with non-negatives
-            hashes[cnt++] = Math.abs(Hash.murmur3(url));
-        }
-        return hashes;
-    }
-
-    private static MemorySegment keyFor(String id) {
-        return MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static byte[] valueFor(Entry<MemorySegment> entry) {
-        return entry.value().toArray(ValueLayout.JAVA_BYTE);
-    }
-
 }

@@ -27,9 +27,11 @@
 #### Флеймграфы для GET запросов
 ##### CPU
 ![](getCpu.png)
+[html](getcpu.html)
 
 ##### Allocations
 ![](getMemory.png)
+[html](getalloc.html)
 
 ##### Lock
 [\*тык\*](getLock.html)

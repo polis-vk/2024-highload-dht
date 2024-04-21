@@ -6,6 +6,7 @@ import one.nio.http.Response;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,6 +31,11 @@ public class RequestsManager {
     private final AtomicBoolean hasResponseSent = new AtomicBoolean(false);
     private static final Comparator<Response> timestampComparator = Comparator
             .comparingLong(RequestsManager::extractTimestampHeader).reversed();
+    private static final Map<Integer, Set<Integer>> SUCCESS_STATUSES = Map.of(
+            Request.METHOD_GET, Set.of(200, 404),
+            Request.METHOD_PUT, Set.of(201),
+            Request.METHOD_DELETE, Set.of(202)
+    );
 
     @SuppressWarnings("FutureReturnValueIgnored")
     public RequestsManager(Collection<CompletableFuture<Response>> futures, HttpSession session,
@@ -58,12 +64,12 @@ public class RequestsManager {
             /* Update actual response in CAS loop. Even if we get ack responses before this one
             it's okay to send this response if it contains newer data */
             while (true) {
-                Response currentActualResponse = actualResponse.get();
                 if (!useTimestamps) {
                     // No difference which one would be set
                     actualResponse.set(response);
                     break;
                 }
+                Response currentActualResponse = actualResponse.get();
                 if (timestampComparator.compare(response, currentActualResponse) < 0
                         || actualResponse.compareAndSet(currentActualResponse, response)) {
                     break;
@@ -99,9 +105,12 @@ public class RequestsManager {
 
     public void makeDecision(Response response) {
         switch (method) {
-            case Request.METHOD_GET -> makeMethodDecision(response, Set.of(200, 404), true);
-            case Request.METHOD_PUT -> makeMethodDecision(response, Set.of(201), false);
-            case Request.METHOD_DELETE -> makeMethodDecision(response, Set.of(202), false);
+            case Request.METHOD_GET -> makeMethodDecision(response,
+                    SUCCESS_STATUSES.get(Request.METHOD_GET), true);
+            case Request.METHOD_PUT -> makeMethodDecision(response,
+                    SUCCESS_STATUSES.get(Request.METHOD_PUT), false);
+            case Request.METHOD_DELETE -> makeMethodDecision(response,
+                    SUCCESS_STATUSES.get(Request.METHOD_DELETE), false);
             default -> sendSingleResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }

@@ -109,9 +109,6 @@ public class RequestHandler {
     }
 
     private byte[] toByteArray(MemorySegment ms) {
-        if (ms == null) {
-            return null;
-        }
         return ms.toArray(ValueLayout.JAVA_BYTE);
     }
 }

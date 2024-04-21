@@ -23,8 +23,8 @@ public class MySession extends HttpSession {
             server.incRequestsProcessed();
             write(new MyIterableQueueItem(myChunkedResponse));
 
-            this.handling = pipeline.pollFirst();
-            if ((this.handling = handling = (Request) this.pipeline.pollFirst()) != null) {
+            this.handling = handling = this.pipeline.pollFirst();
+            if (handling != null) {
                 if (handling == FIN) {
                     scheduleClose();
                 } else {

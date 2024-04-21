@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Paths;
 
-@ServiceFactory(stage = 5)
+@ServiceFactory(stage = 6)
 public class DatabaseServiceFactory implements ServiceFactory.Factory {
     @Override
     public Service create(ServiceConfig serverConfig) {

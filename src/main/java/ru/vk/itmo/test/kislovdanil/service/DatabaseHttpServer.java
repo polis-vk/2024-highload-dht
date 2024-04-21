@@ -133,6 +133,7 @@ public class DatabaseHttpServer extends HttpServer {
                 session.write(body, 0, body.length);
             }
             session.write(ChunkTransformUtility.EMPTY_CONTENT, 0, ChunkTransformUtility.EMPTY_CONTENT.length);
+            session.close();
         } catch (IOException e) {
             throw new NetworkException();
         }
@@ -141,7 +142,10 @@ public class DatabaseHttpServer extends HttpServer {
     @Path(ENTITIES_ACCESS_URL)
     public void handleEntitiesRequest(Request request, HttpSession session,
                                       @Param(value = "start", required = true) String start,
-                                      @Param(value = "id") String end) {
+                                      @Param(value = "end") String end) {
+        if (start.isEmpty()) {
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+        }
         try {
             queryExecutor.execute(() -> handleEntitiesRequestTask(fromString(start),
                     fromString(end), session));

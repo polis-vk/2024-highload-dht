@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets;
 
 public class ChunkTransformUtility {
     private static final String CHUNK_SEPARATOR = "\r\n";
-    private static final String KEY_VALUE_SEPARATOR = "\\n";
+    private static final String KEY_VALUE_SEPARATOR = "\n";
     public static final byte[] EMPTY_CONTENT = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     public static final byte[] HEADERS = """
             HTTP/1.1 200 OK\r

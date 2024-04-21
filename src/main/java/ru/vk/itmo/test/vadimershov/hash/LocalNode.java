@@ -8,6 +8,7 @@ import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 
 import java.lang.foreign.MemorySegment;
 import java.net.HttpURLConnection;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 import static ru.vk.itmo.test.vadimershov.utils.MSUtil.toByteArray;
@@ -74,5 +75,10 @@ public class LocalNode extends VirtualNode {
             }
             return new ResultResponse(HttpURLConnection.HTTP_ACCEPTED, null, 0L);
         });
+    }
+
+    @Override
+    public Iterator<TimestampEntry<MemorySegment>> range(String start, String end) {
+        return dao.get(toMemorySegment(start), end == null ? null : toMemorySegment(end));
     }
 }

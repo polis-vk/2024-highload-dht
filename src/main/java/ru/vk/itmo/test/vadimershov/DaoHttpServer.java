@@ -14,12 +14,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
+import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
 import ru.vk.itmo.test.vadimershov.exceptions.FailedSharding;
 import ru.vk.itmo.test.vadimershov.exceptions.NotFoundException;
 import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
+import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -82,6 +86,11 @@ public class DaoHttpServer extends HttpServer {
                         sessionSendResponse(session, DaoResponse.SERVICE_UNAVAILABLE);
                         return;
                     }
+                    if (request.getMethod() == Request.METHOD_GET
+                        && request.getParameter("start=") != null) {
+                        rangeMapping(request.getParameter("start="), request.getParameter("end="), session);
+                        return;
+                    }
                     super.handleRequest(request, session);
                 } catch (DaoException e) {
                     logger.error("Exception with local dao: {}", e.getMessage(), e);
@@ -116,6 +125,26 @@ public class DaoHttpServer extends HttpServer {
         this.executor.shutdown();
         this.dao.close();
         super.stop();
+    }
+
+    public void rangeMapping(
+            @Nonnull String start,
+            String end,
+            HttpSession session
+    ) throws IOException {
+        if (start.isBlank() || (end != null && end.isBlank())){
+            session.sendError(DaoResponse.BAD_REQUEST, null);
+            return;
+        }
+        Iterator<TimestampEntry<MemorySegment>> range = dao.range(start, end);
+
+        ChunkResponse chunkResponse = new ChunkResponse(session);
+
+        while (range.hasNext()) {
+            TimestampEntry<MemorySegment> current = range.next();
+            chunkResponse.send(current);
+        }
+        chunkResponse.end();
     }
 
     @Path("/v0/entity")

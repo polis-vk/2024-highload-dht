@@ -1,7 +1,10 @@
 package ru.vk.itmo.test.vadimershov.hash;
 
 import ru.vk.itmo.test.vadimershov.ResultResponse;
+import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 
+import java.lang.foreign.MemorySegment;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 public abstract class VirtualNode {
@@ -29,4 +32,5 @@ public abstract class VirtualNode {
 
     public abstract CompletableFuture<ResultResponse> delete(String key, Long timestamp);
 
+    public abstract Iterator<TimestampEntry<MemorySegment>> range(String start, String end);
 }

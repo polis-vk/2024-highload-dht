@@ -1,13 +1,16 @@
 package ru.vk.itmo.test.vadimershov.hash;
 
 import ru.vk.itmo.test.vadimershov.ResultResponse;
+import ru.vk.itmo.test.vadimershov.dao.TimestampEntry;
 
 import javax.annotation.Nonnull;
+import java.lang.foreign.MemorySegment;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 public class RemoteNode extends VirtualNode {
@@ -77,6 +80,11 @@ public class RemoteNode extends VirtualNode {
                 .thenApply((httpResponse) ->
                         new ResultResponse(httpResponse.statusCode(), null, 0L)
                 );
+    }
+
+    @Override
+    public Iterator<TimestampEntry<MemorySegment>> range(String start, String end) {
+        throw new UnsupportedOperationException();
     }
 
 }

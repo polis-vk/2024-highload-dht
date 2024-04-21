@@ -17,6 +17,7 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -40,6 +41,10 @@ public class ShardingDao {
                 serviceConfig.clusterUrls(),
                 this.localDao
         );
+    }
+
+    public Iterator<TimestampEntry<MemorySegment>> range(String start, String end) {
+        return consistentHashing.getLocalNode().range(start, end);
     }
 
     public ResultResponse get(String key) throws NotFoundException, DaoException {

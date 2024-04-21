@@ -5,7 +5,9 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,10 +21,7 @@ import java.lang.foreign.MemorySegment;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.RejectedExecutionException;
@@ -73,6 +72,19 @@ public class MyServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        switch (request.getPath()) {
+            case "/v0/entity" -> handleEntity(request, session);
+            case "/v0/entities" -> handleEntities(request, session);
+            default -> sendResponseWithEmptyBody(session, Response.BAD_REQUEST);
+        }
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new MySession(socket, this);
+    }
+
+    private void handleEntity(Request request, HttpSession session) throws IOException {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
             sendResponseWithEmptyBody(session, Response.BAD_REQUEST);
@@ -105,6 +117,34 @@ public class MyServer extends HttpServer {
         }
     }
 
+    private void handleEntities(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            sendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
+            return;
+        }
+
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
+            sendResponseWithEmptyBody(session, Response.BAD_REQUEST);
+            return;
+        }
+        try {
+            workerPool.execute(() -> {
+                Iterator<Entry<MemorySegment>> entries = requestHandler.handleEntities(start, end);
+
+                try {
+                    session.sendResponse(new MyChunkedResponse(Response.OK, entries));
+                } catch (IOException e) {
+                    logIOExceptionAndCloseSession(session, e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.error("Workers pool queue overflow", e);
+            session.sendError(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), null);
+        }
+    }
+
     private void executeRequests(Request request, HttpSession session, long createdAt, String key, int ack, int from) {
         if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME_MILLIS) {
             try {
@@ -119,7 +159,7 @@ public class MyServer extends HttpServer {
             try {
                 session.sendResponse(response);
             } catch (IOException e) {
-               logIOExceptionAndCloseSession(session, e);
+                logIOExceptionAndCloseSession(session, e);
             }
             return;
         }

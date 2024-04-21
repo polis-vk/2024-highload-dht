@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 
 public class RequestHandler {
@@ -76,6 +77,13 @@ public class RequestHandler {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
+    public Iterator<Entry<MemorySegment>> handleEntities(String start, String end) {
+        MemorySegment msStart = toMemorySegment(start);
+        MemorySegment msEnd = toMemorySegment(end);
+
+        return dao.get(msStart, msEnd);
+    }
+
     private HttpRequest buildHttpRequest(
             String key, String targetNode, Request request, long timestamp, String selfUrl) {
         HttpRequest.Builder httpRequest = HttpRequest.newBuilder(URI.create(targetNode + BASE_PATH + "?id=" + key));
@@ -94,10 +102,16 @@ public class RequestHandler {
     }
 
     private MemorySegment toMemorySegment(String s) {
+        if (s == null) {
+            return null;
+        }
         return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
     }
 
     private byte[] toByteArray(MemorySegment ms) {
+        if (ms == null) {
+            return null;
+        }
         return ms.toArray(ValueLayout.JAVA_BYTE);
     }
 }

@@ -1,60 +1,59 @@
 package ru.vk.itmo.test.nikitaprokopev;
 
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.nikitaprokopev.dao.Dao;
+import ru.vk.itmo.test.nikitaprokopev.dao.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.TreeMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyServer extends HttpServer {
-    private static final String BASE_PATH = "/v0/entity";
-    private static final long MAX_RESPONSE_TIME = TimeUnit.SECONDS.toMillis(1);
+    public static final String HEADER_TIMESTAMP = "X-Timestamp: ";
+    public static final String HEADER_TIMESTAMP_LOWER_CASE = "x-timestamp";
+    public static final String HEADER_INTERNAL = "X-Internal";
+    public static final String LOCAL_REQUEST = "LOCAL";
+    private static final int NOT_FOUND_CODE = 404;
+    private static final long MAX_RESPONSE_TIME_MILLIS = TimeUnit.SECONDS.toMillis(1);
+    private static final List<Integer> allowedMethods = List.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
     private final Logger log = LoggerFactory.getLogger(MyServer.class);
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ThreadPoolExecutor workerPool;
-    private final HttpClient[] httpClients;
-    private final int nodeId;
+    private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
+    private RequestHandler requestHandler;
 
-    public MyServer(
-            ServiceConfig serviceConfig,
-            Dao<MemorySegment, Entry<MemorySegment>> dao,
-            ThreadPoolExecutor workerPool,
-            HttpClient[] httpClients,
-            int nodeId
+    public MyServer(ServiceConfig serviceConfig,
+                    Dao<MemorySegment, Entry<MemorySegment>> dao,
+                    ThreadPoolExecutor workerPool,
+                    HttpClient httpClient
     ) throws IOException {
         super(createServerConfig(serviceConfig));
-        this.dao = dao;
         this.workerPool = workerPool;
-        this.httpClients = httpClients;
-        this.nodeId = nodeId;
+        this.httpClient = httpClient;
         this.serviceConfig = serviceConfig;
+        this.requestHandler = new RequestHandler(dao);
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -68,140 +67,167 @@ public class MyServer extends HttpServer {
         return httpServerConfig;
     }
 
-    @Path(BASE_PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id, Request request) throws IOException {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        int targetNode = hash(id);
-        if (targetNode != nodeId) {
-            return proxyRequest(Request.METHOD_PUT, id, targetNode, request.getBody());
-        }
-
-        MemorySegment msKey = toMemorySegment(id);
-
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                msKey,
-                MemorySegment.ofArray(request.getBody())
-        );
-
-        dao.upsert(entry);
-
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path(BASE_PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) throws IOException {
-
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        int targetNode = hash(id);
-        if (targetNode != nodeId) {
-            return proxyRequest(Request.METHOD_GET, id, targetNode, Response.EMPTY);
-        }
-
-        MemorySegment msKey = toMemorySegment(id);
-
-        Entry<MemorySegment> entry = dao.get(msKey);
-
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-
-        return Response.ok(toByteArray(entry.value()));
-    }
-
-    @Path(BASE_PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) throws IOException {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        int targetNode = hash(id);
-        if (targetNode != nodeId) {
-            return proxyRequest(Request.METHOD_DELETE, id, targetNode, Response.EMPTY);
-        }
-
-        MemorySegment msKey = toMemorySegment(id);
-
-        Entry<MemorySegment> entry = new BaseEntry<>(
-                msKey,
-                null
-        );
-
-        dao.upsert(entry);
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    // For other methods
-    @Path(BASE_PATH)
-    public Response other() {
-        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    }
-
-    // For other requests - 400 Bad Request
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
-    }
-
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        long createdAt = System.currentTimeMillis();
-        try {
-            workerPool.execute(
-                    () -> {
-                        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME) {
-                            try {
-                                session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
-                            } catch (IOException e) {
-                                log.error("Exception while sending close connection", e);
-                                session.scheduleClose();
-                            }
-                            return;
-                        }
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            sendResponseWithEmptyBody(session, Response.BAD_REQUEST);
+            return;
+        }
 
-                        try {
-                            super.handleRequest(request, session);
-                        } catch (Exception e) {
-                            handleRequestException(session, e);
-                        }
-                    }
-            );
+        int methodNum = request.getMethod();
+        if (!allowedMethods.contains(methodNum)) {
+            sendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
+            return;
+        }
+
+        String fromString = request.getParameter("from=");
+        String ackString = request.getParameter("ack=");
+        int from = fromString == null || fromString.isEmpty() ? serviceConfig.clusterUrls().size()
+                : Integer.parseInt(fromString);
+        int ack = ackString == null || ackString.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackString);
+
+        if (ack <= 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
+            sendResponseWithEmptyBody(session, Response.BAD_REQUEST);
+            return;
+        }
+        long createdAt = System.currentTimeMillis();
+
+        try {
+            workerPool.execute(() -> executeRequests(request, session, createdAt, key, ack, from));
         } catch (RejectedExecutionException e) {
             log.error("Workers pool queue overflow", e);
             session.sendError(CustomResponseCodes.TOO_MANY_REQUESTS.getCode(), null);
         }
     }
 
-    private void handleRequestException(HttpSession session, Exception e) {
-        log.error("Error while handling request", e);
+    private void executeRequests(Request request, HttpSession session, long createdAt, String key, int ack, int from) {
+        if (System.currentTimeMillis() - createdAt > MAX_RESPONSE_TIME_MILLIS) {
+            try {
+                session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            } catch (IOException e) {
+                logIOExceptionAndCloseSession(session, e);
+            }
+            return;
+        }
+        if (request.getHeader(HEADER_INTERNAL) != null) {
+            Response response = handleInternalRequest(request);
+            try {
+                session.sendResponse(response);
+            } catch (IOException e) {
+               logIOExceptionAndCloseSession(session, e);
+            }
+            return;
+        }
+
+        Collection<String> targetNodes = getNodesSortedByRendezvousHashing(key, serviceConfig, from);
+        Collection<HttpRequest> httpRequests =
+                requestHandler.createRequests(request, key, targetNodes, serviceConfig.selfUrl());
+        List<Response> responses = getResponses(request, ack, httpRequests);
+        if (responses.size() < ack) {
+            sendResponseWithEmptyBody(session, CustomResponseCodes.RESPONSE_NOT_ENOUGH_REPLICAS.getCode());
+            return;
+        }
         try {
-            if (e instanceof HttpException) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            if (request.getMethod() != Request.METHOD_GET) {
+                session.sendResponse(responses.getFirst());
                 return;
             }
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        } catch (IOException ex) {
-            log.error("Exception while sending close connection", e);
-            session.scheduleClose();
+
+            mergeGetResponses(session, responses);
+        } catch (IOException e) {
+            logIOExceptionAndCloseSession(session, e);
         }
     }
 
-    private MemorySegment toMemorySegment(String s) {
-        return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
+    private void mergeGetResponses(HttpSession session, List<Response> responses) throws IOException {
+        byte[] body = null;
+        long maxTimestamp = Long.MIN_VALUE;
+        for (Response response : responses) {
+            long timestamp = response.getHeader(HEADER_TIMESTAMP) == null ? -1
+                    : Long.parseLong(response.getHeader(HEADER_TIMESTAMP));
+            if (timestamp > maxTimestamp) {
+                maxTimestamp = timestamp;
+                body = response.getStatus() == NOT_FOUND_CODE ? null : response.getBody();
+            }
+        }
+
+        if (body != null) {
+            session.sendResponse(new Response(Response.OK, body));
+            return;
+        }
+        sendResponseWithEmptyBody(session, Response.NOT_FOUND);
     }
 
-    private byte[] toByteArray(MemorySegment ms) {
-        return ms.toArray(ValueLayout.JAVA_BYTE);
+    private List<Response> getResponses(
+            Request request,
+            int ack,
+            Collection<HttpRequest> requests
+    ) {
+        List<Response> responses = new ArrayList<>(requests.size());
+        // stop if too many errors
+        int acceptableErrors = requests.size() - ack + 1;
+        for (HttpRequest httpRequest : requests) {
+            Response response;
+            if (httpRequest.headers().map().containsKey(LOCAL_REQUEST)) {
+                request.addHeader(
+                        HEADER_TIMESTAMP + httpRequest.headers().map().get(HEADER_TIMESTAMP_LOWER_CASE).getFirst());
+                response = handleInternalRequest(request);
+            } else {
+                response = proxyRequest(httpRequest);
+            }
+            if (response == null) {
+                --acceptableErrors;
+                if (acceptableErrors == 0) {
+                    break;
+                }
+                continue;
+            }
+            responses.add(response);
+        }
+        return responses;
+    }
+
+    private Response handleInternalRequest(Request request) {
+        Response response;
+        String id = request.getParameter("id=");
+        long timestamp = request.getHeader(HEADER_TIMESTAMP_LOWER_CASE) == null
+                ? System.currentTimeMillis()
+                : Long.parseLong(request.getHeader(HEADER_TIMESTAMP.toLowerCase()));
+        response = switch (request.getMethod()) {
+            case Request.METHOD_GET -> requestHandler.handleGet(id);
+            case Request.METHOD_PUT -> requestHandler.handlePut(id, request.getBody(), timestamp);
+            case Request.METHOD_DELETE -> requestHandler.handleDelete(id, timestamp);
+            default -> throw new IllegalArgumentException("Unsupported method: " + request.getMethod());
+        };
+        return response;
+    }
+
+    private Response proxyRequest(HttpRequest httpRequest) {
+        try {
+            HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+            return proxyResponse(response, response.body());
+        } catch (InterruptedException e) {
+            log.error("Interrupted while sending request", e);
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception e) {
+            log.info("Exception while sending request to another node", e);
+            return null;
+        }
+    }
+
+    private void sendResponseWithEmptyBody(HttpSession session, String status) {
+        try {
+            session.sendResponse(new Response(status, Response.EMPTY));
+        } catch (IOException e) {
+            logIOExceptionAndCloseSession(session, e);
+        }
+    }
+
+    private void logIOExceptionAndCloseSession(HttpSession session, IOException e) {
+        log.error("Exception while sending close connection", e);
+        session.scheduleClose();
     }
 
     private Response proxyResponse(HttpResponse<byte[]> response, byte[] body) {
@@ -214,63 +240,26 @@ public class MyServer extends HttpServer {
             default -> Response.INTERNAL_ERROR;
         };
 
-        return new Response(responseCode, body);
+        Response responseProxied = new Response(responseCode, body);
+        long timestamp = response.headers().map().containsKey(HEADER_TIMESTAMP_LOWER_CASE)
+                ? Long.parseLong(response.headers().map().get(HEADER_TIMESTAMP_LOWER_CASE).getFirst())
+                : -1;
+        if (timestamp != -1) {
+            responseProxied.addHeader(HEADER_TIMESTAMP + timestamp);
+        }
+        return responseProxied;
     }
 
-    private Response proxyRequest(int method, String id, int targetNode, byte[] body) throws IOException {
-        int idHttpClient = targetNode > nodeId ? targetNode - 1 : targetNode;
-        String targetPath = serviceConfig.clusterUrls().get(targetNode) + BASE_PATH + "?id=" + id;
-        try {
-            switch (method) {
-                case Request.METHOD_PUT -> {
-                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(targetPath))
-                            .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
-                            .timeout(Duration.ofMillis(500))
-                            .build(), HttpResponse.BodyHandlers.ofByteArray());
-                    return proxyResponse(response, Response.EMPTY);
-                }
-                case Request.METHOD_GET -> {
-                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(targetPath))
-                            .GET()
-                            .timeout(Duration.ofMillis(500))
-                            .build(), HttpResponse.BodyHandlers.ofByteArray());
-                    return proxyResponse(response, response.body());
-                }
-                case Request.METHOD_DELETE -> {
-                    HttpResponse<byte[]> response = httpClients[idHttpClient].send(HttpRequest.newBuilder()
-                            .uri(URI.create(targetPath))
-                            .DELETE()
-                            .timeout(Duration.ofMillis(500))
-                            .build(), HttpResponse.BodyHandlers.ofByteArray());
-                    return proxyResponse(response, Response.EMPTY);
-                }
-                default -> {
-                    log.error("Unknown method");
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                }
-            }
-        } catch (InterruptedException e) {
-            log.error("Exception while sending request", e);
-            Thread.currentThread().interrupt();
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (HttpTimeoutException e) {
-            log.error("Exception while sending request", e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
+    List<String> getNodesSortedByRendezvousHashing(String key, ServiceConfig serviceConfig, int from) {
+        TreeMap<Integer, String> nodesHashes = new TreeMap<>();
 
-    private int hash(String id) {
-        int maxValue = Integer.MIN_VALUE;
-        int maxHashNode = 0;
-        for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
-            int hash = Hash.murmur3(serviceConfig.clusterUrls().get(i) + id);
-            if (hash > maxValue) {
-                maxValue = hash;
-                maxHashNode = i;
+        for (String nodeUrl : serviceConfig.clusterUrls()) {
+            nodesHashes.put(Hash.murmur3(nodeUrl + key), nodeUrl);
+            if (nodesHashes.size() > from) {
+                nodesHashes.remove(nodesHashes.lastKey());
             }
         }
-        return maxHashNode;
+
+        return new ArrayList<>(nodesHashes.values());
     }
 }

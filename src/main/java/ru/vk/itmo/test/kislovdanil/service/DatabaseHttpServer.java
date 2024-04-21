@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -30,6 +31,7 @@ public class DatabaseHttpServer extends HttpServer {
     private final PersistentDao dao;
     private final Sharder sharder;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
+    private static final String ENTITIES_ACCESS_URL = "/v0/entities";
     private static final int CORE_POOL_SIZE = 1;
     private static final int MAX_POOL_SIZE = 12;
     private static final int KEEP_ALIVE_TIME_MS = 50;
@@ -121,6 +123,34 @@ public class DatabaseHttpServer extends HttpServer {
                     "Service temporary unavailable, retry later"
                             .getBytes(StandardCharsets.UTF_8)), session);
         }
+    }
+
+    private void handleEntitiesRequestTask(MemorySegment start, MemorySegment end, HttpSession session) {
+        try {
+            session.write(ChunkTransformUtility.HEADERS, 0, ChunkTransformUtility.HEADERS.length);
+            for (Iterator<Entry<MemorySegment>> it = dao.get(start, end); it.hasNext(); ) {
+                byte[] body = ChunkTransformUtility.makeContent(it.next());
+                session.write(body, 0, body.length);
+            }
+            session.write(ChunkTransformUtility.EMPTY_CONTENT, 0, ChunkTransformUtility.EMPTY_CONTENT.length);
+        } catch (IOException e) {
+            throw new NetworkException();
+        }
+    }
+
+    @Path(ENTITIES_ACCESS_URL)
+    public void handleEntitiesRequest(Request request, HttpSession session,
+                                      @Param(value = "start", required = true) String start,
+                                      @Param(value = "id") String end) {
+        try {
+            queryExecutor.execute(() -> handleEntitiesRequestTask(fromString(start),
+                    fromString(end), session));
+        } catch (RejectedExecutionException e) {
+            sendResponse(new Response(Response.SERVICE_UNAVAILABLE,
+                    "Service temporary unavailable, retry later"
+                            .getBytes(StandardCharsets.UTF_8)), session);
+        }
+
     }
 
     private Response putEntity(MemorySegment entityKey, byte[] entityValue) {

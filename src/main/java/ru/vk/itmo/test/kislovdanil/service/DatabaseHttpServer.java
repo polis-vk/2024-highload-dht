@@ -30,7 +30,7 @@ public class DatabaseHttpServer extends HttpServer {
     private final PersistentDao dao;
     private final Sharder sharder;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
-    private static final int CORE_POOL_SIZE = 1;
+    private static final int CORE_POOL_SIZE = 12;
     private static final int MAX_POOL_SIZE = 12;
     private static final int KEEP_ALIVE_TIME_MS = 50;
     private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE,
@@ -60,6 +60,7 @@ public class DatabaseHttpServer extends HttpServer {
             throw new NetworkException();
         }
     }
+
 
     private void handleEntityRequestTask(int method, String entityKey,
                                          int acknowledge, int from,

@@ -16,6 +16,8 @@ public class ChunkTransformUtility {
             \r
             """.getBytes(StandardCharsets.UTF_8);
 
+    private ChunkTransformUtility() {}
+
     public static byte[] makeContent(Entry<MemorySegment> entry) {
         int entrySize = (int) (entry.key().byteSize() + entry.value().byteSize()) + KEY_VALUE_SEPARATOR.length();
         String entrySizeHex = Long.toHexString(entrySize);

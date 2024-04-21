@@ -132,7 +132,7 @@ public class DaoHttpServer extends HttpServer {
             String end,
             HttpSession session
     ) throws IOException {
-        if (start.isBlank() || (end != null && end.isBlank())){
+        if (start.isBlank() || (end != null && end.isBlank())) {
             session.sendError(DaoResponse.BAD_REQUEST, null);
             return;
         }
@@ -160,11 +160,11 @@ public class DaoHttpServer extends HttpServer {
         }
 
         ResultResponse response;
-            if (inner) {
-                response = dao.get(id);
-            } else {
-                response = dao.get(id, ack, from);
-            }
+        if (inner) {
+            response = dao.get(id);
+        } else {
+            response = dao.get(id, ack, from);
+        }
 
         if (response.httpCode() == 404) {
             return DaoResponse.empty(DaoResponse.NOT_FOUND, response.timestamp());

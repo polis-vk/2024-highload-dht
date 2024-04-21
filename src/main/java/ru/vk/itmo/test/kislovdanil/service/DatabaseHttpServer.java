@@ -61,7 +61,6 @@ public class DatabaseHttpServer extends HttpServer {
         }
     }
 
-
     private void handleEntityRequestTask(int method, String entityKey,
                                          int acknowledge, int from,
                                          boolean notProxy,

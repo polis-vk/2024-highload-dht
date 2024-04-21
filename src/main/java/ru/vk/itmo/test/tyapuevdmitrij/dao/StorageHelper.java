@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.tyapuevdmitrij.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.io.File;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -78,6 +76,7 @@ public class StorageHelper {
             if (entry.value() != null) {
                 ssTableDataByteSize += entry.value().byteSize();
             }
+            ssTableDataByteSize += Long.BYTES;
             entriesCount++;
         }
         memTableEntriesCount = entriesCount;
@@ -110,6 +109,8 @@ public class StorageHelper {
                 dataOffset += Long.BYTES;
                 MemorySegment.copy(entry.value(), 0, buffer, dataOffset, entry.value().byteSize());
                 dataOffset += entry.value().byteSize();
+                buffer.set(ValueLayout.JAVA_LONG_UNALIGNED, dataOffset, Long.BYTES);
+                dataOffset += Long.BYTES;
             }
         } catch (IOException e) {
             throw new IllegalStateException(e);
@@ -130,6 +131,7 @@ public class StorageHelper {
             Entry<MemorySegment> entry = dataIterator.next();
             compactionTableByteSize += entry.key().byteSize();
             compactionTableByteSize += entry.value().byteSize();
+            compactionTableByteSize += Long.BYTES;
             countEntry++;
         }
         ssTablesEntryQuantity = countEntry;
@@ -142,9 +144,9 @@ public class StorageHelper {
         }
 
         if (entry.value() == null) {
-            return entry.key().byteSize();
+            return entry.key().byteSize() + Long.BYTES;
         }
 
-        return entry.key().byteSize() + entry.value().byteSize();
+        return entry.key().byteSize() + entry.value().byteSize() + Long.BYTES;
     }
 }

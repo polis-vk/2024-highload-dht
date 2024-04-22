@@ -21,8 +21,17 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
@@ -84,9 +93,9 @@ public class Server extends HttpServer {
             return;
         }
 
-        if (Utils.isRangeRequest(request)){
+        if (Utils.isRangeRequest(request)) {
             handleRangeRequest(request, session);
-        }else {
+        } else {
             handleSingleRequest(request, session);
         }
     }

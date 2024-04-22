@@ -17,6 +17,7 @@ import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Iterator;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -46,6 +47,17 @@ public class DaoHttpServer extends HttpServer {
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String SERVER_STOP_PATH = "/stop";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CHUNKED_HEADERS =
+            """
+            HTTP/1.1 200\r
+            OKContentType: application/octet-stream\r
+            Transfer-Encoding: chunked\r
+            Connection: keep-alive\r
+            \r
+            """.getBytes(StandardCharsets.UTF_8);
+    private static final byte[] ZERO_CHUNK_LENGTH = encodeChunkLength(0);
+    private static final byte[] CHUNK_SEPARATOR = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] ENTRY_SEPARATOR = "\n".getBytes(StandardCharsets.UTF_8);
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
     private final ExecutorService workerPool;
     private final ExecutorService redirectPool;
@@ -141,6 +153,9 @@ public class DaoHttpServer extends HttpServer {
             if (path.equals(SERVER_STOP_PATH)) {
                 stop();
                 return;
+            } else if (path.startsWith("/v0/entities")) {
+                processRange(request, session);
+                return;
             }
             final String id = request.getParameter("id=");
             final ProcessResultHandler handler = processHandler(session, request, id, path);
@@ -159,6 +174,60 @@ public class DaoHttpServer extends HttpServer {
             logger.error("Interrupted while processing tasks.");
             Thread.currentThread().interrupt();
         }
+    }
+
+    private void processRange(final Request request, final HttpSession session) throws IOException {
+        final String startString = request.getParameter("start=");
+        final String endString = request.getParameter("end=");
+        if (startString == null || startString.isBlank() || (endString != null && endString.isBlank())) {
+            session.sendError(Response.BAD_REQUEST, "Missing range parameter \"start\".");
+            return;
+        }
+        final MemorySegment startKey = MemorySegment.ofArray(startString.getBytes(StandardCharsets.UTF_8));
+        final MemorySegment endKey;
+        if (endString == null) {
+            endKey = null;
+        } else {
+            endKey = MemorySegment.ofArray(endString.getBytes(StandardCharsets.UTF_8));
+        }
+
+        final Iterator<TimeEntry<MemorySegment>> iterator = dao.get(startKey, endKey);
+        if (!iterator.hasNext()) {
+            session.sendResponse(new Response(Response.OK, Response.EMPTY));
+            return;
+        }
+        writeRange(iterator, session);
+    }
+
+    private void writeRange(final Iterator<TimeEntry<MemorySegment>> iterator, final HttpSession session) throws IOException {
+        writeOkHttpHeaders(session);
+        while (iterator.hasNext()) {
+            writeChunk(iterator.next(), session);
+        }
+        session.write(ZERO_CHUNK_LENGTH, 0, ZERO_CHUNK_LENGTH.length);
+        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);
+        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);
+        session.close();
+    }
+
+    private void writeChunk(final TimeEntry<MemorySegment> entry, final HttpSession session) throws IOException {
+        final byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
+        final byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
+        final byte[] chunkLength = encodeChunkLength(key.length + value.length + ENTRY_SEPARATOR.length);
+        session.write(chunkLength, 0, chunkLength.length);
+        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);;
+        session.write(key, 0, key.length);
+        session.write(ENTRY_SEPARATOR, 0, ENTRY_SEPARATOR.length);
+        session.write(value, 0, value.length);
+        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);
+    }
+
+    private static byte[] encodeChunkLength(final int length) {
+        return Integer.toHexString(length).toUpperCase().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void writeOkHttpHeaders(final HttpSession session) throws IOException {
+        session.write(CHUNKED_HEADERS, 0, CHUNKED_HEADERS.length);
     }
 
     private void processRequestAck(
@@ -246,7 +315,7 @@ public class DaoHttpServer extends HttpServer {
         return response;
     }
 
-    public ProcessResultHandler processHandler(
+    private ProcessResultHandler processHandler(
             final HttpSession session,
             final Request request,
             final String id,
@@ -292,7 +361,7 @@ public class DaoHttpServer extends HttpServer {
         return handler;
     }
 
-    public boolean isInvalidKey(final String key) {
+    private boolean isInvalidKey(final String key) {
         return key == null || key.isEmpty();
     }
 

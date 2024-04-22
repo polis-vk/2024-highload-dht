@@ -50,7 +50,6 @@ public class ServiceImpl implements Service {
         return serverConfig;
     }
 
-
     @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
         @Override

@@ -11,7 +11,7 @@ public final class Constants {
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     public static final int CLIENT_RESPONSE_TIMEOUT_MILLIS = 100;
-    public static final int THREADS = Runtime.getRuntime().availableProcessors();
+    public static final int ACCEPTOR_THREADS = Runtime.getRuntime().availableProcessors();
     public static final int THREAD_KEEP_ALIVE_TIME = 60;
     public static final long TASK_DEADLINE_MILLIS = 500;
     public static final int FLUSH_THRESHOLD_BYTES = 3 * 1024 * 1024;

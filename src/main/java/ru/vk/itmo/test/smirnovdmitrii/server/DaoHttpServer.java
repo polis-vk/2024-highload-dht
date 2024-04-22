@@ -199,7 +199,10 @@ public class DaoHttpServer extends HttpServer {
         writeRange(iterator, session);
     }
 
-    private void writeRange(final Iterator<TimeEntry<MemorySegment>> iterator, final HttpSession session) throws IOException {
+    private void writeRange(
+            final Iterator<TimeEntry<MemorySegment>> iterator,
+            final HttpSession session
+    ) throws IOException {
         writeOkHttpHeaders(session);
         while (iterator.hasNext()) {
             writeChunk(iterator.next(), session);

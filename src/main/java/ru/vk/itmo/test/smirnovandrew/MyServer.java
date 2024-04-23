@@ -66,11 +66,7 @@ public class MyServer extends HttpServer {
         this.logger = Logger.getLogger(MyServer.class.getName());
         this.httpClients = config.clusterUrls().stream()
                 .filter(url -> !Objects.equals(url, config.selfUrl()))
-                .collect(Collectors.toMap(
-                        s -> s,
-                        MyServerUtil::createClient,
-                        (c, c1) -> c)
-                );
+                .collect(Collectors.toMap(s -> s, MyServerUtil::createClient, (c, c1) -> c));
     }
 
     @Override
@@ -177,7 +173,6 @@ public class MyServer extends HttpServer {
         if (responses.size() < ack) {
             return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
-
         return MyServerUtil.getMaxTimestampResponse(responses);
     }
 

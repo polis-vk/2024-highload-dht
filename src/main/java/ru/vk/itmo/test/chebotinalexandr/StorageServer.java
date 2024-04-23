@@ -25,15 +25,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class StorageServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(StorageServer.class);
@@ -42,7 +38,7 @@ public class StorageServer extends HttpServer {
     private final List<String> clusterUrls;
     private final String selfUrl;
     private final HttpClient httpClient;
-    private AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicBoolean closed = new AtomicBoolean();
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String TIMESTAMP_HEADER = "X-Timestamp";
     private static final String INTERNAL_HEADER = "X-Internal";

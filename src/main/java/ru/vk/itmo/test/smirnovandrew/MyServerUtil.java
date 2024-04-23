@@ -9,10 +9,13 @@ import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.logging.Logger;
 
 public final class MyServerUtil {
     private static final int CONNECTION_TIMEOUT = 1000;
+
+    public static final String X_TIMESTAMP = "X-TimeStamp: ";
 
     private MyServerUtil() {
     }
@@ -43,11 +46,24 @@ public final class MyServerUtil {
         }
     }
 
-    public static long headerTimestampToLong(Response r) {
-        String header = r.getHeader("X-TimeStamp: ");
+    private static long headerTimestampToLong(Response r) {
+        String header = r.getHeader(X_TIMESTAMP);
         if (header == null) {
             return Long.MIN_VALUE;
         }
         return Long.parseLong(header);
+    }
+
+    public static Response getMaxTimestampResponse(List<Response> responses) {
+        long maxTimestamp = Long.MIN_VALUE;
+        Response maxResponse = null;
+        for(var response: responses) {
+            long timestamp = headerTimestampToLong(response);
+            if (timestamp >= maxTimestamp) {
+                maxResponse = response;
+                maxTimestamp = timestamp;
+            }
+        }
+        return maxResponse;
     }
 }

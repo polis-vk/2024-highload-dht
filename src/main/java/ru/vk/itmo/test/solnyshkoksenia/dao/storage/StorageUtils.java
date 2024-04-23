@@ -13,6 +13,7 @@ import java.nio.channels.FileChannel;
 public class StorageUtils {
     private static final long INDEX_SIZE = Long.BYTES;
     private static final int FIELD_COUNT = 4;
+
     protected MemorySegment slice(MemorySegment page, long start, long end) {
         return page.asSlice(start, end - start);
     }

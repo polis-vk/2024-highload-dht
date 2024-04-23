@@ -152,7 +152,7 @@ public class ServiceImpl implements Service {
                     requestHandler.processRequest(request, id, node, timestamp, config.selfUrl());
 
             futureResponse
-                    .whenCompleteAsync((resp, ex) -> {
+                    .whenCompleteAsync((resp, _) -> {
                         if (resp == null) {
                             unableToRespondCheck(session, failures, ack, from);
                         } else {

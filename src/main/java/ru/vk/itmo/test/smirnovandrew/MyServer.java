@@ -28,7 +28,6 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class MyServer extends HttpServer {
-
     private static final String ROOT = "/v0/entity";
     private static final String X_SENDER_NODE = "X-SenderNode";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
@@ -36,7 +35,6 @@ public class MyServer extends HttpServer {
     private static final int OK_STATUS = 300;
     private static final int NOT_FOUND_STATUS = 404;
     private static final String HEADER_DELIMITER = ": ";
-
     private final MyServerDao dao;
     private final MyExecutor executor;
     private final Logger logger;
@@ -170,8 +168,8 @@ public class MyServer extends HttpServer {
         var responses = new ArrayList<Response>();
         for (int nodeNumber : sortedNodes) {
             var r = sendToAnotherNode(request, config.clusterUrls().get(nodeNumber), operation);
-            if (r.getStatus() < OK_STATUS ||
-                    (r.getStatus() == NOT_FOUND_STATUS && request.getMethod() == Request.METHOD_GET)) {
+            if (r.getStatus() < OK_STATUS
+                    || (r.getStatus() == NOT_FOUND_STATUS && request.getMethod() == Request.METHOD_GET)) {
                 responses.add(r);
             }
         }

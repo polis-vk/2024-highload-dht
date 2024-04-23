@@ -24,6 +24,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -42,6 +44,8 @@ public class StorageServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(StorageServer.class);
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ExecutorService serverExecutor;
+    private static final int STORAGE_EXECUTOR_POOL_SIZE = 16;
+    private static final int STORAGE_EXECUTOR_QUEUE_CAPACITY = 128;
     private final ExecutorService storageExecutor;
     private final List<String> clusterUrls;
     private final String selfUrl;
@@ -64,11 +68,11 @@ public class StorageServer extends HttpServer {
         this.dao = dao;
         this.serverExecutor = executor;
         this.storageExecutor = new ThreadPoolExecutor(
-                16,
-                16,
+                STORAGE_EXECUTOR_POOL_SIZE,
+                STORAGE_EXECUTOR_POOL_SIZE,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(128),
+                new ArrayBlockingQueue<>(STORAGE_EXECUTOR_QUEUE_CAPACITY),
                 new CustomThreadFactory("dao")
         );
         this.clusterUrls = config.clusterUrls();
@@ -116,8 +120,14 @@ public class StorageServer extends HttpServer {
 
         //check for internal request
         if (request.getHeader(INTERNAL_HEADER) != null) {
-            long timestamp = parseTimestamp(request.getHeader(TIMESTAMP_HEADER));
-            Response response = handleRequest(request, id, timestamp);
+            Response response;
+
+            if (request.getMethod() != Request.METHOD_GET) {
+                long timestamp = parseTimestamp(request.getHeader(TIMESTAMP_HEADER + ": "));
+                response = handleUpsertRequest(request, id, timestamp);
+            } else {
+                response = handleGetRequest(id);
+            }
             session.sendResponse(response);
             return;
         }
@@ -166,7 +176,7 @@ public class StorageServer extends HttpServer {
         int httpMethod = request.getMethod();
 
         //get completable futures from nodes
-        List<CompletableFuture<Response>> completableFutureResponses = new CopyOnWriteArrayList<>();
+        List<CompletableFuture<Response>> completableFutureResponses = new ArrayList<>();
         for (int i = 0; i < from; i++) {
             int nodeIndex = (partition + i) % clusterUrls.size();
 
@@ -184,7 +194,7 @@ public class StorageServer extends HttpServer {
 
     private void callback(
             HttpSession session, int ack, int from, int httpMethod,
-            List<CompletableFuture<Response>> completableFutureResponses
+            Collection<CompletableFuture<Response>> completableFutureResponses
     ) {
         List<Response> readyResponses = new CopyOnWriteArrayList<>();
         AtomicBoolean enough = new AtomicBoolean();
@@ -192,7 +202,7 @@ public class StorageServer extends HttpServer {
         for (CompletableFuture<Response> completableFuture : completableFutureResponses) {
             completableFuture.whenCompleteAsync((response, throwable) -> {
                 if (enough.get()) {
-                    return; //todo try to cancel other future tasks when done
+                    return;
                 }
                 handled.incrementAndGet();
 
@@ -240,30 +250,31 @@ public class StorageServer extends HttpServer {
             List<Response> responses,
             int ack
     ) throws IOException {
-        boolean enough = responses.size() >= ack;
-
-        if (enough) {
-            if (httpMethod == Request.METHOD_PUT || httpMethod == Request.METHOD_DELETE) {
-                session.sendResponse(responses.getFirst());
-            } else {
-                session.sendResponse(findLastWriteResponse(responses));
-            }
-            return true;
+        if (responses.size() < ack) {
+            return false;
         }
 
-        return false;
+        if (httpMethod == Request.METHOD_PUT || httpMethod == Request.METHOD_DELETE) {
+            session.sendResponse(responses.getFirst());
+        } else {
+            session.sendResponse(findLastWriteResponse(responses));
+        }
+
+        return true;
     }
 
     private static Response findLastWriteResponse(List<Response> responses) {
         Response result = responses.getFirst();
         long maxTimestamp = 0;
         for (Response response : responses) {
-            String timestampHeader = response.getHeaders()[response.getHeaderCount() - 1];
+            String timestampHeader = response.getHeader(TIMESTAMP_HEADER + ": ");
 
-            long timestamp = parseTimestamp(timestampHeader);
-            if (maxTimestamp < timestamp) {
-                maxTimestamp = timestamp;
-                result = response;
+            if (timestampHeader != null) {
+                long timestamp = parseTimestamp(timestampHeader);
+                if (maxTimestamp < timestamp) {
+                    maxTimestamp = timestamp;
+                    result = response;
+                }
             }
         }
 
@@ -271,14 +282,7 @@ public class StorageServer extends HttpServer {
     }
 
     private static long parseTimestamp(String timestampHeader) {
-        Pattern pattern = Pattern.compile("\\d+");
-        Matcher matcher = pattern.matcher(timestampHeader);
-
-        if (matcher.find()) {
-            return Long.parseLong(matcher.group());
-        }
-
-        return 0L;
+        return Long.parseLong(timestampHeader);
     }
 
     private static int quorum(int from) {
@@ -292,17 +296,21 @@ public class StorageServer extends HttpServer {
     ) {
         String partitionUrl = getPartitionUrl(partition) + request.getURI();
 
-        HttpRequest newRequest = HttpRequest.newBuilder()
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(partitionUrl))
                 .header(INTERNAL_HEADER, "true")
-                .header(TIMESTAMP_HEADER, String.valueOf(timestamp))
                 .method(
                         request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(
                                 request.getBody() == null ? Response.EMPTY : request.getBody()
                         )
-                )
-                .build();
+                );
+
+        if (request.getMethod() != Request.METHOD_GET) {
+            requestBuilder.header(TIMESTAMP_HEADER, String.valueOf(timestamp));
+        }
+
+        HttpRequest newRequest = requestBuilder.build();
 
         CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture =
                 httpClient.sendAsync(newRequest, HttpResponse.BodyHandlers.ofByteArray());
@@ -317,11 +325,16 @@ public class StorageServer extends HttpServer {
             case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
             case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
             case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
-            default -> throw new IllegalStateException("Can not define response code:" + response.statusCode());
+            default -> throw new IllegalStateException("Can not define response code: " + response.statusCode());
         };
 
         Response converted = new Response(responseCode, response.body());
-        converted.addHeader(response.headers().firstValue(TIMESTAMP_HEADER).orElse(""));
+        response
+                .headers()
+                .firstValue(TIMESTAMP_HEADER)
+                .ifPresent(
+                        v -> converted.addHeader(TIMESTAMP_HEADER + ": " + v)
+                );
 
         return converted;
     }
@@ -351,28 +364,30 @@ public class StorageServer extends HttpServer {
     }
 
     private CompletableFuture<Response> handleRequestAsync(Request request, String id, long timestamp) {
-        return CompletableFuture.supplyAsync(() -> handleRequest(request, id, timestamp), storageExecutor);
+        return CompletableFuture.supplyAsync(() -> request.getMethod() == Request.METHOD_GET ?
+                handleGetRequest(id) : handleUpsertRequest(request, id, timestamp), storageExecutor);
     }
 
-    private Response handleRequest(Request request, String id, long timestamp) {
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                Entry<MemorySegment> entry = dao.get(fromString(id));
+    private Response handleGetRequest(String id) {
+        Entry<MemorySegment> entry = dao.get(fromString(id));
 
-                if (entry == null) {
-                    //not a tombstone
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
-                } else if (entry.value() == null) {
-                    //tombstone
-                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                    response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
-                    return response;
-                } else {
-                    Response response = Response.ok(toBytes(entry.value()));
-                    response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
-                    return response;
-                }
-            }
+        if (entry == null) {
+            //not a tombstone
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else if (entry.value() == null) {
+            //tombstone
+            Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+            response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
+            return response;
+        } else {
+            Response response = Response.ok(toBytes(entry.value()));
+            response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
+            return response;
+        }
+    }
+
+    private Response handleUpsertRequest(Request request, String id, long timestamp) {
+        switch (request.getMethod()) {
             case Request.METHOD_PUT -> {
                 Entry<MemorySegment> entry = new TimestampEntry<>(
                         fromString(id),

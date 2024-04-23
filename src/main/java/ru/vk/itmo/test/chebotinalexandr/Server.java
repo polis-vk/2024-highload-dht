@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 public final class Server {
     private static final Random RANDOM = new Random();
     private static final int ENTRIES_IN_DB = 500_000;
-    private static final long FLUSH_THRESHOLD_BYTES = 4_194_3040L;
+    private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
     private static final int BASE_PORT = 8080;
     private static final int NODES = 3;
     private static final int POOL_SIZE = 20;

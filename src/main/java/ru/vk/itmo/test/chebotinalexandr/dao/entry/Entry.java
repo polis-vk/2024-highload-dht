@@ -5,7 +5,5 @@ public interface Entry<D> {
 
     D value();
 
-    default long timestamp() {
-        return 0L;
-    }
+    long timestamp();
 }

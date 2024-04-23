@@ -57,7 +57,7 @@ public final class MyServerUtil {
     public static Response getMaxTimestampResponse(List<Response> responses) {
         long maxTimestamp = Long.MIN_VALUE;
         Response maxResponse = null;
-        for(var response: responses) {
+        for (var response: responses) {
             long timestamp = headerTimestampToLong(response);
             if (timestamp >= maxTimestamp) {
                 maxResponse = response;

@@ -17,7 +17,6 @@ import ru.vk.itmo.test.reference.dao.ReferenceDao;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -34,11 +33,8 @@ public class MyServer extends HttpServer {
     private static final String X_SENDER_NODE = "X-SenderNode";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final long DURATION = 1000L;
-
     private static final int OK_STATUS = 300;
-
     private static final int NOT_FOUND_STATUS = 404;
-
     private static final String HEADER_DELIMITER = ": ";
 
     private final MyServerDao dao;
@@ -164,7 +160,7 @@ public class MyServer extends HttpServer {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
-        var sortedNodes = RendezvousClusterManager.getSortedNodes(id, from, config);
+        var sortedNodes = RendezvousClusterManager.getSortedNodes(from, config);
 
         if (sortedNodes.stream().map(config.clusterUrls()::get).noneMatch(config.selfUrl()::equals)) {
             return sendToAnotherNode(request, clusterUrl, operation);
@@ -174,7 +170,8 @@ public class MyServer extends HttpServer {
         var responses = new ArrayList<Response>();
         for (int nodeNumber : sortedNodes) {
             var r = sendToAnotherNode(request, config.clusterUrls().get(nodeNumber), operation);
-            if (r.getStatus() < OK_STATUS || (r.getStatus() == NOT_FOUND_STATUS && request.getMethod() == Request.METHOD_GET)) {
+            if (r.getStatus() < OK_STATUS ||
+                    (r.getStatus() == NOT_FOUND_STATUS && request.getMethod() == Request.METHOD_GET)) {
                 responses.add(r);
             }
         }

@@ -4,10 +4,10 @@ import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
 import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

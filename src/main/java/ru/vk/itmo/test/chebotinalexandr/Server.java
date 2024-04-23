@@ -4,9 +4,10 @@ import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
 import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.TimestampEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -139,7 +140,7 @@ public final class Server {
     }
 
     private static Entry<MemorySegment> entry(MemorySegment key, MemorySegment value) {
-        return new BaseEntry<>(key, value);
+        return new TimestampEntry<>(key, value, 0L);
     }
 
 }

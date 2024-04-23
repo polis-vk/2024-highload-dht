@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.dao.TimestampEntry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.TimestampEntry;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;

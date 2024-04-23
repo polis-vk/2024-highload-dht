@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
 import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 
 import java.io.IOException;

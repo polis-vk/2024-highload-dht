@@ -2,7 +2,6 @@ package ru.vk.itmo.test.chebotinalexandr;
 
 import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
 import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
@@ -127,8 +126,6 @@ public final class Server {
                 count = 0;
             }
         }
-
-        return partition;
     }
 
     private static MemorySegment keyAt(int index) {

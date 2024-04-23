@@ -126,6 +126,8 @@ public final class Server {
                 count = 0;
             }
         }
+
+        return partition;
     }
 
     private static MemorySegment keyAt(int index) {

@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.shishiginstepan.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -29,7 +27,7 @@ public final class BinarySearchSSTableWriter {
     }
 
     public static BinarySearchSSTable writeSSTable(
-            Iterable<Entry<MemorySegment>> entries,
+            Iterable<EntryWithTimestamp<MemorySegment>> entries,
             Path path,
             int id,
             Arena arena
@@ -52,7 +50,8 @@ public final class BinarySearchSSTableWriter {
             if (entry.value() != null) {
                 dataSize += entry.value().byteSize();
             }
-            indexSize += Long.BYTES * 2;
+            indexSize += Long.BYTES * 2; // размер лонгов которые оффсеты ключа, значения
+            dataSize += Long.BYTES; // размер лонга который будет таймстемпом в таблице
         }
         try (var fileChannel = FileChannel.open(
                 tempSSTPath.get(),
@@ -99,7 +98,7 @@ public final class BinarySearchSSTableWriter {
     }
 
     private static void writeEntries(
-            Iterable<Entry<MemorySegment>> entries,
+            Iterable<EntryWithTimestamp<MemorySegment>> entries,
             MemorySegment tableSegment,
             MemorySegment indexSegment
     ) {
@@ -111,6 +110,10 @@ public final class BinarySearchSSTableWriter {
 
             MemorySegment.copy(entry.key(), 0, tableSegment, tableOffset, entry.key().byteSize());
             tableOffset += entry.key().byteSize();
+
+            tableSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, tableOffset, entry.timestamp());
+            tableOffset += ValueLayout.JAVA_LONG_UNALIGNED.byteSize();
+
             if (entry.value() == null) {
                 indexSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, tombstone(tableOffset));
                 indexOffset += ValueLayout.JAVA_LONG_UNALIGNED.byteSize();

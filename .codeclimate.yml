@@ -79,3 +79,4 @@ exclude_patterns:
   - "src/test/"
   - "src/main/java/ru/vk/itmo/test/reference/"
   - "src/main/java/ru/vk/itmo/test/smirnovdmitrii/application/properties"
+  - "src/main/java/ru/vk/itmo/test/smirnovdmitrii/server/ProcessResult.java"

@@ -24,7 +24,6 @@ public class StorageService implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private StorageServer server;
     private ExecutorService executor;
-    private HttpClient httpClient;
     private static final int POOL_SIZE = 20;
     private static final int QUEUE_CAPACITY = 256;
     private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
@@ -44,7 +43,7 @@ public class StorageService implements Service {
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );
-        this.httpClient = HttpClient.newBuilder()
+        HttpClient httpClient = HttpClient.newBuilder()
                 .executor(
                         Executors.newFixedThreadPool(
                                 POOL_SIZE,

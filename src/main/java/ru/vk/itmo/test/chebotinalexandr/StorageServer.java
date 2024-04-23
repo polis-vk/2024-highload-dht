@@ -281,7 +281,12 @@ public class StorageServer extends HttpServer {
         };
 
         Response converted = new Response(responseCode, response.body());
-        response.headers().firstValue(TIMESTAMP_HEADER).ifPresent(v -> converted.addHeader(TIMESTAMP_HEADER + ": " + v));
+        response
+                .headers()
+                .firstValue(TIMESTAMP_HEADER)
+                .ifPresent(
+                        v -> converted.addHeader(TIMESTAMP_HEADER + ": " + v)
+                );
 
         return converted;
     }

@@ -27,7 +27,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -44,17 +46,24 @@ public class StorageServer extends HttpServer {
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String TIMESTAMP_HEADER = "X-Timestamp";
     private static final String INTERNAL_HEADER = "X-Internal";
+    private static final Set<Integer> allowedMethods = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
     public StorageServer(
             ServiceConfig config,
-            Dao<MemorySegment, Entry<MemorySegment>> dao, ExecutorService executor
+            Dao<MemorySegment, Entry<MemorySegment>> dao,
+            ExecutorService executor,
+            HttpClient httpClient
     ) throws IOException {
         super(createConfig(config));
         this.dao = dao;
         this.executor = executor;
         this.clusterUrls = config.clusterUrls();
         this.selfUrl = config.selfUrl();
-        this.httpClient = HttpClient.newHttpClient();
+        this.httpClient = httpClient;
     }
 
     private static HttpServerConfig createConfig(ServiceConfig config) {
@@ -84,6 +93,11 @@ public class StorageServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (!allowedMethods.contains(request.getMethod())) {
+            sendEmptyBodyResponse(Response.METHOD_NOT_ALLOWED, session);
+            return;
+        }
+
         String id = request.getParameter("id=");
         if (id == null || id.isBlank()) {
             sendEmptyBodyResponse(Response.BAD_REQUEST, session);
@@ -92,7 +106,7 @@ public class StorageServer extends HttpServer {
 
         //check for internal request
         if (request.getHeader(INTERNAL_HEADER) != null) {
-            long timestamp = parseTimestamp(request.getHeader(TIMESTAMP_HEADER));
+            long timestamp = parseTimestamp(request.getHeader(TIMESTAMP_HEADER + ": "));
             Response response = handleRequest(request, id, timestamp);
             session.sendResponse(response);
             return;
@@ -145,16 +159,21 @@ public class StorageServer extends HttpServer {
         for (int i = 0; i < from; i++) {
             int nodeIndex = (partition + i) % clusterUrls.size();
 
+            Response response;
+
             if (isCurrentPartition(nodeIndex)) {
-                Response response = handleRequest(request, id, timestamp);
-                responses.add(response);
+                response = handleRequest(request, id, timestamp);
             } else {
-                remote(request, timestamp, nodeIndex, responses);
+                response = remote(request, timestamp, nodeIndex);
+            }
+
+            if (response != null) {
+                responses.add(response);
             }
 
             boolean enough = compareReplicasResponses(httpMethod, session, responses, ack);
-            if (enough && httpMethod == Request.METHOD_GET) {
-                    return;
+            if (enough) {
+                return;
             }
         }
 
@@ -174,7 +193,7 @@ public class StorageServer extends HttpServer {
         if (enough) {
             if (httpMethod == Request.METHOD_PUT || httpMethod == Request.METHOD_DELETE) {
                 session.sendResponse(responses.getFirst());
-                return true;
+                return false;
             } else {
                 session.sendResponse(findLastWriteResponse(responses));
                 return true;
@@ -188,12 +207,14 @@ public class StorageServer extends HttpServer {
         Response result = responses.getFirst();
         long maxTimestamp = 0;
         for (Response response : responses) {
-            String timestampHeader = response.getHeaders()[response.getHeaderCount() - 1];
+            String timestampHeader = response.getHeader(TIMESTAMP_HEADER + ": ");
 
-            long timestamp = parseTimestamp(timestampHeader);
-            if (maxTimestamp < timestamp) {
-                maxTimestamp = timestamp;
-                result = response;
+            if (timestampHeader != null) {
+                long timestamp = parseTimestamp(timestampHeader);
+                if (maxTimestamp < timestamp) {
+                    maxTimestamp = timestamp;
+                    result = response;
+                }
             }
         }
 
@@ -201,34 +222,28 @@ public class StorageServer extends HttpServer {
     }
 
     private long parseTimestamp(String timestampHeader) {
-        Pattern pattern = Pattern.compile("\\d+");
-        Matcher matcher = pattern.matcher(timestampHeader);
-
-        if (matcher.find()) {
-            return Long.parseLong(matcher.group());
-        }
-
-        return 0L;
+        return Long.parseLong(timestampHeader);
     }
 
-    private void remote(
+    private Response remote(
             Request request,
             long timestamp,
-            int nodeIndex,
-            List<Response> responses
+            int nodeIndex
     ) throws IOException, InterruptedException {
+        Response response = null;
         try {
-            Response response = routeRequest(nodeIndex, request, timestamp);
-            if ((response.getStatus() == 201)
-                    || (response.getStatus() == 200)
-                    || (response.getStatus() == 404)
-                    || (response.getStatus() == 202)) {
-                responses.add(response);
+            Response responseFromNode = routeRequest(nodeIndex, request, timestamp);
+            if ((responseFromNode.getStatus() == 201)
+                    || (responseFromNode.getStatus() == 200)
+                    || (responseFromNode.getStatus() == 404)
+                    || (responseFromNode.getStatus() == 202)) {
+                response = responseFromNode;
             }
         } catch (ConnectException e) {
-            //do not add to response list
             log.info("Can't connect to node " + nodeIndex);
         }
+
+        return response;
     }
 
     private int quorum(int from) {
@@ -270,7 +285,7 @@ public class StorageServer extends HttpServer {
         };
 
         Response converted = new Response(responseCode, response.body());
-        converted.addHeader(response.headers().firstValue(TIMESTAMP_HEADER).orElse(""));
+        response.headers().firstValue(TIMESTAMP_HEADER).ifPresent(v -> converted.addHeader(TIMESTAMP_HEADER + ": " + v));
 
         return converted;
     }
@@ -326,7 +341,9 @@ public class StorageServer extends HttpServer {
                 );
                 dao.upsert(entry);
 
-                return new Response(Response.CREATED, Response.EMPTY);
+                Response response = new Response(Response.CREATED, Response.EMPTY);
+                response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
+                return response;
             }
             case Request.METHOD_DELETE -> {
                 //tombstone
@@ -337,7 +354,9 @@ public class StorageServer extends HttpServer {
                 );
                 dao.upsert(entry);
 
-                return new Response(Response.ACCEPTED, Response.EMPTY);
+                Response response = new Response(Response.ACCEPTED, Response.EMPTY);
+                response.addHeader(TIMESTAMP_HEADER + ": " + entry.timestamp());
+                return response;
             }
             default -> {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);

@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -10,9 +11,12 @@ import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -20,6 +24,7 @@ public class StorageService implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private StorageServer server;
     private ExecutorService executor;
+    private HttpClient httpClient;
     private static final int POOL_SIZE = 20;
     private static final int QUEUE_CAPACITY = 256;
     private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
@@ -39,8 +44,18 @@ public class StorageService implements Service {
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );
+        this.httpClient = HttpClient.newBuilder()
+                .executor(
+                        Executors.newFixedThreadPool(
+                                POOL_SIZE,
+                                new CustomThreadFactory("httpClient")
+                        )
+                )
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
 
-        this.server = new StorageServer(config, dao, executor);
+        this.server = new StorageServer(config, dao, executor, httpClient);
         server.start();
 
         return CompletableFuture.completedFuture(null);

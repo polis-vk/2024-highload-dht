@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -9,14 +10,17 @@ import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -62,7 +66,19 @@ public final class Server {
                     TimeUnit.MILLISECONDS,
                     new ArrayBlockingQueue<>(QUEUE_CAPACITY)
             );
-            StorageServer server = new StorageServer(config, dao, executor);
+
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .executor(
+                            Executors.newFixedThreadPool(
+                                    POOL_SIZE,
+                                    new CustomThreadFactory("httpClient")
+                            )
+                    )
+                    .connectTimeout(Duration.ofMillis(500))
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build();
+
+            StorageServer server = new StorageServer(config, dao, executor, httpClient);
             server.start();
 
         }

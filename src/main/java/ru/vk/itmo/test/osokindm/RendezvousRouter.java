@@ -45,7 +45,7 @@ public class RendezvousRouter {
             sortedNodes.put(hash, node);
         }
         List<Node> selectedNodes = new ArrayList<>();
-        int nodesNeeded = Math.min(nodeAmount, sortedNodes.size());
+        int nodesNeeded = nodeAmount;
         for (Node node : sortedNodes.values()) {
             if (nodesNeeded == 0) break;
             selectedNodes.add(node);

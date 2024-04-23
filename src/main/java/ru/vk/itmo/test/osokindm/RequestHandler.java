@@ -13,6 +13,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeoutException;
 public class RequestHandler {
     private static final String TIMESTAMP_HEADER = "Request-timestamp";
     private static final String TIMESTAMP_HEADER_LC = "request-timestamp";
+    private static final int EMPTY_TS = -1;
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
     private final HttpClient client;
     private DaoWrapper daoWrapper;
@@ -109,7 +111,6 @@ public class RequestHandler {
                 .method(request.getMethodName(),
                         HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
-        LOGGER.info("checking request " + proxyRequest.headers().toString());
 
         return client
                 .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
@@ -117,11 +118,10 @@ public class RequestHandler {
     }
 
     private Response processedResponse(HttpResponse<byte[]> response) {
-        long timestamp = response.headers().map().containsKey(TIMESTAMP_HEADER_LC)
-                ? Long.parseLong(response.headers().map().get(TIMESTAMP_HEADER_LC).getFirst())
-                : -1;
+        List<String> tsHeaders = response.headers().map().get(TIMESTAMP_HEADER_LC);
+        long timestamp = (tsHeaders == null || tsHeaders.isEmpty()) ? EMPTY_TS : Long.parseLong(tsHeaders.getFirst());
 
-        if (response.body().length == 0 && timestamp == -1) {
+        if (response.body().length == 0 && timestamp == EMPTY_TS) {
             return new Response(String.valueOf(response.statusCode()), Response.EMPTY);
         }
         Response processedResponse = new Response(String.valueOf(response.statusCode()), response.body());

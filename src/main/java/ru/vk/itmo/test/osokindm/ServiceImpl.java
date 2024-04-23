@@ -34,12 +34,16 @@ import static java.lang.Math.floor;
 
 public class ServiceImpl implements Service {
 
-    private static final int MEMORY_LIMIT_BYTES = 8 * 1024;
+    private static final int MEMORY_LIMIT_BYTES = 8 * 1024 * 1024;
     private static final int CONNECTION_TIMEOUT_MS = 250;
     private static final String DEFAULT_PATH = "/v0/entity";
     private static final String TIMESTAMP_HEADER = "Request-timestamp";
     private static final String WRONG_ACK = "wrong 'ack' value";
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
+    private static final Response badIdResponse
+            = new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8));
+    private static final Response wrongAckResponse
+            = new Response(Response.BAD_REQUEST, WRONG_ACK.getBytes(StandardCharsets.UTF_8));
     private final ServiceConfig config;
     private final Executor responseExecutor;
     private final RequestHandler requestHandler;
@@ -91,19 +95,19 @@ public class ServiceImpl implements Service {
                        @Param(value = "ack") Integer ackNumber,
                        @Param(value = "from") Integer fromNumber) throws TimeoutException, IOException {
         if (id == null || id.isBlank()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, "Invalid id".getBytes(StandardCharsets.UTF_8)));
+            session.sendResponse(badIdResponse);
             return;
         }
 
-        if (!handleTimestampHeader(request, session, id)) {
+        if (handleTimestampHeader(request, session, id)) {
             return;
         }
 
-        int from = fromNumber == null ? config.clusterUrls().size() : fromNumber;
-        int ack = ackNumber == null ? calculateAck(from) : ackNumber;
+        int from = (fromNumber == null || fromNumber < 0) ? config.clusterUrls().size() : fromNumber;
+        int ack = (ackNumber == null || ackNumber < 0) ? calculateAck(from) : ackNumber;
 
         if (ack > from || ack == 0) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, WRONG_ACK.getBytes(StandardCharsets.UTF_8)));
+            session.sendResponse(wrongAckResponse);
             return;
         }
 
@@ -112,18 +116,15 @@ public class ServiceImpl implements Service {
     }
 
     private boolean handleTimestampHeader(Request request, HttpSession session, String id) throws IOException {
-        if (request.getHeader(TIMESTAMP_HEADER) != null) {
-            String timestamp = request.getHeader(TIMESTAMP_HEADER + ": ");
-            try {
-                if (timestamp != null && !timestamp.isBlank()) {
-                    long parsedTimestamp = Long.parseLong(timestamp);
-                    session.sendResponse(requestHandler.handleRequestLocally(request, id, parsedTimestamp));
-                    return false;
-                }
-            } catch (NumberFormatException e) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return false;
-            }
+        String timestamp = request.getHeader(TIMESTAMP_HEADER + ": ");
+        if (timestamp == null || timestamp.isBlank()) {
+            return false;
+        }
+        try {
+            long parsedTimestamp = Long.parseLong(timestamp);
+            session.sendResponse(requestHandler.handleRequestLocally(request, id, parsedTimestamp));
+        } catch (NumberFormatException e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
         return true;
     }
@@ -143,15 +144,18 @@ public class ServiceImpl implements Service {
         AtomicBoolean responseSent = new AtomicBoolean();
 
         for (Node node : targetNodes) {
-
-            long timestamp = getTimestamp(request);
+            if (!node.isAlive()) {
+                LOGGER.info("node is unreachable: " + node.address);
+                continue;
+            }
+            long timestamp = System.currentTimeMillis();
             CompletableFuture<Response> futureResponse =
                     requestHandler.processRequest(request, id, node, timestamp, config.selfUrl());
 
             futureResponse
                     .whenCompleteAsync((resp, ex) -> {
                         if (resp == null) {
-                            checkAck(session, failures, ack, from);
+                            unableToRespondCheck(session, failures, ack, from);
                         } else {
                             updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
                             if (canEarlyResponse(resp, successes, ack, responseSent)) {
@@ -177,7 +181,7 @@ public class ServiceImpl implements Service {
                 && !responseSent.getAndSet(true);
     }
 
-    private void checkAck(HttpSession session, AtomicInteger failures, Integer ack, Integer from) {
+    private void unableToRespondCheck(HttpSession session, AtomicInteger failures, Integer ack, Integer from) {
         if (failures.incrementAndGet() > from - ack) {
             String message = "Not enough replicas responded";
             LOGGER.info(message);
@@ -200,20 +204,6 @@ public class ServiceImpl implements Service {
     private void logFailure(String e, AtomicInteger failures) {
         failures.incrementAndGet();
         LOGGER.error(e);
-    }
-
-    private long getTimestamp(Request request) throws NumberFormatException {
-        // check if the request has been forwarded, so we can use given timestamp
-        String timestamp = request.getHeader(TIMESTAMP_HEADER);
-        try {
-            if (timestamp != null && !timestamp.isBlank()) {
-                return Long.parseLong(timestamp);
-            }
-        } catch (NumberFormatException e) {
-            LOGGER.error("Error while parsing request header");
-        }
-
-        return System.currentTimeMillis();
     }
 
     private long extractTimestampFromResponse(Response response) {
@@ -263,7 +253,7 @@ public class ServiceImpl implements Service {
         return (int) floor(clusterSize * 0.75);
     }
 
-    @ServiceFactory(stage = 5)
+    @ServiceFactory(stage = 6)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

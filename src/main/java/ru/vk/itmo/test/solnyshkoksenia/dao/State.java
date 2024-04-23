@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class State {
     private static final Comparator<MemorySegment> comparator = new MemorySegmentComparator();
+    private static final long INDEX_SIZE = Long.BYTES;
     protected final Config config;
     protected final NavigableMap<MemorySegment, EntryExtended<MemorySegment>> storage;
     protected final NavigableMap<MemorySegment, EntryExtended<MemorySegment>> flushingStorage;
@@ -66,8 +67,8 @@ public class State {
     private static long getSize(EntryExtended<MemorySegment> entry) {
         long valueSize = entry.value() == null ? 0 : entry.value().byteSize();
         long expirationSize = entry.expiration() == null ? 0 : entry.expiration().byteSize();
-        return Long.BYTES + entry.key().byteSize() + Long.BYTES + valueSize + Long.BYTES + entry.timestamp().byteSize()
-                + Long.BYTES + expirationSize;
+        return INDEX_SIZE + entry.key().byteSize() + INDEX_SIZE + valueSize + INDEX_SIZE + entry.timestamp().byteSize()
+                + INDEX_SIZE + expirationSize;
     }
 
     @CanIgnoreReturnValue

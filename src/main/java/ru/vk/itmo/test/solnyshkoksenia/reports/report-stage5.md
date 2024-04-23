@@ -40,3 +40,16 @@
 
 Главное различие заметно на профилях блокировок: асинхронный сервер почти не блокирует потоки, когда задача попадает в
 `ThreadPoolExecutor`, это доказательство того, что всё сделано правильно ([async-put-lock.html](flame_graphs/stage5/lock/async-put-lock.html), [sync-put-lock.html](flame_graphs/stage5/lock/sync-put-lock.html))
+
+#### GET запросы, RPS: 30000, Connections: 64, Threads: 64, Duration: 30s
+
+На профилях CPU и аллокаций можем заметить, что в асинхронной версии уменьшилась доля ресурсов, приходящихся на selector
+threads (опять же, они больше не ходят по сети и в базу) ([async-get-cpu.html](flame_graphs/stage5/cpu/async-get-cpu.html), 
+[sync-get-cpu.html](flame_graphs/stage5/cpu/sync-get-cpu.html),
+[async-get-alloc.html](flame_graphs/stage5/alloc/async-get-alloc.html),
+[sync-get-alloc.html](flame_graphs/stage5/alloc/sync-get-alloc.html)).
+
+Из профилей блокировок видно, что немного уменьшилось время ожидания блокировки в selector тредах. Основное изменение -
+уменьшение времени ожидания в `sendResponse()` с 22.74% до 8.62%
+([async-get-lock.html](flame_graphs/stage5/lock/async-get-lock.html),
+[sync-get-lock.html](flame_graphs/stage5/lock/sync-get-lock.html)).

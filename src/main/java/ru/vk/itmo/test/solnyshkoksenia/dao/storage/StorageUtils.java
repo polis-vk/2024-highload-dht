@@ -11,12 +11,14 @@ import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 
 public class StorageUtils {
+    private static final long INDEX_SIZE = Long.BYTES;
+    private static final int FIELD_COUNT = 4;
     protected MemorySegment slice(MemorySegment page, long start, long end) {
         return page.asSlice(start, end - start);
     }
 
     protected long startOfKey(MemorySegment segment, long recordIndex) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES);
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * FIELD_COUNT * INDEX_SIZE);
     }
 
     protected long endOfKey(MemorySegment segment, long recordIndex) {
@@ -24,7 +26,7 @@ public class StorageUtils {
     }
 
     protected long startOfValue(MemorySegment segment, long recordIndex) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES + Long.BYTES);
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * FIELD_COUNT * INDEX_SIZE + INDEX_SIZE);
     }
 
     protected long endOfValue(MemorySegment segment, long recordIndex) {
@@ -32,7 +34,8 @@ public class StorageUtils {
     }
 
     protected long startOfTimestamp(MemorySegment segment, long recordIndex) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES + Long.BYTES * 2);
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED,
+                recordIndex * FIELD_COUNT * INDEX_SIZE + INDEX_SIZE * 2);
     }
 
     protected long endOfTimestamp(MemorySegment segment, long recordIndex) {
@@ -40,7 +43,8 @@ public class StorageUtils {
     }
 
     protected long startOfExpiration(MemorySegment segment, long recordIndex) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES + Long.BYTES * 3);
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED,
+                recordIndex * FIELD_COUNT * INDEX_SIZE + INDEX_SIZE * 3);
     }
 
     protected long endOfExpiration(MemorySegment segment, long recordIndex, long recordsCount) {
@@ -60,7 +64,7 @@ public class StorageUtils {
 
     protected long recordsCount(MemorySegment segment) {
         long indexSize = segment.get(ValueLayout.JAVA_LONG_UNALIGNED, 0);
-        return indexSize / Long.BYTES / 4;
+        return indexSize / INDEX_SIZE / FIELD_COUNT;
     }
 
     protected MemorySegment mapFile(FileChannel fileChannel, long size, Arena arena) throws IOException {
@@ -77,7 +81,7 @@ public class StorageUtils {
         long indexOffset = offsets.value();
 
         fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
-        indexOffset += Long.BYTES;
+        indexOffset += INDEX_SIZE;
         MemorySegment key = entry.key();
         MemorySegment.copy(key, 0, fileSegment, dataOffset, key.byteSize());
         dataOffset += key.byteSize();
@@ -90,10 +94,10 @@ public class StorageUtils {
             MemorySegment.copy(value, 0, fileSegment, dataOffset, value.byteSize());
             dataOffset += value.byteSize();
         }
-        indexOffset += Long.BYTES;
+        indexOffset += INDEX_SIZE;
 
         fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
-        indexOffset += Long.BYTES;
+        indexOffset += INDEX_SIZE;
         MemorySegment timestamp = entry.timestamp();
         MemorySegment.copy(timestamp, 0, fileSegment, dataOffset, timestamp.byteSize());
         dataOffset += timestamp.byteSize();
@@ -106,7 +110,7 @@ public class StorageUtils {
             MemorySegment.copy(expiration, 0, fileSegment, dataOffset, expiration.byteSize());
             dataOffset += expiration.byteSize();
         }
-        indexOffset += Long.BYTES;
+        indexOffset += INDEX_SIZE;
 
         return new BaseEntry<>(dataOffset, indexOffset);
     }

@@ -29,6 +29,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -41,14 +42,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class MyHttpServer extends HttpServer {
+    private static final int TIMEOUT = 500;
     private static final String HEADER_TIMESTAMP = "X-timestamp";
     private static final String HEADER_TIMESTAMP_HEADER = HEADER_TIMESTAMP + ": ";
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final int MAX_POOL_SIZE = THREADS * 2;
+    private static final int KEEP_ALIVE = 5;
+    private static final int QUEUE_CAPACITY = 128;
+    //    private static final int CHUNK_BYTE_SIZE = 1024 * 1024;
     private final ServiceConfig config;
     private final DaoImpl dao;
     private final HttpClient httpClient;
-    private final ExecutorService executorLocal = new ThreadPoolExecutor(THREADS, THREADS * 2,
-            5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(128),
+    private final ExecutorService executorService = new ThreadPoolExecutor(THREADS, MAX_POOL_SIZE,
+            KEEP_ALIVE, TimeUnit.SECONDS, new LinkedBlockingQueue<>(QUEUE_CAPACITY),
             new CustomThreadFactory("local-work"),
             (r, executor) -> {
                 HttpSession session = ((Task) r).session;
@@ -65,7 +71,7 @@ public class MyHttpServer extends HttpServer {
         this.dao = new DaoImpl(createConfig(config));
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(THREADS))
-                .connectTimeout(Duration.ofMillis(500))
+                .connectTimeout(Duration.ofMillis(TIMEOUT))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
     }
@@ -89,7 +95,7 @@ public class MyHttpServer extends HttpServer {
     @Override
     public synchronized void stop() {
         super.stop();
-        executorLocal.close();
+        executorService.close();
         httpClient.close();
         try {
             dao.close();
@@ -100,7 +106,7 @@ public class MyHttpServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) {
-        executorLocal.execute(new Task(() -> {
+        executorService.execute(new Task(() -> {
             try {
                 if (request.getMethod() == Request.METHOD_GET
                         || request.getMethod() == Request.METHOD_PUT
@@ -119,7 +125,7 @@ public class MyHttpServer extends HttpServer {
     public void handleRequest(final Request request, final HttpSession session,
                               @Param(value = "id", required = true) String id, @Param(value = "ack") String ackString,
                               @Param(value = "from") String fromString, @Param(value = "local") String local)
-            throws IOException {
+            throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int ack = config.clusterUrls().size() / 2 + 1;
         if (ackString != null && !ackString.isBlank()) {
             try {
@@ -146,8 +152,8 @@ public class MyHttpServer extends HttpServer {
         }
 
         if (local != null) {
-            Response response = invokeLocal(request, id);
-            session.sendResponse(response);
+            CompletableFuture<Response> response = invokeLocal(request, id);
+            session.sendResponse(response.get(TIMEOUT, TimeUnit.MILLISECONDS));
             return;
         }
         handle(request, id, session, ack, from);
@@ -159,7 +165,7 @@ public class MyHttpServer extends HttpServer {
 
         for (String node : executorNodes) {
             if (node.equals(config.selfUrl())) {
-                responses.add(CompletableFuture.completedFuture(invokeLocal(request, id)));
+                responses.add(invokeLocal(request, id));
             } else {
                 try {
                     responses.add(invokeRemote(node, request));
@@ -174,19 +180,26 @@ public class MyHttpServer extends HttpServer {
             }
         }
 
-        executorLocal.execute(() -> {
-            List<Response> completedResponses = responses
-                    .stream()
-                    .map(cf -> {
+        executorService.execute(() -> {
+            List<Response> completedResponses = new ArrayList<>();
+            for (CompletableFuture<Response> response : responses) {
+                try {
+                    completedResponses.add(response.get(TIMEOUT, TimeUnit.MILLISECONDS));
+                    if (completedResponses.size() > ack) {
                         try {
-                            return cf.get(500, TimeUnit.MILLISECONDS);
-                        } catch (ExecutionException | TimeoutException e) {
-                            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                            sendResponse(request, session, completedResponses, ack);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
                         }
-                    }).toList();
+                        return;
+                    }
+                } catch (ExecutionException | TimeoutException e) {
+                    completedResponses.add(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    completedResponses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+            }
             try {
                 sendResponse(request, session, completedResponses, ack);
             } catch (IOException e) {
@@ -254,7 +267,7 @@ public class MyHttpServer extends HttpServer {
                                 ? HttpRequest.BodyPublishers.noBody()
                                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 )
-                .timeout(Duration.ofMillis(500))
+                .timeout(Duration.ofMillis(TIMEOUT))
                 .build();
         CompletableFuture<Response> response = new CompletableFuture<>();
         httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
@@ -279,42 +292,46 @@ public class MyHttpServer extends HttpServer {
         return response;
     }
 
-    private Response invokeLocal(Request request, String id) {
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                MemorySegment key = toMS(id);
-                Entry<MemorySegment> entry = dao.get(key);
-                if (entry == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
-                }
+    private CompletableFuture<Response> invokeLocal(Request request, String id) {
+        CompletableFuture<Response> cf = new CompletableFuture<>();
+        cf.completeAsync(() -> {
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    MemorySegment key = toMS(id);
+                    Entry<MemorySegment> entry = dao.get(key);
+                    if (entry == null) {
+                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    }
 
-                if (entry.value() == null) {
-                    Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                    if (entry.value() == null) {
+                        Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                        response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry)
+                                .timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
+                        return response;
+                    }
+
+                    Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
                     response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry)
                             .timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
                     return response;
                 }
-
-                Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-                response.addHeader(HEADER_TIMESTAMP_HEADER + ((EntryExtended<MemorySegment>) entry)
-                        .timestamp().get(ValueLayout.JAVA_LONG_UNALIGNED, 0));
-                return response;
+                case Request.METHOD_PUT -> {
+                    MemorySegment key = toMS(id);
+                    MemorySegment value = MemorySegment.ofArray(request.getBody());
+                    dao.upsert(new BaseEntry<>(key, value));
+                    return new Response(Response.CREATED, Response.EMPTY);
+                }
+                case Request.METHOD_DELETE -> {
+                    MemorySegment key = toMS(id);
+                    dao.upsert(new BaseEntry<>(key, null));
+                    return new Response(Response.ACCEPTED, Response.EMPTY);
+                }
+                default -> {
+                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                }
             }
-            case Request.METHOD_PUT -> {
-                MemorySegment key = toMS(id);
-                MemorySegment value = MemorySegment.ofArray(request.getBody());
-                dao.upsert(new BaseEntry<>(key, value));
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                MemorySegment key = toMS(id);
-                dao.upsert(new BaseEntry<>(key, null));
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
-        }
+        });
+        return cf;
     }
 
     private MemorySegment toMS(String input) {
@@ -324,23 +341,17 @@ public class MyHttpServer extends HttpServer {
     private List<String> getNodesByEntityId(String id, Integer from) {
         List<Node> executorNodes = new ArrayList<>();
 
-        for (int i = 0; i < from; i++) {
+        for (int i = 0; i < config.clusterUrls().size(); i++) {
             int hash = Hash.murmur3(config.clusterUrls().get(i) + id);
             executorNodes.add(new Node(i, hash));
-            executorNodes.sort(Node::compareTo);
         }
+        executorNodes.sort(Node::compareTo);
 
-        for (int i = from; i < config.clusterUrls().size(); i++) {
-            int hash = Hash.murmur3(config.clusterUrls().get(i) + id);
-            if (executorNodes.getFirst().hash < hash) {
-                executorNodes.remove(executorNodes.getFirst());
-                executorNodes.add(new Node(i, hash));
-                executorNodes.sort(Node::compareTo);
-                break;
-            }
+        List<String> nodesId = new ArrayList<>();
+        for (int i = 0; i < from; i++) {
+            nodesId.add(config.clusterUrls().get(executorNodes.get(i).id));
         }
-
-        return executorNodes.stream().map(node -> config.clusterUrls().get(node.id)).toList();
+        return nodesId;
     }
 
     @SuppressWarnings("unused")

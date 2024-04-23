@@ -146,7 +146,6 @@ public class ServiceImpl implements Service {
         for (Node node : targetNodes) {
             if (!node.isAlive()) {
                 LOGGER.info("node is unreachable: " + node.address);
-                continue;
             }
             long timestamp = System.currentTimeMillis();
             CompletableFuture<Response> futureResponse =

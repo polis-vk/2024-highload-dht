@@ -11,7 +11,7 @@ public final class ExecutorServiceConfig {
 
     private static final Integer POOL_SIZE = 8;
     private static final Integer KEEP_ALIVE = 30;
-    private static final Integer QUEUE_SIZE = 2000;
+    private static final Integer QUEUE_SIZE = 1500;
 
     private ExecutorServiceConfig() {
 

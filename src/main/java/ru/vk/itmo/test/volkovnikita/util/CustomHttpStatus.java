@@ -17,4 +17,8 @@ public enum CustomHttpStatus {
     public String toString() {
         return this.value + this.reasonPhrase;
     }
+
+    public int getValue() {
+        return value;
+    }
 }

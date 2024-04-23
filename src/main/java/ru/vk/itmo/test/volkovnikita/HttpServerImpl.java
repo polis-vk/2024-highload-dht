@@ -7,7 +7,9 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
@@ -18,6 +20,8 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.volkovnikita.dao.EntryWithTimestamp;
 import ru.vk.itmo.test.volkovnikita.dao.ReferenceDao;
 import ru.vk.itmo.test.volkovnikita.dao.TimestampEntry;
+import ru.vk.itmo.test.volkovnikita.util.ChunkHttpResponse;
+import ru.vk.itmo.test.volkovnikita.util.CustomSession;
 import ru.vk.itmo.test.volkovnikita.util.NotEnoughReplicasException;
 
 import java.io.IOException;
@@ -28,8 +32,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -145,6 +151,54 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        String requestPath = request.getPath();
+        if (PATH_NAME.equals(requestPath)) {
+            handleHttpRequest(request, session);
+        } else if ("/v0/entities".equals(requestPath)) {
+            handleHttpRequestEntities(request, session);
+        } else {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomSession(socket, this);
+    }
+
+    private void handleHttpRequestEntities(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
+        }
+
+        String startParam = request.getParameter("start=");
+        String endParam = request.getParameter("end=");
+        if (startParam == null || startParam.isEmpty() || (endParam != null && endParam.isEmpty())) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        try {
+            executor.execute(() -> {
+                MemorySegment startSegment = MemorySegment.ofArray(startParam.getBytes(StandardCharsets.UTF_8));
+                MemorySegment endSegment = endParam == null
+                        ? null
+                        : MemorySegment.ofArray(endParam.getBytes(StandardCharsets.UTF_8));
+                Iterator<TimestampEntry<MemorySegment>> entries = dao.get(startSegment, endSegment);
+                try {
+                    session.sendResponse(new ChunkHttpResponse(Response.OK, entries));
+                } catch (IOException ex) {
+                    log.error("Failed to send chunked response", ex);
+                }
+            });
+        } catch (RejectedExecutionException ex) {
+            log.error("Request rejected", ex);
+            session.sendResponse(new Response(TOO_MANY_REQUESTS.toString(), Response.EMPTY));
+        }
+    }
+
+    private void handleHttpRequest(Request request, HttpSession session) throws IOException {
         try {
             String id = request.getParameter("id=");
             if (isIdIncorrect(id)) {

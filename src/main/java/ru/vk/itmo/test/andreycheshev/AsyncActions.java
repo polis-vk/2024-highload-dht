@@ -21,6 +21,8 @@ public class AsyncActions {
 
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
 
+    public static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
+
     private final Executor internalExecutor = Executors.newFixedThreadPool(
             CPU_THREADS_COUNT / 2,
             new WorkerThreadFactory("Internal-thread")
@@ -36,6 +38,10 @@ public class AsyncActions {
     private final Executor remoteCallExecutor = Executors.newFixedThreadPool(
             CPU_THREADS_COUNT,
             new WorkerThreadFactory("RemoteCall-thread")
+    );
+    private final Executor streamingExecutor = Executors.newFixedThreadPool(
+            CPU_THREADS_COUNT,
+            new WorkerThreadFactory("Streaming-thread")
     );
 
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -153,6 +159,21 @@ public class AsyncActions {
         return withSendingErrorProcessing(future);
     }
 
+    public void processStreaming(Runnable runnable) {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(
+                runnable,
+                streamingExecutor
+        ).exceptionallyAsync(
+                exception -> {
+                    LOGGER.error("Error while streaming process", exception);
+                    return null;
+                },
+                internalExecutor
+        );
+
+        checkFuture(future);
+    }
+
     private CompletableFuture<ResponseElements> getLocalFuture(
             int method,
             String id,
@@ -182,7 +203,7 @@ public class AsyncActions {
                 );
     }
 
-    public void sendAsync(Response response, HttpSession session) throws AssertionError {
+    public void sendAsync(Response response, HttpSession session) {
         CompletableFuture<Void> future = withSendingErrorProcessing(
                 CompletableFuture.runAsync(
                         () -> HttpUtils.sendResponse(response, session),
@@ -190,6 +211,12 @@ public class AsyncActions {
                 )
         );
 
-        assert future != null;
+        checkFuture(future);
+    }
+
+    private void checkFuture(CompletableFuture<?> future) {
+        if (future == null) {
+            LOGGER.error(FUTURE_CREATION_ERROR);
+        }
     }
 }

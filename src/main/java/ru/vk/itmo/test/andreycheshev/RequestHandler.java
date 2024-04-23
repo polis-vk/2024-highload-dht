@@ -8,13 +8,17 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
+import ru.vk.itmo.test.andreycheshev.dao.StreamingSession;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+
+import static ru.vk.itmo.test.andreycheshev.AsyncActions.FUTURE_CREATION_ERROR;
 
 public class RequestHandler implements HttpProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
@@ -25,13 +29,10 @@ public class RequestHandler implements HttpProvider {
             Request.METHOD_DELETE
     ); // Immutable set.
 
-    private static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
-
-    private static final String REQUEST_PATH = "/v0/entity";
-
     private static final String ID_PARAMETER = "id=";
-    private static final String ACK_PARAMETER = "ack=";
-    private static final String FROM_PARAMETER = "from=";
+
+    private static final String ENTITY_REQUEST_PATH = "/v0/entity";
+    private static final String ENTITIES_REQUEST_PATH = "/v0/entities";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final RendezvousDistributor distributor;
@@ -55,21 +56,18 @@ public class RequestHandler implements HttpProvider {
     }
 
     public void sendAsync(Response response, HttpSession session) {
-        try {
-            asyncActions.sendAsync(response, session);
-        } catch (AssertionError e) {
-            LOGGER.info(FUTURE_CREATION_ERROR);
-        }
+        asyncActions.sendAsync(response, session);
     }
 
     private Response analyzeRequest(Request request, HttpSession session) {
+        return switch (request.getPath()) {
+            case ENTITY_REQUEST_PATH -> analyzeEntity(request, session);
+            case ENTITIES_REQUEST_PATH -> analyzeEntities(request, session);
+            default -> HttpUtils.getBadRequest();
+        };
+    }
 
-        // Checking the correctness.
-        String path = request.getPath();
-        if (!path.equals(REQUEST_PATH)) {
-            return HttpUtils.getBadRequest();
-        }
-
+    private Response analyzeEntity(Request request, HttpSession session) {
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
             return HttpUtils.getBadRequest();
@@ -87,28 +85,45 @@ public class RequestHandler implements HttpProvider {
                 CompletableFuture<Void> future =
                         asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
 
-                assert future != null;
-            } catch (AssertionError e) {
-                LOGGER.info(FUTURE_CREATION_ERROR);
-                return HttpUtils.getInternalError();
+                if (future == null) {
+                    LOGGER.info(FUTURE_CREATION_ERROR);
+                    return HttpUtils.getInternalError();
+                }
             } catch (NumberFormatException e) {
                 return HttpUtils.getBadRequest();
             }
         } else {
-
-            // Get and check "ack" and "from" parameters.
-            ParametersParser parser = new ParametersParser(distributor);
             try {
-                parser.parseAckFrom(
-                        request.getParameter(ACK_PARAMETER),
-                        request.getParameter(FROM_PARAMETER)
-                );
+
+                // Get and check "ack" and "from" parameters.
+                ParametersTuple<Integer> params = ParametersParser.parseAckFrom(request, distributor);
+
+                // Start processing on remote and local nodes.
+                processDistributed(method, id, request, params.first(), params.second(), session);
+
             } catch (IllegalArgumentException e) {
                 return HttpUtils.getBadRequest();
             }
+        }
 
-            // Start processing on remote and local nodes.
-            processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
+        return null;
+    }
+
+    private Response analyzeEntities(Request request, HttpSession session) {
+        try {
+            // Get and check "start" and "end" parameters.
+            ParametersTuple<String> params = ParametersParser.parseStartEnd(request);
+
+            Iterator<Entry<MemorySegment>> streamingIterator = dao.get(
+                    fromString(params.first()),
+                    fromString(params.second())
+            );
+
+            asyncActions.processStreaming(
+                    () -> ((StreamingSession) session).stream(streamingIterator)
+            );
+        } catch (IllegalArgumentException e) {
+            return HttpUtils.getBadRequest();
         }
 
         return null;

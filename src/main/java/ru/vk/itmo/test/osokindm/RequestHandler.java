@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.osokindm;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class RequestHandler {
     private static final String TIMESTAMP_HEADER = "Request-timestamp";
@@ -48,6 +50,19 @@ public class RequestHandler {
         } else {
             return forwardRequestToNode(request, node, timestamp);
         }
+    }
+
+    public void sendResponse(HttpSession session, Response latestResponse, AtomicInteger failures) {
+        try {
+            session.sendResponse(latestResponse);
+        } catch (IOException e) {
+            logFailure(e.getMessage(), failures);
+        }
+    }
+
+    private void logFailure(String e, AtomicInteger failures) {
+        failures.incrementAndGet();
+        LOGGER.error(e);
     }
 
     public Response handleRequestLocally(Request request, String id, long timestamp) {

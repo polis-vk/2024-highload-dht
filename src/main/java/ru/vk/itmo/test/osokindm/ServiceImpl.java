@@ -129,7 +129,6 @@ public class ServiceImpl implements Service {
         return true;
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
     private void dispatchRequestsToNodes(
             Request request,
             HttpSession session,
@@ -159,17 +158,15 @@ public class ServiceImpl implements Service {
                         } else {
                             updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
                             if (canEarlyResponse(resp, successes, ack, responseSent)) {
-                                try {
-                                    session.sendResponse(latestResponse.get());
-                                } catch (IOException e) {
-                                    logFailure(e.getMessage(), failures);
-                                }
+                                requestHandler.sendResponse(session, latestResponse.get(), failures);
                             }
                         }
-                        if (ex != null) {
-                            logFailure(ex.getMessage(), failures);
-                        }
-                    }, responseExecutor);
+                    }, responseExecutor)
+                    .exceptionally(ex -> {
+                        logFailure(ex.getMessage(), failures);
+                        return null;
+                    });
+
         }
     }
 

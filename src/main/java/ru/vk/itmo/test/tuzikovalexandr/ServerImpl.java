@@ -89,8 +89,8 @@ public class ServerImpl extends HttpServer {
                 return;
             }
 
-            if (!request.getURI().startsWith(Constants.ID_REQUEST) ||
-                    !Constants.METHODS.contains(request.getMethod())) {
+            if (!request.getURI().startsWith(Constants.ID_REQUEST)
+                    || !Constants.METHODS.contains(request.getMethod())) {
                 handleDefault(request, session);
                 return;
             }

@@ -23,7 +23,7 @@ public final class TestServer {
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_SIZE = 1024;
     private static final String LOCALHOST_PREFIX = "http://localhost:";
-    private static final int NODE_AMOUNT = 3;
+    private static final int NODE_AMOUNT = 1;
 
     private TestServer() {
     }

@@ -7,6 +7,7 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.ByteArrayBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -20,7 +21,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -32,6 +35,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static ru.vk.itmo.test.dariasupriadkina.EntryChunkUtils.HEADER_BYTES;
+import static ru.vk.itmo.test.dariasupriadkina.EntryChunkUtils.LAST_BYTES;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER_NORMAL;
@@ -48,6 +53,7 @@ public class Server extends HttpServer {
     private final List<String> clusterUrls;
     private final Utils utils;
     private final SelfRequestHandler selfHandler;
+    private final Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
 
     public Server(ServiceConfig config, Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao,
                   ThreadPoolExecutor workerExecutor, ThreadPoolExecutor nodeExecutor, ShardingPolicy shardingPolicy)
@@ -60,6 +66,7 @@ public class Server extends HttpServer {
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
         this.selfHandler = new SelfRequestHandler(dao, utils);
+        this.dao = dao;
         this.closeSessions = true;
     }
 
@@ -91,6 +98,35 @@ public class Server extends HttpServer {
         try {
             workerExecutor.execute(() -> {
                 try {
+                    if (request.getURI().startsWith(Utils.LOCAL_STREAM_ENTRY_PREFIX)) {
+                        String start = request.getParameter("start=");
+                        String end = request.getParameter("end=");
+
+                        if (start == null
+                                || request.getMethod() != Request.METHOD_GET
+                                || start.isEmpty()
+                                || (end != null && end.isEmpty())) {
+                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                            return;
+                        }
+
+                        Iterator<ExtendedEntry<MemorySegment>> it = dao.get(
+                                utils.convertByteArrToMemorySegment(start.getBytes(StandardCharsets.UTF_8)),
+                                end == null ? null :
+                                        utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
+                        );
+
+                        ByteArrayBuilder bb = new ByteArrayBuilder();
+                        bb.append(HEADER_BYTES, 0, HEADER_BYTES.length);
+                        while (it.hasNext()) {
+                            ExtendedEntry<MemorySegment> ee = it.next();
+                            EntryChunkUtils.getEntryByteChunk(ee, bb);
+                        }
+                        bb.append(LAST_BYTES, 0, LAST_BYTES.length);
+                        session.write(bb.toBytes(), 0, bb.length());
+                        session.scheduleClose();
+                        return;
+                    }
                     Map<String, Integer> ackFrom = getFromAndAck(request);
                     int from = ackFrom.get("from");
                     int ack = ackFrom.get("ack");

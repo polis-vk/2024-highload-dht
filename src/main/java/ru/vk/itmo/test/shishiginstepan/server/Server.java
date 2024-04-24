@@ -184,6 +184,7 @@ public class Server extends HttpServer {
 
         if (!entries.hasNext()) {
             session.sendResponse(new Response(Response.OK, Response.EMPTY));
+            return;
         }
         session.sendChunks(entries);
     }

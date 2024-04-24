@@ -149,7 +149,7 @@
 
 ### Профилирование под нагрузкой `GET` запросами
 
-Рассмотрим [flame graph для CPU](flame_graphs/get_cpu.html). Больше всего CPU используется при поиске `entry` в памяти,
+Рассмотрим [flame graph для CPU](flame_graphs/stage1/get_cpu.html). Больше всего CPU используется при поиске `entry` в памяти,
 а именно во время сравнения `MemorySegment`-ов.
 
 Рассмотрим [flame graph для аллокаций](flame_graphs/get_alloc.html). Большинство 
@@ -158,10 +158,10 @@
 
 ### Профилирование под нагрузкой `PUT` запросами
 
-Рассмотрим [flame graph для CPU](flame_graphs/put_cpu.html). Здесь у нас много CPU используется для обработки
+Рассмотрим [flame graph для CPU](flame_graphs/stage1/put_cpu.html). Здесь у нас много CPU используется для обработки
 `PUT`-запроса: примерно поровну между методами `dao.upsert()` и `sendResponse()`.
 
-Рассмотрим [flame graph для аллокаций](flame_graphs/put_alloc.html). Тут у нас нет такого большого и ярко-выраженного 
+Рассмотрим [flame graph для аллокаций](flame_graphs/stage1/put_alloc.html). Тут у нас нет такого большого и ярко-выраженного 
 количества аллокаций, как при `GET`-запросах, так как в при `PUT` запросе мы аллоцируем только 2 `MemorySegment`-а для
 `key` и `value`.
 

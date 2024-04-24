@@ -54,8 +54,8 @@ public class RendezvousDistributor {
     }
 
     private static class HashPair {
-        int hash;
-        int index;
+        private final int hash;
+        private final int index;
 
         public HashPair(int hash, int index) {
             this.hash = hash;

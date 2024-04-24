@@ -3,12 +3,9 @@ package ru.vk.itmo.test.andreycheshev;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
-import ru.vk.itmo.test.andreycheshev.dao.StreamingSession;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -18,11 +15,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-import static ru.vk.itmo.test.andreycheshev.AsyncActions.FUTURE_CREATION_ERROR;
-
 public class RequestHandler implements HttpProvider {
-    private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
-
     private static final Set<Integer> AVAILABLE_METHODS = Set.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
@@ -55,11 +48,11 @@ public class RequestHandler implements HttpProvider {
         }
     }
 
-    public void sendAsync(Response response, HttpSession session) {
-        asyncActions.sendAsync(response, session);
-    }
-
     private Response analyzeRequest(Request request, HttpSession session) {
+        if (!AVAILABLE_METHODS.contains(request.getMethod())) {
+            return HttpUtils.getMethodNotAllowed();
+        }
+
         return switch (request.getPath()) {
             case ENTITY_REQUEST_PATH -> analyzeEntity(request, session);
             case ENTITIES_REQUEST_PATH -> analyzeEntities(request, session);
@@ -73,37 +66,25 @@ public class RequestHandler implements HttpProvider {
             return HttpUtils.getBadRequest();
         }
 
-        int method = request.getMethod();
-        if (!AVAILABLE_METHODS.contains(method)) {
-            return HttpUtils.getMethodNotAllowed();
-        }
-
         String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
-        if (isRequestCameFromNode(timestamp)) {
-            // The request came from a remote node.
-            try {
+        try {
+            if (isRequestCameFromNode(timestamp)) {
+                // The request came from a remote node.
                 CompletableFuture<Void> future =
-                        asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
+                        asyncActions.processLocallyToSend(id, request, Long.parseLong(timestamp), session);
 
-                if (future == null) {
-                    LOGGER.info(FUTURE_CREATION_ERROR);
+                if (AsyncActions.checkFuture(future)) {
                     return HttpUtils.getInternalError();
                 }
-            } catch (NumberFormatException e) {
-                return HttpUtils.getBadRequest();
-            }
-        } else {
-            try {
-
+            } else {
                 // Get and check "ack" and "from" parameters.
                 ParametersTuple<Integer> params = ParametersParser.parseAckFrom(request, distributor);
 
                 // Start processing on remote and local nodes.
-                processDistributed(method, id, request, params.first(), params.second(), session);
-
-            } catch (IllegalArgumentException e) {
-                return HttpUtils.getBadRequest();
+                processDistributed(id, request, params.first(), params.second(), session);
             }
+        } catch (IllegalArgumentException e) {
+            return HttpUtils.getBadRequest();
         }
 
         return null;
@@ -119,8 +100,14 @@ public class RequestHandler implements HttpProvider {
                     fromString(params.second())
             );
 
-            asyncActions.processStreaming(
-                    () -> ((StreamingSession) session).stream(streamingIterator)
+            asyncActions.stream(
+                    () -> {
+                        try {
+                            ((StreamingSession) session).stream(streamingIterator);
+                        } catch (Exception e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
             );
         } catch (IllegalArgumentException e) {
             return HttpUtils.getBadRequest();
@@ -129,19 +116,14 @@ public class RequestHandler implements HttpProvider {
         return null;
     }
 
-    private boolean isRequestCameFromNode(String timestamp) {
-        // A timestamp is an indication that the request
-        // came from the client directly or from the cluster node.
-        return timestamp != null;
-    }
-
     private void processDistributed(
-            int method,
             String id,
             Request request,
             int ack,
             int from,
             HttpSession session) {
+
+        int method = request.getMethod();
 
         List<Integer> nodesIndices = distributor.getQuorumNodes(id, from);
 
@@ -158,10 +140,18 @@ public class RequestHandler implements HttpProvider {
                     ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector)
                     : asyncActions.processRemotelyToCollect(node, request, timestamp, collector);
 
-            if (future == null) {
-                LOGGER.info(FUTURE_CREATION_ERROR);
-            }
+            AsyncActions.checkFuture(future);
         }
+    }
+
+    private boolean isRequestCameFromNode(String timestamp) {
+        // A timestamp is an indication that the request
+        // came from the client directly or from the cluster node.
+        return timestamp != null;
+    }
+
+    public void sendAsync(Response response, HttpSession session) {
+        asyncActions.sendAsync(response, session);
     }
 
     @Override

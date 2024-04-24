@@ -57,11 +57,12 @@ public class AsyncActions {
     }
 
     public CompletableFuture<Void> processLocallyToSend(
-            int method,
             String id,
             Request request,
             long timestamp,
             HttpSession session) {
+
+        int method = request.getMethod();
 
         return getLocalFuture(method, id, request, timestamp)
                 .thenAcceptAsync(
@@ -159,7 +160,7 @@ public class AsyncActions {
         return withSendingErrorProcessing(future);
     }
 
-    public void processStreaming(Runnable runnable) {
+    public void stream(Runnable runnable) {
         CompletableFuture<Void> future = CompletableFuture.runAsync(
                 runnable,
                 streamingExecutor
@@ -214,9 +215,11 @@ public class AsyncActions {
         checkFuture(future);
     }
 
-    private void checkFuture(CompletableFuture<?> future) {
-        if (future == null) {
+    public static boolean checkFuture(CompletableFuture<?> future) {
+        boolean isFutureNull = future == null;
+        if (isFutureNull) {
             LOGGER.error(FUTURE_CREATION_ERROR);
         }
+        return isFutureNull;
     }
 }

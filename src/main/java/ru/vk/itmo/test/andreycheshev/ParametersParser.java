@@ -46,8 +46,7 @@ public class ParametersParser {
         );
     }
 
-    public static ParametersTuple<String> parseStartEnd(
-            Request request) throws IllegalArgumentException {
+    public static ParametersTuple<String> parseStartEnd(Request request) throws IllegalArgumentException {
 
         String start = request.getParameter(START_PARAMETER);
         String end = request.getParameter(END_PARAMETER);

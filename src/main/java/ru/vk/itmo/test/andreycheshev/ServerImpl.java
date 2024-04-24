@@ -8,8 +8,6 @@ import one.nio.net.Socket;
 import one.nio.server.RejectedSessionException;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
-import ru.vk.itmo.test.andreycheshev.dao.StreamingSession;
-import ru.vk.itmo.test.reference.ReferenceHttpSession;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

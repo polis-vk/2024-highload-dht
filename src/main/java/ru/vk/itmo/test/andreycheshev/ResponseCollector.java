@@ -3,11 +3,14 @@ package ru.vk.itmo.test.andreycheshev;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 
+import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ResponseCollector {
+    private static final Set<Integer> SUCCESSFUL_CODES = Set.of(200, 201, 202, 404, 410);
+
     private final PriorityBlockingQueue<ResponseElements> collector; // Contains only successful responses.
 
     private final int method;
@@ -46,8 +49,7 @@ public class ResponseCollector {
     }
 
     private static boolean isResponseSucceeded(int status) {
-        return status == 404 || status == 410
-                || status == 200 || status == 201 || status == 202;
+        return SUCCESSFUL_CODES.contains(status);
     }
 
     private boolean isReadySendResponse() {

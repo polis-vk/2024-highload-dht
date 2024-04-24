@@ -7,11 +7,11 @@ function build_query_param(param, value)
 end
 
 function generateKey()
-    return math.random(0, 100)
+    return math.random(0, 15000)
 end
 
 function generateValue()
-    key_part = math.random(10000, 25000)
+    key_part = math.random(100000, 2500000)
     key = ""
     for i = 0, 20, 1 do
         key = key .. key_part
@@ -34,7 +34,7 @@ end
 request = function()
     --    magic_selector = math.random(0,3)
     --    if magic_selector < 2 then
-      return getOneRandom()
+     return getOneRandom()
     --    elseif magic_selector == 3 then
     -- return putOneRandom()
     --    else

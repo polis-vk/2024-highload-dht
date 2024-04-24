@@ -7,7 +7,9 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import org.apache.log4j.Logger;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.shishiginstepan.dao.EntryWithTimestamp;
@@ -20,9 +22,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.Iterator;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +39,7 @@ public class Server extends HttpServer {
     private final Logger logger = Logger.getLogger("lsm-db-server");
 
     private final ExecutorService executor;
+    private final ExecutorService streamingExecutor;
     private static final Duration defaultTimeout = Duration.of(200, ChronoUnit.MILLIS);
     private static final ZoneId ServerZoneId = ZoneId.of("+0");
 
@@ -51,6 +56,11 @@ public class Server extends HttpServer {
                 TimeUnit.SECONDS,
                 requestQueue,
                 new CustomThreadFactory("lsm-db-workers")
+        );
+
+        this.streamingExecutor = Executors.newFixedThreadPool(
+                processors/2+1,
+                new CustomThreadFactory("streaming-worker")
         );
     }
 
@@ -70,13 +80,16 @@ public class Server extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         LocalDateTime requestExpirationDate = LocalDateTime.now(ServerZoneId).plus(defaultTimeout);
         try {
-            executor.execute(() -> {
-                try {
-                    handleRequestWithExceptions(request, session, requestExpirationDate);
-                } catch (IOException e) {
-                    session.close();
-                }
-            });
+            if (request.getURI().contains("entities")) {
+                streamingExecutor.execute(()->{
+                    handleRange(request, (CustomSession) session);
+                });
+            } else {
+                executor.execute(() -> {
+                    handleRequestWithExceptions(request, (CustomSession) session, requestExpirationDate);
+                });
+            }
+
 
         } catch (RejectedExecutionException e) {
             logger.error(e);
@@ -85,8 +98,8 @@ public class Server extends HttpServer {
     }
 
     private void handleRequestWithExceptions(Request request,
-                                             HttpSession session,
-                                             LocalDateTime requestExpirationDate) throws IOException {
+                                             CustomSession session,
+                                             LocalDateTime requestExpirationDate){
         try {
             handleRequestInOtherThread(request, session, requestExpirationDate);
         } catch (IOException e) {
@@ -154,6 +167,34 @@ public class Server extends HttpServer {
         }
     }
 
+    private void handleRange(
+            Request request,
+            CustomSession session
+    ) {
+        String startRaw = request.getParameter("start=");
+        String endRaw = request.getParameter("end=");
+        if (startRaw == null || startRaw.isEmpty() || (endRaw !=null && endRaw.isEmpty())) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+
+
+        Iterator<EntryWithTimestamp<MemorySegment>> entries = dao.range(
+                MemorySegment.ofArray(startRaw.getBytes(StandardCharsets.UTF_8)),
+                endRaw == null? null: MemorySegment.ofArray(endRaw.getBytes(StandardCharsets.UTF_8))
+        );
+
+        if (!entries.hasNext()){
+            session.sendResponse(new Response(Response.OK, Response.EMPTY));
+        }
+        session.sendChunks(entries);
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomSession(socket, this);
+    }
     private void handlePut(
             Request request,
             HttpSession session,

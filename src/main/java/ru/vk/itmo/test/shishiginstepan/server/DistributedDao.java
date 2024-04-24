@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedMap;
@@ -50,6 +51,10 @@ public class DistributedDao {
     private final HttpClient httpClient;
     private int totalNodes;
     private int quorum;
+
+    public Iterator<EntryWithTimestamp<MemorySegment>> range(MemorySegment from, MemorySegment to) {
+        return localDao.get(from, to);
+    }
 
     public DistributedDao(Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> localDao, String selfUrl) {
         this.localDao = localDao;

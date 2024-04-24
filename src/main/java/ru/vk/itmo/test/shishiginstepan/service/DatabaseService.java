@@ -52,7 +52,7 @@ public class DatabaseService implements ru.vk.itmo.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 5)
+    @ServiceFactory(stage = 6)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

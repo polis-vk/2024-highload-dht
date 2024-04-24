@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.Math.floor;
+import static ru.vk.itmo.test.osokindm.RequestHandler.sendResponse;
 
 public class ServiceImpl implements Service {
 
@@ -158,7 +159,7 @@ public class ServiceImpl implements Service {
                         } else {
                             updateLatestResponse(resp, request.getMethod(), responseTime, latestResponse);
                             if (canEarlyResponse(resp, successes, ack, responseSent)) {
-                                requestHandler.sendResponse(session, latestResponse.get(), failures);
+                                sendResponse(session, latestResponse.get(), failures);
                             }
                         }
                     }, responseExecutor)
@@ -180,12 +181,8 @@ public class ServiceImpl implements Service {
         if (failures.incrementAndGet() > from - ack) {
             String message = "Not enough replicas responded";
             LOGGER.info(message);
-            try {
-                byte[] mes = message.getBytes(StandardCharsets.UTF_8);
-                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, mes));
-            } catch (IOException e) {
-                logFailure(e.getMessage(), failures);
-            }
+            byte[] mes = message.getBytes(StandardCharsets.UTF_8);
+            sendResponse(session, new Response(Response.GATEWAY_TIMEOUT, mes), failures);
         }
     }
 

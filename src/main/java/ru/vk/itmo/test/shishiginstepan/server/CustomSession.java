@@ -19,6 +19,8 @@ public class CustomSession extends HttpSession {
     private static final byte[] chunkDelimiter = "\r\n".getBytes(StandardCharsets.UTF_8);
     private final byte[] chunkedHeader;
     private final Logger logger = Logger.getLogger("lsm-db-server-http-session");
+    ByteBuffer buffer;
+
 
     public CustomSession(Socket socket, HttpServer server) {
 
@@ -27,8 +29,6 @@ public class CustomSession extends HttpSession {
         r.addHeader("Transfer-Encoding:chunked");
         chunkedHeader = r.toBytes(false);
     }
-
-    ByteBuffer buffer;
 
     @Override
     public synchronized void sendError(String code, String message) {
@@ -50,10 +50,8 @@ public class CustomSession extends HttpSession {
         }
     }
 
-    public void sendChunks(Iterator<EntryWithTimestamp<MemorySegment>> entries) {
-        buffer = ByteBuffer.allocate(1024);
-
-        QueueItem headerItem = new QueueItem() {
+    private QueueItem buildStreamingQueueItem(Iterator<EntryWithTimestamp<MemorySegment>> entries){
+        return new QueueItem() {
             @Override
             public int write(Socket socket) throws IOException {
                 return socket.write(chunkedHeader, 0, chunkedHeader.length);
@@ -94,6 +92,13 @@ public class CustomSession extends HttpSession {
                 };
             }
         };
+    }
+
+
+    public void sendChunks(Iterator<EntryWithTimestamp<MemorySegment>> entries) {
+        buffer = ByteBuffer.allocate(1024);
+
+        QueueItem headerItem = buildStreamingQueueItem(entries);
 
         try {
             write(headerItem);

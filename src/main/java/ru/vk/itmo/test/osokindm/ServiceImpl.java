@@ -129,6 +129,7 @@ public class ServiceImpl implements Service {
         return true;
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void dispatchRequestsToNodes(
             Request request,
             HttpSession session,
@@ -165,12 +166,10 @@ public class ServiceImpl implements Service {
                                 }
                             }
                         }
-                    }, responseExecutor)
-                    .exceptionally(ex -> {
-                        logFailure(ex.getMessage(), failures);
-                        return null;
-                    });
-
+                        if (ex != null) {
+                            logFailure(ex.getMessage(), failures);
+                        }
+                    }, responseExecutor);
         }
     }
 

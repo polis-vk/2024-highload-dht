@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.Iterator;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -35,12 +36,12 @@ public class DhtServer extends HttpServer {
     public static final String START_KEY = "start=";
     public static final String END_KEY = "end=";
     protected static final int THREADS_PER_PROCESSOR = 1;
-    protected static final byte[] EMPTY_BODY = new byte[0];
     protected static final long KEEP_ALIVE_TIME_MILLIS = 1000;
     protected static final int REQUEST_TIMEOUT_MILLIS = 1024;
     protected static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
     protected static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
     private static final Logger LOGGER = Logger.getLogger(DhtServer.class.getName());
+    private static final String FUTURE_RETURN_VALUE_IGNORED = "FutureReturnValueIgnored";
     protected final MergeDaoMediator mergeDaoMediator;
     protected final ThreadPoolExecutor threadPoolExecutor;
 
@@ -51,15 +52,9 @@ public class DhtServer extends HttpServer {
         threadPoolExecutor = new ThreadPoolExecutor(
                 Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
                 Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR,
-                KEEP_ALIVE_TIME_MILLIS,
-                TimeUnit.MILLISECONDS,
+                KEEP_ALIVE_TIME_MILLIS, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(TASK_QUEUE_SIZE),
-                r -> {
-                    Thread t = new Thread(r);
-                    t.setDaemon(true);
-                    t.setName("DhtServerThreadPool-Thread-" + threadsInPool.incrementAndGet());
-                    return t;
-                }
+                r -> new Thread(r, "DhtServerThreadPool-Thread-" + threadsInPool.incrementAndGet())
         );
     }
 
@@ -78,7 +73,7 @@ public class DhtServer extends HttpServer {
         }
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     @RequestMethod(METHOD_GET)
     @Path("/v0/entity")
     public void entity(HttpSession session, Request request) throws IOException {
@@ -93,11 +88,11 @@ public class DhtServer extends HttpServer {
                                         if (entry == null) {
                                             sendNotEnoughReplicas(session);
                                         } else if (entry.timestamp() == DaoMediator.NEVER_TIMESTAMP) {
-                                            session.sendResponse(new Response(Response.NOT_FOUND, EMPTY_BODY));
+                                            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
                                         } else {
                                             Response response;
                                             if (entry.value() == null) {
-                                                response = new Response(Response.NOT_FOUND, EMPTY_BODY);
+                                                response = new Response(Response.NOT_FOUND, Response.EMPTY);
                                             } else {
                                                 response = new Response(
                                                         Response.OK,
@@ -120,26 +115,17 @@ public class DhtServer extends HttpServer {
         );
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     @RequestMethod(METHOD_GET)
     @Path("/v0/entities")
-    public void entities(@Param(value="start") String start, HttpSession httpSession, Request request)
+    public void entities(@Param(value = "start") String start, HttpSession httpSession, Request request)
             throws IOException {
         requestProccessing(start, httpSession,
                 () -> mergeDaoMediator.getRange(request).whenCompleteAsync(
                         (result, ex) -> {
                             if (ex == null) {
                                 try {
-                                    if (result != null) {
-                                        httpSession.write(new HttpChunkedHeaderQueueItem());
-                                        while (result.hasNext()) {
-                                            httpSession.write(new HttpChunkedEntry(result.next()));
-                                        }
-                                        httpSession.write(new EmptyChunk());
-                                        httpSession.scheduleClose();
-                                    } else {
-                                        httpSession.sendResponse(new Response(Response.INTERNAL_ERROR, EMPTY_BODY));
-                                    }
+                                    stream(httpSession, result);
                                 } catch (IOException e) {
                                     throw new UncheckedIOException(e);
                                 }
@@ -151,7 +137,21 @@ public class DhtServer extends HttpServer {
         );
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    private static void stream(HttpSession httpSession, Iterator<TimestampedEntry<MemorySegment>> result)
+            throws IOException {
+        if (result == null) {
+            httpSession.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } else {
+            httpSession.write(new HttpChunkedHeaderQueueItem());
+            while (result.hasNext()) {
+                httpSession.write(new HttpChunkedEntry(result.next()));
+            }
+            httpSession.write(new EmptyChunk());
+            httpSession.scheduleClose();
+        }
+    }
+
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     @RequestMethod(METHOD_PUT)
     @Path("/v0/entity")
     public void putEntity(@Param(value = "id") String id, HttpSession httpSession, Request request) throws IOException {
@@ -162,7 +162,7 @@ public class DhtServer extends HttpServer {
                                 (success, ex) -> {
                                     try {
                                         if (success) {
-                                            httpSession.sendResponse(new Response(Response.CREATED, EMPTY_BODY));
+                                            httpSession.sendResponse(new Response(Response.CREATED, Response.EMPTY));
                                         } else {
                                             sendNotEnoughReplicas(httpSession);
                                         }
@@ -178,7 +178,7 @@ public class DhtServer extends HttpServer {
         );
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
+    @SuppressWarnings(FUTURE_RETURN_VALUE_IGNORED)
     @RequestMethod(METHOD_DELETE)
     @Path("/v0/entity")
     public void deleteEntity(@Param("id") String id, HttpSession httpSession, Request request) throws IOException {
@@ -189,7 +189,7 @@ public class DhtServer extends HttpServer {
                                 (success, ex) -> {
                                     try {
                                         if (success) {
-                                            httpSession.sendResponse(new Response(Response.ACCEPTED, EMPTY_BODY));
+                                            httpSession.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
                                         } else {
                                             sendNotEnoughReplicas(httpSession);
                                         }
@@ -211,12 +211,12 @@ public class DhtServer extends HttpServer {
         if (requestMethod == METHOD_GET || requestMethod == METHOD_PUT || requestMethod == METHOD_DELETE) {
             sendBadRequestResponse(session);
         } else {
-            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, EMPTY_BODY));
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
     private void requestProccessing(String id, HttpSession session, Runnable runnable) throws IOException {
-        if (isKeyIncorrect(id)) {
+        if (id == null || id.isEmpty()) {
             sendBadRequestResponse(session);
         } else {
             long startTimeInMillis = System.currentTimeMillis();
@@ -224,7 +224,7 @@ public class DhtServer extends HttpServer {
                     () -> {
                         try {
                             if (System.currentTimeMillis() - startTimeInMillis > REQUEST_TIMEOUT_MILLIS) {
-                                session.sendResponse(new Response(Response.PAYMENT_REQUIRED, EMPTY_BODY));
+                                session.sendResponse(new Response(Response.PAYMENT_REQUIRED, Response.EMPTY));
                                 return;
                             }
                             runnable.run();
@@ -237,11 +237,11 @@ public class DhtServer extends HttpServer {
     }
 
     private static void sendNotEnoughReplicas(HttpSession session) throws IOException {
-        session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_STATUS, EMPTY_BODY));
+        session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_STATUS, Response.EMPTY));
     }
 
     private static void sendBadRequestResponse(HttpSession httpSession) throws IOException {
-        httpSession.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_BODY));
+        httpSession.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
     private void sendBadRequestResponseUnchecked(HttpSession session) {
@@ -250,10 +250,6 @@ public class DhtServer extends HttpServer {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-    }
-
-    private static boolean isKeyIncorrect(String key) {
-        return key == null || key.isEmpty();
     }
 
     private static HttpServerConfig createConfig(ServiceConfig serviceConfig) {

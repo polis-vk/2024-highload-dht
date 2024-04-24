@@ -94,8 +94,12 @@ public class MergeDaoMediator extends DaoMediator {
         } else {
             int ack;
             int from;
-            ack = getAck(request);
-            from = getFrom(request);
+            try {
+                ack = getAck(request);
+                from = getFrom(request);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(e);
+            }
             if (!isAckFromCorrect(ack, from)) {
                 throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
             }
@@ -166,8 +170,12 @@ public class MergeDaoMediator extends DaoMediator {
         }
         int ack;
         int from;
-        ack = getAck(request);
-        from = getFrom(request);
+        try {
+            ack = getAck(request);
+            from = getFrom(request);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(e);
+        }
         if (!isAckFromCorrect(ack, from)) {
             throw new IllegalArgumentException("Wrong ack/from: " + ack + "/" + from);
         }
@@ -203,6 +211,7 @@ public class MergeDaoMediator extends DaoMediator {
         int choosen = 0;
         int keyHash = Math.abs(Hash.murmur3(key));
         for (int i = 0; i < mediatorsHashes.length; i++) {
+            // cantor pairing function works nicely only with non-negatives
             int totalHash = (mediatorsHashes[i] + keyHash) * (mediatorsHashes[i] + keyHash + 1) / 2 + keyHash;
             if (totalHash > maxHash) {
                 maxHash = totalHash;
@@ -211,4 +220,5 @@ public class MergeDaoMediator extends DaoMediator {
         }
         return choosen;
     }
+
 }

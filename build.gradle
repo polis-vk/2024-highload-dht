@@ -69,7 +69,7 @@ compileTestJava {
 }
 
 application {
-    mainClass = 'ru.vk.itmo.test.reference.ReferenceService'
+    mainClass = 'ru.vk.itmo.test.emelyanovvitaliy.TestServerRunner'
     applicationDefaultJvmArgs = ['-Xmx128m', '--enable-preview', '-Xlog:gc']
     // + ['-XX:+UseSerialGC']
 //

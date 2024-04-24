@@ -1,9 +1,11 @@
 package ru.vk.itmo.test.emelyanovvitaliy;
 
 import one.nio.http.Request;
+import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
@@ -12,6 +14,10 @@ public abstract class DaoMediator {
 
     protected static MemorySegment keyFor(String id) {
         return MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+    }
+
+    protected static byte[] valueFor(Entry<MemorySegment> entry) {
+        return entry.value().toArray(ValueLayout.JAVA_BYTE);
     }
 
     abstract void stop();

@@ -17,7 +17,6 @@ public class HttpChunkedEntry extends Session.QueueItem {
         this.entry = entry;
     }
 
-
     @Override
     public int write(Socket socket) throws IOException {
         byte[] key = getBytes(entry.key());

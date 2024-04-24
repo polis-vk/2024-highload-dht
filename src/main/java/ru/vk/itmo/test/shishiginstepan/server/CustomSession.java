@@ -21,7 +21,6 @@ public class CustomSession extends HttpSession {
     private final Logger logger = Logger.getLogger("lsm-db-server-http-session");
     ByteBuffer buffer;
 
-
     public CustomSession(Socket socket, HttpServer server) {
 
         super(socket, server);
@@ -50,7 +49,7 @@ public class CustomSession extends HttpSession {
         }
     }
 
-    private QueueItem buildStreamingQueueItem(Iterator<EntryWithTimestamp<MemorySegment>> entries){
+    private QueueItem buildStreamingQueueItem(Iterator<EntryWithTimestamp<MemorySegment>> entries) {
         return new QueueItem() {
             @Override
             public int write(Socket socket) throws IOException {
@@ -93,7 +92,6 @@ public class CustomSession extends HttpSession {
             }
         };
     }
-
 
     public void sendChunks(Iterator<EntryWithTimestamp<MemorySegment>> entries) {
         buffer = ByteBuffer.allocate(1024);

@@ -1,6 +1,8 @@
 package ru.vk.itmo.test.tuzikovalexandr;
 
-import one.nio.http.*;
+import one.nio.http.Param;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import ru.vk.itmo.test.tuzikovalexandr.dao.BaseEntryWithTimestamp;
 import ru.vk.itmo.test.tuzikovalexandr.dao.Dao;
 import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;

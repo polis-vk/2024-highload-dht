@@ -33,9 +33,9 @@ public class StreamResponse extends Response {
 
         String keyInString = new String(keyInBytes, StandardCharsets.UTF_8);
         String valueInString = new String(valueInBytes, StandardCharsets.UTF_8);
-        byte[] resultValue = (entrySize + Constants.CRLF +
-                keyInString + Constants.NEW_LINE +
-                valueInString + Constants.CRLF).getBytes(StandardCharsets.UTF_8);
+        byte[] resultValue = (entrySize + Constants.CRLF
+                + keyInString + Constants.NEW_LINE
+                + valueInString + Constants.CRLF).getBytes(StandardCharsets.UTF_8);
 
         session.write(resultValue, 0, resultValue.length);
     }

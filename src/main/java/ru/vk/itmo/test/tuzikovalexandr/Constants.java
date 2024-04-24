@@ -4,6 +4,7 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.net.HttpURLConnection;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 
@@ -30,6 +31,18 @@ public final class Constants {
     public static final String HTTP_TIMESTAMP_HEADER = "X-Timestamp";
     public static final String NIO_TIMESTAMP_HEADER = "x-timestamp:";
     public static final String HTTP_TERMINATION_HEADER = "X-Termination";
+    public static final String RANGE_REQUEST = "/v0/entities?start=";
+    public static final String ID_REQUEST = "/v0/entity?id=";
+    public static final String CRLF = "\r\n";
+    public static final byte[] LAST_STRING = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
+    public static final String NEW_LINE = "\n";
+    public static final byte[] HEADER =
+            """
+                    HTTP/1.1 200 OK\r
+                    Content-Type: text/plain\r
+                    Transfer-Encoding: chunked\r
+                    \r
+                    """.getBytes(StandardCharsets.UTF_8);
 
     private Constants() {
     }

@@ -11,8 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.tuzikovalexandr.dao.Dao;
+import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -20,6 +22,7 @@ import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -78,7 +81,15 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            if (!request.getURI().startsWith("/v0/entity?id=") || !Constants.METHODS.contains(request.getMethod())) {
+            if (request.getURI().startsWith(Constants.RANGE_REQUEST)) {
+                String paramStart = request.getParameter("start=");
+                String paramEnd = request.getParameter("end=");
+
+                rangeRequest(session, paramStart, paramEnd);
+                return;
+            }
+
+            if (!request.getURI().startsWith(Constants.ID_REQUEST) || !Constants.METHODS.contains(request.getMethod())) {
                 handleDefault(request, session);
                 return;
             }
@@ -107,6 +118,25 @@ public class ServerImpl extends HttpServer {
         } catch (RejectedExecutionException e) {
             session.sendResponse(new Response(Constants.TOO_MANY_REQUESTS, Response.EMPTY));
         }
+    }
+
+    private void rangeRequest(HttpSession session, String start, String end) {
+        if (start == null || start.isBlank()) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        executorService.execute(() -> {
+            try {
+                Iterator<EntryWithTimestamp<MemorySegment>> entries = requestHandler.getEntries(start, end);
+
+                final StreamResponse streamResponse = new StreamResponse(Response.OK, entries);
+                streamResponse.stream(session);
+            } catch (IOException e) {
+                log.error("Exception while sending close connection", e);
+                session.scheduleClose();
+            }
+        });
     }
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime,

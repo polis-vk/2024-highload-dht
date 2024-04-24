@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.tuzikovalexandr;
 
-import one.nio.http.Param;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.http.*;
 import ru.vk.itmo.test.tuzikovalexandr.dao.BaseEntryWithTimestamp;
 import ru.vk.itmo.test.tuzikovalexandr.dao.Dao;
 import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
@@ -10,6 +8,7 @@ import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 
 public class RequestHandler {
     private final Dao dao;
@@ -83,5 +82,12 @@ public class RequestHandler {
 
     private MemorySegment fromString(String data) {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public Iterator<EntryWithTimestamp<MemorySegment>> getEntries(String start, String end) {
+        MemorySegment startVal = fromString(start);
+        MemorySegment endVal = end != null ? fromString(end) : null;
+
+        return dao.get(startVal, endVal);
     }
 }

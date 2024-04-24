@@ -21,9 +21,12 @@ public class JoinedQueueItem extends Session.ArrayQueueItem {
 
     @Override
     public int write(Socket socket) throws IOException {
-        int written = super.write(socket);
-        fillIfNeeded();
-        return written;
+        int res;
+        do {
+            res = super.write(socket);
+            fillIfNeeded();
+        } while (res > 0 && remaining() > 0);
+        return res;
     }
 
     private void fillIfNeeded() {

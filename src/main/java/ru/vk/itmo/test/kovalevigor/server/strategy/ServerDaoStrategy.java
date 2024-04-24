@@ -13,7 +13,6 @@ import ru.vk.itmo.test.kovalevigor.dao.entry.DaoEntry;
 import ru.vk.itmo.test.kovalevigor.dao.entry.MSegmentTimeEntry;
 import ru.vk.itmo.test.kovalevigor.dao.entry.TimeEntry;
 import ru.vk.itmo.test.kovalevigor.dao.iterators.ApplyIterator;
-import ru.vk.itmo.test.kovalevigor.dao.iterators.ShiftedIterator;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.BaseByteStorage;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.ByteStorage;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.ChainedQueueItem;
@@ -51,6 +50,7 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
     private static final byte[] RANGE_END = "0\r\n\r\n".getBytes(CHARSET);
     private static final ByteStorage CHUNK_LINE_END = new BaseByteStorage("\r\n".getBytes(CHARSET));
     private static final ByteStorage KEY_VALUE_SEP = new BaseByteStorage("\n".getBytes(CHARSET));
+    public static final int BUFFER_SIZE = 1024;
 
     private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
     public static final Logger log = Logger.getLogger(ServerDaoStrategy.class.getName());
@@ -83,26 +83,14 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
                     session.write(
                             new ChainedQueueItem(
                                     List.of(
-                                        new Session.ArrayQueueItem(
-                                                RANGE_HEADER,
-                                                0,
-                                                RANGE_HEADER.length,
-                                                0
-                                        ),
-                                        new ChainedQueueItem(
-                                                new ShiftedIterator<>(
-                                                        new ApplyIterator<>(
-                                                                iterator,
-                                                                ServerDaoStrategy::mapEntry
-                                                        )
-                                                )
-                                        ),
-                                        new Session.ArrayQueueItem(
-                                                RANGE_END,
-                                                0,
-                                                RANGE_END.length,
-                                                0
-                                        )
+                                            mapBytes(RANGE_HEADER),
+                                            new ChainedQueueItem(
+                                                    new ApplyIterator<>(
+                                                            iterator,
+                                                            ServerDaoStrategy::mapEntry
+                                                    )
+                                            ),
+                                            mapBytes(RANGE_END)
                                     ).iterator()
                             )
                     );
@@ -160,6 +148,23 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
         return response;
     }
 
+    private static Session.QueueItem mapEntry(DaoEntry<MemorySegment> entry) {
+        ByteStorage keyStorage = new MemorySegmentByteStorage(entry.key());
+        ByteStorage valueStorage = new MemorySegmentByteStorage(entry.value());
+        long totalSize = keyStorage.size() + valueStorage.size() + KEY_VALUE_SEP.size();
+        return new JoinedQueueItem(
+                BUFFER_SIZE,
+                List.of(
+                        new BaseByteStorage(mapToHex(totalSize)),
+                        CHUNK_LINE_END,
+                        keyStorage,
+                        KEY_VALUE_SEP,
+                        valueStorage,
+                        CHUNK_LINE_END
+                ).iterator()
+        );
+    }
+
     private static Config mapConfig(DaoServerConfig config) {
         return new Config(
                 config.basePath,
@@ -175,20 +180,11 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(CHARSET));
     }
 
-    private static Session.QueueItem mapEntry(DaoEntry<MemorySegment> entry) {
-        int keySize = (int)entry.key().byteSize();
-        int valueSize = entry.value() == null ? 0 : (int)entry.value().byteSize();
-        long totalSize = keySize + valueSize + KEY_VALUE_SEP.size();
-        return new JoinedQueueItem(
-                1024,
-                List.of(
-                        new BaseByteStorage(Long.toHexString(totalSize).getBytes(CHARSET)),
-                        CHUNK_LINE_END,
-                        new MemorySegmentByteStorage(entry.key()),
-                        KEY_VALUE_SEP,
-                        new MemorySegmentByteStorage(entry.value()),
-                        CHUNK_LINE_END
-                ).iterator()
-        );
+    private static Session.ArrayQueueItem mapBytes(byte[] data) {
+        return new Session.ArrayQueueItem(data, 0, data.length, 0);
+    }
+
+    private static byte[] mapToHex(long value) {
+        return Long.toHexString(value).getBytes(CHARSET);
     }
 }

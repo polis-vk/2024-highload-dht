@@ -1,11 +1,13 @@
 package ru.vk.itmo.test.kovalevigor.server.strategy.util;
 
+import java.util.Arrays;
+
 public class BaseByteStorage implements ByteStorage {
 
     private final byte[] data;
 
     public BaseByteStorage(byte[] data) {
-        this.data = data;
+        this.data = Arrays.copyOf(data, data.length);
     }
 
     @Override

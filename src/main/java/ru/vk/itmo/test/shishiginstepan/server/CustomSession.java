@@ -20,7 +20,6 @@ public class CustomSession extends HttpSession {
     private final byte[] chunkedHeader;
     private final Logger logger = Logger.getLogger("lsm-db-server-http-session");
 
-
     public CustomSession(Socket socket, HttpServer server) {
 
         super(socket, server);
@@ -32,7 +31,7 @@ public class CustomSession extends HttpSession {
     ByteBuffer buffer;
 
     @Override
-    public synchronized void sendError(String code, String message){
+    public synchronized void sendError(String code, String message) {
         try {
             super.sendError(code, message);
         } catch (IOException e) {
@@ -42,7 +41,7 @@ public class CustomSession extends HttpSession {
     }
 
     @Override
-    public synchronized void sendResponse(Response response){
+    public synchronized void sendResponse(Response response) {
         try {
             super.sendResponse(response);
         } catch (IOException e) {
@@ -51,7 +50,7 @@ public class CustomSession extends HttpSession {
         }
     }
 
-    public void sendChunks(Iterator<EntryWithTimestamp<MemorySegment>> entries){
+    public void sendChunks(Iterator<EntryWithTimestamp<MemorySegment>> entries) {
         buffer = ByteBuffer.allocate(1024);
 
         QueueItem headerItem = new QueueItem() {
@@ -79,7 +78,7 @@ public class CustomSession extends HttpSession {
                         buffer.put(keyValueDelimiter);
                         buffer.put(entry.value().toArray(ValueLayout.JAVA_BYTE));
                         buffer.put(chunkDelimiter);
-                        if (remaining()==0) {
+                        if (remaining() == 0) {
                             buffer.put("0".getBytes(StandardCharsets.US_ASCII));
                             buffer.put(chunkDelimiter);
                             buffer.put(chunkDelimiter);
@@ -90,7 +89,7 @@ public class CustomSession extends HttpSession {
 
                     @Override
                     public int remaining() {
-                        return entries.hasNext()? 1: 0;
+                        return entries.hasNext() ? 1 : 0;
                     }
                 };
             }

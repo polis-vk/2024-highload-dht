@@ -59,7 +59,7 @@ public class Server extends HttpServer {
         );
 
         this.streamingExecutor = Executors.newFixedThreadPool(
-                processors/2+1,
+                processors / 2 + 1,
                 new CustomThreadFactory("streaming-worker")
         );
     }
@@ -81,7 +81,7 @@ public class Server extends HttpServer {
         LocalDateTime requestExpirationDate = LocalDateTime.now(ServerZoneId).plus(defaultTimeout);
         try {
             if (request.getURI().contains("entities")) {
-                streamingExecutor.execute(()->{
+                streamingExecutor.execute(() -> {
                     handleRange(request, (CustomSession) session);
                 });
             } else {
@@ -89,7 +89,6 @@ public class Server extends HttpServer {
                     handleRequestWithExceptions(request, (CustomSession) session, requestExpirationDate);
                 });
             }
-
 
         } catch (RejectedExecutionException e) {
             logger.error(e);
@@ -99,7 +98,7 @@ public class Server extends HttpServer {
 
     private void handleRequestWithExceptions(Request request,
                                              CustomSession session,
-                                             LocalDateTime requestExpirationDate){
+                                             LocalDateTime requestExpirationDate) {
         try {
             handleRequestInOtherThread(request, session, requestExpirationDate);
         } catch (IOException e) {
@@ -173,19 +172,17 @@ public class Server extends HttpServer {
     ) {
         String startRaw = request.getParameter("start=");
         String endRaw = request.getParameter("end=");
-        if (startRaw == null || startRaw.isEmpty() || (endRaw !=null && endRaw.isEmpty())) {
+        if (startRaw == null || startRaw.isEmpty() || (endRaw != null && endRaw.isEmpty())) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
-
-
         Iterator<EntryWithTimestamp<MemorySegment>> entries = dao.range(
                 MemorySegment.ofArray(startRaw.getBytes(StandardCharsets.UTF_8)),
-                endRaw == null? null: MemorySegment.ofArray(endRaw.getBytes(StandardCharsets.UTF_8))
+                endRaw == null ? null : MemorySegment.ofArray(endRaw.getBytes(StandardCharsets.UTF_8))
         );
 
-        if (!entries.hasNext()){
+        if (!entries.hasNext()) {
             session.sendResponse(new Response(Response.OK, Response.EMPTY));
         }
         session.sendChunks(entries);
@@ -195,6 +192,7 @@ public class Server extends HttpServer {
     public HttpSession createSession(Socket socket) throws RejectedSessionException {
         return new CustomSession(socket, this);
     }
+
     private void handlePut(
             Request request,
             HttpSession session,

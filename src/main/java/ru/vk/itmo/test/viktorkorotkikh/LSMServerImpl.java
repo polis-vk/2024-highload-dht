@@ -18,6 +18,7 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession;
+import ru.vk.itmo.test.viktorkorotkikh.http.LSMRangeQueueItem;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
 import ru.vk.itmo.test.viktorkorotkikh.util.ClusterResponseMerger;
 import ru.vk.itmo.test.viktorkorotkikh.util.HttpResponseNodeResponse;
@@ -102,6 +103,12 @@ public class LSMServerImpl extends HttpServer {
             executorService.execute(() -> {
                 try {
                     final String path = request.getPath();
+
+                    if (path.startsWith("/v0/entities")) {
+                        handleEntitiesRangeRequest(request, (LSMCustomSession) session);
+                        return;
+                    }
+
                     if (path.startsWith("/v0/entity")) {
                         handleEntityRequest(request, session);
                     } else {
@@ -413,6 +420,21 @@ public class LSMServerImpl extends HttpServer {
     public Response handleCompact(Request request) throws IOException {
         dao.compact();
         return LSMConstantResponse.ok(request);
+    }
+
+    public void handleEntitiesRangeRequest(Request request, LSMCustomSession session) throws IOException {
+        final String start = request.getParameter("start=");
+        final String end = request.getParameter("end=");
+        if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
+            log.debug("Bad request: empty id parameter");
+            session.sendResponse(LSMConstantResponse.badRequest(request));
+            return;
+        }
+
+        final MemorySegment startMemorySegment = fromByteArray(start.getBytes(StandardCharsets.UTF_8));
+        final MemorySegment endMemorySegment = end == null ? null : fromByteArray(end.getBytes(StandardCharsets.UTF_8));
+        Iterator<TimestampedEntry<MemorySegment>> iterator = dao.get(startMemorySegment, endMemorySegment);
+        session.sendRangeResponse(new LSMRangeQueueItem(iterator, LSMConstantResponse.keepAlive(request)));
     }
 
     private static MemorySegment fromByteArray(final byte[] data) {

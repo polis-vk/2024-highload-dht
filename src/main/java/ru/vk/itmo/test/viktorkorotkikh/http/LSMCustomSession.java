@@ -39,4 +39,29 @@ public class LSMCustomSession extends HttpSession {
             }
         }
     }
+
+    public synchronized void sendRangeResponse(LSMRangeQueueItem item) throws IOException {
+        Request handling = this.handling;
+        if (handling == null) {
+            throw new IOException("Out of order response");
+        }
+
+        server.incRequestsProcessed();
+
+        boolean keepAlive = LSMConstantResponse.keepAlive(handling);
+
+        write(item);
+        if (!keepAlive) scheduleClose();
+
+        this.handling = pipeline.pollFirst();
+        handling = this.handling;
+
+        if (handling != null) {
+            if (handling == FIN) {
+                scheduleClose();
+            } else {
+                server.handleRequest(handling, this);
+            }
+        }
+    }
 }

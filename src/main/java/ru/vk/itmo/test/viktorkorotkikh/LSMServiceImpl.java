@@ -90,6 +90,7 @@ public class LSMServiceImpl implements Service {
             }
         });
         Runtime.getRuntime().addShutdownHook(stopServiceHook);
+        System.out.println("Service started on port " + port);
     }
 
     public LSMServiceImpl(ServiceConfig serviceConfig) {
@@ -229,7 +230,7 @@ public class LSMServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 5)
+    @ServiceFactory(stage = 6)
     public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

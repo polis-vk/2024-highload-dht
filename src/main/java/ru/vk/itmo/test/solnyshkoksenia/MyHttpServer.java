@@ -29,6 +29,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -43,6 +44,7 @@ import java.util.concurrent.TimeoutException;
 public class MyHttpServer extends HttpServer {
     private static final String HEADER_TIMESTAMP = "X-timestamp";
     private static final String HEADER_TIMESTAMP_HEADER = HEADER_TIMESTAMP + ": ";
+    private static final String CHUNK_SEPARATOR = "\r\n";
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ServiceConfig config;
     private final DaoImpl dao;
@@ -113,6 +115,63 @@ public class MyHttpServer extends HttpServer {
                 throw new UncheckedIOException(e);
             }
         }, session));
+    }
+
+    @Path("/v0/entities")
+    public void handleRangeRequest(final Request request, final HttpSession session,
+                                   @Param(value = "start", required = true) String start,
+                                   @Param(value = "end") String end) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
+        }
+
+        if (start == null || start.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, "Start parameter required");
+            return;
+        }
+
+        if (end != null && !end.isBlank() && start.compareTo(end) >= 0) {
+            session.sendError(Response.BAD_REQUEST, "Start parameter should be less than end parameter");
+            return;
+        }
+
+        sendLocalRange(new CustomHttpSession(session, session.socket(), this), start, end);
+    }
+
+    private void sendLocalRange(CustomHttpSession session, String start, String end) {
+        Iterator<Entry<MemorySegment>> range = dao.get(toMS(start), end == null || end.isBlank() ? null : toMS(end));
+
+        ArrayList<Entry<MemorySegment>> data = new ArrayList<>();
+        int currentChunkSize = 0;
+        while (range.hasNext()) {
+            Entry<MemorySegment> entry = range.next();
+            data.add(entry);
+            currentChunkSize += (int) (entry.key().byteSize() + 1 + entry.value().byteSize());
+        }
+
+        session.chunkedWrite("HTTP/1.1 " + Response.OK + CHUNK_SEPARATOR);
+        session.chunkedWrite("Transfer-Encoding: chunked" + CHUNK_SEPARATOR);
+        session.chunkedWrite("Content-Length: " + currentChunkSize + CHUNK_SEPARATOR);
+        session.chunkedWrite(CHUNK_SEPARATOR);
+
+        int offset = 0;
+        byte[] bytes = new byte[currentChunkSize];
+        for (Entry<MemorySegment> memorySegmentEntry : data) {
+            byte[] key = memorySegmentEntry.key().toArray(ValueLayout.JAVA_BYTE);
+            System.arraycopy(key, 0, bytes, offset, key.length);
+            offset += key.length;
+
+            bytes[offset] = (byte) '\n';
+            offset += 1;
+
+            byte[] value = memorySegmentEntry.value().toArray(ValueLayout.JAVA_BYTE);
+            System.arraycopy(value, 0, bytes, offset, value.length);
+            offset += value.length;
+        }
+
+        session.chunkedWrite(bytes);
+        session.scheduleClose();
     }
 
     @Path("/v0/entity")

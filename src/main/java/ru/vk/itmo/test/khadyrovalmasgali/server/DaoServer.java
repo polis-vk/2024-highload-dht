@@ -100,29 +100,36 @@ public class DaoServer extends HttpServer {
         }
     }
 
-    private void handleEntities(Request request, HttpSession session) throws IOException {
-        if (request.getMethod() != Request.METHOD_GET) {
-            session.sendError(Response.METHOD_NOT_ALLOWED, null);
-            return;
-        }
-        String start = request.getParameter("start=");
-        if (start == null || start.isBlank()) {
-            session.sendError(Response.BAD_REQUEST, null);
-            return;
-        }
-        String end = request.getParameter("end=");
-        Iterator<TimestampEntry<MemorySegment>> iterator;
-        if (end == null || end.isBlank()) {
-            iterator = dao.get(stringToMemorySegment(start), null);
-        } else {
-            iterator = dao.get(stringToMemorySegment(start), stringToMemorySegment(end));
-        }
-        writeFull(session, CHUNK_HEADERS);
-        while (iterator.hasNext()) {
-            writeChunk(session, iterator.next());
-        }
-        writeEmptyChunk(session);
-        session.close();
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private void handleEntities(Request request, HttpSession session) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                if (request.getMethod() != Request.METHOD_GET) {
+                    session.sendError(Response.METHOD_NOT_ALLOWED, null);
+                    return;
+                }
+                String start = request.getParameter("start=");
+                if (start == null || start.isBlank()) {
+                    session.sendError(Response.BAD_REQUEST, null);
+                    return;
+                }
+                String end = request.getParameter("end=");
+                Iterator<TimestampEntry<MemorySegment>> iterator;
+                if (end == null || end.isBlank()) {
+                    iterator = dao.get(stringToMemorySegment(start), null);
+                } else {
+                    iterator = dao.get(stringToMemorySegment(start), stringToMemorySegment(end));
+                }
+                writeFull(session, CHUNK_HEADERS);
+                while (iterator.hasNext()) {
+                    writeChunk(session, iterator.next());
+                }
+                writeEmptyChunk(session);
+                session.close();
+            } catch (IOException e) {
+                log.error("Error handling range", e);
+            }
+        }, executorLocal);
     }
 
     private void writeChunk(HttpSession session, TimestampEntry<MemorySegment> entry) throws IOException {

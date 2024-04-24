@@ -135,6 +135,8 @@ public class ServiceImpl implements Service {
                 session.sendResponse(new ChunkedResponse(Response.OK, it));
             } catch (IOException e) {
                 LOGGER.error(e.getMessage());
+                throw new RuntimeException(e);
+
             }
         });
 

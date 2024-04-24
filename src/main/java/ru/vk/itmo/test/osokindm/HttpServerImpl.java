@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 public class HttpServerImpl extends HttpServer {
 
     private static final String ID_REQUEST = "id=";
+    private static final String START_REQUEST = "start=";
     private static final long KEEP_ALIVE_TIME = 60L;
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ThreadPoolExecutor requestWorkers;
@@ -52,7 +53,8 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         String id = request.getParameter(ID_REQUEST);
-        if (id == null || id.isEmpty()) {
+        String start = request.getParameter(START_REQUEST);
+        if ((id == null || id.isEmpty()) && (start == null || start.isEmpty()) ) {
             try {
                 handleDefault(request, session);
             } catch (IOException e) {

@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -111,6 +112,10 @@ public class MergeDaoMediator extends DaoMediator {
             }
             return entryMerger.getCompletableFuture();
         }
+    }
+
+    public CompletableFuture<Iterator<TimestampedEntry<MemorySegment>>> getRange(Request request) {
+        return localDaoMediator.getRange(request);
     }
 
     @Override

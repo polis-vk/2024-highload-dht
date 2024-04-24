@@ -7,6 +7,7 @@ import ru.vk.itmo.test.emelyanovvitaliy.dao.TimestampedEntry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -60,6 +61,21 @@ public class LocalDaoMediator extends DaoMediator {
             MemorySegment id = keyFor(request.getParameter(DhtServer.ID_KEY));
             TimestampedEntry<MemorySegment> entry = dao.get(id);
             ans.complete(Objects.requireNonNullElseGet(entry, () -> new TimestampedEntry<>(id, null, NEVER_TIMESTAMP)));
+        });
+        return ans;
+    }
+
+    CompletableFuture<Iterator<TimestampedEntry<MemorySegment>>> getRange(Request request) {
+        CompletableFuture<Iterator<TimestampedEntry<MemorySegment>>> ans = new CompletableFuture<>();
+        executor.execute(() -> {
+            MemorySegment start = keyFor(request.getParameter(DhtServer.START_KEY));
+            String endKey = request.getParameter(DhtServer.END_KEY);
+            MemorySegment end = null;
+            if (endKey != null) {
+                end = keyFor(endKey);
+            }
+            Iterator<TimestampedEntry<MemorySegment>> entries = dao.get(start, end);
+            ans.complete(entries);
         });
         return ans;
     }

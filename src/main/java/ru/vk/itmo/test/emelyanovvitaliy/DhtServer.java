@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
@@ -31,12 +32,15 @@ public class DhtServer extends HttpServer {
     public static final String NOT_ENOUGH_REPLICAS_STATUS = "504 Not Enough Replicas";
     public static final String TIMESTAMP_HEADER = "X-Timestamp";
     public static final String ID_KEY = "id=";
+    public static final String START_KEY = "start=";
+    public static final String END_KEY = "end=";
     protected static final int THREADS_PER_PROCESSOR = 1;
     protected static final byte[] EMPTY_BODY = new byte[0];
     protected static final long KEEP_ALIVE_TIME_MILLIS = 1000;
     protected static final int REQUEST_TIMEOUT_MILLIS = 1024;
     protected static final int THREAD_POOL_TERMINATION_TIMEOUT_SECONDS = 600;
     protected static final int TASK_QUEUE_SIZE = Runtime.getRuntime().availableProcessors() * THREADS_PER_PROCESSOR;
+    private static final Logger LOGGER = Logger.getLogger(DhtServer.class.getName());
     protected final MergeDaoMediator mergeDaoMediator;
     protected final ThreadPoolExecutor threadPoolExecutor;
 
@@ -113,6 +117,37 @@ public class DhtServer extends HttpServer {
                         sendBadRequestResponseUnchecked(session);
                     }
                 }
+        );
+    }
+
+    @SuppressWarnings("FutureReturnValueIgnored")
+    @RequestMethod(METHOD_GET)
+    @Path("/v0/entities")
+    public void entities(@Param(value="start") String start, HttpSession httpSession, Request request)
+            throws IOException {
+        requestProccessing(start, httpSession,
+                () -> mergeDaoMediator.getRange(request).whenCompleteAsync(
+                        (result, ex) -> {
+                            if (ex == null) {
+                                try {
+                                    if (result != null) {
+                                        httpSession.write(new HttpChunkedHeaderQueueItem());
+                                        while (result.hasNext()) {
+                                            httpSession.write(new HttpChunkedEntry(result.next()));
+                                        }
+                                        httpSession.write(new EmptyChunk());
+                                        httpSession.scheduleClose();
+                                    } else {
+                                        httpSession.sendResponse(new Response(Response.INTERNAL_ERROR, EMPTY_BODY));
+                                    }
+                                } catch (IOException e) {
+                                    throw new UncheckedIOException(e);
+                                }
+                            } else {
+                                LOGGER.warning(ex.toString());
+                            }
+                        }, threadPoolExecutor
+                )
         );
     }
 

@@ -211,7 +211,7 @@ final class SSTable {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
                 entry += 1;
-                return new TimestampedEntry<>(key, value, getTime(entry));
+                return new TimestampedEntry<>(key, value, getTime(entry >= 0 ? entry : -entry - 1));
             }
         }
     }

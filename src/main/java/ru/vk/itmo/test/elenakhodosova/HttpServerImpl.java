@@ -9,6 +9,7 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
@@ -27,7 +28,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -50,6 +53,9 @@ public class HttpServerImpl extends HttpServer {
     private static final String TIMESTAMP_HEADER = "X-timestamp: ";
     private static final String REDIRECTED_HEADER = "X-redirected";
     public static final String X_TOMB_HEADER = "X-tomb: ";
+    private static final char SEPARATOR = '\n';
+    private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] EOF = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executorService;
     private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
@@ -78,42 +84,80 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            String id = request.getParameter("id=");
-            if (isParamIncorrect(id)) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
             AllowedMethods method = getMethod(request.getMethod());
             if (method == null) {
                 session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 return;
             }
-            String fromStr = request.getParameter("from=");
-            String ackStr = request.getParameter("ack=");
-            int from = fromStr == null || fromStr.isEmpty() ? nodes.size() : Integer.parseInt(fromStr);
-            int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
-            if (ack == 0 || from == 0 || ack > from || from > nodes.size()) {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
+
+            switch (request.getPath()) {
+                case PATH_NAME -> executeSingleRequest(request, session, method);
+                case "/v0/entities" -> executeRangeRequest(request, session);
+                default -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             }
-            executorService.execute(() -> {
-                try {
-                    String isRedirected = request.getHeader(REDIRECTED_HEADER);
-                    if (isRedirected != null) {
-                        sendResponse(session, handleLocalRequest(request, id).get());
-                        return;
-                    }
-                    processRequest(request, session, id, method, from, ack);
-                } catch (Exception e) {
-                    logger.error("Unexpected error when processing request", e);
-                    sendError(session, e);
-                    Thread.currentThread().interrupt();
-                }
-            });
+
         } catch (RejectedExecutionException e) {
             logger.error("Request rejected", e);
             session.sendResponse(new Response(TOO_MANY_REQUESTS, Response.EMPTY));
         }
+    }
+
+    private void executeSingleRequest(Request request, HttpSession session, AllowedMethods method) {
+        executorService.execute(() -> {
+            try {
+                String fromStr = request.getParameter("from=");
+                String ackStr = request.getParameter("ack=");
+                int from = fromStr == null || fromStr.isEmpty() ? nodes.size() : Integer.parseInt(fromStr);
+                int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
+                if (ack == 0 || from == 0 || ack > from || from > nodes.size()) {
+                    sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+                String id = request.getParameter("id=");
+                if (isParamIncorrect(id)) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+                String isRedirected = request.getHeader(REDIRECTED_HEADER);
+                if (isRedirected != null) {
+                    sendResponse(session, handleLocalRequest(request, id).get());
+                    return;
+                }
+                processRequest(request, session, id, method, from, ack);
+            } catch (Exception e) {
+                logger.error("Unexpected error when processing request", e);
+                sendError(session, e);
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
+    private void executeRangeRequest(Request request, HttpSession session) {
+        String start = request.getParameter("start=");
+        if (isParamIncorrect(start)) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        String end = request.getParameter("end=");
+
+        executorService.execute(() -> {
+            try {
+                Iterator<EntryWithTimestamp<MemorySegment>> iterator = dao.get(
+                        MemorySegment.ofArray(Utf8.toBytes(start)),
+                        end == null ? null : MemorySegment.ofArray(Utf8.toBytes(end)));
+                byte[] headers = """
+                        HTTP/1.1 200 OK\r
+                        Transfer-Encoding: chunked\r
+                        Connection: close\r
+                        \r
+                        """.getBytes(StandardCharsets.UTF_8);
+                session.write(headers, 0, headers.length);
+                iterateOverChunks(session, iterator);
+            } catch (IOException e) {
+                logger.error("Error while handling range request for keys start={}, end={}", start, end, e);
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            }
+        });
     }
 
     private void processRequest(Request request, HttpSession session, String id,
@@ -397,5 +441,41 @@ public class HttpServerImpl extends HttpServer {
         if (method == 5) return AllowedMethods.PUT;
         if (method == 6) return AllowedMethods.DELETE;
         return null;
+    }
+
+    private void iterateOverChunks(HttpSession session, Iterator<EntryWithTimestamp<MemorySegment>> iterator) {
+        try {
+            if (processChunk(session, iterator)) {
+                iterateOverChunks(session, iterator);
+            }
+        } catch (IOException e) {
+            logger.error("Error during iteration over chunks", e);
+            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
+    }
+
+    private boolean processChunk(Session session, Iterator<EntryWithTimestamp<MemorySegment>> iterator)
+            throws IOException {
+        if (iterator.hasNext()) {
+            EntryWithTimestamp<MemorySegment> entry = iterator.next();
+            byte[] keyBytes = entry.key().toArray(ValueLayout.JAVA_BYTE);
+            byte[] valueBytes = entry.value().toArray(ValueLayout.JAVA_BYTE);
+            int length = keyBytes.length + valueBytes.length + 1;
+            ByteArrayBuilder bytesBuilder = new ByteArrayBuilder();
+            bytesBuilder
+                    .append(Utf8.toBytes(Integer.toHexString(length)))
+                    .append(CRLF)
+                    .append(keyBytes)
+                    .append(SEPARATOR)
+                    .append(valueBytes)
+                    .append(CRLF);
+            byte[] bytes = bytesBuilder.toBytes();
+            session.write(bytes, 0, bytes.length);
+            return true;
+        } else {
+            session.write(EOF, 0, EOF.length);
+            session.scheduleClose();
+            return false;
+        }
     }
 }

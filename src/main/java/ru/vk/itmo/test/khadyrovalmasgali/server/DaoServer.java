@@ -42,9 +42,14 @@ public class DaoServer extends HttpServer {
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": da";
     private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-server-to-node-by-paschenko2";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
-    private static final byte[] CHUNK_HEADERS =
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n"
-                    .getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CHUNK_HEADERS = ("""
+            HTTP/1.1 200 OK\r
+            Content-Type: text/plain\r
+            Transfer-Encoding: chunked\r
+            Connection: keep-alive\r
+            \r
+            """)
+            .getBytes(StandardCharsets.UTF_8);
     private static final byte[] CHUNK_SEP = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] ENTRY_SEP = "\n".getBytes(StandardCharsets.UTF_8);
     private static final Logger log = LoggerFactory.getLogger(DaoServer.class);

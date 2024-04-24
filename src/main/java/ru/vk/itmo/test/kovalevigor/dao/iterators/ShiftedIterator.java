@@ -35,4 +35,8 @@ public class ShiftedIterator<E> implements Iterator<E> {
         }
         return result;
     }
+
+    public E getValue() {
+        return value;
+    }
 }

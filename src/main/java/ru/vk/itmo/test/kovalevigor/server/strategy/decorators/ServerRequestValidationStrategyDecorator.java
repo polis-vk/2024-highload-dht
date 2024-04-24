@@ -18,11 +18,13 @@ import java.util.concurrent.Executor;
 public class ServerRequestValidationStrategyDecorator extends ServerStrategyDecorator {
 
     private static final Map<Paths, EnumSet<Parameters>> REQUIRED_PARAMETERS = Map.of(
-            Paths.V0_ENTITY, EnumSet.of(Parameters.ID)
+            Paths.V0_ENTITY, EnumSet.of(Parameters.ID),
+            Paths.V0_ENTITIES, EnumSet.of(Parameters.START)
     );
 
     private static final Map<Paths, Set<Integer>> ALLOWED_METHODS = Map.of(
-            Paths.V0_ENTITY, Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE)
+            Paths.V0_ENTITY, Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE),
+            Paths.V0_ENTITIES, Set.of(Request.METHOD_GET)
     );
 
     public ServerRequestValidationStrategyDecorator(ServerStrategy httpServer) {

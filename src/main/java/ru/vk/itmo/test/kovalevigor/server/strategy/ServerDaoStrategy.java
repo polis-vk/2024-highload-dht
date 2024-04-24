@@ -3,6 +3,7 @@ package ru.vk.itmo.test.kovalevigor.server.strategy;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.kovalevigor.config.DaoServerConfig;
@@ -13,11 +14,15 @@ import ru.vk.itmo.test.kovalevigor.dao.entry.MSegmentTimeEntry;
 import ru.vk.itmo.test.kovalevigor.dao.entry.TimeEntry;
 import ru.vk.itmo.test.kovalevigor.dao.iterators.ApplyIterator;
 import ru.vk.itmo.test.kovalevigor.dao.iterators.ShiftedIterator;
-import ru.vk.itmo.test.kovalevigor.server.util.CustomQueueItem;
-import ru.vk.itmo.test.kovalevigor.server.util.Headers;
-import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
-import ru.vk.itmo.test.kovalevigor.server.util.Paths;
-import ru.vk.itmo.test.kovalevigor.server.util.Responses;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.BaseByteStorage;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.ByteStorage;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.ChainedQueueItem;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Headers;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.JoinedQueueItem;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.MemorySegmentByteStorage;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Parameters;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Paths;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Responses;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -26,15 +31,27 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Iterator;
+import java.util.List;
 import java.util.logging.Logger;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.createIllegalState;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.createIllegalState;
 
 public class ServerDaoStrategy extends ServerRejectStrategy {
     private static final Charset CHARSET = StandardCharsets.UTF_8;
+    private static final byte[] RANGE_HEADER = """
+            HTTP/1.1 200 OK\r
+            Content-Type: text/plain\r
+            Transfer-Encoding: chunked\r
+            Connection: keep-alive\r
+            \r
+            """.getBytes(CHARSET);
+    private static final byte[] RANGE_END = "0\r\n\r\n".getBytes(CHARSET);
+    private static final ByteStorage CHUNK_LINE_END = new BaseByteStorage("\r\n".getBytes(CHARSET));
+    private static final ByteStorage KEY_VALUE_SEP = new BaseByteStorage("\n".getBytes(CHARSET));
+
     private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
     public static final Logger log = Logger.getLogger(ServerDaoStrategy.class.getName());
 
@@ -63,18 +80,32 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
                 MemorySegment endKey = fromString(Parameters.getParameter(request, Parameters.END));
                 Iterator<TimeEntry<MemorySegment>> iterator = getEntities(startKey, endKey);
                 if (iterator.hasNext()) {
-                    byte[] kek = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n".getBytes(StandardCharsets.UTF_8);
-                    session.write(kek, 0, kek.length);
-                    session.write(new CustomQueueItem(
-                            new ShiftedIterator<>(
-                                new ApplyIterator<>(
-                                        iterator,
-                                        ServerDaoStrategy::mapEntry
-                                )
+                    session.write(
+                            new ChainedQueueItem(
+                                    List.of(
+                                        new Session.ArrayQueueItem(
+                                                RANGE_HEADER,
+                                                0,
+                                                RANGE_HEADER.length,
+                                                0
+                                        ),
+                                        new ChainedQueueItem(
+                                                new ShiftedIterator<>(
+                                                        new ApplyIterator<>(
+                                                                iterator,
+                                                                ServerDaoStrategy::mapEntry
+                                                        )
+                                                )
+                                        ),
+                                        new Session.ArrayQueueItem(
+                                                RANGE_END,
+                                                0,
+                                                RANGE_END.length,
+                                                0
+                                        )
+                                    ).iterator()
                             )
-                    ));
-                    byte[] kek2 = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
-                    session.write(kek2, 0, kek2.length);
+                    );
                 } else {
                     return Responses.OK.toResponse();
                 }
@@ -144,40 +175,20 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(CHARSET));
     }
 
-    private static byte[] CHUNK_LINE_END = "\r\n".getBytes(StandardCharsets.UTF_8);
-    private static byte[] KEY_VALUE_SEP = "\n".getBytes(StandardCharsets.UTF_8);
-
-    private static byte[] mapEntry(DaoEntry<MemorySegment> entry) {
+    private static Session.QueueItem mapEntry(DaoEntry<MemorySegment> entry) {
         int keySize = (int)entry.key().byteSize();
         int valueSize = entry.value() == null ? 0 : (int)entry.value().byteSize();
-        int totalSize = (int)(keySize + valueSize + KEY_VALUE_SEP.length);
-        byte[] sizeBytes = Integer.toHexString(totalSize).getBytes(StandardCharsets.UTF_8);
-        byte[] bytes = new byte[totalSize + sizeBytes.length + 2 * CHUNK_LINE_END.length];
-        System.arraycopy(sizeBytes, 0, bytes, 0, sizeBytes.length);
-        System.arraycopy(CHUNK_LINE_END, 0, bytes, sizeBytes.length, CHUNK_LINE_END.length);
-        int offset = sizeBytes.length + CHUNK_LINE_END.length;
-        segmentCopy(entry.key(), 0, bytes, offset, keySize);
-        offset += keySize;
-        System.arraycopy(KEY_VALUE_SEP, 0, bytes, offset, KEY_VALUE_SEP.length);
-        offset += KEY_VALUE_SEP.length;
-        if (entry.value() != null) {
-            segmentCopy(entry.value(), 0, bytes, offset, valueSize);
-            offset += valueSize;
-        }
-        System.arraycopy(CHUNK_LINE_END, 0, bytes, offset, CHUNK_LINE_END.length);
-
-        return bytes;
-    }
-
-    private static void segmentCopy(MemorySegment src, long srcOffset, byte[] dst, int dstOffset, int length) {
-        if (length < 0) {
-            throw new IllegalArgumentException("Length should be positive");
-        }
-        if (dstOffset > dst.length - length) {
-            throw new IllegalArgumentException("Dst not enough size");
-        }
-        for (int i = 0; i < length; i++) {
-            dst[dstOffset + i] = src.get(ValueLayout.JAVA_BYTE, srcOffset + i);
-        }
+        long totalSize = keySize + valueSize + KEY_VALUE_SEP.size();
+        return new JoinedQueueItem(
+                1024,
+                List.of(
+                        new BaseByteStorage(Long.toHexString(totalSize).getBytes(CHARSET)),
+                        CHUNK_LINE_END,
+                        new MemorySegmentByteStorage(entry.key()),
+                        KEY_VALUE_SEP,
+                        new MemorySegmentByteStorage(entry.value()),
+                        CHUNK_LINE_END
+                ).iterator()
+        );
     }
 }

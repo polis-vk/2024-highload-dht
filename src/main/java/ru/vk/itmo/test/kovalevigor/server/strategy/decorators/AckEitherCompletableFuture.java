@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.kovalevigor.server.strategy.decorators;
 
 import one.nio.http.Response;
-import ru.vk.itmo.test.kovalevigor.server.util.Responses;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Responses;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -9,9 +9,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.GOOD_STATUSES;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.logIO;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.mergeResponses;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.GOOD_STATUSES;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.logIO;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.mergeResponses;
 
 public class AckEitherCompletableFuture extends CompletableFuture<Response> {
     private final AtomicReference<Response> replicasResponse;

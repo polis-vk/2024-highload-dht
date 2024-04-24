@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server.util;
+package ru.vk.itmo.test.kovalevigor.server.strategy.util;
 
 public enum Paths {
     V0_ENTITY("/v0/entity"),

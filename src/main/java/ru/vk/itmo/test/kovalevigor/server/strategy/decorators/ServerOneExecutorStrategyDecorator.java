@@ -4,7 +4,7 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
-import ru.vk.itmo.test.kovalevigor.server.util.ServerTask;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerTask;
 
 import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -15,7 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.shutdownAndAwaitTermination;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.shutdownAndAwaitTermination;
 
 public class ServerOneExecutorStrategyDecorator extends ServerStrategyDecorator implements RejectedExecutionHandler {
     private final ThreadPoolExecutor executorService;

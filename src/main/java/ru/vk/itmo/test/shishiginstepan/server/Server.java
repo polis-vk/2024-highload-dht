@@ -12,9 +12,7 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.apache.log4j.Logger;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.shishiginstepan.dao.EntryWithTimestamp;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
@@ -35,8 +33,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends HttpServer {
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final DistributedDao dao;
     private static final String BASE_PATH = "/v0/entity";
+    private static final String TIMESTAMP_HEADER = "X-timestamp: ";
+    private static final String INNER_REQUEST_HEADER = "X-inner-request: ";
 
     private final Logger logger = Logger.getLogger("lsm-db-server");
 
@@ -53,7 +53,7 @@ public class Server extends HttpServer {
         }
     };
 
-    public Server(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    public Server(ServiceConfig config, DistributedDao dao) throws IOException {
         super(configFromServiceConfig(config));
         this.dao = dao;
         //TODO подумать какое значение будет разумным
@@ -86,26 +86,29 @@ public class Server extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    handleRequestInOtherThread(request, session, requestExpirationDate);
-                } catch (IOException e) {
-                    try {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                    } catch (IOException exceptionHandlingException) {
-                        logger.error(exceptionHandlingException.initCause(e));
-                        session.close();
-                    }
-                } catch (HttpException e) {
-                    try {
-                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    } catch (IOException exceptionHandlingException) {
-                        logger.error(exceptionHandlingException.initCause(e));
-                        session.close();
-                    }
+                    handleRequestWithExceptions(request, session, requestExpirationDate);
+                } catch (IOException exceptionHandlingException) {
+                    logger.error(exceptionHandlingException.initCause(exceptionHandlingException));
+                    session.scheduleClose();
                 }
             });
         } catch (RejectedExecutionException e) {
             logger.error(e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private void handleRequestWithExceptions(Request request,
+                                             HttpSession session,
+                                             LocalDateTime requestExpirationDate) throws IOException {
+        try {
+            handleRequestInOtherThread(request, session, requestExpirationDate);
+        } catch (IOException e) {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (HttpException | DistributedDao.ClusterLimitExceeded e) {
+            session.sendError(Response.BAD_REQUEST, null);
+        } catch (DistributedDao.NoConsensus e) {
+            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         }
     }
 
@@ -123,56 +126,119 @@ public class Server extends HttpServer {
 
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_GET)
-
-    public Response getOne(@Param(value = "id", required = true) String id) {
+    public Response getOne(
+            @Param(value = "id", required = true) String id,
+            @Param(value = "ack") Integer ack,
+            @Param(value = "from") Integer from,
+            Request request
+    ) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        Entry<MemorySegment> val;
-        try {
-            val = dao.get(key);
-        } catch (Exception e) {
-            logger.error(e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        EntryWithTimestamp<MemorySegment> entry;
+
+        if (request.getHeader(INNER_REQUEST_HEADER) == null) {
+            entry = dao.get(
+                    key,
+                    from,
+                    ack
+            );
+        } else {
+            entry = dao.get(key);
         }
-        if (val == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+
+        if (entry.value() == null) {
+            Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+            return response;
         }
-        return Response.ok(val.value().toArray(ValueLayout.JAVA_BYTE));
+        Response response = new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
+        response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+        return response;
     }
 
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_PUT)
-    public Response putOne(@Param(value = "id", required = true) String id, Request request) {
+    public Response putOne(
+            @Param(value = "id", required = true) String id,
+            @Param(value = "ack") Integer ack,
+            @Param(value = "from") Integer from,
+            Request request
+    ) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
         MemorySegment val = MemorySegment.ofArray(request.getBody());
-        try {
-            dao.upsert(new BaseEntry<>(key, val));
-        } catch (Exception e) {
-            logger.error(e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        if (request.getHeader(INNER_REQUEST_HEADER) == null) {
+            dao.upsert(
+                    new EntryWithTimestamp<>(
+                            key,
+                            val,
+                            System.currentTimeMillis()),
+                    from,
+                    ack
+            );
+        } else {
+            var timestamp = getTimestampHeaderValue(request);
+            if (timestamp != null) {
+                dao.upsert(
+                        new EntryWithTimestamp<>(
+                                key,
+                                val,
+                                timestamp
+                        )
+                );
+            }
         }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Path(BASE_PATH)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteOne(@Param(value = "id", required = true) String id) {
+    public Response deleteOne(
+            @Param(value = "id", required = true) String id,
+            @Param(value = "ack") String ack,
+            @Param(value = "from") String from,
+            Request request
+    ) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
-        try {
-            dao.upsert(new BaseEntry<>(key, null));
-        } catch (Exception e) {
-            logger.error(e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        if (request.getHeader(INNER_REQUEST_HEADER) == null) {
+            dao.upsert(
+                    new EntryWithTimestamp<>(
+                            key,
+                            null,
+                            System.currentTimeMillis()),
+                    from == null ? null : Integer.parseInt(from),
+                    ack == null ? null : Integer.parseInt(ack)
+            );
+        } else {
+            var timestamp = getTimestampHeaderValue(request);
+            if (timestamp != null) {
+                dao.upsert(
+                        new EntryWithTimestamp<>(
+                                key,
+                                null,
+                                timestamp
+                        )
+                );
+            }
         }
+
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private static Long getTimestampHeaderValue(Request request) {
+        var headerRaw = request.getHeader(TIMESTAMP_HEADER).substring(2);
+        if (headerRaw == null) {
+            return null;
+        }
+        return Long.parseLong(headerRaw);
     }
 
     @Path(BASE_PATH)

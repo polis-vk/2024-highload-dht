@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
+    private static final String ENTITY_PATH = "/v0/entity";
+    private static final String ENTITIES_PATH = "/v0/entities";
     private static final Integer INTERNAL_SERVER_ERROR_CODE = 500;
     private static final List<Integer> NOT_SUCCESSFUL_BAD_REQUESTS_CODES = List.of(429);
     private static final List<Integer> ALLOWED_METHODS = List.of(
@@ -98,11 +100,17 @@ public class ServerImpl extends HttpServer {
                 return;
             }
 
-            RequestWrapper parameters = new RequestWrapper(request, serviceConfig.clusterUrls().size());
-            if (request.getHeader(RequestWrapper.SELF_HEADER) == null) {
-                processFirstRequest(request, session, parameters);
-            } else {
-                session.sendResponse(requestHandler.handle(request));
+            switch (request.getPath()) {
+                case ENTITY_PATH -> {
+                    RequestWrapper parameters = new RequestWrapper(request, serviceConfig.clusterUrls().size());
+                    if (request.getHeader(RequestWrapper.SELF_HEADER) == null) {
+                        processFirstRequest(request, session, parameters);
+                    } else {
+                        session.sendResponse(requestHandler.handleEntity(request));
+                    }
+                }
+                case ENTITIES_PATH -> requestHandler.handleEntities(request, session);
+                default -> session.sendError(Response.BAD_REQUEST, null);
             }
         } catch (Exception ex) {
             try {

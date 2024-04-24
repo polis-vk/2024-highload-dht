@@ -1,26 +1,30 @@
 package ru.vk.itmo.test.asvistukhin;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.asvistukhin.dao.Dao;
 import ru.vk.itmo.test.asvistukhin.dao.TimestampEntry;
 
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class RequestHandler {
+
     private final Dao<MemorySegment, TimestampEntry<MemorySegment>> dao;
 
     public RequestHandler(Dao<MemorySegment, TimestampEntry<MemorySegment>> dao) {
         this.dao = dao;
     }
 
-    public Response handle(Request request) {
+    public Response handleEntity(Request request) {
         String id = request.getParameter("id=");
         return switch (request.getMethod()) {
             case Request.METHOD_GET -> get(id);
@@ -30,6 +34,19 @@ public class RequestHandler {
         };
     }
 
+    public void handleEntities(Request request, HttpSession session) {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        try {
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> rangeGet(start, end, session);
+                default -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            }
+        } catch (IOException e) {
+            session.close();
+        }
+    }
+
     public void handle(
             Request request,
             List<CompletableFuture<Response>> futures,
@@ -37,7 +54,7 @@ public class RequestHandler {
             AtomicInteger unsuccessfulResponsesCount
     ) {
         futures.add(new CompletableFuture<Response>().completeAsync(() -> {
-            Response response = handle(request);
+            Response response = handleEntity(request);
             if (ServerImpl.isSuccessProcessed(response.getStatus())) {
                 collectedResponses.add(response);
             } else {
@@ -68,6 +85,23 @@ public class RequestHandler {
         }
 
         return response;
+    }
+
+    public void rangeGet(
+        @Param(value = "start", required = true) String start,
+        @Param(value = "end") String end,
+        HttpSession session
+    ) throws IOException {
+        if (RequestWrapper.isEmptyParam(start)) {
+            session.sendError(Response.BAD_REQUEST, null);
+        }
+
+        Iterator<TimestampEntry<MemorySegment>> entries = dao.get(
+            MemorySegment.ofArray(start.getBytes(StandardCharsets.UTF_8)),
+            end == null || end.isEmpty() ? null : MemorySegment.ofArray(end.getBytes(StandardCharsets.UTF_8))
+        );
+
+        ChunkWriter.writeAllEntries(session, entries);
     }
 
     public Response put(@Param(value = "id", required = true) String id, Request request) {

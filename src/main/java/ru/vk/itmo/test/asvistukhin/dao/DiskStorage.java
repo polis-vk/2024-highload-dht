@@ -51,7 +51,8 @@ public class DiskStorage {
 
     public Iterator<TimestampEntry<MemorySegment>> range(
         StorageState storageState,
-        MemorySegment from, MemorySegment to
+        MemorySegment from,
+        MemorySegment to
     ) {
         List<Iterator<TimestampEntry<MemorySegment>>> iterators = new ArrayList<>(segmentList.size() + 1);
         for (MemorySegment memorySegment : segmentList) {

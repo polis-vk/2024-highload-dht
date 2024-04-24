@@ -111,14 +111,7 @@ public class ReferenceServer extends HttpServer {
         String end = request.getParameter(END_ID_PARAMETER_KEY);
 
         if (RANGE_PATH.equals(request.getPath())) {
-            if (start == null || start.isBlank()) {
-                session.sendError(Response.BAD_REQUEST, null);
-            }
-            if (end != null && !end.isBlank()) {
-                handleLocalRangeRequest(session, start, end);
-            } else {
-                handleLocalRangeRequest(session, start, null);
-            }
+            checkRangeRequest(session, start, end);
             return;
         }
 
@@ -160,13 +153,29 @@ public class ReferenceServer extends HttpServer {
         }
     }
 
+    private void checkRangeRequest(HttpSession session, String start, String end) throws IOException {
+        if (start == null || start.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, null);
+        }
+
+        if (end != null && !end.isBlank()) {
+            handleLocalRangeRequest(session, start, end);
+        } else {
+            handleLocalRangeRequest(session, start, null);
+        }
+    }
+
     private void handleLocalRangeRequest(HttpSession session, String start, String end) {
         executorLocal.execute(() -> {
             try {
                 StringBuilder headerResponse = new StringBuilder();
                 headerResponse.append(OK_STATUS_HEADER);
                 for (Map.Entry<String, String> header : TRANSFER_ENCODING_HEADERS.entrySet()) {
-                    headerResponse.append(header.getKey()).append(": ").append(header.getValue()).append(CHUNK_DELIMITER);
+                    headerResponse
+                            .append(header.getKey())
+                            .append(": ")
+                            .append(header.getValue())
+                            .append(CHUNK_DELIMITER);
                 }
                 headerResponse.append(CHUNK_DELIMITER);
 
@@ -182,26 +191,31 @@ public class ReferenceServer extends HttpServer {
                     byte[] keyBytes = entry.key().toArray(ValueLayout.JAVA_BYTE);
                     byte[] valueBytes = entry.value().toArray(ValueLayout.JAVA_BYTE);
 
-                    int chunkSize = keyBytes.length + valueBytes.length + KEY_VALUE_DELIMITER.length();
-                    String entrySizeHex = Long.toHexString(chunkSize);
-                    String chunk = entrySizeHex +
-                            CHUNK_DELIMITER +
-                            new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8) +
-                            KEY_VALUE_DELIMITER +
-                            new String(entry.value().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8) +
-                            CHUNK_DELIMITER;
-                    byte[] chunkBytes = chunk.getBytes(StandardCharsets.UTF_8);
+                    byte[] chunkBytes = getChunkBytes(keyBytes, valueBytes);
 
                     session.write(chunkBytes, 0, chunkBytes.length);
                 }
                 byte[] lastChunk = LAST_CHUNK.getBytes(StandardCharsets.UTF_8);
-                
+
                 session.write(lastChunk, 0, lastChunk.length);
                 session.scheduleClose();
             } catch (Exception e) {
                 ExceptionUtils.handleErrorFromHandleRequest(e, session);
             }
         });
+    }
+
+    private static byte[] getChunkBytes(byte[] keyBytes, byte[] valueBytes) {
+        int chunkSize = keyBytes.length + valueBytes.length + KEY_VALUE_DELIMITER.length();
+        String entrySizeHex = Long.toHexString(chunkSize);
+        String chunk = entrySizeHex
+                + CHUNK_DELIMITER
+                + new String(keyBytes, StandardCharsets.UTF_8)
+                + KEY_VALUE_DELIMITER
+                + new String(valueBytes, StandardCharsets.UTF_8)
+                + CHUNK_DELIMITER;
+        byte[] chunkBytes = chunk.getBytes(StandardCharsets.UTF_8);
+        return chunkBytes;
     }
 
     private void handleLocalAsReplica(Request request, HttpSession session, String id) {

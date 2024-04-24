@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 
 public class CustomHttpSession extends HttpSession {
     private final HttpSession session;
+
     public CustomHttpSession(HttpSession session, Socket socket, HttpServer server) {
         super(socket, server);
         this.session = session;
@@ -21,7 +22,7 @@ public class CustomHttpSession extends HttpSession {
 
     public void chunkedWrite(byte[] bytes) {
         try {
-            session.write(bytes, 0 , bytes.length);
+            session.write(bytes, 0, bytes.length);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

@@ -12,7 +12,8 @@
    Команды для запуска нагрузки:
 
    [GET](../../scripts/GetRequest.lua):
-   - wrk2:  `wrk -d 60 -t 1 -c 1 -R 17000 -L -s ./scripts/[GetRequest.lua](./scripts/GetRequest.lua) http://localhost:8080`
+   - wrk2:  `wrk -d 60 -t 1 -c 1 -R 45000 -L -s ./scripts/[GetRequest.lua](./scripts/GetRequest.lua) http://localhost:8080`
+
 
    [PUT](../../scripts/PutRequest.lua):
    - wrk2:  `wrk -d 60 -t 1 -c 1 -R 45000 -L -s ./scripts/[GetRequest.lua](./scripts/PutRequest.lua) http://localhost:8080`

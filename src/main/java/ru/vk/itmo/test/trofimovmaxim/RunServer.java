@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -14,17 +15,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public final class RunServer {
-    private static final String URL_PREFIX = "http://localhost:";
+    private static final String LOCALHOST_PREFIX = "http://localhost:";
 
     private RunServer() {
     }
 
-    public static void main(String[] args) throws IOException {
-        Map<Integer, String> nodes = Map.of(
-                8080, URL_PREFIX + 8080,
-                8090, URL_PREFIX + 8090,
-                8100, URL_PREFIX + 8100
-        );
+    public static void main(String[] args) throws IOException,
+            InterruptedException, ExecutionException, TimeoutException {
+        //port -> url
+        Map<Integer, String> nodes = new HashMap<>();
+        int nodePort = 8080;
+        for (int i = 0; i < 3; i++) {
+            nodes.put(nodePort, LOCALHOST_PREFIX + nodePort);
+            nodePort += 10;
+        }
 
         List<String> clusterUrls = new ArrayList<>(nodes.values());
         List<ServiceConfig> clusterConfs = new ArrayList<>();
@@ -42,12 +46,7 @@ public final class RunServer {
 
         for (ServiceConfig serviceConfig : clusterConfs) {
             TrofikService instance = new TrofikService(serviceConfig);
-            try {
-                instance.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+            instance.start().get(1, TimeUnit.SECONDS);
         }
     }
 }

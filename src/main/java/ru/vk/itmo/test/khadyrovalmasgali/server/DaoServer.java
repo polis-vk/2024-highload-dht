@@ -28,6 +28,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -41,8 +42,14 @@ public class DaoServer extends HttpServer {
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": da";
     private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-server-to-node-by-paschenko2";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
+    private static final byte[] CHUNK_HEADERS =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n"
+                    .getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CHUNK_SEP = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] ENTRY_SEP = "\n".getBytes(StandardCharsets.UTF_8);
     private static final Logger log = LoggerFactory.getLogger(DaoServer.class);
     private static final String ENTITY_PATH = "/v0/entity";
+    private static final String ENTITIES_PATH = "/v0/entities";
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final int TERMINATION_TIMEOUT = 60;
     private static final int HTTP_CLIENT_TIMEOUT_MS = 1000;
@@ -80,11 +87,62 @@ public class DaoServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!ENTITY_PATH.equals(request.getPath())) {
+        if (ENTITY_PATH.equals(request.getPath())) {
+            handleEntity(request, session);
+        } else if (ENTITIES_PATH.equals(request.getPath())) {
+            handleEntities(request, session);
+        } else {
+            session.sendError(Response.BAD_REQUEST, null);
+        }
+    }
+
+    private void handleEntities(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendError(Response.METHOD_NOT_ALLOWED, null);
+            return;
+        }
+        String start = request.getParameter("start=");
+        if (start == null || start.isBlank()) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
         }
+        String end = request.getParameter("end=");
+        Iterator<TimestampEntry<MemorySegment>> iterator;
+        if (end == null || end.isBlank()) {
+            iterator = dao.get(stringToMemorySegment(start), null);
+        } else {
+            iterator = dao.get(stringToMemorySegment(start), stringToMemorySegment(end));
+        }
+        writeFull(session, CHUNK_HEADERS);
+        while (iterator.hasNext()) {
+            writeChunk(session, iterator.next());
+        }
+        writeEmptyChunk(session);
+        session.close();
+    }
 
+    private void writeChunk(HttpSession session, TimestampEntry<MemorySegment> entry) throws IOException {
+        byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
+        byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
+        writeFull(session, lengthToHexBytes(key.length + value.length + ENTRY_SEP.length));
+        writeFull(session, CHUNK_SEP);
+        writeFull(session, key);
+        writeFull(session, ENTRY_SEP);
+        writeFull(session, value);
+        writeFull(session, CHUNK_SEP);
+    }
+
+    private void writeEmptyChunk(HttpSession session) throws IOException {
+        writeFull(session, lengthToHexBytes(0));
+        writeFull(session, CHUNK_SEP);
+        writeFull(session, CHUNK_SEP);
+    }
+
+    private void writeFull(HttpSession session, byte[] data) throws IOException {
+        session.write(data, 0, data.length);
+    }
+
+    private void handleEntity(Request request, HttpSession session) throws IOException {
         if (request.getMethod() != Request.METHOD_GET
                 && request.getMethod() != Request.METHOD_DELETE
                 && request.getMethod() != Request.METHOD_PUT) {
@@ -113,8 +171,8 @@ public class DaoServer extends HttpServer {
 
         int[] indexes = determineResponsibleNodes(id, from);
         MergeHandleResult mergeResult = new MergeHandleResult(indexes.length, ack, session);
-        for (int i = 0; i < indexes.length; ++i) {
-            Node node = nodes.get(indexes[i]);
+        for (int index : indexes) {
+            Node node = nodes.get(index);
             if (!config.selfUrl().equals(node.getUrl())) {
                 handle(mergeResult, () -> remote(request, node));
             } else {
@@ -261,6 +319,10 @@ public class DaoServer extends HttpServer {
 
     private static MemorySegment stringToMemorySegment(String s) {
         return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] lengthToHexBytes(int length) {
+        return Integer.toHexString(length).getBytes(StandardCharsets.UTF_8);
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig config) {

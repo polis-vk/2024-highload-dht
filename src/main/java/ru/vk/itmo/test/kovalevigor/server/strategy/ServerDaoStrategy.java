@@ -147,7 +147,7 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
 
     private static Session.QueueItem mapEntry(Entry<MemorySegment> entry) {
         long keySize = entry.key().byteSize();
-        long valueSize = entry.value()  == null ? 0 : entry.value().byteSize();
+        long valueSize = entry.value() == null ? 0 : entry.value().byteSize();
         long totalSize = keySize + valueSize + KEY_VALUE_SEP.byteSize();
         return new JoinedQueueItem(
                 BUFFER_SIZE,

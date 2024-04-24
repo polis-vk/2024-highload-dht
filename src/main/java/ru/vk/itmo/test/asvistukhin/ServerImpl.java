@@ -110,7 +110,7 @@ public class ServerImpl extends HttpServer {
                     }
                 }
                 case ENTITIES_PATH -> requestHandler.handleEntities(request, session);
-                default -> session.sendError(Response.BAD_REQUEST, null);
+                default -> handleDefault(request, session);
             }
         } catch (Exception ex) {
             try {

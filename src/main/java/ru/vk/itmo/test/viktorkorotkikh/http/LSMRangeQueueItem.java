@@ -119,7 +119,8 @@ public class LSMRangeQueueItem extends Session.QueueItem {
     }
 
     private boolean writeMemorySegment(MemorySegment memorySegment, int memorySegmentOffset, boolean isKey) {
-        int writtenMemorySegment = LsmServerUtil.copyMemorySegmentToByteArrayBuilder(memorySegment, memorySegmentOffset, buffer);
+        int writtenMemorySegment
+                = LsmServerUtil.copyMemorySegmentToByteArrayBuilder(memorySegment, memorySegmentOffset, buffer);
         if (writtenMemorySegment < memorySegment.byteSize()) {
             nextOperation = isKey ? NextOperation.WRITE_KEY : NextOperation.WRITE_VALUE;
             lastEntryOffset = writtenMemorySegment;

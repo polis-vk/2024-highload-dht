@@ -73,7 +73,6 @@ public final class LSMConstantResponse {
         chunkedResponseKeepAlive.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         CHUNKED_RESPONSE_KEEP_ALIVE_WITH_HEADERS_BYTES = chunkedResponseKeepAlive.toBytes(false);
 
-
         Response chunkedResponseClose = new Response(Response.OK);
         chunkedResponseKeepAlive.addHeader("Transfer-Encoding: chunked");
         chunkedResponseKeepAlive.addHeader(CONNECTION_CLOSE_HEADER);

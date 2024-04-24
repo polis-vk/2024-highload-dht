@@ -90,7 +90,6 @@ public class LSMServiceImpl implements Service {
             }
         });
         Runtime.getRuntime().addShutdownHook(stopServiceHook);
-        System.out.println("Service started on port " + port);
     }
 
     public LSMServiceImpl(ServiceConfig serviceConfig) {

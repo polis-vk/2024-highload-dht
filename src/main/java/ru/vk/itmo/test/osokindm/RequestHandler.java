@@ -52,7 +52,7 @@ public class RequestHandler {
         }
     }
 
-    public void sendResponse(HttpSession session, Response latestResponse, AtomicInteger failures) {
+    public static void sendResponse(HttpSession session, Response latestResponse, AtomicInteger failures) {
         try {
             session.sendResponse(latestResponse);
         } catch (IOException e) {
@@ -60,7 +60,7 @@ public class RequestHandler {
         }
     }
 
-    private void logFailure(String e, AtomicInteger failures) {
+    private static void logFailure(String e, AtomicInteger failures) {
         failures.incrementAndGet();
         LOGGER.error(e);
     }

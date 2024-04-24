@@ -13,13 +13,16 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.osokindm.dao.Entry;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.net.HttpURLConnection;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -38,6 +41,7 @@ public class ServiceImpl implements Service {
     private static final int MEMORY_LIMIT_BYTES = 8 * 1024 * 1024;
     private static final int CONNECTION_TIMEOUT_MS = 250;
     private static final String DEFAULT_PATH = "/v0/entity";
+    private static final String RANGE_PATH = "/v0/entities";
     private static final String TIMESTAMP_HEADER = "Request-timestamp";
     private static final String WRONG_ACK = "wrong 'ack' value";
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpServerImpl.class);
@@ -114,6 +118,26 @@ public class ServiceImpl implements Service {
 
         List<Node> targetNodes = router.getNodes(id, from);
         dispatchRequestsToNodes(request, session, targetNodes, id, ack, from);
+    }
+
+    @Path(RANGE_PATH)
+    public void entities(Request request, HttpSession session,
+                         @Param(value = "start", required = true) String start,
+                         @Param(value = "end", required = true) String end) throws IOException {
+        if (start == null || start.isBlank() || end == null || end.isBlank()) {
+            session.sendResponse(badIdResponse);
+            return;
+        }
+
+        responseExecutor.execute(() -> {
+            Iterator<Entry<MemorySegment>> it = daoWrapper.get(start, end);
+            try {
+                session.sendResponse(new ChunkedResponse(Response.OK, it));
+            } catch (IOException e) {
+                LOGGER.error(e.getMessage());
+            }
+        });
+
     }
 
     private boolean handleTimestampHeader(Request request, HttpSession session, String id) throws IOException {

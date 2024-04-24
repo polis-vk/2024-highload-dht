@@ -9,6 +9,7 @@ import ru.vk.itmo.test.osokindm.dao.ReferenceDao;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 
 public class DaoWrapper {
 
@@ -21,6 +22,12 @@ public class DaoWrapper {
     public Entry<MemorySegment> get(String id) {
         MemorySegment key = getMemorySegment(id);
         return storage.get(key);
+    }
+
+    public Iterator<Entry<MemorySegment>> get(String start, String end) {
+        MemorySegment startKey = getMemorySegment(start);
+        MemorySegment endKey = getMemorySegment(end);
+        return storage.get(startKey, endKey);
     }
 
     public void delete(String id, long timestamp) {

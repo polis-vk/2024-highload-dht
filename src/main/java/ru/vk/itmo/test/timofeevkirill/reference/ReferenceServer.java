@@ -24,7 +24,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -38,10 +41,21 @@ public class ReferenceServer extends HttpServer {
     private static final String HEADER_TIMESTAMP = "X-timestamp-reference-server-to-node";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final String BASE_PATH = "/v0/entity";
+    private static final String RANGE_PATH = "/v0/entities";
     private static final String UNPROCESSABLE_CONTENT_RESPONSE = "422 Unprocessable Content";
     private static final String ID_PARAMETER_KEY = "id=";
     private static final String ACK_PARAMETER_KEY = "ack=";
     private static final String FROM_PARAMETER_KEY = "from=";
+    private static final String START_ID_PARAMETER_KEY = "start=";
+    private static final String END_ID_PARAMETER_KEY = "end=";
+    private static final String CHUNK_DELIMITER = "\r\n";
+    private static final String KEY_VALUE_DELIMITER = "\n";
+    private static final String LAST_CHUNK = "0\r\n\r\n";
+    private static final String OK_STATUS_HEADER = "HTTP/1.1 200 OK\r\n";
+    private static final Map<String, String> TRANSFER_ENCODING_HEADERS = Map.of(
+            "Content-Type", "text/plain",
+            "Transfer-Encoding", "chunked"
+    );
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
     private final int totalThreads = Runtime.getRuntime().availableProcessors();
 
@@ -80,7 +94,8 @@ public class ReferenceServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!BASE_PATH.equals(request.getPath())) {
+        if (!BASE_PATH.equals(request.getPath())
+                && !RANGE_PATH.equals(request.getPath())) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
         }
@@ -89,6 +104,21 @@ public class ReferenceServer extends HttpServer {
                 && request.getMethod() != Request.METHOD_DELETE
                 && request.getMethod() != Request.METHOD_PUT) {
             session.sendError(Response.METHOD_NOT_ALLOWED, null);
+            return;
+        }
+
+        String start = request.getParameter(START_ID_PARAMETER_KEY);
+        String end = request.getParameter(END_ID_PARAMETER_KEY);
+
+        if (RANGE_PATH.equals(request.getPath())) {
+            if (start == null || start.isBlank()) {
+                session.sendError(Response.BAD_REQUEST, null);
+            }
+            if (end != null && !end.isBlank()) {
+                handleLocalRangeRequest(session, start, end);
+            } else {
+                handleLocalRangeRequest(session, start, null);
+            }
             return;
         }
 
@@ -128,6 +158,50 @@ public class ReferenceServer extends HttpServer {
                 handleAsync(executorRemote, mergeHandleResult, () -> remote(request, executorNode));
             }
         }
+    }
+
+    private void handleLocalRangeRequest(HttpSession session, String start, String end) {
+        executorLocal.execute(() -> {
+            try {
+                StringBuilder headerResponse = new StringBuilder();
+                headerResponse.append(OK_STATUS_HEADER);
+                for (Map.Entry<String, String> header : TRANSFER_ENCODING_HEADERS.entrySet()) {
+                    headerResponse.append(header.getKey()).append(": ").append(header.getValue()).append(CHUNK_DELIMITER);
+                }
+                headerResponse.append(CHUNK_DELIMITER);
+
+                byte[] headerBytes = headerResponse.toString().getBytes(StandardCharsets.UTF_8);
+                session.write(headerBytes, 0, headerBytes.length);
+
+                MemorySegment startKey = MemorySegment.ofArray(Utf8.toBytes(start));
+                MemorySegment endKey = (end != null) ? MemorySegment.ofArray(Utf8.toBytes(end)) : null;
+
+                Iterator<ReferenceBaseEntry<MemorySegment>> iterator = dao.get(startKey, endKey);
+                while (iterator.hasNext()) {
+                    ReferenceBaseEntry<MemorySegment> entry = iterator.next();
+                    byte[] keyBytes = entry.key().toArray(ValueLayout.JAVA_BYTE);
+                    byte[] valueBytes = entry.value().toArray(ValueLayout.JAVA_BYTE);
+
+                    int chunkSize = keyBytes.length + valueBytes.length + KEY_VALUE_DELIMITER.length();
+                    String entrySizeHex = Long.toHexString(chunkSize);
+                    String chunk = entrySizeHex +
+                            CHUNK_DELIMITER +
+                            new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8) +
+                            KEY_VALUE_DELIMITER +
+                            new String(entry.value().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8) +
+                            CHUNK_DELIMITER;
+                    byte[] chunkBytes = chunk.getBytes(StandardCharsets.UTF_8);
+
+                    session.write(chunkBytes, 0, chunkBytes.length);
+                }
+                byte[] lastChunk = LAST_CHUNK.getBytes(StandardCharsets.UTF_8);
+                
+                session.write(lastChunk, 0, lastChunk.length);
+                session.scheduleClose();
+            } catch (Exception e) {
+                ExceptionUtils.handleErrorFromHandleRequest(e, session);
+            }
+        });
     }
 
     private void handleLocalAsReplica(Request request, HttpSession session, String id) {

@@ -33,9 +33,9 @@ public final class Constants {
     public static final String HTTP_TERMINATION_HEADER = "X-Termination";
     public static final String RANGE_REQUEST = "/v0/entities?start=";
     public static final String ID_REQUEST = "/v0/entity?id=";
-    public static final String CRLF = "\r\n";
+    public static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     public static final byte[] LAST_STRING = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
-    public static final String NEW_LINE = "\n";
+    public static final byte[] NEW_LINE = "\n".getBytes(StandardCharsets.UTF_8);
     public static final byte[] HEADER =
             """
                     HTTP/1.1 200 OK\r

@@ -7,6 +7,7 @@ import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
@@ -29,15 +30,21 @@ public class StreamResponse extends Response {
         byte[] keyInBytes = toByteArray(key);
         byte[] valueInBytes = toByteArray(value);
 
-        String entrySize = Integer.toHexString(keyInBytes.length + valueInBytes.length + Constants.NEW_LINE.length());
+        byte[] entrySize = Integer.toHexString(keyInBytes.length + valueInBytes.length + Constants.NEW_LINE.length)
+                .getBytes(StandardCharsets.UTF_8);
 
-        String keyInString = new String(keyInBytes, StandardCharsets.UTF_8);
-        String valueInString = new String(valueInBytes, StandardCharsets.UTF_8);
-        byte[] resultValue = (entrySize + Constants.CRLF
-                + keyInString + Constants.NEW_LINE
-                + valueInString + Constants.CRLF).getBytes(StandardCharsets.UTF_8);
+        byte[] resultValue = new byte[keyInBytes.length + valueInBytes.length + Constants.NEW_LINE.length
+                + Constants.CRLF.length * 2 + entrySize.length];
 
-        session.write(resultValue, 0, resultValue.length);
+        ByteBuffer target = ByteBuffer.wrap(resultValue);
+        target.put(entrySize);
+        target.put(Constants.CRLF);
+        target.put(keyInBytes);
+        target.put(Constants.NEW_LINE);
+        target.put(valueInBytes);
+        target.put(Constants.CRLF);
+
+        session.write(target.array(), 0, target.array().length);
     }
 
     private void processWrite(Session session) throws IOException {

@@ -1,3 +1,4 @@
+
 package ru.vk.itmo.test.kachmareugene;
 
 import one.nio.http.HttpException;
@@ -36,12 +37,15 @@ public class HttpServerImpl extends HttpServer {
     private static final int CORE_POOL = 4;
     private static final int MAX_POOL = 8;
     public static final String PATH = "/v0/entity";
+
+    public static final RangeAnswer rangeHandler = new RangeAnswer();
+
     public static final long KEEP_ALIVE_TIME = 10L;
     private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(256);
     private final ExecutorService executorService =
             new ThreadPoolExecutor(CORE_POOL, MAX_POOL,
                     KEEP_ALIVE_TIME, TimeUnit.MILLISECONDS,
-                                    queue);
+                    queue);
     Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> daoImpl;
     private final String selfNodeURL;
     private final ServiceConfig serviceConfig;
@@ -121,6 +125,12 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (request.getPath().equals(RangeAnswer.RANGE_REQUEST_PATH)) {
+            rangeHandler.handleRange(request, session, daoImpl);
+            session.close();
+            return;
+        }
+
         if (checkRequest(request, session)) return;
 
         try {
@@ -219,11 +229,11 @@ public class HttpServerImpl extends HttpServer {
                     System.currentTimeMillis()));
         } else {
             client.sendAsync(
-                    JavaRequestConverter.convertRequest(slaveUrl, request, timestamp),
+                            JavaRequestConverter.convertRequest(slaveUrl, request, timestamp),
                             HttpResponse.BodyHandlers.ofByteArray())
-                            .completeOnTimeout(null, Utils.TIMEOUT_SECONDS, TimeUnit.MILLISECONDS)
-                            .whenComplete((httpResponse, ignore) -> cfResponse.complete(
-                                    JavaRequestConverter.convertResponse(httpResponse)));
+                    .completeOnTimeout(null, Utils.TIMEOUT_SECONDS, TimeUnit.MILLISECONDS)
+                    .whenComplete((httpResponse, ignore) -> cfResponse.complete(
+                            JavaRequestConverter.convertResponse(httpResponse)));
         }
         return cfResponse;
     }
@@ -237,7 +247,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     public Response handleToDaoOperations(Request request, long timestamp) {
-        String key = request.getParameter("id");
+        String key = request.getParameter("id=");
 
         int m = request.getMethod();
         return switch (m) {

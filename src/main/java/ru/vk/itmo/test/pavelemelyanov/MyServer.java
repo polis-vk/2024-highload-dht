@@ -1,12 +1,9 @@
 package ru.vk.itmo.test.pavelemelyanov;
 
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -49,21 +46,15 @@ public class MyServer extends HttpServer {
     private final String selfUrl;
     private final int clusterSize;
 
-    public MyServer(
-            ServiceConfig config,
-            Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao,
-            ExecutorServiceWrapper worker,
-            ConsistentHashing shards) throws IOException {
-        super(createServerConfig(config));
+    public MyServer(ServiceConfig config, Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao,
+            ExecutorServiceWrapper worker, ConsistentHashing shards) throws IOException {
+        super(ServerConfiguration.createServerConfig(config));
         this.selfUrl = config.selfUrl();
         this.shards = shards;
         this.requestHandler = new RequestHandler(dao);
         this.workersPool = worker.getExecutorService();
         this.clusterSize = config.clusterUrls().size();
-
-        this.httpClient = HttpClient.newBuilder()
-                .executor(workersPool)
-                .build();
+        this.httpClient = HttpClient.newBuilder().executor(workersPool).build();
     }
 
     @Override
@@ -91,8 +82,8 @@ public class MyServer extends HttpServer {
             String paramId = request.getParameter(ID_PARAM);
             String fromStr = request.getParameter(FROM_PARAM);
             String ackStr = request.getParameter(ACK_PARAM);
-            int from = isNotParameterValid(fromStr) ? clusterSize : Integer.parseInt(fromStr);
-            int ack = isNotParameterValid(ackStr) ? from / 2 + 1 : Integer.parseInt(ackStr);
+            int from = fromStr == null || fromStr.isBlank() ? clusterSize : Integer.parseInt(fromStr);
+            int ack = ackStr == null || ackStr.isBlank() ? from / 2 + 1 : Integer.parseInt(ackStr);
             if (ack == 0 || from > clusterSize || ack > from || paramId == null || paramId.isEmpty()) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
@@ -124,10 +115,6 @@ public class MyServer extends HttpServer {
             }
             sendResponse(session, requestHandler.handle(request, paramId));
         } catch (Exception e) {
-            if (e.getClass() == HttpException.class) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
             LOG.error("Exception during handleRequest: ", e);
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
@@ -163,9 +150,7 @@ public class MyServer extends HttpServer {
             return new Response(Response.INTERNAL_ERROR, response.body());
         }
         var newResponse = new Response(statusCode, response.body());
-        long timestamp = response.headers()
-                .firstValueAsLong(HttpUtils.HTTP_TIMESTAMP_HEADER)
-                .orElse(0);
+        long timestamp = response.headers().firstValueAsLong(HttpUtils.HTTP_TIMESTAMP_HEADER).orElse(0);
         newResponse.addHeader(HttpUtils.NIO_TIMESTAMP_HEADER + timestamp);
         return newResponse;
     }
@@ -187,17 +172,13 @@ public class MyServer extends HttpServer {
         if (nodeUrls.size() < from) {
             return new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
-
         HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
         for (var nodeUrl : nodeUrls) {
             httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
         }
-
         List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
         if (httpRequests.containsKey(selfUrl)) {
-            responses.add(
-                    CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId))
-            );
+            responses.add(CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId)));
         }
         return getQuorumResult(request, from, ack, responses);
     }
@@ -234,16 +215,6 @@ public class MyServer extends HttpServer {
         }
     }
 
-    private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
-        HttpServerConfig serverConfig = new HttpServerConfig();
-        AcceptorConfig acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = serviceConfig.selfPort();
-        acceptorConfig.reusePort = true;
-        serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
-        serverConfig.closeSessions = true;
-        return serverConfig;
-    }
-
     private Response getResult(Request request, List<Response> successResponses) {
         if (request.getMethod() == Request.METHOD_GET) {
             sortResponses(successResponses);
@@ -260,7 +231,7 @@ public class MyServer extends HttpServer {
     }
 
     private void rangeRequest(HttpSession session, String startParam, String endParam) {
-        if (isNotParameterValid(startParam)) {
+        if (startParam == null || startParam.isBlank()) {
             sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
@@ -274,9 +245,5 @@ public class MyServer extends HttpServer {
                 session.scheduleClose();
             }
         });
-    }
-
-    private static boolean isNotParameterValid(String param) {
-        return param == null || param.isBlank();
     }
 }

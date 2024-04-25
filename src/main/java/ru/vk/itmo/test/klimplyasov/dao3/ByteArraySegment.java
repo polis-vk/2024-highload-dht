@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.osipovdaniil.dao;
+package ru.vk.itmo.test.klimplyasov.dao3;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

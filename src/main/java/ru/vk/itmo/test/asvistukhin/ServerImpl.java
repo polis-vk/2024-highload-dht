@@ -167,7 +167,9 @@ public class ServerImpl extends HttpServer {
 
         try {
             allFutures.get(5, TimeUnit.SECONDS);
+            futures.forEach(future -> future.cancel(true));
         } catch (TimeoutException e) {
+            futures.forEach(future -> future.cancel(true));
             log.warn("Timeout reached while waiting for responses");
         }
 

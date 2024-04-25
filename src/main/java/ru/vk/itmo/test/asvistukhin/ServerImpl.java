@@ -165,14 +165,9 @@ public class ServerImpl extends HttpServer {
                         .toArray(CompletableFuture[]::new)
         );
 
-        allFutures.whenComplete(
-            (result, ex) -> futures.forEach(future -> future.completeExceptionally(new TimeoutException()))
-        );
-
         try {
             allFutures.get(5, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            futures.forEach(future -> future.completeExceptionally(new TimeoutException()));
             log.warn("Timeout reached while waiting for responses");
         }
 

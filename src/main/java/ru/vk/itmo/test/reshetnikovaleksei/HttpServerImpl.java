@@ -123,17 +123,16 @@ public class HttpServerImpl extends HttpServer {
                         : MemorySegment.ofArray(endId.getBytes(StandardCharsets.UTF_8))
         );
 
-        byte[] responseBytes = new ChunkedResponseBuilder()
-                .withHeader()
-                .withData(iterator)
-                .withEnd()
-                .build();
         try {
-            session.write(responseBytes, 0, responseBytes.length);
+            ChunkedResponseSender.generateHeaderAndWrite(session);
+            while (iterator.hasNext()) {
+                ChunkedResponseSender.generateDataChunkAndWrite(session, iterator.next());
+            }
+            ChunkedResponseSender.generateEndChunkAndWrite(session);
+            session.scheduleClose();
         } catch (IOException e) {
             processIOException(request, session, e);
         }
-        session.scheduleClose();
     }
 
     @Path("/v0/entity")

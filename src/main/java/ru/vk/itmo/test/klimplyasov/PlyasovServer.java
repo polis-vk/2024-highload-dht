@@ -135,7 +135,6 @@ public class PlyasovServer extends HttpServer {
         }
     }
 
-
     private boolean isValidPath(String path) {
         return "/v0/entity".equals(path) || "/v0/entities".equals(path);
     }

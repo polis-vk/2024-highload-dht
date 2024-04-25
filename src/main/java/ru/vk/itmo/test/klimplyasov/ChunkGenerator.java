@@ -9,10 +9,6 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 public final class ChunkGenerator {
-
-    private ChunkGenerator () {
-        //:)
-    }
     private static final byte[] HTTP_RESPONSE_LINE = "HTTP/1.1 200 OK".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONTENT_TYPE_HEADER = "Content-Type: text/plain".getBytes(StandardCharsets.UTF_8);
@@ -20,6 +16,10 @@ public final class ChunkGenerator {
             "Transfer-Encoding: chunked".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONNECTION_HEADER = "Connection: keep-alive".getBytes(StandardCharsets.UTF_8);
     private static final byte[] LF = "\n".getBytes(StandardCharsets.UTF_8);
+
+    private ChunkGenerator() {
+        //:)
+    }
 
     public static void writeResponseHeaders(HttpSession session) throws IOException {
         session.write(HTTP_RESPONSE_LINE, 0, HTTP_RESPONSE_LINE.length);

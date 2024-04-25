@@ -87,5 +87,7 @@ public class ServiceImpl implements Service {
             executorService.shutdownNow();
             Thread.currentThread().interrupt();
         }
+
+        stopped = true;
     }
 }

@@ -115,7 +115,6 @@ public class HttpServerImpl extends HttpServer {
         if (ack == null) {
             ack = (from + 1) / 2;
         }
-
         if (from < 0 || from > clusterSize || from < ack || ack <= 0) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }

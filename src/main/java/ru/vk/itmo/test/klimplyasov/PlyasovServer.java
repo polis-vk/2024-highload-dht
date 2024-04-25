@@ -13,8 +13,8 @@ import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.klimplyasov.dao.ReferenceBaseEntry;
-import ru.vk.itmo.test.klimplyasov.dao.ReferenceDao;
+import ru.vk.itmo.test.klimplyasov.dao3.ReferenceBaseEntry;
+import ru.vk.itmo.test.klimplyasov.dao3.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -24,7 +24,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -83,40 +85,51 @@ public class PlyasovServer extends HttpServer {
             return;
         }
 
-        String id = request.getParameter("id=");
-        if (isInvalidId(id)) {
-            session.sendError(Response.BAD_REQUEST, null);
-            return;
+        if ("/v0/entities".equals(request.getPath())) {
+            handleEntitiesRequest(request, session);
         }
 
-        if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
-            handleRemoteRequest(request, session, id);
-            return;
-        }
+        else {
+            String id = request.getParameter("id=");
 
-        int ack = getInt(request, "ack=", config.clusterUrls().size() / 2 + 1);
-        int from = getInt(request, "from=", config.clusterUrls().size());
+            if ("/v0/entity".equals(request.getPath())) {
+                if (isInvalidId(id)) {
+                    session.sendError(Response.BAD_REQUEST, null);
+                    return;
+                }
+            }
 
-        if (isInvalidFromOrAck(from, ack)) {
-            session.sendError(Response.BAD_REQUEST, null);
-            return;
-        }
 
-        int[] indexes = getIndexes(id, from);
-        MergeHandleResult mergeHandleResult = new MergeHandleResult(session, indexes.length, ack);
-        for (int i = 0; i < indexes.length; i++) {
-            int index = indexes[i];
-            String executorNode = config.clusterUrls().get(index);
-            if (executorNode.equals(config.selfUrl())) {
-                handleAsync(executorLocal, i, mergeHandleResult, () -> handleLocalAsync(request, id));
-            } else {
-                handleAsync(executorRemote, i, mergeHandleResult, () -> handleRemoteAsync(request, executorNode));
+            if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
+                handleRemoteRequest(request, session, id);
+                return;
+            }
+
+            int ack = getInt(request, "ack=", config.clusterUrls().size() / 2 + 1);
+            int from = getInt(request, "from=", config.clusterUrls().size());
+
+            if (isInvalidFromOrAck(from, ack)) {
+                session.sendError(Response.BAD_REQUEST, null);
+                return;
+            }
+
+            int[] indexes = getIndexes(id, from);
+            MergeHandleResult mergeHandleResult = new MergeHandleResult(session, indexes.length, ack);
+            for (int i = 0; i < indexes.length; i++) {
+                int index = indexes[i];
+                String executorNode = config.clusterUrls().get(index);
+                if (executorNode.equals(config.selfUrl())) {
+                    handleAsync(executorLocal, i, mergeHandleResult, () -> handleLocalAsync(request, id));
+                } else {
+                    handleAsync(executorRemote, i, mergeHandleResult, () -> handleRemoteAsync(request, executorNode));
+                }
             }
         }
+
     }
 
     private boolean isValidPath(String path) {
-        return "/v0/entity".equals(path);
+        return "/v0/entity".equals(path) || "/v0/entities".equals(path);
     }
 
     private boolean isValidMethod(int method) {
@@ -236,6 +249,8 @@ public class PlyasovServer extends HttpServer {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
+
+
     @Path("/v0/status")
     public Response status() {
         return Response.ok("OK");
@@ -272,23 +287,25 @@ public class PlyasovServer extends HttpServer {
         long currentTimeMillis = System.currentTimeMillis();
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-                ReferenceBaseEntry<MemorySegment> entry = dao.get(key);
-                if (entry == null) {
-                    return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY);
-                }
-                if (entry.value() == null) {
-                    return new HandleResult(
-                            HttpURLConnection.HTTP_NOT_FOUND,
-                            Response.EMPTY,
-                            entry.timestamp());
-                }
+                if ("/v0/entity".equals(request.getPath())) {
+                    MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+                    ReferenceBaseEntry<MemorySegment> entry = dao.get(key);
+                    if (entry == null) {
+                        return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY);
+                    }
+                    if (entry.value() == null) {
+                        return new HandleResult(
+                                HttpURLConnection.HTTP_NOT_FOUND,
+                                Response.EMPTY,
+                                entry.timestamp());
+                    }
 
-                return new HandleResult(
-                        HttpURLConnection.HTTP_OK,
-                        entry.value().toArray(ValueLayout.JAVA_BYTE),
-                        entry.timestamp()
-                );
+                    return new HandleResult(
+                            HttpURLConnection.HTTP_OK,
+                            entry.value().toArray(ValueLayout.JAVA_BYTE),
+                            entry.timestamp()
+                    );
+                }
             }
             case Request.METHOD_PUT -> {
                 MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
@@ -305,9 +322,50 @@ public class PlyasovServer extends HttpServer {
                 return new HandleResult(HttpURLConnection.HTTP_BAD_METHOD, Response.EMPTY);
             }
         }
+        return null;
     }
 
-    // count <= config.clusterUrls().size()
+    public void handleEntitiesRequest(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        System.out.println(start);
+        if (start == null || start.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, null);
+        }
+        if (end != null && !end.isBlank()) {
+            handleLocalEntitiesRangeRequest(session, start, end);
+        } else {
+            handleLocalEntitiesRangeRequest(session, start, null);
+        }
+    }
+
+    private void handleLocalEntitiesRangeRequest(HttpSession session, String start, String end) {
+        executorLocal.execute(() -> {
+            try {
+                ChunkGenerator.writeResponseHeaders(session);
+                Iterator<ReferenceBaseEntry<MemorySegment>> iterator = getMemorySegmentsIterator(start, end);
+                writeDataChunks(session, iterator);
+                ChunkGenerator.writeEmptyChunk(session);
+                session.scheduleClose();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private Iterator<ReferenceBaseEntry<MemorySegment>> getMemorySegmentsIterator(String start, String end) throws IOException {
+        return dao.get(
+                MemorySegment.ofArray(start.getBytes(StandardCharsets.UTF_8)),
+                end == null ? null : MemorySegment.ofArray(end.getBytes(StandardCharsets.UTF_8))
+        );
+    }
+
+    private void writeDataChunks(HttpSession session, Iterator<ReferenceBaseEntry<MemorySegment>> iterator) throws IOException {
+        while (iterator.hasNext()) {
+            ChunkGenerator.writeDataChunk(session, iterator.next());
+        }
+    }
+
     private int[] getIndexes(String id, int count) {
         assert count < 5;
 
@@ -335,6 +393,7 @@ public class PlyasovServer extends HttpServer {
         }
         return result;
     }
+
 
     private interface ERunnable {
         CompletableFuture<HandleResult> run();

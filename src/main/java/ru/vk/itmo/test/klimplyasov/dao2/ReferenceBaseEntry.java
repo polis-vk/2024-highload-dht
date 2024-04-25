@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.trofimovmaxim.dao;
+package ru.vk.itmo.test.klimplyasov.dao2;
 
 import ru.vk.itmo.dao.Entry;
 

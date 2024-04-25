@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.osokindm.dao;
+package ru.vk.itmo.test.klimplyasov.dao2;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;

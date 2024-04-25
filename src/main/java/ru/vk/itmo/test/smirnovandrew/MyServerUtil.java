@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -148,5 +149,50 @@ public final class MyServerUtil {
                 + new String(valueWithTimestamp.value(), StandardCharsets.UTF_8) + SEPARATOR_CHUNK;
 
         return sessionBody.getBytes(StandardCharsets.UTF_8);
+    }
+
+    public static String getParametersError(String id, Integer from, Integer ack, int clusterSize) {
+        if (Objects.isNull(id) || id.isEmpty()) {
+            return "Invalid id provided";
+        }
+
+        if (ack <= 0) {
+            return "Too small ack";
+        }
+
+        if (from <= 0) {
+            return "Too small from";
+        }
+
+        if (from > clusterSize) {
+            return String.format("From is greater than cluster size: from=%d, clusterSize=%d", from, clusterSize);
+        }
+
+        if (ack > from) {
+            return String.format("Ack is greater than from: ack=%d, from=%d", ack, from);
+        }
+
+        return null;
+    }
+
+    public static void handleLocalEntitiesRequest(
+            String start,
+            String end,
+            HttpSession session,
+            MyServerDao dao,
+            Logger logger
+    ) {
+        try {
+            session.write(MyServerUtil.CHUNKED_HEADERS, 0, MyServerUtil.CHUNKED_HEADERS.length);
+            for (var it = dao.getEntriesFromDao(start, end); it.hasNext(); ) {
+                var sessionBody = MyServerUtil.getSessionBody(it.next());
+                session.write(sessionBody, 0, sessionBody.length);
+            }
+            session.write(MyServerUtil.EMPTY_CHUNKED_CONTENT, 0, MyServerUtil.EMPTY_CHUNKED_CONTENT.length);
+            session.close();
+        } catch (IOException | ClassNotFoundException e) {
+            logger.info(e.getMessage());
+            MyServerUtil.sendEmpty(session, logger, Response.INTERNAL_ERROR);
+        }
     }
 }

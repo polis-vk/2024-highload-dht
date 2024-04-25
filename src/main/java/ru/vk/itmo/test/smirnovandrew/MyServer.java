@@ -68,7 +68,7 @@ public class MyServer extends HttpServer {
             long exp = System.currentTimeMillis() + MyServerUtil.DURATION;
             executor.execute(() -> {
                 try {
-                    if(Objects.equals(request.getPath(), MyServerUtil.ROOT_ENTITIES)) {
+                    if (Objects.equals(request.getPath(), MyServerUtil.ROOT_ENTITIES)) {
                         entities(request, session);
                         return;
                     }
@@ -145,7 +145,7 @@ public class MyServer extends HttpServer {
             ack = ackParam;
         }
 
-        String paramError = getParametersError(id, from, ack);
+        String paramError = MyServerUtil.getParametersError(id, from, ack, config.clusterUrls().size());
         if (Objects.nonNull(paramError)) {
             return new Response(Response.BAD_REQUEST, paramError.getBytes(StandardCharsets.UTF_8));
         }
@@ -183,50 +183,6 @@ public class MyServer extends HttpServer {
                 completableResults,
                 logger
         );
-    }
-
-    private void handleLocalEntitiesRequest(
-            String start,
-            String end,
-            HttpSession session
-    ) {
-        try {
-            session.write(MyServerUtil.CHUNKED_HEADERS, 0, MyServerUtil.CHUNKED_HEADERS.length);
-            for (var it = dao.getEntriesFromDao(start, end); it.hasNext(); ) {
-                var sessionBody = MyServerUtil.getSessionBody(it.next());
-                session.write(sessionBody, 0, sessionBody.length);
-            }
-            session.write(MyServerUtil.EMPTY_CHUNKED_CONTENT, 0, MyServerUtil.EMPTY_CHUNKED_CONTENT.length);
-            session.close();
-        } catch (IOException | ClassNotFoundException e) {
-            logger.info(e.getMessage());
-            MyServerUtil.sendEmpty(session, logger, Response.INTERNAL_ERROR);
-        }
-    }
-
-    private String getParametersError(String id, Integer from, Integer ack) {
-        if (Objects.isNull(id) || id.isEmpty()) {
-            return "Invalid id provided";
-        }
-
-        if (ack <= 0) {
-            return "Too small ack";
-        }
-
-        if (from <= 0) {
-            return "Too small from";
-        }
-
-        int clusterSize = config.clusterUrls().size();
-        if (from > clusterSize) {
-            return String.format("From is greater than cluster size: from=%d, clusterSize=%d", from, clusterSize);
-        }
-
-        if (ack > from) {
-            return String.format("Ack is greater than from: ack=%d, from=%d", ack, from);
-        }
-
-        return null;
     }
 
     @Path(MyServerUtil.ROOT)
@@ -301,7 +257,7 @@ public class MyServer extends HttpServer {
             return;
         }
 
-        handleLocalEntitiesRequest(start, end, session);
+        MyServerUtil.handleLocalEntitiesRequest(start, end, session, dao, logger);
     }
 
     @Override

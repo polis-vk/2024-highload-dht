@@ -75,61 +75,73 @@ public class PlyasovServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (!isValidRequest(request, session)) {
+            return;
+        }
+
+        String path = request.getPath();
+        if ("/v0/entities".equals(path)) {
+            handleEntitiesRequest(request, session);
+        } else {
+            handleOtherRequest(request, session);
+        }
+    }
+
+    private boolean isValidRequest(Request request, HttpSession session) throws IOException {
         if (!isValidPath(request.getPath())) {
             session.sendError(Response.BAD_REQUEST, null);
-            return;
+            return false;
         }
 
         if (!isValidMethod(request.getMethod())) {
             session.sendError(Response.METHOD_NOT_ALLOWED, null);
+            return false;
+        }
+
+        return true;
+    }
+
+    private void handleOtherRequest(Request request, HttpSession session) throws IOException {
+        String id = request.getParameter("id=");
+
+        if (isValidPathEntity(request.getPath()) && isInvalidId(id)) {
+            session.sendError(Response.BAD_REQUEST, null);
             return;
         }
 
-        if ("/v0/entities".equals(request.getPath())) {
-            handleEntitiesRequest(request, session);
+        if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
+            handleRemoteRequest(request, session, id);
+            return;
         }
 
-        else {
-            String id = request.getParameter("id=");
+        int ack = getInt(request, "ack=", config.clusterUrls().size() / 2 + 1);
+        int from = getInt(request, "from=", config.clusterUrls().size());
 
-            if ("/v0/entity".equals(request.getPath())) {
-                if (isInvalidId(id)) {
-                    session.sendError(Response.BAD_REQUEST, null);
-                    return;
-                }
-            }
-
-
-            if (request.getHeader(HEADER_REMOTE_ONE_NIO_HEADER) != null) {
-                handleRemoteRequest(request, session, id);
-                return;
-            }
-
-            int ack = getInt(request, "ack=", config.clusterUrls().size() / 2 + 1);
-            int from = getInt(request, "from=", config.clusterUrls().size());
-
-            if (isInvalidFromOrAck(from, ack)) {
-                session.sendError(Response.BAD_REQUEST, null);
-                return;
-            }
-
-            int[] indexes = getIndexes(id, from);
-            MergeHandleResult mergeHandleResult = new MergeHandleResult(session, indexes.length, ack);
-            for (int i = 0; i < indexes.length; i++) {
-                int index = indexes[i];
-                String executorNode = config.clusterUrls().get(index);
-                if (executorNode.equals(config.selfUrl())) {
-                    handleAsync(executorLocal, i, mergeHandleResult, () -> handleLocalAsync(request, id));
-                } else {
-                    handleAsync(executorRemote, i, mergeHandleResult, () -> handleRemoteAsync(request, executorNode));
-                }
-            }
+        if (isInvalidFromOrAck(from, ack)) {
+            session.sendError(Response.BAD_REQUEST, null);
+            return;
         }
 
+        int[] indexes = getIndexes(id, from);
+        MergeHandleResult mergeHandleResult = new MergeHandleResult(session, indexes.length, ack);
+        for (int i = 0; i < indexes.length; i++) {
+            int index = indexes[i];
+            String executorNode = config.clusterUrls().get(index);
+            if (executorNode.equals(config.selfUrl())) {
+                handleAsync(executorLocal, i, mergeHandleResult, () -> handleLocalAsync(request, id));
+            } else {
+                handleAsync(executorRemote, i, mergeHandleResult, () -> handleRemoteAsync(request, executorNode));
+            }
+        }
     }
+
 
     private boolean isValidPath(String path) {
         return "/v0/entity".equals(path) || "/v0/entities".equals(path);
+    }
+
+    private boolean isValidPathEntity(String path) {
+        return "/v0/entity".equals(path);
     }
 
     private boolean isValidMethod(int method) {
@@ -249,8 +261,6 @@ public class PlyasovServer extends HttpServer {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
     }
 
-
-
     @Path("/v0/status")
     public Response status() {
         return Response.ok("OK");
@@ -287,7 +297,7 @@ public class PlyasovServer extends HttpServer {
         long currentTimeMillis = System.currentTimeMillis();
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                if ("/v0/entity".equals(request.getPath())) {
+                if (isValidPathEntity(request.getPath())) {
                     MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
                     ReferenceBaseEntry<MemorySegment> entry = dao.get(key);
                     if (entry == null) {
@@ -328,7 +338,6 @@ public class PlyasovServer extends HttpServer {
     public void handleEntitiesRequest(Request request, HttpSession session) throws IOException {
         String start = request.getParameter("start=");
         String end = request.getParameter("end=");
-        System.out.println(start);
         if (start == null || start.isBlank()) {
             session.sendError(Response.BAD_REQUEST, null);
         }
@@ -348,19 +357,25 @@ public class PlyasovServer extends HttpServer {
                 ChunkGenerator.writeEmptyChunk(session);
                 session.scheduleClose();
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                log.error("EXC");
             }
         });
     }
 
-    private Iterator<ReferenceBaseEntry<MemorySegment>> getMemorySegmentsIterator(String start, String end) throws IOException {
+    private Iterator<ReferenceBaseEntry<MemorySegment>> getMemorySegmentsIterator(
+            String start,
+            String end
+    ) throws IOException {
         return dao.get(
                 MemorySegment.ofArray(start.getBytes(StandardCharsets.UTF_8)),
                 end == null ? null : MemorySegment.ofArray(end.getBytes(StandardCharsets.UTF_8))
         );
     }
 
-    private void writeDataChunks(HttpSession session, Iterator<ReferenceBaseEntry<MemorySegment>> iterator) throws IOException {
+    private void writeDataChunks(
+            HttpSession session,
+            Iterator<ReferenceBaseEntry<MemorySegment>> iterator
+    ) throws IOException {
         while (iterator.hasNext()) {
             ChunkGenerator.writeDataChunk(session, iterator.next());
         }
@@ -393,7 +408,6 @@ public class PlyasovServer extends HttpServer {
         }
         return result;
     }
-
 
     private interface ERunnable {
         CompletableFuture<HandleResult> run();

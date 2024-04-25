@@ -13,17 +13,15 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public abstract class BaseSharder implements Sharder {
-    protected static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-
     private static final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
     private final HttpClient client;
     private static final String TIMESTAMP_HEADER_LITERAL = TIMESTAMP_HEADER + " ";
-    
+
     protected BaseSharder(HttpClient client) {
         this.client = client;
     }
 
-    protected Response handleProxiedResponse(int statusCode, byte[] body, Long timestamp) {
+    public static Response handleProxiedResponse(int statusCode, byte[] body, Long timestamp) {
         Response response = switch (statusCode) {
             case 200 -> new Response(Response.OK, body);
             case 201 -> new Response(Response.CREATED, Response.EMPTY);
@@ -67,7 +65,9 @@ public abstract class BaseSharder implements Sharder {
     @Override
     public List<CompletableFuture<Response>> proxyRequest(int method, String entityKey, byte[] body,
                                                           List<String> baseUrls) {
-        List<CompletableFuture<Response>> futures = new ArrayList<>(baseUrls.size());
+        /* For the case if our node participates in request it's better to allocate
+        room for 1 object then in worst case for 2*n */
+        List<CompletableFuture<Response>> futures = new ArrayList<>(baseUrls.size() + 1);
         for (String baseUrl : baseUrls) {
             String entityUrl = baseUrl + "/v0/entity?id=" + entityKey + "&not-proxy=true";
             URI uri = URI.create(entityUrl);

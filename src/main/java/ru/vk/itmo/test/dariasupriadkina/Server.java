@@ -7,7 +7,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.ByteArrayBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -21,9 +20,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,7 +48,6 @@ public class Server extends HttpServer {
     private final List<String> clusterUrls;
     private final Utils utils;
     private final SelfRequestHandler selfHandler;
-    private final Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
 
     public Server(ServiceConfig config, Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao,
                   ThreadPoolExecutor workerExecutor, ThreadPoolExecutor nodeExecutor, ShardingPolicy shardingPolicy)
@@ -64,19 +60,15 @@ public class Server extends HttpServer {
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
         this.selfHandler = new SelfRequestHandler(dao, utils);
-        this.dao = dao;
         this.closeSessions = true;
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
-
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
-
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-
         return httpServerConfig;
     }
 
@@ -97,7 +89,7 @@ public class Server extends HttpServer {
             workerExecutor.execute(() -> {
                 try {
                     if (request.getURI().startsWith(Utils.LOCAL_STREAM_ENTRY_PREFIX)) {
-                        handleRange(request, session);
+                        selfHandler.handleRange(request, session);
                         return;
                     }
                     Map<String, Integer> ackFrom = getFromAndAck(request);
@@ -127,39 +119,6 @@ public class Server extends HttpServer {
             logger.error("Service is unavailable", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
-    }
-
-    private void handleRange(Request request, HttpSession session) throws IOException {
-        String start = request.getParameter("start=");
-        String end = request.getParameter("end=");
-
-        if (start == null
-                || request.getMethod() != Request.METHOD_GET
-                || start.isEmpty()
-                || (end != null && end.isEmpty())) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-
-        Iterator<ExtendedEntry<MemorySegment>> it = dao.get(
-                utils.convertByteArrToMemorySegment(start.getBytes(StandardCharsets.UTF_8)),
-                end == null ? null :
-                        utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
-        );
-
-        sendRange(it, session);
-    }
-
-    private void sendRange(Iterator<ExtendedEntry<MemorySegment>> it, HttpSession session) throws IOException {
-        ByteArrayBuilder bb = new ByteArrayBuilder();
-        bb.append(EntryChunkUtils.HEADER_BYTES, 0, EntryChunkUtils.HEADER_BYTES.length);
-        while (it.hasNext()) {
-            ExtendedEntry<MemorySegment> ee = it.next();
-            EntryChunkUtils.getEntryByteChunk(ee, bb);
-        }
-        bb.append(EntryChunkUtils.LAST_BYTES, 0, EntryChunkUtils.LAST_BYTES.length);
-        session.write(bb.toBytes(), 0, bb.length());
-        session.scheduleClose();
     }
 
     private void solveUnexpectedError(Exception e, HttpSession session) {

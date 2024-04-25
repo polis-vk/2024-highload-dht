@@ -1,14 +1,19 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.util.ByteArrayBuilder;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedBaseEntry;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 public class SelfRequestHandler {
@@ -101,4 +106,38 @@ public class SelfRequestHandler {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
+
+    public void handleRange(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+
+        if (start == null
+                || request.getMethod() != Request.METHOD_GET
+                || start.isEmpty()
+                || (end != null && end.isEmpty())) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        Iterator<ExtendedEntry<MemorySegment>> it = dao.get(
+                utils.convertByteArrToMemorySegment(start.getBytes(StandardCharsets.UTF_8)),
+                end == null ? null :
+                        utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
+        );
+
+        sendRange(it, session);
+    }
+
+    public void sendRange(Iterator<ExtendedEntry<MemorySegment>> it, HttpSession session) throws IOException {
+        ByteArrayBuilder bb = new ByteArrayBuilder();
+        bb.append(EntryChunkUtils.HEADER_BYTES, 0, EntryChunkUtils.HEADER_BYTES.length);
+        while (it.hasNext()) {
+            ExtendedEntry<MemorySegment> ee = it.next();
+            EntryChunkUtils.getEntryByteChunk(ee, bb);
+        }
+        bb.append(EntryChunkUtils.LAST_BYTES, 0, EntryChunkUtils.LAST_BYTES.length);
+        session.write(bb.toBytes(), 0, bb.length());
+        session.scheduleClose();
+    }
+
 }

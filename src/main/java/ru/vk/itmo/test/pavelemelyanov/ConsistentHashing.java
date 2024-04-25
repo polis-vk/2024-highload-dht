@@ -65,10 +65,10 @@ public class ConsistentHashing {
         private final Iterator<String> tail;
 
         public ClockwiseIterator(int slot) {
-            this.head = virtualNodeMapping.headMap(slot)
+            head = virtualNodeMapping.headMap(slot)
                     .values()
                     .iterator();
-            this.tail = virtualNodeMapping.tailMap(slot)
+            tail = virtualNodeMapping.tailMap(slot)
                     .values()
                     .iterator();
         }

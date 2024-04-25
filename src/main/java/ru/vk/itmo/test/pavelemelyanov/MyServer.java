@@ -22,6 +22,7 @@ import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -34,6 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
     private static final String V0_PATH = "/v0/entity";
+    private static final String RANGE_REQUEST = "/v0/entities?start=";
     private static final String ID_PARAM = "id=";
     private static final String FROM_PARAM = "from=";
     private static final String ACK_PARAM = "ack=";
@@ -74,6 +76,14 @@ public class MyServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
+            if (request.getURI().startsWith(RANGE_REQUEST)) {
+                String paramStart = request.getParameter("start=");
+                String paramEnd = request.getParameter("end=");
+
+                rangeRequest(session, paramStart, paramEnd);
+                return;
+            }
+
             if (!request.getURI().startsWith(getPathWithIdParam())
                     || !HttpUtils.SUPPORTED_METHODS.contains(request.getMethod())) {
                 handleDefault(request, session);
@@ -84,8 +94,8 @@ public class MyServer extends HttpServer {
             String fromStr = request.getParameter(FROM_PARAM);
             String ackStr = request.getParameter(ACK_PARAM);
 
-            int from = fromStr == null || fromStr.isBlank() ? clusterSize : Integer.parseInt(fromStr);
-            int ack = ackStr == null || ackStr.isBlank() ? from / 2 + 1 : Integer.parseInt(ackStr);
+            int from = isNotParameterValid(fromStr) ? clusterSize : Integer.parseInt(fromStr);
+            int ack = isNotParameterValid(ackStr) ? from / 2 + 1 : Integer.parseInt(ackStr);
 
             if (ack == 0 || from > clusterSize || ack > from || paramId == null || paramId.isEmpty()) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -264,5 +274,26 @@ public class MyServer extends HttpServer {
 
     private static String getPathWithIdParam() {
         return V0_PATH + "?" + ID_PARAM;
+    }
+
+    private void rangeRequest(HttpSession session, String startParam, String endParam) {
+        if (isNotParameterValid(startParam)) {
+            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        workersPool.execute(() -> {
+            try {
+                Iterator<EntryWithTimestamp<MemorySegment>> entries = requestHandler.getEntries(startParam, endParam);
+                var streamResponse = new StreamResponse(Response.OK, entries);
+                streamResponse.stream(session);
+            } catch (IOException e) {
+                LOG.error("Exception while closing connection", e);
+                session.scheduleClose();
+            }
+        });
+    }
+
+    private static boolean isNotParameterValid(String param) {
+        return param == null || param.isBlank();
     }
 }

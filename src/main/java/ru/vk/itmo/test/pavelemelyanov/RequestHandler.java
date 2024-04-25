@@ -10,6 +10,7 @@ import ru.vk.itmo.test.pavelemelyanov.dao.EntryWithTimestamp;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 
 import static ru.vk.itmo.test.pavelemelyanov.HttpUtils.HTTP_TIMESTAMP_HEADER;
 
@@ -31,6 +32,12 @@ public class RequestHandler {
             case Request.METHOD_DELETE -> deleteEntry(id);
             default -> new Response(Response.BAD_REQUEST, Response.EMPTY);
         };
+    }
+
+    public Iterator<EntryWithTimestamp<MemorySegment>> getEntries(String startParam, String endParam) {
+        MemorySegment startVal = convertFromString(startParam);
+        MemorySegment endVal = endParam != null ? convertFromString(endParam) : null;
+        return dao.get(startVal, endVal);
     }
 
     private Response getEntry(@Param(value = "id", required = true) String id) {

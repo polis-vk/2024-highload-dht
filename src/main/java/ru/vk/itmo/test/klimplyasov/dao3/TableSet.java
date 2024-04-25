@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.klimplyasov.dao2;
+package ru.vk.itmo.test.klimplyasov.dao3;
 
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -175,6 +175,10 @@ final class TableSet {
         // Nothing found
         return null;
     }
+
+//    private static ReferenceBaseEntry<MemorySegment> swallowTombstone(final ReferenceBaseEntry<MemorySegment> entry) {
+//        return entry.value() == null ? null : entry;
+//    }
 
     ReferenceBaseEntry<MemorySegment> upsert(final ReferenceBaseEntry<MemorySegment> entry) {
         return memTable.upsert(entry);

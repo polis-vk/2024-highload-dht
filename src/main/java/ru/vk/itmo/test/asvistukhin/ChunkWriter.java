@@ -9,7 +9,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
-public class ChunkWriter {
+public final class ChunkWriter {
     private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] SEPARATOR = "\n".getBytes(StandardCharsets.UTF_8);
 

@@ -35,8 +35,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static ru.vk.itmo.test.dariasupriadkina.EntryChunkUtils.HEADER_BYTES;
-import static ru.vk.itmo.test.dariasupriadkina.EntryChunkUtils.LAST_BYTES;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER_NORMAL;
@@ -99,32 +97,7 @@ public class Server extends HttpServer {
             workerExecutor.execute(() -> {
                 try {
                     if (request.getURI().startsWith(Utils.LOCAL_STREAM_ENTRY_PREFIX)) {
-                        String start = request.getParameter("start=");
-                        String end = request.getParameter("end=");
-
-                        if (start == null
-                                || request.getMethod() != Request.METHOD_GET
-                                || start.isEmpty()
-                                || (end != null && end.isEmpty())) {
-                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                            return;
-                        }
-
-                        Iterator<ExtendedEntry<MemorySegment>> it = dao.get(
-                                utils.convertByteArrToMemorySegment(start.getBytes(StandardCharsets.UTF_8)),
-                                end == null ? null :
-                                        utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
-                        );
-
-                        ByteArrayBuilder bb = new ByteArrayBuilder();
-                        bb.append(HEADER_BYTES, 0, HEADER_BYTES.length);
-                        while (it.hasNext()) {
-                            ExtendedEntry<MemorySegment> ee = it.next();
-                            EntryChunkUtils.getEntryByteChunk(ee, bb);
-                        }
-                        bb.append(LAST_BYTES, 0, LAST_BYTES.length);
-                        session.write(bb.toBytes(), 0, bb.length());
-                        session.scheduleClose();
+                        handleRange(request, session);
                         return;
                     }
                     Map<String, Integer> ackFrom = getFromAndAck(request);
@@ -154,6 +127,39 @@ public class Server extends HttpServer {
             logger.error("Service is unavailable", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
+    }
+
+    private void handleRange(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+
+        if (start == null
+                || request.getMethod() != Request.METHOD_GET
+                || start.isEmpty()
+                || (end != null && end.isEmpty())) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        Iterator<ExtendedEntry<MemorySegment>> it = dao.get(
+                utils.convertByteArrToMemorySegment(start.getBytes(StandardCharsets.UTF_8)),
+                end == null ? null :
+                        utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
+        );
+
+        sendRange(it, session);
+    }
+
+    private void sendRange(Iterator<ExtendedEntry<MemorySegment>> it, HttpSession session) throws IOException {
+        ByteArrayBuilder bb = new ByteArrayBuilder();
+        bb.append(EntryChunkUtils.HEADER_BYTES, 0, EntryChunkUtils.HEADER_BYTES.length);
+        while (it.hasNext()) {
+            ExtendedEntry<MemorySegment> ee = it.next();
+            EntryChunkUtils.getEntryByteChunk(ee, bb);
+        }
+        bb.append(EntryChunkUtils.LAST_BYTES, 0, EntryChunkUtils.LAST_BYTES.length);
+        session.write(bb.toBytes(), 0, bb.length());
+        session.scheduleClose();
     }
 
     private void solveUnexpectedError(Exception e, HttpSession session) {

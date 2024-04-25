@@ -202,7 +202,7 @@ public class MyReferenceServer extends HttpServer {
                 try {
                     timestamp = Long.parseLong(string.get());
                 } catch (Exception e) {
-                    log.error("todo ");
+                    log.error("Error while parsing timestamp");
                     timestamp = 0;
                 }
             } else {

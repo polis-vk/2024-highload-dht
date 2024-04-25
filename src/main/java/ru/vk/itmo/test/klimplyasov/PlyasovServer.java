@@ -13,8 +13,8 @@ import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.test.klimplyasov.dao3.ReferenceBaseEntry;
-import ru.vk.itmo.test.klimplyasov.dao3.ReferenceDao;
+import ru.vk.itmo.test.klimplyasov.dao.ReferenceBaseEntry;
+import ru.vk.itmo.test.klimplyasov.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

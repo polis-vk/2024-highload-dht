@@ -6,7 +6,7 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.klimplyasov.dao3.ReferenceDao;
+import ru.vk.itmo.test.klimplyasov.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.nio.file.Files;

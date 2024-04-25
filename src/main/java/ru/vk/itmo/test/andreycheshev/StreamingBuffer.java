@@ -34,7 +34,7 @@ public class StreamingBuffer {
     public int tryWrite(Socket socket) throws IOException {
         int diff = size - pos;
         if (diff > 0) {
-            int written = socket.write(buffer, pos, diff, 0);
+            int written = socket.write(buffer, pos, diff);
             if (diff == written) {
                 reset();
             } else {

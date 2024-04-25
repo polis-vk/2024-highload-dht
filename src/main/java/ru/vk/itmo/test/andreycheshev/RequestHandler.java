@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
+import static ru.vk.itmo.test.alenkovayulya.ServerInitializer.LOGGER;
+
 public class RequestHandler implements HttpProvider {
     private static final Set<Integer> AVAILABLE_METHODS = Set.of(
             Request.METHOD_GET,
@@ -97,7 +99,7 @@ public class RequestHandler implements HttpProvider {
 
             Iterator<Entry<MemorySegment>> streamingIterator = dao.get(
                     fromString(params.first()),
-                    fromString(params.second())
+                    params.second() == null ? null : fromString(params.second())
             );
 
             asyncActions.stream(
@@ -196,6 +198,7 @@ public class RequestHandler implements HttpProvider {
     }
 
     private static MemorySegment fromString(String data) {
+        LOGGER.info(data);
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 }

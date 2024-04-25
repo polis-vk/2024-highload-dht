@@ -6,8 +6,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.net.Socket;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
 
 import java.io.IOException;
@@ -15,14 +13,11 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class StreamingSession extends HttpSession {
-    //    private static final Logger LOGGER = LoggerFactory.getLogger(StreamingSession.class);
-    private static final byte[] CRLF = "\\r\\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] LF = "\\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] END_PART = "0\\r\\n\\r\\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] LF = "\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] END_PART = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
 
     public StreamingSession(Socket socket, HttpServer server) {
         super(socket, server);
@@ -46,7 +41,6 @@ public class StreamingSession extends HttpSession {
     }
 
     public static class RangeItem extends Session.QueueItem {
-
         private final Iterator<Entry<MemorySegment>> rangeIterator;
         private static final int BUFF_SIZE = (2 << 10) * (2 << 7); // 128 kb.
         private final StreamingBuffer buffer = new StreamingBuffer(BUFF_SIZE);
@@ -67,12 +61,11 @@ public class StreamingSession extends HttpSession {
             response.addHeader("Transfer-Encoding: chunked");
 
             buffer.append(response.toBytes(false));
-            buffer.append(CRLF);
         }
 
         @Override
         public int remaining() {
-            return entry != null && rangeIterator.hasNext() ? 1 : 0;
+            return entry != null || rangeIterator.hasNext() ? 1 : 0;
         }
 
         @Override
@@ -87,13 +80,13 @@ public class StreamingSession extends HttpSession {
                 byte[] keyBytes = entry.key().toArray(ValueLayout.JAVA_BYTE);
                 byte[] valueBytes = entry.value().toArray(ValueLayout.JAVA_BYTE);
                 int entrySize = keyBytes.length + LF.length + valueBytes.length;
-                byte[] lengthBytes = String.valueOf(entrySize).getBytes(StandardCharsets.UTF_8);
+                byte[] lengthBytes = Integer.toHexString(entrySize).getBytes(StandardCharsets.UTF_8);
 
                 if (buffer.isFits(lengthBytes.length + entrySize + 2 * CRLF.length + END_PART.length)) {
                     break;
                 }
 
-                tryWriteEntry(lengthBytes, keyBytes, valueBytes);
+                writeEntry(lengthBytes, keyBytes, valueBytes);
                 entry = null;
             }
             if (remaining() == 0) {
@@ -103,7 +96,7 @@ public class StreamingSession extends HttpSession {
             return buffer.tryWrite(socket);
         }
 
-        private void tryWriteEntry(byte[] length, byte[] key, byte[] value) {
+        private void writeEntry(byte[] length, byte[] key, byte[] value) {
             buffer.append(length);
             buffer.append(CRLF);
             buffer.append(key);

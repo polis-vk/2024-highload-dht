@@ -28,7 +28,7 @@ public class ParametersParser {
                         Integer.parseInt(from)
                 );
 
-                if (params.isValidAckFrom()) {
+                if (!params.isValidAckFrom()) {
                     throw new IllegalArgumentException();
                 }
 
@@ -51,11 +51,10 @@ public class ParametersParser {
         String start = request.getParameter(START_PARAMETER);
         String end = request.getParameter(END_PARAMETER);
 
-        if (start == null) {
+        if (start == null || start.isEmpty()) {
             throw new IllegalArgumentException();
         }
 
-        // end may be null.
         return new ParametersTuple<>(start, end);
     }
 }

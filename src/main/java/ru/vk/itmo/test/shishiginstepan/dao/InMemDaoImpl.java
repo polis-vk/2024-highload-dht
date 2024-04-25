@@ -1,7 +1,6 @@
 package ru.vk.itmo.test.shishiginstepan.dao;
 
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -24,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class InMemDaoImpl implements Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> {
     private final ExecutorService executor;
     private final Lock flushLock = new ReentrantLock();
 
@@ -54,13 +53,13 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
 
     private final long memStorageLimit;
 
-    private final AtomicReference<ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>>> tempStorage =
-            new AtomicReference<>(
-                    new ConcurrentSkipListMap<>(
-                            keyComparator
-                    )
-            );
-    private final AtomicReference<ConcurrentNavigableMap<MemorySegment, Entry<MemorySegment>>> memStorage =
+    private final AtomicReference<ConcurrentNavigableMap<MemorySegment, EntryWithTimestamp<MemorySegment>>>
+            tempStorage = new AtomicReference<>(
+                new ConcurrentSkipListMap<>(
+                        keyComparator
+                )
+    );
+    private final AtomicReference<ConcurrentNavigableMap<MemorySegment, EntryWithTimestamp<MemorySegment>>> memStorage =
             new AtomicReference<>(
                     new ConcurrentSkipListMap<>(
                             keyComparator
@@ -98,9 +97,9 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        Iterator<Entry<MemorySegment>> memIterator;
-        Iterator<Entry<MemorySegment>> tempIterator;
+    public Iterator<EntryWithTimestamp<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+        Iterator<EntryWithTimestamp<MemorySegment>> memIterator;
+        Iterator<EntryWithTimestamp<MemorySegment>> tempIterator;
         if (to == null && from == null) {
             memIterator = this.memStorage.get().values().iterator();
             tempIterator = this.tempStorage.get().values().iterator();
@@ -115,7 +114,7 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
             tempIterator = this.tempStorage.get().subMap(from, to).values().iterator();
         }
 
-        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>();
+        List<Iterator<EntryWithTimestamp<MemorySegment>>> iterators = new ArrayList<>();
         iterators.add(memIterator);
         iterators.add(tempIterator);
         persistentStorage.enrichWithPersistentIterators(from, to, iterators);
@@ -124,23 +123,24 @@ public class InMemDaoImpl implements Dao<MemorySegment, Entry<MemorySegment>> {
         );
     }
 
+    // если этот метод возвращает могилу, это валидный объект Ентри с таймстемпом смерти (RIP 😔)
     @Override
-    public Entry<MemorySegment> get(MemorySegment key) {
-        Entry<MemorySegment> entry = this.memStorage.get().get(key);
+    public EntryWithTimestamp<MemorySegment> get(MemorySegment key) {
+        EntryWithTimestamp<MemorySegment> entry = this.memStorage.get().get(key);
         if (entry == null) {
             entry = this.tempStorage.get().get(key);
         }
         if (entry == null) {
             entry = persistentStorage.get(key);
         }
-        if (entry != null && entry.value() == null) {
-            return null;
+        if (entry == null) {
+            return new EntryWithTimestamp<>(key, null, 0L); // у пустых значений timestamp ноль
         }
         return entry;
     }
 
     @Override
-    public void upsert(Entry<MemorySegment> entry) {
+    public void upsert(EntryWithTimestamp<MemorySegment> entry) {
         this.memStorage.get().put(entry.key(), entry);
         this.memStorageSize.updateAndGet(
                 (size) -> size + (entry.key().byteSize() + (entry.value() == null ? 0 : entry.value().byteSize()))

@@ -189,7 +189,7 @@ public class ServerImpl extends HttpServer {
     }
 
     private void writeChunkEntry(final ReferenceBaseEntry<MemorySegment> entry, final HttpSession session)
-            throws IOException{
+            throws IOException {
         final byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
         final byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
         final byte[] length = Integer.toHexString(key.length + value.length + N_SEP.length)

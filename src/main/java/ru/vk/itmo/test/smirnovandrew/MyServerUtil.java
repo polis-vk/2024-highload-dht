@@ -169,7 +169,7 @@ public final class MyServerUtil {
         }
 
         if (ack > from) {
-            return String.format("Ack is greater than from: ack=%d, from=%d", ack, from);
+            return String.format("Ack is greater than from: ack=%d from=%d", ack, from);
         }
 
         return null;

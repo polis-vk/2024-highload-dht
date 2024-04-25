@@ -165,9 +165,9 @@ public class ServerImpl extends HttpServer {
                         .toArray(CompletableFuture[]::new)
         );
 
-        allFutures.whenComplete((_, _) -> {
-            futures.forEach(future -> future.completeExceptionally(new TimeoutException()));
-        });
+        allFutures.whenComplete(
+            (result, ex) -> futures.forEach(future -> future.completeExceptionally(new TimeoutException()))
+        );
 
         try {
             allFutures.get(5, TimeUnit.SECONDS);

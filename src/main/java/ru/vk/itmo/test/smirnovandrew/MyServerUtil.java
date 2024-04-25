@@ -5,10 +5,14 @@ import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import ru.vk.itmo.ServiceConfig;
+import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -26,6 +30,15 @@ public final class MyServerUtil {
     public static final String ROOT_ENTITIES = "/v0/entities";
     public static final String X_SENDER_NODE = "X-SenderNode";
     public static final String X_TIMESTAMP = "X-TimeStamp";
+
+    private static final String SEPARATOR_CHUNK = "\r\n";
+    private static final String SEPARATOR_KEY_VAL = "\n";
+    public static final byte[] EMPTY_CHUNKED_CONTENT = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
+    public static final byte[] CHUNKED_HEADERS = """
+            HTTP/1.1 200 OK\r
+            Transfer-Encoding: chunked\r
+            \r
+            """.getBytes(StandardCharsets.UTF_8);
     public static final Map<Integer, String> HTTP_CODES = Map.of(
             HttpURLConnection.HTTP_OK, Response.OK,
             HttpURLConnection.HTTP_ACCEPTED, Response.ACCEPTED,
@@ -123,5 +136,17 @@ public final class MyServerUtil {
             logger.info("Too long waiting for response: " + e.getMessage());
             return new Response(MyServerUtil.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
+    }
+
+    public static byte[] getSessionBody(Entry<MemorySegment> entry) throws IOException, ClassNotFoundException {
+        var valueWithTimestamp = MyServerDao.byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
+        int entrySize = (int) (entry.key().byteSize() + valueWithTimestamp.value().length) + SEPARATOR_KEY_VAL.length();
+        String hexEntrySize = Long.toHexString(entrySize);
+
+        String sessionBody = hexEntrySize + SEPARATOR_CHUNK
+                + new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8) + SEPARATOR_KEY_VAL
+                + new String(valueWithTimestamp.value(), StandardCharsets.UTF_8) + SEPARATOR_CHUNK;
+
+        return sessionBody.getBytes(StandardCharsets.UTF_8);
     }
 }

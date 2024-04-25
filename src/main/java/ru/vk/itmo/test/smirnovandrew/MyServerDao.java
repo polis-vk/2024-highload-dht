@@ -69,7 +69,7 @@ public class MyServerDao {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private static ValWithTime byteArrayToObject(byte[] bytes) throws IOException, ClassNotFoundException {
+    static ValWithTime byteArrayToObject(byte[] bytes) throws IOException, ClassNotFoundException {
         var byteArrayInputStream = new ByteArrayInputStream(bytes);
         try (var objectInputStream = new ObjectInputStream(byteArrayInputStream)) {
             return (ValWithTime) objectInputStream.readObject();

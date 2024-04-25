@@ -191,16 +191,16 @@ public class MyServer extends HttpServer {
             HttpSession session
     ) {
         try {
-            session.write(ChunkTransformUtility.HEADERS, 0, ChunkTransformUtility.HEADERS.length);
+            session.write(MyServerUtil.CHUNKED_HEADERS, 0, MyServerUtil.CHUNKED_HEADERS.length);
             for (var it = dao.getEntriesFromDao(start, end); it.hasNext(); ) {
-                logger.info("iterating...");
-                var body = ChunkTransformUtility.makeContent(it.next());
-                session.write(body, 0, body.length);
+                var sessionBody = MyServerUtil.getSessionBody(it.next());
+                session.write(sessionBody, 0, sessionBody.length);
             }
-            session.write(ChunkTransformUtility.EMPTY_CONTENT, 0, ChunkTransformUtility.EMPTY_CONTENT.length);
+            session.write(MyServerUtil.EMPTY_CHUNKED_CONTENT, 0, MyServerUtil.EMPTY_CHUNKED_CONTENT.length);
             session.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        } catch (IOException | ClassNotFoundException e) {
+            logger.info(e.getMessage());
+            MyServerUtil.sendEmpty(session, logger, Response.INTERNAL_ERROR);
         }
     }
 
@@ -295,7 +295,6 @@ public class MyServer extends HttpServer {
     ) {
         String start = request.getParameter("start=");
         String end = request.getParameter("end=");
-        logger.info("in entities start=" + start + " end=" + end);
 
         if (start.isEmpty()) {
             MyServerUtil.sendEmpty(session, logger, Response.BAD_REQUEST);

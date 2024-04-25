@@ -23,7 +23,9 @@ public class StreamingSession extends HttpSession {
         super(socket, server);
     }
 
-    public synchronized void stream(Iterator<Entry<MemorySegment>> streamIterator) throws IOException, InterruptedException {
+    public synchronized void stream(
+            Iterator<Entry<MemorySegment>> streamIterator) throws IOException, InterruptedException {
+
         Request handling = this.handling;
         if (handling == null) {
             throw new IOException("Out of order response");
@@ -44,7 +46,7 @@ public class StreamingSession extends HttpSession {
         private final Iterator<Entry<MemorySegment>> rangeIterator;
         private static final int BUFF_SIZE = (2 << 10) * (2 << 7); // 128 kb.
         private final StreamingBuffer buffer = new StreamingBuffer(BUFF_SIZE);
-        private Entry<MemorySegment> entry = null;
+        private Entry<MemorySegment> entry;
 
         public RangeItem(Iterator<Entry<MemorySegment>> iterator, Request request) {
             this.rangeIterator = iterator;

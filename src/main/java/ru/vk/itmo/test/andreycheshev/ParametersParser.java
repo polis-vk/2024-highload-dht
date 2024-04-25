@@ -2,7 +2,7 @@ package ru.vk.itmo.test.andreycheshev;
 
 import one.nio.http.Request;
 
-public class ParametersParser {
+public final class ParametersParser {
     private static final String ACK_PARAMETER = "ack=";
     private static final String FROM_PARAMETER = "from=";
     private static final String START_PARAMETER = "start=";

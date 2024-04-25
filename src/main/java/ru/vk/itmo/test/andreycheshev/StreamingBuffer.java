@@ -27,10 +27,6 @@ public class StreamingBuffer {
         pos = 0;
     }
 
-    public byte[] getBuffer() {
-        return buffer;
-    }
-
     public int tryWrite(Socket socket) throws IOException {
         int diff = size - pos;
         if (diff > 0) {

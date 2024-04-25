@@ -14,7 +14,6 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
 
 import java.io.IOException;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -128,6 +127,7 @@ public class ServerImpl extends HttpServer {
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void processFirstRequest(
             Request request,
             HttpSession session,
@@ -164,6 +164,10 @@ public class ServerImpl extends HttpServer {
                         .limit(parameters.ack)
                         .toArray(CompletableFuture[]::new)
         );
+
+        allFutures.whenComplete((_, _) -> {
+            futures.forEach(future -> future.completeExceptionally(new TimeoutException()));
+        });
 
         try {
             allFutures.get(5, TimeUnit.SECONDS);

@@ -7,8 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 
-import java.io.IOException;
-import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -55,7 +53,7 @@ public class ProxyRequestHandler {
 
         for (String url : nodeUrls) {
             if (unsuccessfulResponsesCount.get() >= ack) {
-                futures.add(CompletableFuture.completedFuture(null));
+                return;
             }
 
             CompletableFuture<Response> futureResponse = proxyRequest(request, url);
@@ -89,7 +87,7 @@ public class ProxyRequestHandler {
         CompletableFuture<HttpResponse<byte[]>> httpResponseFuture = clients.get(proxiedNodeUrl)
             .sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
 
-        return httpResponseFuture.thenApply(httpResponse -> {
+        return httpResponseFuture.thenApplyAsync(httpResponse -> {
             Response response = new Response(proxyResponseCode(httpResponse), httpResponse.body());
             long timestamp = Long.parseLong(
                 httpResponse.headers()

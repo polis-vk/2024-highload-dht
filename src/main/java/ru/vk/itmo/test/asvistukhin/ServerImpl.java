@@ -14,9 +14,9 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -129,9 +129,9 @@ public class ServerImpl extends HttpServer {
 
     @SuppressWarnings("FutureReturnValueIgnored")
     private void processFirstRequest(
-            Request request,
-            HttpSession session,
-            RequestWrapper parameters
+        Request request,
+        HttpSession session,
+        RequestWrapper parameters
     ) throws IOException, ExecutionException, InterruptedException {
         List<String> nodeUrls = proxyRequestHandler.getNodesByHash(parameters.from);
 
@@ -142,17 +142,17 @@ public class ServerImpl extends HttpServer {
 
         boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
 
-        List<CompletableFuture<Response>> futures = new ArrayList<>();
-        List<Response> validResponses = new ArrayList<>();
+        List<CompletableFuture<Void>> futures = new CopyOnWriteArrayList<>();
+        List<Response> validResponses = new CopyOnWriteArrayList<>();
         AtomicInteger unsuccessfulResponsesCount = new AtomicInteger(0);
 
         proxyRequestHandler.proxyRequests(
-                request,
-                nodeUrls,
-                parameters.ack,
-                futures,
-                validResponses,
-                unsuccessfulResponsesCount
+            request,
+            nodeUrls,
+            parameters.ack,
+            futures,
+            validResponses,
+            unsuccessfulResponsesCount
         );
 
         if (isSelfProcessing) {
@@ -160,14 +160,13 @@ public class ServerImpl extends HttpServer {
         }
 
         CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-                futures.stream()
-                        .limit(parameters.ack)
-                        .toArray(CompletableFuture[]::new)
+            futures.stream()
+                .limit(parameters.ack)
+                .toArray(CompletableFuture[]::new)
         );
 
         try {
             allFutures.get(1, TimeUnit.SECONDS);
-            futures.forEach(future -> future.cancel(true));
         } catch (TimeoutException e) {
             futures.forEach(future -> future.cancel(true));
             log.warn("Timeout reached while waiting for responses");

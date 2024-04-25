@@ -45,7 +45,7 @@ public class ProxyRequestHandler {
         Request request,
         List<String> nodeUrls,
         int ack,
-        List<CompletableFuture<Response>> futures,
+        List<CompletableFuture<Void>> futures,
         List<Response> collectedResponses,
         AtomicInteger unsuccessfulResponsesCount
     ) {
@@ -53,20 +53,18 @@ public class ProxyRequestHandler {
 
         for (String url : nodeUrls) {
             if (unsuccessfulResponsesCount.get() >= ack) {
-                return;
+                futures.add(CompletableFuture.completedFuture(null));
             }
 
-            CompletableFuture<Response> futureResponse = proxyRequest(request, url);
-            CompletableFuture<Response> resultFuture = futureResponse.thenApply(response -> {
+            CompletableFuture<Void> futureResponse = proxyRequest(request, url).thenAcceptAsync((response) -> {
                 boolean success = ServerImpl.isSuccessProcessed(response.getStatus());
                 if (success && responsesCollected.getAndIncrement() < ack) {
                     collectedResponses.add(response);
                 } else {
                     unsuccessfulResponsesCount.incrementAndGet();
                 }
-                return response;
             });
-            futures.add(resultFuture);
+            futures.add(futureResponse);
         }
     }
 

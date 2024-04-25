@@ -48,21 +48,20 @@ public class RequestHandler {
     }
 
     public void handle(
-            Request request,
-            List<CompletableFuture<Response>> futures,
-            List<Response> collectedResponses,
-            AtomicInteger unsuccessfulResponsesCount
+        Request request,
+        List<CompletableFuture<Void>> futures,
+        List<Response> collectedResponses,
+        AtomicInteger unsuccessfulResponsesCount
     ) {
-        futures.add(new CompletableFuture<Response>().completeAsync(() -> {
-            Response response = handleEntity(request);
-            if (ServerImpl.isSuccessProcessed(response.getStatus())) {
-                collectedResponses.add(response);
-            } else {
-                unsuccessfulResponsesCount.incrementAndGet();
+        futures.add(CompletableFuture.runAsync(() -> {
+                Response response = handleEntity(request);
+                if (ServerImpl.isSuccessProcessed(response.getStatus())) {
+                    collectedResponses.add(response);
+                } else {
+                    unsuccessfulResponsesCount.incrementAndGet();
+                }
             }
-
-            return response;
-        }));
+        ));
     }
 
     public Response get(@Param(value = "id", required = true) String id) {

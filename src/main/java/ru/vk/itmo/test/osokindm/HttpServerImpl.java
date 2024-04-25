@@ -5,6 +5,8 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,6 +38,11 @@ public class HttpServerImpl extends HttpServer {
     }
 
     @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomHttpSession(socket, this);
+    }
+
+    @Override
     public synchronized void stop() {
         super.stop();
         try {
@@ -54,7 +61,7 @@ public class HttpServerImpl extends HttpServer {
     public void handleRequest(Request request, HttpSession session) {
         String id = request.getParameter(ID_REQUEST);
         String start = request.getParameter(START_REQUEST);
-        if ((id == null || id.isEmpty()) && (start == null || start.isEmpty()) ) {
+        if ((id == null || id.isEmpty()) && (start == null || start.isEmpty())) {
             try {
                 handleDefault(request, session);
             } catch (IOException e) {

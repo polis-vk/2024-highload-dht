@@ -16,7 +16,7 @@ import java.util.Iterator;
 public class CustomHttpSession extends HttpSession {
 
     private static final byte[] CHUNK_SEPARATOR = "\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] DELIMITER = "\t".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] DELIMITER = "\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] ZERO = "0".getBytes(StandardCharsets.UTF_8);
 
     public CustomHttpSession(Socket socket, HttpServer server) {
@@ -45,7 +45,7 @@ public class CustomHttpSession extends HttpSession {
         byte[] keyBytes = entry.key().toArray(ValueLayout.JAVA_BYTE);
         byte[] valueBytes = entry.value().toArray(ValueLayout.JAVA_BYTE);
         int entryLength = keyBytes.length + valueBytes.length + DELIMITER.length;
-        ByteBuffer buffer = ByteBuffer.allocate(entryLength);
+        ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES + entryLength + CHUNK_SEPARATOR.length * 2);
         buffer.put(Integer.toHexString(entryLength).getBytes(StandardCharsets.UTF_8));
         buffer.put(CHUNK_SEPARATOR);
         buffer.put(entry.key().toArray(ValueLayout.JAVA_BYTE));

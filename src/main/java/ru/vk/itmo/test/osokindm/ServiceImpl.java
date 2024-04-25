@@ -121,16 +121,17 @@ public class ServiceImpl implements Service {
     }
 
     @Path(RANGE_PATH)
-    public void entities(Request request, HttpSession session,
+    public void entities(HttpSession session,
                          @Param(value = "start", required = true) String start,
-                         @Param(value = "end", required = true) String end) throws IOException {
-        if (start == null || start.isBlank() || end == null || end.isBlank()) {
+                         @Param(value = "end") String end) throws IOException {
+        if (start == null || start.isBlank()) {
             session.sendResponse(badIdResponse);
             return;
         }
 
         responseExecutor.execute(() -> {
             Iterator<Entry<MemorySegment>> it = daoWrapper.get(start, end);
+
             try {
                 session.sendResponse(new ChunkedResponse(Response.OK, it));
             } catch (IOException e) {

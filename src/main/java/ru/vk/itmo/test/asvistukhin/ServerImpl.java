@@ -172,6 +172,7 @@ public class ServerImpl extends HttpServer {
         try {
             allFutures.get(5, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
+            futures.forEach(future -> future.completeExceptionally(new TimeoutException()));
             log.warn("Timeout reached while waiting for responses");
         }
 

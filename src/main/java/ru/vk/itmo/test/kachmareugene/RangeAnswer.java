@@ -16,16 +16,14 @@ import java.util.Iterator;
 public class RangeAnswer {
     public static final String RANGE_REQUEST_PATH = "/v0/entities";
     public static final String CHUNK_TRANSFER_HEADERS =
-            "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: text/plain\r\n" +
-            "Transfer-Encoding: chunked\r\n" +
-            "Connection: keep-alive\r\n" +
-            "\r\n";
+            new StringBuilder()
+                    .append("HTTP/1.1 200 OK\r\n")
+                    .append("Content-Type: text/plain\r\n")
+                    .append("Transfer-Encoding: chunked\r\n")
+                    .append("Connection: keep-alive\r\n")
+                    .append("\r\n").toString();
 
     public static final String SEP = "\r\n";
-
-    public RangeAnswer() {
-    }
 
     public void handleRange(Request request,
                             HttpSession session,
@@ -55,8 +53,10 @@ public class RangeAnswer {
 
             writeDataIntoSession(session,
                     Integer.toHexString(
-                    key.length + "\n".length() + value.length) +
-                            SEP);
+                    key.length
+                            + "\n".length()
+                            + value.length)
+                            + SEP);
             writeDataIntoSession(session, key);
             writeDataIntoSession(session, "\n");
             writeDataIntoSession(session, value);

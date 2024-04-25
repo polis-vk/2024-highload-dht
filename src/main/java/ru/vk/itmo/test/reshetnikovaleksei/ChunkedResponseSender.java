@@ -17,7 +17,9 @@ public final class ChunkedResponseSender {
     private static final byte[] TRANSFER_ENCODING = "Transfer-Encoding: chunked".getBytes(StandardCharsets.UTF_8);
     private static final byte[] CONNECTION = "Connection: keep-alive".getBytes(StandardCharsets.UTF_8);
 
-    private ChunkedResponseSender() { }
+    private ChunkedResponseSender() {
+
+    }
 
     public static void generateHeaderAndWrite(HttpSession session) throws IOException {
         ByteArrayBuilder builder = new ByteArrayBuilder();

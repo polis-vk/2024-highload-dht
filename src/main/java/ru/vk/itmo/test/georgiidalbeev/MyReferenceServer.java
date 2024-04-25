@@ -7,7 +7,9 @@ import one.nio.http.HttpSession;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
@@ -24,11 +26,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Supplier;
 
 import static ru.vk.itmo.test.georgiidalbeev.MyReferenceService.shutdownAndAwaitTermination;
@@ -39,6 +44,7 @@ public class MyReferenceServer extends HttpServer {
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": da";
     private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-server-to-node-by-paschenko2";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
+    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     private static final Logger log = LoggerFactory.getLogger(MyReferenceServer.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
 
@@ -75,11 +81,18 @@ public class MyReferenceServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!"/v0/entity".equals(request.getPath())) {
+        if (!("/v0/entity".equals(request.getPath()) || "/v0/entities".equals(request.getPath()))) {
             sendError(session, Response.BAD_REQUEST);
             return;
         }
+        if ("/v0/entities".equals(request.getPath())) {
+            handleEntities(request, session);
+        } else {
+            handleEntity(request, session);
+        }
+    }
 
+    private void handleEntity(Request request, HttpSession session) throws IOException {
         if (!isValidMethod(request.getMethod())) {
             sendError(session, Response.METHOD_NOT_ALLOWED);
             return;
@@ -105,6 +118,52 @@ public class MyReferenceServer extends HttpServer {
         }
 
         handleRemoteRequest(request, session, id, ack, from);
+    }
+
+    private void handleEntities(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            sendError(session, Response.METHOD_NOT_ALLOWED);
+            return;
+        }
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
+            sendError(session, Response.BAD_REQUEST);
+            return;
+        }
+        try {
+            executorLocal.execute(() -> {
+                Iterator<ReferenceBaseEntry<MemorySegment>> entries = handleEntities(start, end);
+                try {
+                    session.sendResponse(new MyChunkedResponse(Response.OK, entries));
+                } catch (IOException e) {
+                    log.error("Error while sending response", e);
+                    session.scheduleClose();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.error("Workers pool queue overflow", e);
+            session.sendError(TOO_MANY_REQUESTS, null);
+        }
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new MyHttpSession(socket, this);
+    }
+
+    public Iterator<ReferenceBaseEntry<MemorySegment>> handleEntities(String start, String end) {
+        MemorySegment msStart = toMemorySegment(start);
+        MemorySegment msEnd = toMemorySegment(end);
+
+        return dao.get(msStart, msEnd);
+    }
+
+    private MemorySegment toMemorySegment(String s) {
+        if (s == null) {
+            return null;
+        }
+        return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
     }
 
     private void sendError(HttpSession session, String errorCode) throws IOException {
@@ -155,7 +214,7 @@ public class MyReferenceServer extends HttpServer {
         }
     }
 
-    private int getInt(Request request, String param, int defaultValue) throws IOException {
+    private int getInt(Request request, String param, int defaultValue) {
         int ack;
         String ackStr = request.getParameter(param);
         if (ackStr == null || ackStr.isBlank()) {

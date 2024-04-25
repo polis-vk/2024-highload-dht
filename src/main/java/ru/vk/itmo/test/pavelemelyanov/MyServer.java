@@ -34,8 +34,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
-    private static final String V0_PATH = "/v0/entity";
     private static final String RANGE_REQUEST = "/v0/entities?start=";
+    private static final String ID_REQUEST = "/v0/entity?id=";
     private static final String ID_PARAM = "id=";
     private static final String FROM_PARAM = "from=";
     private static final String ACK_PARAM = "ack=";
@@ -62,7 +62,8 @@ public class MyServer extends HttpServer {
         this.clusterSize = config.clusterUrls().size();
 
         this.httpClient = HttpClient.newBuilder()
-                .executor(workersPool).build();
+                .executor(workersPool)
+                .build();
     }
 
     @Override
@@ -79,29 +80,23 @@ public class MyServer extends HttpServer {
             if (request.getURI().startsWith(RANGE_REQUEST)) {
                 String paramStart = request.getParameter("start=");
                 String paramEnd = request.getParameter("end=");
-
                 rangeRequest(session, paramStart, paramEnd);
                 return;
             }
-
-            if (!request.getURI().startsWith(getPathWithIdParam())
+            if (!request.getURI().startsWith(ID_REQUEST)
                     || !HttpUtils.SUPPORTED_METHODS.contains(request.getMethod())) {
                 handleDefault(request, session);
                 return;
             }
-
             String paramId = request.getParameter(ID_PARAM);
             String fromStr = request.getParameter(FROM_PARAM);
             String ackStr = request.getParameter(ACK_PARAM);
-
             int from = isNotParameterValid(fromStr) ? clusterSize : Integer.parseInt(fromStr);
             int ack = isNotParameterValid(ackStr) ? from / 2 + 1 : Integer.parseInt(ackStr);
-
             if (ack == 0 || from > clusterSize || ack > from || paramId == null || paramId.isEmpty()) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
-
             long processingStartTime = System.currentTimeMillis();
             workersPool.execute(() -> {
                 try {
@@ -151,7 +146,7 @@ public class MyServer extends HttpServer {
         var bodyPublisher = request.getBody() == null
                 ? HttpRequest.BodyPublishers.noBody()
                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
-        return HttpRequest.newBuilder(URI.create(nodeUrl + getPathWithIdParam() + params))
+        return HttpRequest.newBuilder(URI.create(nodeUrl + ID_REQUEST + params))
                 .method(request.getMethodName(), bodyPublisher)
                 .setHeader(HttpUtils.HTTP_TERMINATION_HEADER, "true")
                 .build();
@@ -167,7 +162,7 @@ public class MyServer extends HttpServer {
         if (statusCode == null) {
             return new Response(Response.INTERNAL_ERROR, response.body());
         }
-        Response newResponse = new Response(statusCode, response.body());
+        var newResponse = new Response(statusCode, response.body());
         long timestamp = response.headers()
                 .firstValueAsLong(HttpUtils.HTTP_TIMESTAMP_HEADER)
                 .orElse(0);
@@ -189,7 +184,6 @@ public class MyServer extends HttpServer {
 
     private Response handleProxyRequest(Request request, String paramId, int from, int ack) {
         List<String> nodeUrls = shards.getNodes(paramId, from);
-
         if (nodeUrls.size() < from) {
             return new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
@@ -200,13 +194,11 @@ public class MyServer extends HttpServer {
         }
 
         List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
-
         if (httpRequests.containsKey(selfUrl)) {
             responses.add(
                     CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId))
             );
         }
-
         return getQuorumResult(request, from, ack, responses);
     }
 
@@ -216,7 +208,6 @@ public class MyServer extends HttpServer {
         CompletableFuture<Response> result = new CompletableFuture<>();
         AtomicInteger successResponseCount = new AtomicInteger();
         AtomicInteger errorResponseCount = new AtomicInteger();
-
         for (var responseFuture : responses) {
             responseFuture.whenCompleteAsync((response, throwable) -> {
                 if (throwable == null || (response != null && response.getStatus() < SERVER_ERROR)) {
@@ -225,17 +216,14 @@ public class MyServer extends HttpServer {
                 } else {
                     errorResponseCount.incrementAndGet();
                 }
-
                 if (successResponseCount.get() >= ack) {
                     result.complete(getResult(request, successResponses));
                 }
-
                 if (errorResponseCount.get() == from - ack + 1) {
                     result.complete(new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
             }).exceptionally(e -> new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
-
         try {
             return result.get();
         } catch (InterruptedException e) {
@@ -251,7 +239,6 @@ public class MyServer extends HttpServer {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
-
         serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
         serverConfig.closeSessions = true;
         return serverConfig;
@@ -270,10 +257,6 @@ public class MyServer extends HttpServer {
             String timestamp = r.getHeader(HttpUtils.NIO_TIMESTAMP_HEADER);
             return timestamp == null ? 0 : Long.parseLong(timestamp);
         }));
-    }
-
-    private static String getPathWithIdParam() {
-        return V0_PATH + "?" + ID_PARAM;
     }
 
     private void rangeRequest(HttpSession session, String startParam, String endParam) {

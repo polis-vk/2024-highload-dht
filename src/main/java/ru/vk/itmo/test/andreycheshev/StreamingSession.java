@@ -4,6 +4,7 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.net.Socket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,62 +19,22 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class StreamingSession extends HttpSession {
-    private static final Logger LOGGER = LoggerFactory.getLogger(StreamingSession.class);
+    //    private static final Logger LOGGER = LoggerFactory.getLogger(StreamingSession.class);
     private static final byte[] CRLF = "\\r\\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] LF = "\\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] END_PART = "0\\r\\n\\r\\n".getBytes(StandardCharsets.UTF_8);
-
-    private final Semaphore semaphore = new Semaphore(0);
-
-    private final AtomicBoolean wasFirstWrite = new AtomicBoolean(false);
-
-    private static final int BUFF_SIZE = 1024 * 1024; // 1 mb.
-    private final StreamingBuffer buffer = new StreamingBuffer(BUFF_SIZE, this);
 
     public StreamingSession(Socket socket, HttpServer server) {
         super(socket, server);
     }
 
-    @SuppressWarnings("DefaultCharset")
     public synchronized void stream(Iterator<Entry<MemorySegment>> streamIterator) throws IOException, InterruptedException {
         Request handling = this.handling;
         if (handling == null) {
             throw new IOException("Out of order response");
         }
 
-        Response response = new Response(Response.OK);
-
-        String connection = handling.getHeader("Connection:");
-        boolean keepAlive = handling.isHttp11()
-                ? !"close".equalsIgnoreCase(connection)
-                : "Keep-Alive".equalsIgnoreCase(connection);
-        response.addHeader(keepAlive ? "Connection: Keep-Alive" : "Connection: close");
-        response.addHeader("Transfer-Encoding: chunked");
-
-        byte[] responseBytes = response.toBytes(false);
-        buffer.copyIn(responseBytes);
-        buffer.copyIn(CRLF);
-
-        while (streamIterator.hasNext()) {
-            Entry<MemorySegment> entry = streamIterator.next();
-
-            byte[] keyBytes = entry.key().toArray(ValueLayout.JAVA_BYTE);
-            byte[] valueBytes = entry.value().toArray(ValueLayout.JAVA_BYTE);
-            int entrySize = keyBytes.length + LF.length + valueBytes.length;
-
-            byte[] lengthBytes = String.valueOf(entrySize).getBytes();
-            int lengthSize = lengthBytes.length;
-
-            checkForFlush(buffer.size() + lengthSize + entrySize + 2 * CRLF.length);
-
-            appendEntryToBuffer(lengthBytes, keyBytes, valueBytes);
-        }
-
-        checkForFlush(buffer.size() + END_PART.length);
-        buffer.copyIn(END_PART);
-        flush();
-
-        wasFirstWrite.set(false);
+        write(new RangeItem(streamIterator, handling));
 
         if ((this.handling = pipeline.pollFirst()) != null) {
             if (handling == FIN) {
@@ -84,40 +45,71 @@ public class StreamingSession extends HttpSession {
         }
     }
 
-    private void appendEntryToBuffer(byte[] length, byte[] key, byte[] value) {
-        buffer.copyIn(length);
-        buffer.copyIn(CRLF);
-        buffer.copyIn(key);
-        buffer.copyIn(LF);
-        buffer.copyIn(value);
-        buffer.copyIn(CRLF);
-    }
+    public static class RangeItem extends Session.QueueItem {
 
-    private void checkForFlush(int size) throws InterruptedException, IOException {
-        if (size > BUFF_SIZE) {
-            flush();
+        private final Iterator<Entry<MemorySegment>> rangeIterator;
+        private static final int BUFF_SIZE = (2 << 10) * (2 << 7); // 128 kb.
+        private final StreamingBuffer buffer = new StreamingBuffer(BUFF_SIZE);
+        private Entry<MemorySegment> entry = null;
+
+        public RangeItem(Iterator<Entry<MemorySegment>> iterator, Request request) {
+            this.rangeIterator = iterator;
+            initResponse(request);
         }
-    }
 
-    private void flush() throws IOException, InterruptedException {
-        if (!wasFirstWrite.getAndSet(true)) {
-            buffer.write();
-        } else {
-            buffer.setReadyToWrite();
-            semaphore.acquire();
+        private void initResponse(Request request) {
+            Response response = new Response(Response.OK);
+            String connection = request.getHeader("Connection:");
+            boolean keepAlive = request.isHttp11()
+                    ? !"close".equalsIgnoreCase(connection)
+                    : "Keep-Alive".equalsIgnoreCase(connection);
+            response.addHeader(keepAlive ? "Connection: Keep-Alive" : "Connection: close");
+            response.addHeader("Transfer-Encoding: chunked");
+
+            buffer.append(response.toBytes(false));
+            buffer.append(CRLF);
         }
-        buffer.reset();
-    }
 
-    private void streamingWrite() throws IOException {
-        LOGGER.info("streamingWrite");
-        buffer.writeIfReady();
-        semaphore.release();
-    }
+        @Override
+        public int remaining() {
+            return entry != null && rangeIterator.hasNext() ? 1 : 0;
+        }
 
-    @Override
-    protected void processWrite() throws Exception {
-        super.processWrite();
-        streamingWrite();
+        @Override
+        public int write(Socket socket) throws IOException {
+            buffer.tryWrite(socket);
+
+            while (entry != null || rangeIterator.hasNext()) {
+                if (entry == null) {
+                    entry = rangeIterator.next();
+                }
+
+                byte[] keyBytes = entry.key().toArray(ValueLayout.JAVA_BYTE);
+                byte[] valueBytes = entry.value().toArray(ValueLayout.JAVA_BYTE);
+                int entrySize = keyBytes.length + LF.length + valueBytes.length;
+                byte[] lengthBytes = String.valueOf(entrySize).getBytes(StandardCharsets.UTF_8);
+
+                if (buffer.isFits(lengthBytes.length + entrySize + 2 * CRLF.length + END_PART.length)) {
+                    break;
+                }
+
+                tryWriteEntry(lengthBytes, keyBytes, valueBytes);
+                entry = null;
+            }
+            if (remaining() == 0) {
+                buffer.append(END_PART);
+            }
+
+            return buffer.tryWrite(socket);
+        }
+
+        private void tryWriteEntry(byte[] length, byte[] key, byte[] value) {
+            buffer.append(length);
+            buffer.append(CRLF);
+            buffer.append(key);
+            buffer.append(LF);
+            buffer.append(value);
+            buffer.append(CRLF);
+        }
     }
 }

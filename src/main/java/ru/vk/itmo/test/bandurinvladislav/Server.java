@@ -30,6 +30,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -39,13 +40,14 @@ public class Server extends HttpServer {
     private final int clusterSize;
     private final DaoWorkerPool workerPool;
     private final DhtServerConfig serverConfig;
+
     private final ReferenceDao dao;
 
     public Server(DhtServerConfig config, java.nio.file.Path workingDir) throws IOException {
         super(config);
         workerPool = new DaoWorkerPool(
-                Constants.THREADS,
-                Constants.THREADS,
+                Constants.ACCEPTOR_THREADS,
+                Constants.ACCEPTOR_THREADS,
                 Constants.THREAD_KEEP_ALIVE_TIME,
                 TimeUnit.SECONDS
         );
@@ -129,6 +131,7 @@ public class Server extends HttpServer {
         }
     }
 
+    @SuppressWarnings("unused")
     private void handleDaoCall(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
         if (!path.equals(Constants.ENDPOINT)) {
@@ -162,25 +165,26 @@ public class Server extends HttpServer {
         }
 
         List<HttpClient> sortedClients = getClientsByKey(key, from);
-        List<Response> responses = new ArrayList<>(from);
+        RequestProcessingState rs = new RequestProcessingState(from);
         for (HttpClient client : sortedClients) {
-            Response response;
             if (client == null) {
-                response = invokeLocal(request, key);
-            } else {
-                response = invokeRemote(request, client);
+                Response response = invokeLocal(request, key);
+                NetworkUtil.handleResponse(session, rs, response, ack, from);
+                continue;
             }
-            if (response.getStatus() < HttpURLConnection.HTTP_MULT_CHOICE
-                    || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
-                responses.add(response);
-            }
+            CompletableFuture<Response> remote = CompletableFuture.supplyAsync(
+                    () -> invokeRemote(request, client), workerPool)
+                    .completeOnTimeout(
+                            new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY), 100, TimeUnit.MILLISECONDS);
+            CompletableFuture<Void> responseAction = remote.thenAccept(r -> {
+                if (r.getStatus() == HttpURLConnection.HTTP_INTERNAL_ERROR
+                        || r.getStatus() == HttpURLConnection.HTTP_GATEWAY_TIMEOUT) {
+                    NetworkUtil.handleTimeout(session, rs, ack, from);
+                } else {
+                    NetworkUtil.handleResponse(session, rs, r, ack, from);
+                }
+            });
         }
-        if (responses.size() < ack) {
-            session.sendResponse(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
-            return;
-        }
-
-        session.sendResponse(NetworkUtil.successResponse(responses));
     }
 
     private Response invokeLocal(Request request, String key) {

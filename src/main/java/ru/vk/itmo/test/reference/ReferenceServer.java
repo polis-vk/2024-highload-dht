@@ -21,7 +21,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -82,7 +84,21 @@ public class ReferenceServer extends HttpServer {
         if (!(sessionI instanceof ReferenceHttpSession session)) {
             throw new IllegalArgumentException("this method support only ReferenceHttpSession");
         }
-//        if (config.selfPort() == 8100) {
+        if ("/v0/entities".equals(request.getPath())) {
+            executorWork.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        stream(request, session);
+                    } catch (Exception e) {
+                        session.sendError(e);
+                    }
+                }
+            });
+            return;
+        }
+
+        //        if (config.selfPort() == 8100) {
 //            return;
 //        }
         String id = request.getParameter("id=");
@@ -156,6 +172,24 @@ public class ReferenceServer extends HttpServer {
             }
 
         });
+    }
+
+    private void stream(Request request, HttpSession session) throws IOException {
+        String startStr = request.getParameter("start=");
+        if (startStr == null || startStr.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, "Invalid arguments");
+            return;
+        }
+
+        String endStr = request.getParameter("end=");
+        if (endStr != null && endStr.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, "Invalid arguments");
+            return;
+        }
+
+        Iterator<ReferenceBaseEntry<MemorySegment>> iterator = dao.get(MemorySegment.ofArray(startStr.getBytes(StandardCharsets.UTF_8)),
+                endStr == null ? null : MemorySegment.ofArray(endStr.getBytes(StandardCharsets.UTF_8)));
+        ((ReferenceHttpSession)session).stream(iterator);
     }
 
     private int getInt(Request request, String param, int defaultValue) throws IOException {

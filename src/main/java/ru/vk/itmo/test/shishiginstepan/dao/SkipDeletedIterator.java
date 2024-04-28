@@ -5,12 +5,12 @@ import ru.vk.itmo.dao.Entry;
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 
-public class SkipDeletedIterator implements Iterator<Entry<MemorySegment>> {
-    private Entry<MemorySegment> prefetched;
-    private final Iterator<Entry<MemorySegment>> iterator;
+public class SkipDeletedIterator implements Iterator<EntryWithTimestamp<MemorySegment>> {
+    private EntryWithTimestamp<MemorySegment> prefetched;
+    private final Iterator<EntryWithTimestamp<MemorySegment>> iterator;
 
     public SkipDeletedIterator(
-            Iterator<Entry<MemorySegment>> iterator
+            Iterator<EntryWithTimestamp<MemorySegment>> iterator
     ) {
         this.iterator = iterator;
     }
@@ -22,11 +22,11 @@ public class SkipDeletedIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public EntryWithTimestamp<MemorySegment> next() {
         if (this.prefetched == null) {
             return this.iterator.next();
         } else {
-            Entry<MemorySegment> toReturn = this.prefetched;
+            EntryWithTimestamp<MemorySegment> toReturn = this.prefetched;
             this.prefetched = null;
             return toReturn;
         }

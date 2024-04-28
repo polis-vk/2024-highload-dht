@@ -9,7 +9,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
 
-public class MergeIterator implements Iterator<Entry<MemorySegment>> {
+public class MergeIterator implements Iterator<EntryWithTimestamp<MemorySegment>> {
     private static final Comparator<MemorySegment> keyComparator = (o1, o2) -> {
         long mismatch = o1.mismatch(o2);
         if (mismatch == -1) {
@@ -33,12 +33,12 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
     });
 
     private static class PeekIteratorWrapper implements Iterator<Entry<MemorySegment>> {
-        private Entry<MemorySegment> prefetched;
-        private final Iterator<Entry<MemorySegment>> iterator;
+        private EntryWithTimestamp<MemorySegment> prefetched;
+        private final Iterator<EntryWithTimestamp<MemorySegment>> iterator;
 
         private final int priority;
 
-        public PeekIteratorWrapper(Iterator<Entry<MemorySegment>> iterator, int priority) {
+        public PeekIteratorWrapper(Iterator<EntryWithTimestamp<MemorySegment>> iterator, int priority) {
             this.iterator = iterator;
             this.priority = priority;
         }
@@ -49,11 +49,11 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public EntryWithTimestamp<MemorySegment> next() {
             if (this.prefetched == null) {
                 return this.iterator.next();
             } else {
-                Entry<MemorySegment> toReturn = this.prefetched;
+                EntryWithTimestamp<MemorySegment> toReturn = this.prefetched;
                 this.prefetched = null;
                 return toReturn;
             }
@@ -75,10 +75,10 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
         }
     }
 
-    public MergeIterator(List<Iterator<Entry<MemorySegment>>> iterators) {
+    public MergeIterator(List<Iterator<EntryWithTimestamp<MemorySegment>>> iterators) {
         // приоритет мержа будет определен порядком итераторов
         for (int i = 0; i < iterators.size(); i++) {
-            Iterator<Entry<MemorySegment>> iterator = iterators.get(i);
+            Iterator<EntryWithTimestamp<MemorySegment>> iterator = iterators.get(i);
             if (iterator.hasNext()) {
                 this.iterators.add(new PeekIteratorWrapper(iterator, i));
             }
@@ -92,9 +92,9 @@ public class MergeIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public EntryWithTimestamp<MemorySegment> next() {
         PeekIteratorWrapper nextIterator = iterators.remove();
-        Entry<MemorySegment> nextEntry = nextIterator.next();
+        EntryWithTimestamp<MemorySegment> nextEntry = nextIterator.next();
         if (nextIterator.hasNext()) {
             this.iterators.add(nextIterator);
         }

@@ -129,14 +129,14 @@ public class SelfRequestHandler {
     }
 
     public void sendRange(Iterator<ExtendedEntry<MemorySegment>> it, HttpSession session) throws IOException {
-        ByteArrayBuilder bb = new ByteArrayBuilder();
-        bb.append(EntryChunkUtils.HEADER_BYTES, 0, EntryChunkUtils.HEADER_BYTES.length);
+        session.write(EntryChunkUtils.HEADER_BYTES, 0, EntryChunkUtils.HEADER_BYTES.length);
         while (it.hasNext()) {
+            ByteArrayBuilder bb = new ByteArrayBuilder();
             ExtendedEntry<MemorySegment> ee = it.next();
             EntryChunkUtils.getEntryByteChunk(ee, bb);
+            session.write(bb.toBytes(), 0, bb.length());
         }
-        bb.append(EntryChunkUtils.LAST_BYTES, 0, EntryChunkUtils.LAST_BYTES.length);
-        session.write(bb.toBytes(), 0, bb.length());
+        session.write(EntryChunkUtils.LAST_BYTES, 0, EntryChunkUtils.LAST_BYTES.length);
         session.scheduleClose();
     }
 

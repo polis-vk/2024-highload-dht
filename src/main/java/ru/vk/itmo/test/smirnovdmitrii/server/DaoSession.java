@@ -40,61 +40,42 @@ public class DaoSession extends HttpSession {
         private final Chunk lastChunk = new Chunk();
 
         private static class Chunk {
-            private final byte[] key;
-            private final byte[] value;
-            protected final byte[] chunkLength;
+
+            private final byte[][] parts;
             protected int offset;
             public final int total;
 
             public Chunk() {
-                this.chunkLength = ZERO_CHUNK_LENGTH;
-                this.total = chunkLength.length + 2 * CHUNK_SEPARATOR.length;
-                this.key = null;
-                this.value = null;
+                this.parts = new byte[3][];
+                this.parts[0] = ZERO_CHUNK_LENGTH;
+                this.parts[1] = CHUNK_SEPARATOR;
+                this.parts[2] = CHUNK_SEPARATOR;
+                this.total = ZERO_CHUNK_LENGTH.length + 2 * CHUNK_SEPARATOR.length;
                 this.offset = 0;
             }
 
             public Chunk(final TimeEntry<MemorySegment> entry) {
-                final byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
-                this.key = key;
-                final byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
-                this.value = value;
-                this.chunkLength = encodeChunkLength(ENTRY_SEPARATOR.length + key.length + value.length);
-                this.total = this.chunkLength.length + 2 * CHUNK_SEPARATOR.length
-                        + key.length + value.length + ENTRY_SEPARATOR.length;
+                this.parts = new byte[6][];
+                this.parts[2] = entry.key().toArray(ValueLayout.JAVA_BYTE);
+                this.parts[3] = ENTRY_SEPARATOR;
+                this.parts[4] = entry.value().toArray(ValueLayout.JAVA_BYTE);
+                final int chunkLength = parts[2].length + parts[3].length + parts[4].length;
+                this.parts[0] = encodeChunkLength(chunkLength);
+                this.parts[1] = CHUNK_SEPARATOR;
+                this.parts[5] = CHUNK_SEPARATOR;
+                this.total = parts[0].length + 2 * CHUNK_SEPARATOR.length + chunkLength;
                 this.offset = 0;
             }
 
             public int write(final Socket socket) throws IOException {
-                // chunk length
-                // chunk separator
-                // key
-                // entry separator
-                // value
-                // chunk separator
+
                 final int beforeOffset = offset;
                 int curLength = 0;
-                if (tryFull(curLength, chunkLength, socket)) {
-                    curLength += chunkLength.length;
-                    if (tryFull(curLength, CHUNK_SEPARATOR, socket)) {
-                        curLength += CHUNK_SEPARATOR.length;
-                        if (key == null || tryFull(curLength, key, socket)) {
-                            if (key != null) {
-                                curLength += key.length;
-                            }
-                            if (key == null || tryFull(curLength, ENTRY_SEPARATOR, socket)) {
-                                if (key != null) {
-                                    curLength += ENTRY_SEPARATOR.length;
-                                }
-                                if (value == null || tryFull(curLength, value, socket)) {
-                                    if (value != null) {
-                                        curLength += value.length;
-                                    }
-                                    tryFull(curLength, CHUNK_SEPARATOR, socket);
-                                }
-                            }
-                        }
+                for (final byte[] arr: parts) {
+                    if (!tryFull(curLength, arr, socket)) {
+                        break;
                     }
+                    curLength += arr.length;
                 }
                 return offset - beforeOffset;
             }
@@ -131,7 +112,6 @@ public class DaoSession extends HttpSession {
         @Override
         public int write(final Socket socket) throws IOException {
             int total = 0;
-            System.out.println(Thread.currentThread().getThreadGroup());
             while (true) {
                 if (!iterator.hasNext() && chunk == null) {
                     final int written = lastChunk.write(socket);

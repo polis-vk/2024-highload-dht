@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;

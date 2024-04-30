@@ -4,6 +4,7 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.Dao;
@@ -47,17 +48,6 @@ public class DaoHttpServer extends HttpServer {
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String SERVER_STOP_PATH = "/stop";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CHUNKED_HEADERS =
-            """
-            HTTP/1.1 200\r
-            OKContentType: application/octet-stream\r
-            Transfer-Encoding: chunked\r
-            Connection: keep-alive\r
-            \r
-            """.getBytes(StandardCharsets.UTF_8);
-    private static final byte[] ZERO_CHUNK_LENGTH = encodeChunkLength(0);
-    private static final byte[] CHUNK_SEPARATOR = "\r\n".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] ENTRY_SEPARATOR = "\n".getBytes(StandardCharsets.UTF_8);
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
     private final ExecutorService workerPool;
     private final ExecutorService redirectPool;
@@ -196,41 +186,13 @@ public class DaoHttpServer extends HttpServer {
             session.sendResponse(new Response(Response.OK, Response.EMPTY));
             return;
         }
-        writeRange(iterator, session);
-    }
-
-    private void writeRange(
-            final Iterator<TimeEntry<MemorySegment>> iterator,
-            final HttpSession session
-    ) throws IOException {
-        writeOkHttpHeaders(session);
-        while (iterator.hasNext()) {
-            writeChunk(iterator.next(), session);
-        }
-        session.write(ZERO_CHUNK_LENGTH, 0, ZERO_CHUNK_LENGTH.length);
-        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);
-        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);
+        ((DaoSession) session).range(iterator);
         session.close();
     }
 
-    private void writeChunk(final TimeEntry<MemorySegment> entry, final HttpSession session) throws IOException {
-        final byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
-        final byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
-        final byte[] chunkLength = encodeChunkLength(key.length + value.length + ENTRY_SEPARATOR.length);
-        session.write(chunkLength, 0, chunkLength.length);
-        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);;
-        session.write(key, 0, key.length);
-        session.write(ENTRY_SEPARATOR, 0, ENTRY_SEPARATOR.length);
-        session.write(value, 0, value.length);
-        session.write(CHUNK_SEPARATOR, 0, CHUNK_SEPARATOR.length);
-    }
-
-    private static byte[] encodeChunkLength(final int length) {
-        return Integer.toHexString(length).toUpperCase().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private void writeOkHttpHeaders(final HttpSession session) throws IOException {
-        session.write(CHUNKED_HEADERS, 0, CHUNKED_HEADERS.length);
+    @Override
+    public HttpSession createSession(final Socket socket) {
+        return new DaoSession(socket, this);
     }
 
     private void processRequestAck(

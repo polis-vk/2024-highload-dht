@@ -70,7 +70,7 @@ public class StreamingResponse extends Response {
             byte[] key = MemorySegmentFactory.toByteArray(entry.key());
             byte[] value = MemorySegmentFactory.toByteArray(entry.value());
 
-            if (key.length + value.length + NEW_LINE_BYTES.length > buffer.remaining()) {
+            if (offset + key.length + value.length + NEW_LINE_BYTES.length > PART_SIZE) {
                 break;
             }
 

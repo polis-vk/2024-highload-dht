@@ -1,55 +1,89 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
 import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.TimestampEntry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.Collections;
+import java.nio.file.Paths;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class Server {
     private static final Random RANDOM = new Random();
     private static final int ENTRIES_IN_DB = 500_000;
+    private static final long FLUSH_THRESHOLD_BYTES = 4_194_3040L;
+    private static final int BASE_PORT = 8080;
+    private static final int NODES = 3;
+    private static final int POOL_SIZE = 20;
+    private static final int QUEUE_CAPACITY = 256;
 
     private Server() {
 
     }
 
     public static void main(String[] args) throws IOException {
-        ServiceConfig config = new ServiceConfig(
-                8080,
-                "http://localhost",
-                Collections.singletonList("http://localhost"),
-                Files.createTempDirectory(".")
-        );
+        List<String> clusterUrls = new ArrayList<>();
+        Dao<MemorySegment, Entry<MemorySegment>>[] daoCluster = new Dao[NODES];
 
-        Dao<MemorySegment, Entry<MemorySegment>> dao =
-                new NotOnlyInMemoryDao(new Config(config.workingDir(), 4_194_304L));
+        for (int i = 0; i < NODES; i++) {
+            int port = BASE_PORT + i;
+            clusterUrls.add("http://localhost:" + port);
+        }
 
-        ExecutorService executor = new ThreadPoolExecutor(
-                8,
-                8,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(128)
-        );
+        for (int i = 0; i < NODES; i++) {
+            int port = BASE_PORT + i;
 
-        StorageServer server = new StorageServer(config, dao, executor);
-        server.start();
+            ServiceConfig config = new ServiceConfig(
+                    port,
+                    "http://localhost:" + port,
+                    clusterUrls,
+                    Files.createDirectory(Paths.get("/Users/axothy/dao/tmp." + port))
+            );
 
-        fillFlush(dao);
-        fillManyFlushes(dao);
+            Dao<MemorySegment, Entry<MemorySegment>> dao =
+                    new NotOnlyInMemoryDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+            daoCluster[i] = dao;
+            ExecutorService executor = new ThreadPoolExecutor(
+                    POOL_SIZE,
+                    POOL_SIZE,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+            );
+
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .executor(
+                            Executors.newFixedThreadPool(
+                                    POOL_SIZE,
+                                    new CustomThreadFactory("httpClient")
+                            )
+                    )
+                    .connectTimeout(Duration.ofMillis(500))
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build();
+
+            StorageServer server = new StorageServer(config, dao, executor, httpClient);
+            server.start();
+
+        }
+
+        fillClusterNodesWithMultipleFlush(daoCluster);
     }
 
     private static int[] getRandomArray() {
@@ -67,41 +101,29 @@ public final class Server {
                 entries[index] ^= entries[i];
             }
         }
-  
         return entries;
     }
 
-    /**
-     * Just fills memtable without flushing.
-     */
-    private static void fillMemtable(Dao<MemorySegment, Entry<MemorySegment>> dao) {
-        int[] entries = getRandomArray();
-        for (int entry : entries) {
-            dao.upsert(entry(keyAt(entry), valueAt(entry)));
-        }
-    }
-
-    /**
-     * Fills memtable with one flush.
-     */
-    private static void fillFlush(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
-        fillMemtable(dao);
-        dao.flush();
-    }
-
-    /**
-     * Fills dao with multiple sstables.
-     */
-    private static void fillManyFlushes(Dao<MemorySegment, Entry<MemorySegment>> dao) throws IOException {
+    private static void fillClusterNodesWithMultipleFlush(Dao... daoCluster) throws IOException {
         final int sstables = 100; //how many sstables dao must create
         final int flushEntries = ENTRIES_IN_DB / sstables; //how many entries in one sstable
-        int[] entries = getRandomArray();
+        final int[] entries = getRandomArray();
 
-        //many flushes
+        //only for GET tests with from = 3
+        int count = 0;
         for (int entry : entries) {
-            dao.upsert(entry(keyAt(entry), valueAt(entry)));
-            if (entry % flushEntries == 0) {
-                dao.flush();
+            //upsert entry
+            for (int node = 0; node < NODES; node++) {
+                daoCluster[node].upsert(entry(keyAt(entry), valueAt(entry)));
+            }
+            count++;
+
+            //flush nodes
+            if (count == flushEntries) {
+                for (Dao dao : daoCluster) {
+                    dao.flush();
+                }
+                count = 0;
             }
         }
     }
@@ -115,7 +137,7 @@ public final class Server {
     }
 
     private static Entry<MemorySegment> entry(MemorySegment key, MemorySegment value) {
-        return new BaseEntry<>(key, value);
+        return new TimestampEntry<>(key, value, 0L);
     }
 
 }

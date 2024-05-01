@@ -1,28 +1,32 @@
 package ru.vk.itmo.test.chebotinalexandr;
 
+import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.chebotinalexandr.dao.Dao;
 import ru.vk.itmo.test.chebotinalexandr.dao.NotOnlyInMemoryDao;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class StorageService implements Service {
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
-    private static final int POOL_SIZE = 32;
-    private static final int QUEUE_CAPACITY = 256;
     private StorageServer server;
     private ExecutorService executor;
+    private static final int POOL_SIZE = 20;
+    private static final int QUEUE_CAPACITY = 256;
+    private static final long FLUSH_THRESHOLD_BYTES = 4_194_304L;
     private final ServiceConfig config;
 
     public StorageService(ServiceConfig config) {
@@ -31,7 +35,6 @@ public class StorageService implements Service {
 
     @Override
     public CompletableFuture<Void> start() throws IOException {
-        //Dao opens here in order to make it able to reopen
         this.dao = new NotOnlyInMemoryDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         this.executor = new ThreadPoolExecutor(
                 POOL_SIZE,
@@ -40,8 +43,18 @@ public class StorageService implements Service {
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );
+        HttpClient httpClient = HttpClient.newBuilder()
+                .executor(
+                        Executors.newFixedThreadPool(
+                                POOL_SIZE,
+                                new CustomThreadFactory("httpClient")
+                        )
+                )
+                .connectTimeout(Duration.ofMillis(500))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
 
-        this.server = new StorageServer(config, dao, executor);
+        this.server = new StorageServer(config, dao, executor, httpClient);
         server.start();
 
         return CompletableFuture.completedFuture(null);
@@ -59,7 +72,7 @@ public class StorageService implements Service {
         executor.shutdown();
 
         try {
-            if (!executor.awaitTermination(5, TimeUnit.MINUTES)) {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
                 throw new InterruptedException("Timeout");
             }
         } catch (InterruptedException e) {
@@ -68,7 +81,7 @@ public class StorageService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2)
+    @ServiceFactory(stage = 4)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

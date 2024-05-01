@@ -13,6 +13,7 @@ public class ChunkQueueItem extends JoinedQueueItem {
     public static final MemorySegment CHUNK_LINE_END = MemorySegment.ofArray("\r\n".getBytes(CHARSET));
     public static final MemorySegment KEY_VALUE_SEP = MemorySegment.ofArray("\n".getBytes(CHARSET));
     private final List<MemorySegment> chunk;
+
     public ChunkQueueItem(int bufferSize) {
         super(bufferSize);
         chunk = new ArrayList<>(

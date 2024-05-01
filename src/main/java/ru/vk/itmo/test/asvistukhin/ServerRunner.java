@@ -26,8 +26,8 @@ public final class ServerRunner {
         return new ServiceImpl(
             new ServiceConfig(
                 8080,
-                "http://localhost",
-                List.of("http://localhost:8080", "http://localhost:8081", "http://localhost:8082"),
+                "http://localhost:8080",
+                List.of("http://localhost:8080"),
                 Files.createTempDirectory("nio-server")
             )
         );

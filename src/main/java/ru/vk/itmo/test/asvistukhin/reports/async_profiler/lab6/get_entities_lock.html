@@ -14,11 +14,11 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 64px}
+	#canvas {width: 100%; height: 16px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
-<h1>Flame Graph</h1>
+<h1>Lock profile</h1>
 <header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
 <header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
 <canvas id='canvas'></canvas>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(4);
+	const levels = Array(1);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -250,17 +250,11 @@
 	}
 
 const cpool = [
-'all',
-' one.nio.http.HttpSession',
-'#/nio/net/Session.process',
-'(server/SelectorThread.run'
+'all'
 ];
 unpack(cpool);
 
-n(3,1)
-u(25)
-u(17)
-u(10)
+n(2)
 
 search();
 </script></body></html>

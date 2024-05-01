@@ -1,7 +1,7 @@
 counter = 0
 
 function request()
-    path = "/v0/entity?id=" .. counter .. "&ack=2&from=3"
+    path = "/v0/entity?id=" .. counter
     wrk.method = "PUT"
     wrk.body = randomString()
     counter = counter + 1

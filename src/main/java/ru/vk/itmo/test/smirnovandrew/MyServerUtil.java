@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -85,7 +86,7 @@ public final class MyServerUtil {
             List<CompletableFuture<Response>> completableResults,
             Logger logger
     ) throws ExecutionException, InterruptedException {
-        var okResponses = new ArrayList<Response>();
+        var okResponses = new ConcurrentLinkedDeque<Response>();
         var okResponsesCount = new AtomicInteger();
         var failedResponsesCount = new AtomicInteger();
         var answer = new CompletableFuture<Response>();
@@ -98,13 +99,13 @@ public final class MyServerUtil {
                 failedResponsesCount.incrementAndGet();
             }
 
-            if (okResponsesCount.get() == ack) {
+            if (okResponsesCount.get() >= ack) {
                 answer.complete(okResponses.stream()
                         .max(Comparator.comparingLong(MyServerUtil::headerTimestampToLong))
                         .get());
             }
 
-            if (failedResponsesCount.get() == from - ack + 1) {
+            if (failedResponsesCount.get() >= from - ack + 1) {
                 answer.complete(new Response(MyServerUtil.NOT_ENOUGH_REPLICAS, Response.EMPTY));
             }
         };

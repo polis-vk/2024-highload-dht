@@ -8,7 +8,7 @@
 ```curl "http://localhost:8080/v0/entities?start=1230&end=4560000000" ```
 
 
-Два запуска профайлера на cpu. При первом запуске видна работа оптимизатора 
+Два запуска профайлера на cpu. При первом запуске видна работа компилятора 
 <details>
 <summary>CPU флеймграф</summary>
 <img alt="cpu" src="../hw6/profiler/cpu1.png">

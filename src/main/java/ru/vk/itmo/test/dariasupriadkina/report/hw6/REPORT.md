@@ -11,8 +11,51 @@ curl -v http://localhost:8080/v0/entities\?start=1
 
 ## Результаты профилирования
 
-[range-alloc.html](..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2FDownloads%2Fasync-profiler-3.0-macos%2Frange-alloc.html)
+[range-alloc.html](data%2Frange-alloc.html)
 
-[range-cpu.html](..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2FDownloads%2Fasync-profiler-3.0-macos%2Frange-cpu.html)
+[range-cpu.html](data%2Frange-cpu.html)
 
-[range-lock.html](..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2FDownloads%2Fasync-profiler-3.0-macos%2Frange-lock.html)
+[range-lock.html](data%2Frange-lock.html)
+
+
+Профиль блокировок выглядит весьма неинтересно, практически 100% блокировок уходит на `Session.write`
+
+Если посмотреть на профиль cpu, то разделение сеймплов примерно такое:
+
+- `Session.write` - 48.7% 
+- `getEntryByteChunk` (метод, отвечающий за формирование байтового чанка с данными) - 14.7%, что выглядит весьма солидными
+затратами для обычного преобразования `MemorySegment`'ов в массив байт
+- `MergingEntryIterator` (работа dao) - 28.7% 
+- Оставшаяся часть - работа `SelectorThread`
+
+На профиле аллокаций дела обстоят несколько иначе: 
+
+- `MergingEntryIterator.next` (работа dao) - 10.6%
+- `Session.write` - всего около 9% несмотря на то, что занимает больше всего процессорного времени
+- `getEntryByteChunk` - ≈45%. В рамках этого метода у нас по отдельности преобразуется в байтовый массив каждая из частей 
+- `ByteArrayBuilder.<init>` - ≈25% - инициализация ByteArrayBuilder
+
+`getEntryByteChunk` забирает на себя практически половину всех аллокаций, что выглядит узким местом, которое нуждается 
+в оптимизации
+
+`ByteArrayBuilder.<init>` также занимает весьма солидный процент аллокаций - целую четверть. Пичина возникновения этих алллокаций весьма очевидна, 
+в коде мы аллоцируем новый ByteArrayBuilder каждый раз, когда формируем новый чанк key-value с данными
+
+```
+ while (it.hasNext()) {
+    ByteArrayBuilder bb = new ByteArrayBuilder();
+    ExtendedEntry<MemorySegment> ee = it.next();
+    EntryChunkUtils.getEntryByteChunk(ee, bb);
+    session.write(bb.toBytes(), 0, bb.length());
+ }
+```
+
+Это решение было принято, чтобы отправлять через session.write весь чанк с данными, а не каждую его часть 
+(length, crlf, <key>, \n, value) по отдельность. В качестве альтернативы можно как раз отправлять каждую часть через session.write, 
+тогда аллокацию ByteArrayBuilder можно избежать, но, так как на профиле локов, фигурирует в основном только метод Session.write, 
+вероятно, лишнее использование Session.write может привести к затратам на синхронизацию, отчего в конце концов пострадает latency 
+и сама производительность системы. 
+
+Тем не менее имеет смысл судя по полученным результатам профилирования, имеет смысл попытаться оптимизировать процесс формирования 
+массивов байт.
+

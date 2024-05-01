@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -31,8 +31,7 @@ public final class State {
     }
 
     public static State initial(List<MemorySegment> segments) {
-        return new State(createMap(), createMap(), segments
-        );
+        return new State(createMap(), createMap(), segments);
     }
 
     public State compact(MemorySegment compacted) {

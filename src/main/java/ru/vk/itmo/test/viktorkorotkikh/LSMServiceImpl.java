@@ -39,6 +39,7 @@ public class LSMServiceImpl implements Service {
     private HttpClient clusterClient;
     private ExecutorService clusterClientExecutorService;
     private ExecutorService clusterResponseProcessor;
+    private ExecutorService localProcessor;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         Path baseWorkingDir = Path.of("daoWorkingDir");
@@ -97,21 +98,26 @@ public class LSMServiceImpl implements Service {
         this.consistentHashingManager = new ConsistentHashingManager(10, serviceConfig.clusterUrls());
     }
 
-    private static LSMServerImpl createServer(
-            ServiceConfig serviceConfig,
-            Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao,
-            ExecutorService executorService,
-            ConsistentHashingManager consistentHashingManager,
-            HttpClient clusterClient,
-            ExecutorService clusterResponseProcessor
+    private LSMServerImpl createServer(
+            Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao
     ) throws IOException {
+        executorService = createExecutorService(16, 1024, "worker");
+        clusterClientExecutorService = createExecutorService(16, 1024, "cluster-worker");
+        clusterResponseProcessor = createExecutorService(16, 1024, "cluster-response");
+        localProcessor = createExecutorService(16, 1024, "local-processor");
+
+        clusterClient = HttpClient.newBuilder()
+                .executor(clusterClientExecutorService)
+                .build();
+
         return new LSMServerImpl(
                 serviceConfig,
                 dao,
                 executorService,
                 consistentHashingManager,
                 clusterClient,
-                clusterResponseProcessor
+                clusterResponseProcessor,
+                localProcessor
         );
     }
 
@@ -155,22 +161,7 @@ public class LSMServiceImpl implements Service {
         if (isRunning) return CompletableFuture.completedFuture(null);
         dao = createLSMDao(serviceConfig.workingDir());
 
-        executorService = createExecutorService(16, 1024, "worker");
-        clusterClientExecutorService = createExecutorService(16, 1024, "cluster-worker");
-        clusterResponseProcessor = createExecutorService(16, 1024, "cluster-response");
-
-        clusterClient = HttpClient.newBuilder()
-                .executor(clusterClientExecutorService)
-                .build();
-
-        httpServer = createServer(
-                serviceConfig,
-                dao,
-                executorService,
-                consistentHashingManager,
-                clusterClient,
-                clusterResponseProcessor
-        );
+        httpServer = createServer(dao);
         httpServer.start();
 
         isRunning = true;
@@ -185,6 +176,7 @@ public class LSMServiceImpl implements Service {
         shutdownHttpClient(clusterClient);
         shutdownExecutorService(clusterClientExecutorService);
         shutdownExecutorService(clusterResponseProcessor);
+        shutdownExecutorService(localProcessor);
         shutdownExecutorService(executorService);
         executorService = null;
         clusterClient = null;

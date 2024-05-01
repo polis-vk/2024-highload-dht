@@ -1,12 +1,20 @@
 package ru.vk.itmo.test.bandurinvladislav.util;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ru.vk.itmo.test.bandurinvladislav.RequestProcessingState;
 
+import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class NetworkUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(NetworkUtil.class);
 
     private NetworkUtil() {
     }
@@ -26,8 +34,8 @@ public class NetworkUtil {
     public static Response successResponse(List<Response> responses) {
         if (responses == null || responses.isEmpty()) {
             return new Response(Response.INTERNAL_ERROR,
-                        "Unable to create a successful response from the received data."
-                                .getBytes(StandardCharsets.UTF_8));
+                    "Unable to create a successful response from the received data."
+                            .getBytes(StandardCharsets.UTF_8));
         }
         Response response = responses.getFirst();
         long maxTimestamp = getTimestampHeader(response);
@@ -67,5 +75,47 @@ public class NetworkUtil {
         }
 
         return null;
+    }
+
+    public static boolean shouldHandle(Response r) {
+        return r.getStatus() < HttpURLConnection.HTTP_MULT_CHOICE
+                || r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
+    }
+
+    public static void handleResponse(HttpSession session, RequestProcessingState rs, Response r, int ack, int from) {
+        if (NetworkUtil.shouldHandle(r)) {
+            rs.getResponses().add(r);
+            if (rs.getResponses().size() >= ack
+                    && rs.isResponseSent().compareAndSet(false, true)) {
+                trySendResponse(session, successResponse(rs.getResponses()));
+            } else if (from - rs.getFailedResponseCount().get() < ack) {
+                trySendResponse(session, new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            }
+        } else {
+            rs.getFailedResponseCount().getAndIncrement();
+        }
+    }
+
+    public static void trySendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("IO exception during response sending: " + e.getMessage());
+            try {
+                session.sendError(Response.INTERNAL_ERROR, null);
+            } catch (IOException ex) {
+                logger.error("Exception while sending close connection:", e);
+                session.scheduleClose();
+            }
+        }
+    }
+
+    public static void handleTimeout(HttpSession session, RequestProcessingState rs, int ack, int from) {
+        rs.getFailedResponseCount().getAndIncrement();
+        if (from - rs.getFailedResponseCount().get() < ack
+                && rs.isResponseSent().compareAndSet(false, true)) {
+            NetworkUtil.trySendResponse(session,
+                    new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+        }
     }
 }

@@ -3,6 +3,7 @@ package ru.vk.itmo;
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -15,7 +16,7 @@ class SingleRangeTest extends TestBase {
     private static byte[] chunkOf(
             String key,
             String value) {
-        return (key + '\n' + value).getBytes();
+        return (key + '\n' + value).getBytes(UTF_8);
     }
 
     @ServiceTest(stage = 6)
@@ -52,7 +53,7 @@ class SingleRangeTest extends TestBase {
         String value = "value1";
 
         // Insert
-        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(key, value.getBytes()).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(key, value.getBytes(UTF_8)).statusCode());
 
         // Check
         {
@@ -84,9 +85,9 @@ class SingleRangeTest extends TestBase {
         String value3 = "value3";
 
         // Insert reversed
-        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 3, value3.getBytes()).statusCode());
-        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 2, value2.getBytes()).statusCode());
-        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 1, value1.getBytes()).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 3, value3.getBytes(UTF_8)).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 2, value2.getBytes(UTF_8)).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 1, value1.getBytes(UTF_8)).statusCode());
 
         // Check all
         {

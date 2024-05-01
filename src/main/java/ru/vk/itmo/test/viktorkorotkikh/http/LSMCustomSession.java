@@ -58,14 +58,7 @@ public class LSMCustomSession extends HttpSession {
         this.lsmRangeWriter = lsmRangeWriter;
         sendNextRangeChunks();
 
-        if (this.lsmRangeWriter.hasChunks()) {
-            this.handling = pipeline.pollFirst();
-            if (handling == FIN) {
-                scheduleClose();
-            } else {
-                server.handleRequest(handling, this);
-            }
-        }
+
     }
 
     private void sendNextRangeChunks() throws IOException {

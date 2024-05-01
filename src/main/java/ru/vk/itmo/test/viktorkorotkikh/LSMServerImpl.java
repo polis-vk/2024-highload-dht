@@ -442,7 +442,7 @@ public class LSMServerImpl extends HttpServer {
         final String start = request.getParameter("start=");
         final String end = request.getParameter("end=");
         if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
-            log.debug("Bad request: empty id parameter");
+            log.debug("Bad request: start parameter and end parameter (if it present) should not be empty");
             session.sendResponse(LSMConstantResponse.badRequest(request));
             return;
         }

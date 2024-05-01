@@ -10,7 +10,7 @@
 
 Наполнение одной ноды - 1335Mb (1.3Gb). Все ключи имеют вид `key%d+`.
 
-Запрос: `curl -vvv --location 'http://localhost:8080/v0/entities?start=key'`
+Запрос: `curl -vvv 'http://localhost:8080/v0/entities?start=key'`
 
 ## CPU profile
 

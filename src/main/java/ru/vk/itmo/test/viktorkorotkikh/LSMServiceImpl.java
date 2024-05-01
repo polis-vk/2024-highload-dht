@@ -30,6 +30,14 @@ import java.util.concurrent.TimeUnit;
 public class LSMServiceImpl implements Service {
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private static final int TERMINATION_TIMEOUT_SECONDS = 20;
+    private static final int SERVER_EXECUTOR_SERVICE_THREADS_COUNT = 16;
+    private static final int SERVER_EXECUTOR_SERVICE_QUEUE_SIZE = 1024;
+    private static final int CLUSTER_HTTP_CLIENT_EXECUTOR_SERVICE_THREADS_COUNT = 16;
+    private static final int CLUSTER_HTTP_CLIENT_EXECUTOR_SERVICE_QUEUE_SIZE = 1024;
+    private static final int CLUSTER_RESPONSE_EXECUTOR_SERVICE_THREADS_COUNT = 16;
+    private static final int CLUSTER_RESPONSE_EXECUTOR_SERVICE_QUEUE_SIZE = 1024;
+    private static final int LOCAL_REQUEST_EXECUTOR_SERVICE_THREADS_COUNT = 16;
+    private static final int LOCAL_REQUEST_EXECUTOR_SERVICE_QUEUE_SIZE = 1024;
     private final ServiceConfig serviceConfig;
     private LSMServerImpl httpServer;
     private boolean isRunning;
@@ -101,10 +109,26 @@ public class LSMServiceImpl implements Service {
     private LSMServerImpl createServer(
             Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao
     ) throws IOException {
-        executorService = createExecutorService(16, 1024, "worker");
-        clusterClientExecutorService = createExecutorService(16, 1024, "cluster-worker");
-        clusterResponseProcessor = createExecutorService(16, 1024, "cluster-response");
-        localProcessor = createExecutorService(16, 1024, "local-processor");
+        executorService = createExecutorService(
+                SERVER_EXECUTOR_SERVICE_THREADS_COUNT,
+                SERVER_EXECUTOR_SERVICE_QUEUE_SIZE,
+                "worker"
+        );
+        clusterClientExecutorService = createExecutorService(
+                CLUSTER_HTTP_CLIENT_EXECUTOR_SERVICE_THREADS_COUNT,
+                CLUSTER_HTTP_CLIENT_EXECUTOR_SERVICE_QUEUE_SIZE,
+                "cluster-request"
+        );
+        clusterResponseProcessor = createExecutorService(
+                CLUSTER_RESPONSE_EXECUTOR_SERVICE_THREADS_COUNT,
+                CLUSTER_RESPONSE_EXECUTOR_SERVICE_QUEUE_SIZE,
+                "cluster-response-processor"
+        );
+        localProcessor = createExecutorService(
+                LOCAL_REQUEST_EXECUTOR_SERVICE_THREADS_COUNT,
+                LOCAL_REQUEST_EXECUTOR_SERVICE_QUEUE_SIZE,
+                "local-processor"
+        );
 
         clusterClient = HttpClient.newBuilder()
                 .executor(clusterClientExecutorService)

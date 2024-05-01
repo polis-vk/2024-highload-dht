@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.smirnovdmitrii.server;
 
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -8,34 +7,48 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.Dao;
+import ru.vk.itmo.test.smirnovdmitrii.application.properties.DhtValue;
 import ru.vk.itmo.test.smirnovdmitrii.dao.TimeEntry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 
+import static java.net.HttpURLConnection.HTTP_ACCEPTED;
+import static java.net.HttpURLConnection.HTTP_BAD_METHOD;
+import static java.net.HttpURLConnection.HTTP_CREATED;
+import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
 
 public class DaoHttpServer extends HttpServer {
+
+    @DhtValue("server.use.async:true")
+    private static boolean useAsync;
+    @DhtValue("server.redirect.pool.size:30")
+    private static int REDIRECT_POOL_SIZE;
+
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String SERVER_STOP_PATH = "/stop";
     private static final byte[] INVALID_KEY_MESSAGE = "invalid id".getBytes(StandardCharsets.UTF_8);
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final Logger logger = LoggerFactory.getLogger(DaoHttpServer.class);
-    private static final String TIMESTAMP_HEADER_NAME = "X-KEY-TS: ";
     private final ExecutorService workerPool;
+    private final ExecutorService redirectPool;
     private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
     private final Balancer balancer;
     private final RedirectService redirectService;
@@ -49,7 +62,8 @@ public class DaoHttpServer extends HttpServer {
         super(config);
         this.dao = dao;
         this.balancer = new Balancer(config.clusterUrls);
-        this.redirectService = new RedirectService(config.selfUrl, config.clusterUrls);
+        this.redirectPool = Executors.newFixedThreadPool(REDIRECT_POOL_SIZE);
+        this.redirectService = new RedirectService(redirectPool);
         this.selfUrl = config.selfUrl;
         if (config.useWorkers && config.useVirtualThreads) {
             this.workerPool = Executors.newVirtualThreadPerTaskExecutor();
@@ -73,34 +87,34 @@ public class DaoHttpServer extends HttpServer {
         this.useWorkers = config.useWorkers;
     }
 
-    public Response get(final MemorySegment key) {
+    public ProcessResult get(final MemorySegment key) {
         final TimeEntry<MemorySegment> entry = dao.get(key);
         if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+            return new ProcessResult(HTTP_NOT_FOUND, Response.EMPTY);
         } else if (entry.value() == null) {
-            final Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-            response.addHeader(TIMESTAMP_HEADER_NAME + entry.millis());
-            return response;
+            return new ProcessResult(HTTP_NOT_FOUND, Response.EMPTY, epochMillisNow());
         }
-        final Response response = Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-        response.addHeader(TIMESTAMP_HEADER_NAME + entry.millis());
-        return response;
+        return new ProcessResult(
+                HTTP_OK,
+                entry.value().toArray(ValueLayout.JAVA_BYTE),
+                epochMillisNow()
+        );
     }
 
-    public Response put(
+    public ProcessResult put(
             final MemorySegment key,
             final Request request
     ) {
         final MemorySegment value = MemorySegment.ofArray(request.getBody());
         final TimeEntry<MemorySegment> entry = new TimeEntry<>(epochMillisNow(), key, value);
         dao.upsert(entry);
-        return new Response(Response.CREATED, Response.EMPTY);
+        return new ProcessResult(HTTP_CREATED, Response.EMPTY);
     }
 
-    public Response delete(final MemorySegment key) {
+    public ProcessResult delete(final MemorySegment key) {
         final TimeEntry<MemorySegment> entry = new TimeEntry<>(epochMillisNow(), key, null);
         dao.upsert(entry);
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+        return new ProcessResult(HTTP_ACCEPTED, Response.EMPTY);
     }
 
     @Override
@@ -128,32 +142,117 @@ public class DaoHttpServer extends HttpServer {
                 stop();
                 return;
             }
-            final int method = request.getMethod();
             final String id = request.getParameter("id=");
-            final Response validationFailedResponse = validateResponse(path, id, method);
-            if (validationFailedResponse != null) {
-                session.sendResponse(validationFailedResponse);
+            final ProcessResultHandler handler = processHandler(session, request, id, path);
+            if (handler.isClosed()) {
                 return;
             }
-            final String redirectHeader = request.getHeader(RedirectService.REDIRECT_HEADER_NAME);
+            final String redirectHeader = request.getHeader(Utils.REDIRECT_ONE_NIO_HEADER_NAME);
             if (redirectHeader != null && redirectHeader.equals("true")) {
-                final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
-                final MemorySegment key = MemorySegment.ofArray(keyBytes);
-                session.sendResponse(processRequest(request, method, key));
+                handler.sendResult(processRequest(request, handler.method(), id));
                 return;
             }
-            processRequestAck(request, session, id, method);
+            processRequestAck(request, id, handler);
         } catch (final IOException e) {
             logger.error("IOException in send response.");
+        } catch (final InterruptedException e) {
+            logger.error("Interrupted while processing tasks.");
+            Thread.currentThread().interrupt();
         }
     }
 
     private void processRequestAck(
             final Request request,
-            final HttpSession session,
             final String id,
-            final int method
-    ) throws IOException {
+            final ProcessResultHandler handler
+    ) throws IOException, InterruptedException {
+        final String[] nodeUrls = balancer.getNodeUrls(id, handler.from());
+        if (useAsync) {
+            processRequestAckAsync(request, id, handler, nodeUrls);
+        } else {
+            processRequestAckSync(request, id, handler, nodeUrls);
+        }
+    }
+
+    private void processRequestAckSync(
+            final Request request,
+            final String id,
+            final ProcessResultHandler handler,
+            final String[] nodeUrls
+    ) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(nodeUrls.length);
+        for (final String url: nodeUrls) {
+            if (url.equals(selfUrl)) {
+                redirectPool.execute(() -> {
+                    try {
+                        handler.add(processRequest(request, handler.method(), id));
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            } else {
+                redirectPool.execute(() -> {
+                    try {
+                        redirectService.redirectSync(url, request, handler);
+                    } catch (final Exception e) {
+                        handler.add(new ProcessResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, Response.EMPTY));
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+        }
+        latch.await();
+        if (handler.isOutcomeSuccess()) {
+            handler.sendResult(handler.outcome.get());
+        } else {
+            handler.sendNotEnoughReplicas();
+        }
+    }
+
+    private void processRequestAckAsync(
+            final Request request,
+            final String id,
+            final ProcessResultHandler handler,
+            final String[] nodeUrls
+    ) {
+        boolean isLocal = false;
+        for (final String url : nodeUrls) {
+            if (url.equals(selfUrl)) {
+                isLocal = true;
+            } else {
+                redirectService.redirectAsync(url, request, handler);
+            }
+        }
+        if (isLocal) {
+            handler.add(processRequest(request, handler.method(), id));
+        }
+    }
+
+    private ProcessResult processRequest(final Request request, final int method, final String id) {
+        final MemorySegment key = MemorySegment.ofArray(id.getBytes(StandardCharsets.UTF_8));
+        ProcessResult response;
+        try {
+            response = switch (method) {
+                case METHOD_GET -> get(key);
+                case METHOD_DELETE -> delete(key);
+                case METHOD_PUT -> put(key, request);
+                default -> new ProcessResult(HTTP_BAD_METHOD, Response.EMPTY, -1);
+            };
+        } catch (final Exception e) {
+            logger.error("Exception while handling request", e);
+            response = new ProcessResult(HTTP_INTERNAL_ERROR, Response.EMPTY, -1);
+        }
+        return response;
+    }
+
+    public ProcessResultHandler processHandler(
+            final HttpSession session,
+            final Request request,
+            final String id,
+            final String path
+    ) {
+        final int method = request.getMethod();
         final String ackParam = request.getParameter("ack=");
         final String fromParam = request.getParameter("from=");
         final int from;
@@ -163,8 +262,9 @@ public class DaoHttpServer extends HttpServer {
             try {
                 from = Integer.parseInt(fromParam);
             } catch (final NumberFormatException e) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
+                final ProcessResultHandler execHandler = new ProcessResultHandler(session, method, -1, -1);
+                execHandler.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return execHandler;
             }
         }
         final int ack;
@@ -174,138 +274,22 @@ public class DaoHttpServer extends HttpServer {
             try {
                 ack = Integer.parseInt(ackParam);
             } catch (final NumberFormatException e) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
+                final ProcessResultHandler execHandler = new ProcessResultHandler(session, method, -1, -1);
+                execHandler.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return execHandler;
             }
         }
+        final ProcessResultHandler handler = new ProcessResultHandler(session, method, ack, from);
         if (ack < 1 || from < 1 || ack > from) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-        final String[] nodeUrls = balancer.getNodeUrls(id, from);
-        final Response response;
-        if (method == METHOD_GET) {
-            response = processGetRequest(request, nodeUrls, id, ack);
-        } else {
-            response = processNotGetRequest(request, nodeUrls, id, ack);
-        }
-        session.sendResponse(response);
-    }
-
-    private Response processNotGetRequest(
-            final Request request,
-            final String[] nodeUrls,
-            final String id,
-            final int ack
-    ) {
-        int success = 0;
-        Response response = null;
-        for (final String url : nodeUrls) {
-            final Response curResponse = processRequestWithUrl(request, url, id);
-            final int status = curResponse.getStatus();
-            if (200 <= status && status < 300) {
-                success++;
-                response = curResponse;
-            }
-        }
-        if (success >= ack) {
-            return response;
-        } else {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-        }
-    }
-
-    private Response processGetRequest(
-            final Request request,
-            final String[] nodeUrls,
-            final String id,
-            final int ack
-    ) {
-        int success = 0;
-        Response response = null;
-        long responseTs = -1;
-        for (final String url : nodeUrls) {
-            final Response curResponse = processRequestWithUrl(request, url, id);
-            final int status = curResponse.getStatus();
-            if (200 <= status && status < 500) {
-                success++;
-                final String headerTs = curResponse.getHeader(TIMESTAMP_HEADER_NAME);
-                final long responseMillis = headerTs == null ? 0 : Long.parseLong(headerTs);
-                if (responseTs < responseMillis) {
-                    response = curResponse;
-                    responseTs = responseMillis;
-                }
-            }
-        }
-        if (success >= ack) {
-            return response;
-        } else {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-        }
-    }
-
-    private Response processRequestWithUrl(
-            final Request request,
-            final String url,
-            final String id
-    ) {
-        final Response response;
-        if (url.equals(selfUrl)) {
-            final byte[] keyBytes = id.getBytes(StandardCharsets.UTF_8);
-            final MemorySegment key = MemorySegment.ofArray(keyBytes);
-            response = processRequest(request, request.getMethod(), key);
-        } else {
-            response = shardResponse(request, url);
-        }
-        return response;
-    }
-
-    private Response shardResponse(
-            final Request request,
-            final String nodeUrl
-    ) {
-        try {
-            return redirectService.redirect(nodeUrl, request);
-        } catch (final IOException e) {
-            logger.error("IOException in get response from node {}", nodeUrl, e);
-        } catch (final HttpException e) {
-            logger.error("HttpException in sending to node {}", nodeUrl, e);
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.error("Timeout in sending to node {}", nodeUrl, e);
-        }
-        return new Response(Response.BAD_GATEWAY, Response.EMPTY);
-    }
-
-    private Response processRequest(final Request request, final int method, final MemorySegment key) {
-        Response response;
-        try {
-            response = switch (method) {
-                case METHOD_GET -> get(key);
-                case METHOD_DELETE -> delete(key);
-                case METHOD_PUT -> put(key, request);
-                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            };
-        } catch (final Exception e) {
-            logger.error("Exception while handling request", e);
-            response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        return response;
-    }
-
-    public Response validateResponse(
-            final String path,
-            final String id,
-            final int method
-    ) {
-        if (!path.equals(REQUEST_PATH)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            handler.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        } else if (!path.equals(REQUEST_PATH)) {
+            handler.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         } else if (isInvalidKey(id)) {
-            return new Response(Response.BAD_REQUEST, INVALID_KEY_MESSAGE);
+            handler.sendResponse(new Response(Response.BAD_REQUEST, INVALID_KEY_MESSAGE));
         } else if (METHOD_GET != method && METHOD_DELETE != method && METHOD_PUT != method) {
-            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            handler.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
-        return null;
+        return handler;
     }
 
     public boolean isInvalidKey(final String key) {
@@ -323,6 +307,9 @@ public class DaoHttpServer extends HttpServer {
         redirectService.close();
         if (workerPool != null) {
             gracefulShutdown(workerPool);
+        }
+        if (redirectPool != null) {
+            gracefulShutdown(redirectPool);
         }
         try {
             dao.close();

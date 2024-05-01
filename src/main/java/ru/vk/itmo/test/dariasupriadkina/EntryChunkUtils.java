@@ -42,9 +42,8 @@ public final class EntryChunkUtils {
     }
 
     public static byte[] getKVLengthChunk(Entry<MemorySegment> entry) {
-        return Integer.toHexString(entry.value().toArray(ValueLayout.JAVA_BYTE).length
-                + entry.key().toArray(ValueLayout.JAVA_BYTE).length
-                + "\n".length()).getBytes(StandardCharsets.UTF_8);
+        return Long.toHexString((entry.value().byteSize()
+                + entry.key().byteSize() + DELIMITER_BYTES.length)).getBytes(StandardCharsets.UTF_8);
     }
 
 }

@@ -57,8 +57,6 @@ public class LSMCustomSession extends HttpSession {
 
         this.lsmRangeWriter = lsmRangeWriter;
         sendNextRangeChunks();
-
-
     }
 
     private void sendNextRangeChunks() throws IOException {

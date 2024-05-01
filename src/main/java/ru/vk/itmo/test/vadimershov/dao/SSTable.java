@@ -195,14 +195,15 @@ final class SSTable {
             offset += Long.BYTES;
 
             // Read value
-            if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
-                // Tombstone encountered
-                return new TimestampBaseEntry<>(key, null, getTimestamp(offset));
-            } else {
-                final MemorySegment value = data.asSlice(offset, valueLength);
+            MemorySegment value = null;
+            if (valueLength != SSTables.TOMBSTONE_VALUE_LENGTH) {
+                value = data.asSlice(offset, valueLength);
                 offset += valueLength;
-                return new TimestampBaseEntry<>(key, value, getTimestamp(offset));
             }
+
+            long timestamp = getTimestamp(offset);
+            offset += Long.BYTES;
+            return new TimestampBaseEntry<>(key, value, timestamp);
         }
     }
 }

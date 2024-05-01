@@ -15,7 +15,7 @@ public final class Start {
     }
 
     public static void main(String[] args) throws IOException {
-        List<Integer> ports = List.of(9080, 9081, 9082);
+        List<Integer> ports = List.of(9080);
         List<String> clusterUrls = new ArrayList<>(ports.size());
         for (int port : ports) {
             clusterUrls.add("http://localhost:" + port);
@@ -23,7 +23,7 @@ public final class Start {
         for (int port : ports) {
             Path path = Path.of("/Users/ruarsv5/Developer/ITMO/temp/" + port);
             Files.createDirectories(path);
-            Config daoConfig = new Config(path, 1 << 15);
+            Config daoConfig = new Config(path, 1 << 17);
             ServiceConfig serviceConfig = new ServiceConfig(port, "http://localhost:" + port, clusterUrls, path);
             DaoHttpServer server = new DaoHttpServer(serviceConfig, daoConfig, new RequestThreadExecutor.Config());
             server.start();

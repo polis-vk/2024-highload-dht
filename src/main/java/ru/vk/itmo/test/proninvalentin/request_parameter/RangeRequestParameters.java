@@ -6,13 +6,14 @@ import ru.vk.itmo.test.proninvalentin.utils.Utils;
 import java.lang.foreign.MemorySegment;
 
 public class RangeRequestParameters {
-    private MemorySegment start;
+    private final MemorySegment start;
     private MemorySegment end;
     private boolean isValid = true;
 
     public RangeRequestParameters(String startString, String endString) {
         if (Utils.isNullOrBlank(startString)) {
             isValid = false;
+            start = null;
             return;
         }
 

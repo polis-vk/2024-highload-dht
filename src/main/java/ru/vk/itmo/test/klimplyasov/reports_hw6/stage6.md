@@ -1,13 +1,32 @@
-## Нагрузочное тестирование
-### async-profiler
-## Вывод профилирования аллокации
-- `one/nio/net/Session.write` - 46%
-  - writeDataChunk -70% 
-  - AbstractMemorySegmentImpl.toArray - 24%
-- LiveFilteringIterator.next - 29%
+# Профилирование Аллокации
 
-## Вывод профилирования CPU
 
-- `Session.write` - 95%
-- LiveFilteringIterator.next - 4%
-- writeDataChunk -0.1%
+### one/nio/net/Session.write 
+занимает 46% всей выделенной памяти. Внутри этого метода распределение памяти выглядит следующим образом:
+
+- writeDataChunk - 70%
+  - генерирует байтовый чанк с данными
+- AbstractMemorySegmentImpl.toArray - 24%
+  - Преобразование данных в массив.
+
+### LiveFilteringIterator.next 
+занимает 29% всей выделенной памяти.
+
+
+
+---
+
+# Профилирование CPU
+
+### Session.write 
+Этот метод занимает абсолютное большинство времени CPU (95%) во время выполнения программы. 
+
+### LiveFilteringIterator.next 
+Этот метод занимает небольшую долю времени CPU (4%).
+
+### writeDataChunk - 0.1%
+занимает крайне малую долю времени CPU (0.1%). 
+
+# Результаты
+- [Результат аллокации](async_profiler%2Falloc.html)
+- [Результат CPU](async_profiler%2Fcpu.html)

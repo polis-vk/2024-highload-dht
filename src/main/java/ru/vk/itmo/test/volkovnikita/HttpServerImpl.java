@@ -22,7 +22,7 @@ import ru.vk.itmo.test.volkovnikita.dao.ReferenceDao;
 import ru.vk.itmo.test.volkovnikita.dao.TimestampEntry;
 import ru.vk.itmo.test.volkovnikita.util.ChunkHttpResponse;
 import ru.vk.itmo.test.volkovnikita.util.CustomSession;
-import ru.vk.itmo.test.volkovnikita.util.NotEnoughReplicasException;
+import ru.vk.itmo.test.volkovnikita.exception.NotEnoughReplicasException;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -54,7 +54,7 @@ import static ru.vk.itmo.test.volkovnikita.util.Settings.TIMESTAMP_HEADER;
 public class HttpServerImpl extends HttpServer {
 
     private static final String PATH_NAME = "/v0/entity";
-    private static final String TIMESTAMP = "X-timestamp";
+    private static final String TIMESTAMP = "Timestamp";
     private final Dao<MemorySegment, TimestampEntry<MemorySegment>> dao;
     private static final Logger log = LoggerFactory.getLogger(HttpServerImpl.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();

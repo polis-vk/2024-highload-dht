@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.volkovnikita.util;
+package ru.vk.itmo.test.volkovnikita.exception;
 
 public class NotEnoughReplicasException extends RuntimeException {
     public NotEnoughReplicasException(String message) {

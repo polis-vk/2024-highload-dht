@@ -13,7 +13,7 @@ import static ru.vk.itmo.test.viktorkorotkikh.util.LSMConstantResponse.CHUNKED_R
 
 public class LSMRangeWriter {
     private static final int BUFFER_SIZE = 8192;
-    private static final int CHUNK_SIZE_BYTES = 16;
+    private static final int CHUNK_SIZE_BYTES = 16; // long 8 bytes in hex
     private static final byte[] CRLF_BYTES = new byte[]{'\r', '\n'};
     private final Iterator<TimestampedEntry<MemorySegment>> entryIterator;
     private final boolean keepAlive;
@@ -35,18 +35,18 @@ public class LSMRangeWriter {
 
     public Chunk nextChunk() {
         chunkSize = 0;
-        int chunkSizeOffset = CHUNK_SIZE_BYTES + CRLF_BYTES.length;
+        int chunkHeaderOffset = CHUNK_SIZE_BYTES + CRLF_BYTES.length;
         boolean writeHttpHeaders = false;
         if (nextOperation == NextOperation.WRITE_HEADERS) {
-            chunkSizeOffset += keepAlive
+            chunkHeaderOffset += keepAlive
                     ? CHUNKED_RESPONSE_KEEP_ALIVE_WITH_HEADERS_BYTES.length
                     : CHUNKED_RESPONSE_CLOSE_WITH_HEADERS_BYTES.length;
             writeHttpHeaders = true;
         }
-        buffer.setLength(chunkSizeOffset);
+        buffer.setLength(chunkHeaderOffset);
 
         if (!appendNextOperationBytes()) {
-            int chunkOffset = writeChunkHeader(chunkSizeOffset, writeHttpHeaders);
+            int chunkOffset = writeChunkHeader(chunkHeaderOffset, writeHttpHeaders);
             return new Chunk(buffer, chunkOffset);
         }
 
@@ -54,18 +54,18 @@ public class LSMRangeWriter {
             lastEntry = entryIterator.next();
             lastEntryOffset = 0;
             if (buffer.length() + getEntrySize(lastEntry) + CRLF_BYTES.length > buffer.capacity()) {
-                int offset = writeChunkHeader(chunkSizeOffset, writeHttpHeaders);
+                int offset = writeChunkHeader(chunkHeaderOffset, writeHttpHeaders);
                 return new Chunk(buffer, offset);
             }
 
             nextOperation = NextOperation.WRITE_KEY;
             if (!appendNextOperationBytes()) {
-                int chunkOffset = writeChunkHeader(chunkSizeOffset, writeHttpHeaders);
+                int chunkOffset = writeChunkHeader(chunkHeaderOffset, writeHttpHeaders);
                 return new Chunk(buffer, chunkOffset);
             }
         }
 
-        int chunkOffset = writeChunkHeader(chunkSizeOffset, writeHttpHeaders);
+        int chunkOffset = writeChunkHeader(chunkHeaderOffset, writeHttpHeaders);
         if (chunkSize == 0) {
             appendCLRF(buffer);
         } else {
@@ -153,7 +153,7 @@ public class LSMRangeWriter {
                 buffer
         );
 
-        if (writtenMemorySegment < memorySegment.byteSize()) {
+        if (lastEntryOffset + writtenMemorySegment < memorySegment.byteSize()) {
             nextOperation = isKey ? NextOperation.WRITE_KEY : NextOperation.WRITE_VALUE;
             lastEntryOffset = writtenMemorySegment;
             return false;

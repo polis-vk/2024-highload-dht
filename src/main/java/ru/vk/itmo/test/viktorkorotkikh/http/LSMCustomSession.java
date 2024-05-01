@@ -72,7 +72,7 @@ public class LSMCustomSession extends HttpSession {
         if (lsmRangeWriter == null) return;
         while (queueHead == null && lsmRangeWriter.hasChunks()) {
             Chunk chunk = lsmRangeWriter.nextChunk();
-            write(chunk.getBytes(), chunk.offset(), chunk.length() - chunk.offset());
+            write(chunk.getBytes(), chunk.offset(), chunk.length());
         }
 
         if (!lsmRangeWriter.hasChunks()) {

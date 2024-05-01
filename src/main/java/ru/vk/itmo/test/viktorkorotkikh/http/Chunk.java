@@ -3,18 +3,18 @@ package ru.vk.itmo.test.viktorkorotkikh.http;
 import one.nio.util.ByteArrayBuilder;
 
 public class Chunk {
-    private final byte[] bytes;
+    private final ByteArrayBuilder byteArrayBuilder;
     private final int offset;
     private final int length;
 
     public Chunk(ByteArrayBuilder buffer, int offset) {
-        this.bytes = buffer.buffer();
+        this.byteArrayBuilder = buffer;
         this.offset = offset;
-        this.length = buffer.length();
+        this.length = buffer.length() - offset;
     }
 
     public byte[] getBytes() {
-        return bytes;
+        return byteArrayBuilder.buffer();
     }
 
     public int offset() {

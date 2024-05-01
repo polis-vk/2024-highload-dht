@@ -5,7 +5,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Socket;
-import one.nio.util.ByteArrayBuilder;
 import ru.vk.itmo.test.viktorkorotkikh.util.LSMConstantResponse;
 
 import java.io.IOException;
@@ -59,7 +58,7 @@ public class LSMCustomSession extends HttpSession {
         this.lsmRangeWriter = lsmRangeWriter;
         sendNextRangeChunks();
 
-        if (this.lsmRangeWriter.remaining() > 0) {
+        if (this.lsmRangeWriter.hasChunks()) {
             this.handling = pipeline.pollFirst();
             if (handling == FIN) {
                 scheduleClose();
@@ -71,12 +70,12 @@ public class LSMCustomSession extends HttpSession {
 
     private void sendNextRangeChunks() throws IOException {
         if (lsmRangeWriter == null) return;
-        while (queueHead == null && lsmRangeWriter.remaining() > 0) {
-            ByteArrayBuilder chunk = lsmRangeWriter.nextChunk();
-            write(chunk.buffer(), 0, chunk.length());
+        while (queueHead == null && lsmRangeWriter.hasChunks()) {
+            Chunk chunk = lsmRangeWriter.nextChunk();
+            write(chunk.getBytes(), chunk.offset(), chunk.length() - chunk.offset());
         }
 
-        if (lsmRangeWriter.remaining() <= 0) {
+        if (!lsmRangeWriter.hasChunks()) {
             this.handling = pipeline.pollFirst();
             if (handling != null) {
                 if (handling == FIN) {

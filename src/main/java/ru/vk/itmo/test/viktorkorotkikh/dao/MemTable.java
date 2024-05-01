@@ -4,6 +4,7 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException
 
 import java.lang.foreign.MemorySegment;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.NavigableMap;
 import java.util.NoSuchElementException;
@@ -39,7 +40,12 @@ public class MemTable {
             return storage.tailMap(from).sequencedValues().iterator();
         }
 
-        return storage.subMap(from, to).sequencedValues().iterator();
+        try {
+            return storage.subMap(from, to).sequencedValues().iterator();
+        } catch (IllegalArgumentException illegalArgumentException) {
+            // we get inconsistent range error when from > to
+            return Collections.emptyIterator();
+        }
     }
 
     public MemTableIterator iterator(MemorySegment from, MemorySegment to, int priorityReduction) {

@@ -107,7 +107,7 @@ public class LSMServerImpl extends HttpServer {
                 try {
                     final String path = request.getPath();
 
-                    if (path.startsWith("/v0/entities")) {
+                    if (path.startsWith("/v0/entities") && request.getMethod() == METHOD_GET) {
                         handleEntitiesRangeRequest(request, (LSMCustomSession) session);
                         return;
                     }

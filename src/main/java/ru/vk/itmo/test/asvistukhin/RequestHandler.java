@@ -9,6 +9,7 @@ import ru.vk.itmo.test.asvistukhin.dao.TimestampEntry;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,13 +31,12 @@ public class RequestHandler {
         };
     }
 
-    public void handle(
+    public CompletableFuture<Response> handle(
             Request request,
-            List<CompletableFuture<Response>> futures,
             List<Response> collectedResponses,
             AtomicInteger unsuccessfulResponsesCount
     ) {
-        futures.add(new CompletableFuture<Response>().completeAsync(() -> {
+        return new CompletableFuture<Response>().completeAsync(() -> {
             Response response = handle(request);
             if (ServerImpl.isSuccessProcessed(response.getStatus())) {
                 collectedResponses.add(response);
@@ -45,7 +45,7 @@ public class RequestHandler {
             }
 
             return response;
-        }));
+        });
     }
 
     public Response get(@Param(value = "id", required = true) String id) {

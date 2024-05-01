@@ -12,10 +12,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -41,14 +38,14 @@ public class ProxyRequestHandler {
         clients.values().forEach(HttpClient::close);
     }
 
-    public void proxyRequests(
+    public List<CompletableFuture<Response>> proxyRequests(
         Request request,
         List<String> nodeUrls,
         int ack,
-        List<CompletableFuture<Response>> futures,
         List<Response> collectedResponses,
         AtomicInteger unsuccessfulResponsesCount
     ) {
+        List<CompletableFuture<Response>> futures = new ArrayList<>();
         AtomicInteger responsesCollected = new AtomicInteger();
 
         for (String url : nodeUrls) {
@@ -61,13 +58,14 @@ public class ProxyRequestHandler {
                 boolean success = ServerImpl.isSuccessProcessed(response.getStatus());
                 if (success && responsesCollected.getAndIncrement() < ack) {
                     collectedResponses.add(response);
-                } else {
+                } else if (collectedResponses.size() < ack) {
                     unsuccessfulResponsesCount.incrementAndGet();
                 }
                 return response;
             });
             futures.add(resultFuture);
         }
+        return futures;
     }
 
     private CompletableFuture<Response> proxyRequest(Request request, String proxiedNodeUrl) {

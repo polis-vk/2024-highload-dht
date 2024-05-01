@@ -10,12 +10,15 @@ import java.util.Iterator;
 
 public class JoinedQueueItem extends Session.ArrayQueueItem {
 
-    private final Iterator<MemorySegment> items;
+    private Iterator<MemorySegment> items;
     private MemorySegment current;
     private int itemOffset;
 
-    public JoinedQueueItem(int bufferSize, Iterator<MemorySegment> items) {
+    public JoinedQueueItem(int bufferSize) {
         super(new byte[bufferSize], 0, 0, 0);
+    }
+
+    public void setItems(Iterator<MemorySegment> items) {
         this.items = items;
         nextItem();
         fillBuffer();

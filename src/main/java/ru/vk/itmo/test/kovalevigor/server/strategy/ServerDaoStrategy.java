@@ -14,8 +14,8 @@ import ru.vk.itmo.test.kovalevigor.dao.entry.MSegmentTimeEntry;
 import ru.vk.itmo.test.kovalevigor.dao.entry.TimeEntry;
 import ru.vk.itmo.test.kovalevigor.dao.iterators.ApplyIterator;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.ChainedQueueItem;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.ChunkQueueItem;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.Headers;
-import ru.vk.itmo.test.kovalevigor.server.strategy.util.JoinedQueueItem;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.Parameters;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.Paths;
 import ru.vk.itmo.test.kovalevigor.server.strategy.util.Responses;
@@ -23,20 +23,19 @@ import ru.vk.itmo.test.kovalevigor.server.strategy.util.Responses;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Iterator;
 import java.util.List;
+import java.util.function.Function;
 import java.util.logging.Logger;
 
 import static one.nio.http.Request.METHOD_DELETE;
 import static one.nio.http.Request.METHOD_GET;
 import static one.nio.http.Request.METHOD_PUT;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.CHARSET;
 import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.createIllegalState;
 
 public class ServerDaoStrategy extends ServerRejectStrategy {
-    private static final Charset CHARSET = StandardCharsets.UTF_8;
     private static final byte[] RANGE_HEADER = """
             HTTP/1.1 200 OK\r
             Content-Type: text/plain\r
@@ -45,8 +44,6 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
             \r
             """.getBytes(CHARSET);
     private static final byte[] RANGE_END = "0\r\n\r\n".getBytes(CHARSET);
-    private static final MemorySegment CHUNK_LINE_END = MemorySegment.ofArray("\r\n".getBytes(CHARSET));
-    private static final MemorySegment KEY_VALUE_SEP = MemorySegment.ofArray("\n".getBytes(CHARSET));
     public static final int BUFFER_SIZE = 1024;
 
     private final Dao<MemorySegment, TimeEntry<MemorySegment>> dao;
@@ -82,10 +79,7 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
                                     List.of(
                                             mapBytes(RANGE_HEADER),
                                             new ChainedQueueItem(
-                                                    new ApplyIterator<>(
-                                                            iterator,
-                                                            ServerDaoStrategy::mapEntry
-                                                    )
+                                                    mapEntry(iterator)
                                             ),
                                             mapBytes(RANGE_END)
                                     ).iterator()
@@ -145,20 +139,18 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
         return response;
     }
 
-    private static Session.QueueItem mapEntry(Entry<MemorySegment> entry) {
-        long keySize = entry.key().byteSize();
-        long valueSize = entry.value() == null ? 0 : entry.value().byteSize();
-        long totalSize = keySize + valueSize + KEY_VALUE_SEP.byteSize();
-        return new JoinedQueueItem(
-                BUFFER_SIZE,
-                List.of(
-                        mapToHex(totalSize),
-                        CHUNK_LINE_END,
-                        entry.key(),
-                        KEY_VALUE_SEP,
-                        entry.value(),
-                        CHUNK_LINE_END
-                ).iterator()
+    private static <T extends Entry<MemorySegment>> Iterator<Session.QueueItem> mapEntry(Iterator<T> entryIterator) {
+
+        ChunkQueueItem chunkQueueItem = new ChunkQueueItem(BUFFER_SIZE);
+
+        Function<T, Session.QueueItem> mapEntry = entry -> {
+            chunkQueueItem.setChunk(entry);
+            return chunkQueueItem;
+        };
+
+        return new ApplyIterator<>(
+                entryIterator,
+                mapEntry
         );
     }
 
@@ -179,11 +171,5 @@ public class ServerDaoStrategy extends ServerRejectStrategy {
 
     private static Session.ArrayQueueItem mapBytes(byte[] data) {
         return new Session.ArrayQueueItem(data, 0, data.length, 0);
-    }
-
-    private static MemorySegment mapToHex(long value) {
-        return MemorySegment.ofArray(
-                Long.toHexString(value).getBytes(CHARSET)
-        );
     }
 }

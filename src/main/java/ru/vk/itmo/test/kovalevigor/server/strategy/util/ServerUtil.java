@@ -4,6 +4,8 @@ import one.nio.http.HttpSession;
 import one.nio.http.Response;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -13,7 +15,7 @@ import java.util.logging.Level;
 import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
 
 public final class ServerUtil {
-
+    public static final Charset CHARSET = StandardCharsets.UTF_8;
     public static final TimeUnit SHUTDOWN_TIMEOUT_TIME_UNIT = TimeUnit.SECONDS;
     public static final int SHUTDOWN_TIMEOUT = 60;
     public static final Set<Integer> GOOD_STATUSES = Set.of(

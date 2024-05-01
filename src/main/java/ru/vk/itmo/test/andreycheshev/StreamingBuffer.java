@@ -42,6 +42,6 @@ public class StreamingBuffer {
     }
 
     public boolean isFits(int length) {
-        return size + length > buffer.length;
+        return size + length <= buffer.length;
     }
 }

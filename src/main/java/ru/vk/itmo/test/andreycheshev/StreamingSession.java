@@ -84,7 +84,7 @@ public class StreamingSession extends HttpSession {
                 int entrySize = keyBytes.length + LF.length + valueBytes.length;
                 byte[] lengthBytes = Integer.toHexString(entrySize).getBytes(StandardCharsets.UTF_8);
 
-                if (buffer.isFits(lengthBytes.length + entrySize + 2 * CRLF.length + END_PART.length)) {
+                if (!buffer.isFits(lengthBytes.length + entrySize + 2 * CRLF.length + END_PART.length)) {
                     break;
                 }
 

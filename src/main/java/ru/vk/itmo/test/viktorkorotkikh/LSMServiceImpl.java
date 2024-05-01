@@ -98,15 +98,18 @@ public class LSMServiceImpl implements Service {
         this.consistentHashingManager = new ConsistentHashingManager(10, serviceConfig.clusterUrls());
     }
 
-    private static LSMServerImpl createServer(
-            ServiceConfig serviceConfig,
-            Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao,
-            ExecutorService executorService,
-            ConsistentHashingManager consistentHashingManager,
-            HttpClient clusterClient,
-            ExecutorService clusterResponseProcessor,
-            ExecutorService localProcessor
+    private LSMServerImpl createServer(
+            Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao
     ) throws IOException {
+        executorService = createExecutorService(16, 1024, "worker");
+        clusterClientExecutorService = createExecutorService(16, 1024, "cluster-worker");
+        clusterResponseProcessor = createExecutorService(16, 1024, "cluster-response");
+        localProcessor = createExecutorService(16, 1024, "local-processor");
+
+        clusterClient = HttpClient.newBuilder()
+                .executor(clusterClientExecutorService)
+                .build();
+
         return new LSMServerImpl(
                 serviceConfig,
                 dao,
@@ -158,24 +161,7 @@ public class LSMServiceImpl implements Service {
         if (isRunning) return CompletableFuture.completedFuture(null);
         dao = createLSMDao(serviceConfig.workingDir());
 
-        executorService = createExecutorService(16, 1024, "worker");
-        clusterClientExecutorService = createExecutorService(16, 1024, "cluster-worker");
-        clusterResponseProcessor = createExecutorService(16, 1024, "cluster-response");
-        localProcessor = createExecutorService(16, 1024, "local-processor");
-
-        clusterClient = HttpClient.newBuilder()
-                .executor(clusterClientExecutorService)
-                .build();
-
-        httpServer = createServer(
-                serviceConfig,
-                dao,
-                executorService,
-                consistentHashingManager,
-                clusterClient,
-                clusterResponseProcessor,
-                localProcessor
-        );
+        httpServer = createServer(dao);
         httpServer.start();
 
         isRunning = true;

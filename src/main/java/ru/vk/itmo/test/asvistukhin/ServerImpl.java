@@ -14,9 +14,9 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -142,21 +142,19 @@ public class ServerImpl extends HttpServer {
 
         boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
 
-        List<CompletableFuture<Void>> futures = new CopyOnWriteArrayList<>();
-        List<Response> validResponses = new CopyOnWriteArrayList<>();
+        List<Response> validResponses = new ArrayList<>();
         AtomicInteger unsuccessfulResponsesCount = new AtomicInteger(0);
 
-        proxyRequestHandler.proxyRequests(
+        List<CompletableFuture<Void>> futures = new ArrayList<>(proxyRequestHandler.proxyRequests(
             request,
             nodeUrls,
             parameters.ack,
-            futures,
             validResponses,
             unsuccessfulResponsesCount
-        );
+        ));
 
         if (isSelfProcessing) {
-            requestHandler.handle(request, futures, validResponses, unsuccessfulResponsesCount);
+            futures.add(requestHandler.handle(request, validResponses, unsuccessfulResponsesCount));
         }
 
         CompletableFuture<Void> allFutures = CompletableFuture.allOf(

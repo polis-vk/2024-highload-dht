@@ -47,13 +47,12 @@ public class RequestHandler {
         }
     }
 
-    public void handle(
+    public CompletableFuture<Void> handle(
         Request request,
-        List<CompletableFuture<Void>> futures,
         List<Response> collectedResponses,
         AtomicInteger unsuccessfulResponsesCount
     ) {
-        futures.add(CompletableFuture.runAsync(() -> {
+        return CompletableFuture.runAsync(() -> {
                 Response response = handleEntity(request);
                 if (ServerImpl.isSuccessProcessed(response.getStatus())) {
                     collectedResponses.add(response);
@@ -61,7 +60,7 @@ public class RequestHandler {
                     unsuccessfulResponsesCount.incrementAndGet();
                 }
             }
-        ));
+        );
     }
 
     public Response get(@Param(value = "id", required = true) String id) {

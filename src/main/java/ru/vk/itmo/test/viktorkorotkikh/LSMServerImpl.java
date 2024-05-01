@@ -18,7 +18,7 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession;
-import ru.vk.itmo.test.viktorkorotkikh.http.LSMRangeQueueItem;
+import ru.vk.itmo.test.viktorkorotkikh.http.LSMRangeWriter;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
 import ru.vk.itmo.test.viktorkorotkikh.util.ClusterResponseMerger;
 import ru.vk.itmo.test.viktorkorotkikh.util.HttpResponseNodeResponse;
@@ -450,7 +450,7 @@ public class LSMServerImpl extends HttpServer {
         final MemorySegment startMemorySegment = fromByteArray(start.getBytes(StandardCharsets.UTF_8));
         final MemorySegment endMemorySegment = end == null ? null : fromByteArray(end.getBytes(StandardCharsets.UTF_8));
         Iterator<TimestampedEntry<MemorySegment>> iterator = dao.get(startMemorySegment, endMemorySegment);
-        session.sendRangeResponse(new LSMRangeQueueItem(iterator, LSMConstantResponse.keepAlive(request)));
+        session.sendRangeResponse(new LSMRangeWriter(iterator, LSMConstantResponse.keepAlive(request)));
     }
 
     private static MemorySegment fromByteArray(final byte[] data) {

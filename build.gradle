@@ -68,8 +68,9 @@ compileTestJava {
     options.compilerArgs += ["--enable-preview"]
 }
 
-application {
-    mainClass = 'ru.vk.itmo.test.reference.ReferenceService'
+run {
+//    mainClass = 'ru.vk.itmo.test.reference.ReferenceService'
+    mainClass ='ru.vk.itmo.test.smirnovandrew.Main'
     applicationDefaultJvmArgs = ['-Xmx128m', '--enable-preview', '-Xlog:gc']
     // + ['-XX:+UseSerialGC']
 //

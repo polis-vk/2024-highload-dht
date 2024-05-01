@@ -63,6 +63,7 @@ public class LSMServerImpl extends HttpServer {
     private final HttpClient clusterClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService clusterResponseProcessor;
+    private final ExecutorService localProcessor;
 
     public LSMServerImpl(
             ServiceConfig serviceConfig,
@@ -70,7 +71,8 @@ public class LSMServerImpl extends HttpServer {
             ExecutorService executorService,
             ConsistentHashingManager consistentHashingManager,
             HttpClient clusterClient,
-            ExecutorService clusterResponseProcessor
+            ExecutorService clusterResponseProcessor,
+            ExecutorService localProcessor
     ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
@@ -80,6 +82,7 @@ public class LSMServerImpl extends HttpServer {
         this.clusterClient = clusterClient;
         this.serviceConfig = serviceConfig;
         this.clusterResponseProcessor = clusterResponseProcessor;
+        this.localProcessor = localProcessor;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -233,7 +236,7 @@ public class LSMServerImpl extends HttpServer {
         int i = 0;
         for (final String replicaUrl : replicas) {
             if (replicaUrl.equals(selfUrl)) {
-                clusterResponseMerger.addToMerge(i, processLocal(request, key, id, requestTimestamp));
+                processLocalAsync(request, key, id, requestTimestamp, i, clusterResponseMerger);
             } else {
                 processRemote(request, replicaUrl, id, requestTimestamp, i, clusterResponseMerger);
             }
@@ -307,6 +310,19 @@ public class LSMServerImpl extends HttpServer {
                     }
                     return null;
                 }, clusterResponseProcessor).state();
+    }
+
+    private void processLocalAsync(
+            Request request,
+            byte[] key,
+            String id,
+            long requestTimestamp,
+            int i,
+            ClusterResponseMerger clusterResponseMerger
+    ) {
+        localProcessor.execute(() ->
+                clusterResponseMerger.addToMerge(i, processLocal(request, key, id, requestTimestamp))
+        );
     }
 
     private OneNioNodeResponse processLocal(

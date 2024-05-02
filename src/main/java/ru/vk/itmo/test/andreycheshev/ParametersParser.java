@@ -51,7 +51,7 @@ public final class ParametersParser {
         String start = request.getParameter(START_PARAMETER);
         String end = request.getParameter(END_PARAMETER);
 
-        if (start == null || start.isEmpty() || end.isEmpty()) {
+        if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
             throw new IllegalArgumentException();
         }
 

@@ -142,7 +142,7 @@ public class DatabaseHttpServer extends HttpServer {
     public void handleEntitiesRequest(Request request, HttpSession session,
                                       @Param(value = "start", required = true) String start,
                                       @Param(value = "end") String end) {
-        if (start.isEmpty()) {
+        if (start.isBlank()) {
             sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
         }
         try {

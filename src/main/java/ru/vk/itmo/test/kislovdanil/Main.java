@@ -16,9 +16,7 @@ public final class Main {
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         DatabaseServiceFactory factory = new DatabaseServiceFactory();
-        List<String> nodes = List.of("http://localhost:8080",
-                "http://localhost:8081",
-                "http://localhost:8082");
+        List<String> nodes = List.of("http://localhost:8080");
         ServiceConfig config = getConfig(args, nodes);
         Service service = factory.create(config);
         service.start().get();

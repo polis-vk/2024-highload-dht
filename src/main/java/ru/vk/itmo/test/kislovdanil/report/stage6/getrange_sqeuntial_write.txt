@@ -1,0 +1,64 @@
+./wrk http://localhost:8080 -s getrange.lua -d 1m -R 10000 -t 4 -c 64 -L
+Running 1m test @ http://localhost:8080
+  4 threads and 64 connections
+  Thread calibration: mean lat.: 9223372036854776.000ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 9223372036854776.000ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 9223372036854776.000ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 9223372036854776.000ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    34.19s    13.56s    0.92m    40.62%
+    Req/Sec     0.34      6.14   200.00     99.68%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%   37.26s
+ 75.000%   41.68s
+ 90.000%    0.90m
+ 99.000%    0.92m
+ 99.900%    0.92m
+ 99.990%    0.92m
+ 99.999%    0.92m
+100.000%    0.92m
+
+  Detailed Percentile spectrum:
+       Value   Percentile   TotalCount 1/(1-Percentile)
+
+   16318.463     0.000000            1         1.00
+   18317.311     0.100000            7         1.11
+   19333.119     0.200000           13         1.25
+   19464.191     0.300000           20         1.43
+   27508.735     0.400000           26         1.67
+   37257.215     0.500000           32         2.00
+   38305.791     0.550000           36         2.22
+   38567.935     0.600000           39         2.50
+   39288.831     0.650000           42         2.86
+   40108.031     0.700000           45         3.33
+   41680.895     0.750000           48         4.00
+   47579.135     0.775000           50         4.44
+   51085.311     0.800000           52         5.00
+   51544.063     0.825000           53         5.71
+   53051.391     0.850000           55         6.67
+   53084.159     0.875000           56         8.00
+   53870.591     0.887500           57         8.89
+   54263.807     0.900000           58        10.00
+   54329.343     0.912500           59        11.43
+   54558.719     0.925000           60        13.33
+   54558.719     0.937500           60        16.00
+   54657.023     0.943750           62        17.78
+   54657.023     0.950000           62        20.00
+   54657.023     0.956250           62        22.86
+   54657.023     0.962500           62        26.67
+   54657.023     0.968750           62        32.00
+   55050.239     0.971875           63        35.56
+   55050.239     0.975000           63        40.00
+   55050.239     0.978125           63        45.71
+   55050.239     0.981250           63        53.33
+   55050.239     0.984375           63        64.00
+   55181.311     0.985938           64        71.11
+   55181.311     1.000000           64          inf
+#[Mean    =    34186.048, StdDeviation   =    13561.120]
+#[Max     =    55148.544, Total count    =           64]
+#[Buckets =           27, SubBuckets     =         2048]
+----------------------------------------------------------
+  64 requests in 1.00m, 9.07GB read
+  Socket errors: connect 0, read 0, write 0, timeout 1840
+Requests/sec:      1.06
+Transfer/sec:    154.47MB

@@ -32,8 +32,8 @@ public class DatabaseHttpServer extends HttpServer {
     private final Sharder sharder;
     private static final String ENTITY_ACCESS_URL = "/v0/entity";
     private static final String ENTITIES_ACCESS_URL = "/v0/entities";
-    private static final int CORE_POOL_SIZE = 1;
-    private static final int MAX_POOL_SIZE = 12;
+    private static final int CORE_POOL_SIZE = 24;
+    private static final int MAX_POOL_SIZE = 24;
     private static final int KEEP_ALIVE_TIME_MS = 50;
     private final ThreadPoolExecutor queryExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE,
             KEEP_ALIVE_TIME_MS, TimeUnit.MILLISECONDS, new LinkedBlockingStack<>());
@@ -129,8 +129,7 @@ public class DatabaseHttpServer extends HttpServer {
         try {
             session.write(ChunkTransformUtility.HEADERS, 0, ChunkTransformUtility.HEADERS.length);
             for (Iterator<Entry<MemorySegment>> it = dao.get(start, end); it.hasNext(); ) {
-                byte[] body = ChunkTransformUtility.makeContent(it.next());
-                session.write(body, 0, body.length);
+                ChunkTransformUtility.writeContent(it.next(), session);
             }
             session.write(ChunkTransformUtility.EMPTY_CONTENT, 0, ChunkTransformUtility.EMPTY_CONTENT.length);
             session.close();

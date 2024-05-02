@@ -125,15 +125,16 @@ public class LsmServerUtil {
     }
 
     public static int copyMemorySegmentToByteArrayBuilder(MemorySegment memorySegmentBody, ByteArrayBuilder builder) {
-        return copyMemorySegmentToByteArrayBuilder(memorySegmentBody, 0, builder);
+        return copyMemorySegmentToByteArrayBuilder(memorySegmentBody, 0, builder, builder.capacity());
     }
 
     public static int copyMemorySegmentToByteArrayBuilder(
             MemorySegment memorySegment,
             int memorySegmentOffset,
-            ByteArrayBuilder builder
+            ByteArrayBuilder builder,
+            int builderCapacity
     ) {
-        int estimatedCapacityInBuffer = builder.capacity() - builder.length();
+        int estimatedCapacityInBuffer = builderCapacity - builder.length();
         int toWrite = memorySegment.byteSize() > estimatedCapacityInBuffer
                 ? estimatedCapacityInBuffer
                 : (int) memorySegment.byteSize() - memorySegmentOffset;

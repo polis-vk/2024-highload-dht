@@ -53,10 +53,6 @@ public class LSMRangeWriter {
         while (entryIterator.hasNext()) {
             lastEntry = entryIterator.next();
             lastEntryOffset = 0;
-            if (buffer.length() + getEntrySize(lastEntry) + CRLF_BYTES.length > buffer.capacity()) {
-                int offset = writeChunkHeader(chunkHeaderOffset, writeHttpHeaders);
-                return new Chunk(buffer, offset);
-            }
 
             nextOperation = NextOperation.WRITE_KEY;
             if (!appendNextOperationBytes()) {
@@ -114,11 +110,9 @@ public class LSMRangeWriter {
                 }
 
                 if (appendMemorySegment(lastEntry.key(), lastEntryOffset, true)) {
-                    chunkSize += lastEntry.key().byteSize() - lastEntryOffset;
                     nextOperation = NextOperation.WRITE_DELIMITERS_AFTER_KEY;
                     yield appendNextOperationBytes();
                 }
-                chunkSize += lastEntryOffset;
                 yield false;
             }
             case WRITE_DELIMITERS_AFTER_KEY -> {
@@ -135,11 +129,9 @@ public class LSMRangeWriter {
                     yield false;
                 }
                 if (appendMemorySegment(lastEntry.value(), lastEntryOffset, false)) {
-                    chunkSize += lastEntry.value().byteSize() - lastEntryOffset;
                     nextOperation = null;
                     yield true;
                 }
-                chunkSize += lastEntryOffset;
                 yield false;
             }
             case null -> true;
@@ -150,12 +142,14 @@ public class LSMRangeWriter {
         int writtenMemorySegment = LsmServerUtil.copyMemorySegmentToByteArrayBuilder(
                 memorySegment,
                 memorySegmentOffset,
-                buffer
+                buffer,
+                buffer.capacity() - CRLF_BYTES.length
         );
+        chunkSize += writtenMemorySegment;
 
         if (lastEntryOffset + writtenMemorySegment < memorySegment.byteSize()) {
             nextOperation = isKey ? NextOperation.WRITE_KEY : NextOperation.WRITE_VALUE;
-            lastEntryOffset = writtenMemorySegment;
+            lastEntryOffset += writtenMemorySegment;
             return false;
         }
         lastEntryOffset = 0;
@@ -164,10 +158,6 @@ public class LSMRangeWriter {
 
     private static void appendCLRF(final ByteArrayBuilder builder) {
         builder.append(CRLF_BYTES);
-    }
-
-    private static long getEntrySize(TimestampedEntry<MemorySegment> entry) {
-        return entry.key().byteSize() + 1 + entry.value().byteSize(); // + 1 delimiter byte
     }
 
     private enum NextOperation {

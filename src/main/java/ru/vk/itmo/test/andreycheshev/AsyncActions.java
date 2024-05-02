@@ -68,7 +68,7 @@ public class AsyncActions {
                 .exceptionallyAsync(
                         exception -> {
                             if (exception.getCause() instanceof UncheckedIOException) {
-                                LOGGER.error("Error when sending a request", exception);
+                                LOGGER.error("Error when sending a response", exception);
                             }
                             return null;
                         },
@@ -175,7 +175,7 @@ public class AsyncActions {
         return future
                 .exceptionallyAsync(
                         exception -> {
-                            LOGGER.error("Error when sending a request", exception);
+                            LOGGER.error("Error when sending a response", exception);
                             return null;
                         },
                         internalExecutor

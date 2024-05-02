@@ -3,6 +3,7 @@ package ru.vk.itmo.test.andreycheshev;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
@@ -81,36 +82,40 @@ public class RequestHandler implements HttpProvider {
         }
 
         String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
-        if (isRequestCameFromNode(timestamp)) {
-            // The request came from a remote node.
-            try {
-                CompletableFuture<Void> future =
-                        asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
+        return isRequestCameFromNode(timestamp)
+                ? local(request, method, id, timestamp, session)
+                : distributed(request, method, id, session);
+    }
 
-                assert future != null;
-            } catch (AssertionError e) {
+    private Response local(Request request, int method, String id, String timestamp, HttpSession session) {
+        try {
+            CompletableFuture<Void> future =
+                    asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
+
+            if (future == null) {
                 LOGGER.info(FUTURE_CREATION_ERROR);
                 return HttpUtils.getInternalError();
-            } catch (NumberFormatException e) {
-                return HttpUtils.getBadRequest();
             }
-        } else {
+        } catch (NumberFormatException e) {
+            return HttpUtils.getBadRequest();
+        }
+        return null;
+    }
 
-            // Get and check "ack" and "from" parameters.
-            ParametersParser parser = new ParametersParser(distributor);
-            try {
-                parser.parseAckFrom(
-                        request.getParameter(ACK_PARAMETER),
-                        request.getParameter(FROM_PARAMETER)
-                );
-            } catch (IllegalArgumentException e) {
-                return HttpUtils.getBadRequest();
-            }
-
-            // Start processing on remote and local nodes.
-            processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
+    private Response distributed(Request request, int method, String id, HttpSession session) {
+        // Get and check "ack" and "from" parameters.
+        ParametersParser parser = new ParametersParser(distributor);
+        try {
+            parser.parseAckFrom(
+                    request.getParameter(ACK_PARAMETER),
+                    request.getParameter(FROM_PARAMETER)
+            );
+        } catch (IllegalArgumentException e) {
+            return HttpUtils.getBadRequest();
         }
 
+        // Start processing on remote and local nodes.
+        processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
         return null;
     }
 

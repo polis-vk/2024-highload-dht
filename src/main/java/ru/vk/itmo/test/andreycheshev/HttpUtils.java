@@ -26,6 +26,7 @@ public class HttpUtils {
             404, Response.NOT_FOUND,
             410, Response.GONE
     ); // Immutable map.
+    private static final int GONE_RESPONSE_CODE = 410;
 
     private HttpUtils() {
 
@@ -78,7 +79,7 @@ public class HttpUtils {
             case Request.METHOD_GET -> {
                 int status = elements.getStatus();
 
-                Response response = status == 410
+                Response response = status == GONE_RESPONSE_CODE
                         ? new Response(Response.NOT_FOUND, Response.EMPTY)
                         : new Response(AVAILABLE_RESPONSES.get(status), elements.getBody());
 
@@ -89,9 +90,10 @@ public class HttpUtils {
             case Request.METHOD_PUT -> {
                 return new Response(Response.CREATED, Response.EMPTY);
             }
-            default -> { // For delete method.
+            case Request.METHOD_DELETE  -> { // For delete method.
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
+            default -> throw new IllegalArgumentException("Unsupported request method");
         }
     }
 }

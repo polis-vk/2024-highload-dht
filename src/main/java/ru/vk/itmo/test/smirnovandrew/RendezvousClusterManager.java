@@ -3,6 +3,7 @@ package ru.vk.itmo.test.smirnovandrew;
 import one.nio.util.Hash;
 import ru.vk.itmo.ServiceConfig;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class RendezvousClusterManager {
@@ -17,7 +18,7 @@ public class RendezvousClusterManager {
         int resIdx = -1;
         int maxHash = Integer.MIN_VALUE;
         for (int i = 0; i < availableClusters.size(); ++i) {
-            var hash = Hash.murmur3(String.join("", availableClusters.get(i), key));
+            var hash = Hash.murmur3(key + availableClusters.get(i));
             if (hash > maxHash) {
                 resIdx = i;
                 maxHash = hash;
@@ -29,5 +30,13 @@ public class RendezvousClusterManager {
         }
 
         return availableClusters.get(resIdx);
+    }
+
+    public static List<Integer> getSortedNodes(int amount, ServiceConfig config) {
+        var result = new ArrayList<Integer>();
+        for (int i = 0; i < config.clusterUrls().size() && result.size() < amount; i++) {
+            result.add(i);
+        }
+        return result;
     }
 }

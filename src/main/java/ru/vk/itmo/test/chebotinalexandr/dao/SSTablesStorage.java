@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -25,8 +25,8 @@ import java.util.stream.Stream;
 
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.binarySearch;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.deleteOldSSTables;
-import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.entryByteSize;
 import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.restoreCompaction;
+import static ru.vk.itmo.test.chebotinalexandr.dao.SSTableUtils.sizeOf;
 
 public class SSTablesStorage {
     private static final long TOMBSTONE = -1;
@@ -35,7 +35,7 @@ public class SSTablesStorage {
     private static final long OLDEST_SS_TABLE_INDEX = 0;
     private static final long COMPACTION_NOT_FINISHED_TAG = -1;
     private final Path basePath;
-    public static final int HASH_FUNCTIONS_NUM = 2;
+    public static final int HASH_FUNCTIONS_NUM = 2; //for bloom filter
     private static final SSTableOffsets offsetsConfig =
             new SSTableOffsets(Long.BYTES, 0, 2L * Long.BYTES);
     private static int sstablesCount;
@@ -158,32 +158,40 @@ public class SSTablesStorage {
      * │─────────────────────│─────────────────────────│─────────────────────│
      * │   BF array length   │  Hash functions count   │    Entries count    │
      * └─────────────────────┴─────────────────────────┴─────────────────────┘
+     * where BF is bloom filter.
      * SStable bloom filter:
      * ┌────────────────────────────┐
-     * │ 8 x BloomFilter array size │
+     * │    8 x BF array length     │
      * │────────────────────────────│
-     * │           Hash_i           │
+     * │           hash_i           │
      * └────────────────────────────┘
-     * where i = 1, ... , bloom filter array size
+     * where i = 1, ... , bloom filter array length
      * SStable data format:
-     * ┌─────────────────────┬──────────┬──────────┬────────────┬────────────┐
-     * │  8 x Entries count  │    8     │ Key size │     8      │ Value size │
-     * │─────────────────────│──────────│──────────│────────────│────────────│
-     * │     Key_j offset    │ Key size │    Key   │ Value size │ Value      │
-     * └─────────────────────┴──────────┴──────────┴────────────┴────────────┘
-     * where j = 1, ... , entries count.
+     * ┌─────────────────────┬──────────┬──────────┬────────────┬────────────┬────────────┐
+     * │  8 x Entries count  │    8     │ Key size │     8      │ Value size │     8      │
+     * │─────────────────────│──────────│──────────┬────────────┬────────────┬────────────│
+     * │     key_i offset    │ Key size │    Key   │ Value size │ Value      │ Timestamp  │
+     * └─────────────────────┴──────────┴──────────┴────────────┴────────────┴────────────┘
+     * where i = 1, ... , entries count.
+     * If entry is tombstone, sstable has next format:
+     * ┌──────────┬──────────┬────────────┬────────────┐
+     * │    8     │ Key size │     8      │      8     │
+     * │──────────│──────────│────────────│────────────│
+     * │ Key size │    Key   │    -1      │ Timestamp  │
+     * └──────────┴──────────┴────────────┴────────────┘
+     * where -1 is tombstone tag
      */
     public static MemorySegment write(Collection<Entry<MemorySegment>> dataToFlush,
                                       double bloomFilterFPP, Path basePath) throws IOException {
         long size = 0;
 
         for (Entry<MemorySegment> entry : dataToFlush) {
-            size += entryByteSize(entry);
+            size += sizeOf(entry);
         }
 
         long bloomFilterLength = BloomFilter.bloomFilterLength(dataToFlush.size(), bloomFilterFPP);
 
-        size += 2L * Long.BYTES * dataToFlush.size();
+        size += 3L * Long.BYTES * dataToFlush.size();
         size += 3L * Long.BYTES + (long) Long.BYTES * dataToFlush.size(); //for metadata (header + key offsets)
         size += Long.BYTES * bloomFilterLength; //for bloom filter
 
@@ -219,25 +227,25 @@ public class SSTablesStorage {
             i++;
         }
         //---------
-
         sstablesCount++;
         return memorySegment;
     }
 
     private static long writeEntry(Entry<MemorySegment> entry, MemorySegment dst, long offset) {
-        long newOffset = writeSegment(entry.key(), dst, offset);
+        long newOffset = writeKey(entry.key(), dst, offset);
 
         if (entry.value() == null) {
             dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, TOMBSTONE);
             newOffset += Long.BYTES;
+            dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, entry.timestamp());
+            newOffset += Long.BYTES;
         } else {
-            newOffset = writeSegment(entry.value(), dst, newOffset);
+            newOffset = writeValue(entry.value(), dst, newOffset, entry.timestamp());
         }
-
         return newOffset;
     }
 
-    private static long writeSegment(MemorySegment src, MemorySegment dst, long offset) {
+    private static long writeKey(MemorySegment src, MemorySegment dst, long offset) {
         long size = src.byteSize();
         long newOffset = offset;
 
@@ -249,6 +257,21 @@ public class SSTablesStorage {
         return newOffset;
     }
 
+    //writes value with timestamp
+    private static long writeValue(MemorySegment src, MemorySegment dst, long offset, long timestamp) {
+        long size = src.byteSize();
+        long newOffset = offset;
+
+        dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, size);
+        newOffset += Long.BYTES;
+        MemorySegment.copy(src, 0, dst, newOffset, size);
+        newOffset += size;
+        dst.set(ValueLayout.JAVA_LONG_UNALIGNED, newOffset, timestamp);
+        newOffset += Long.BYTES;
+
+        return newOffset;
+    }
+
     public MemorySegment compact(Iterator<Entry<MemorySegment>> iterator,
                                  long sizeForCompaction, long entryCount, long bfLength) throws IOException {
         Path path = basePath.resolve(SSTABLE_NAME + ".tmp");
@@ -256,9 +279,7 @@ public class SSTablesStorage {
         MemorySegment memorySegment;
         try (Arena arenaForCompact = Arena.ofShared()) {
             try (FileChannel channel = FileChannel.open(path,
-                    StandardOpenOption.READ,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.CREATE)) {
+                    StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
                 memorySegment = channel.map(FileChannel.MapMode.READ_WRITE, 0, sizeForCompaction,
                         arenaForCompact);
             }
@@ -281,14 +302,14 @@ public class SSTablesStorage {
             final long keyOffset = bloomFilterOffset + bfLength * Long.BYTES;
             long offset = keyOffset + Long.BYTES * entryCount;
 
-            long index = 0;
+            long i = 0;
             while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
 
                 BloomFilter.addToSstable(entry.key(), memorySegment, HASH_FUNCTIONS_NUM, bfLength * Long.SIZE);
-                memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset + index * Long.BYTES, offset);
+                memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset + i * Long.BYTES, offset);
                 offset = writeEntry(entry, memorySegment, offset);
-                index++;
+                i++;
             }
 
             memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offsetsConfig.getEntriesSizeOffset(), entryCount);
@@ -300,21 +321,16 @@ public class SSTablesStorage {
 
     private static void finishCompact(Path basePath) throws IOException {
         Path path = basePath.resolve(SSTABLE_NAME + ".tmp");
-
         deleteOldSSTables(basePath);
         Files.move(path, path.resolveSibling(SSTABLE_NAME + OLDEST_SS_TABLE_INDEX + SSTABLE_EXTENSION),
                 StandardCopyOption.ATOMIC_MOVE);
-
         sstablesCount = 1;
     }
 
     private static MemorySegment writeMappedSegment(Path basePath, long size, Arena arena) throws IOException {
         Path path = basePath.resolve(SSTABLE_NAME + sstablesCount + SSTABLE_EXTENSION);
         try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.CREATE)) {
-
+                StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
             return channel.map(FileChannel.MapMode.READ_WRITE, 0, size, arena);
         }
     }

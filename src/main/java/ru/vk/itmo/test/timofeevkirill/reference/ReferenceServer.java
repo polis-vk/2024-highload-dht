@@ -44,7 +44,7 @@ public class ReferenceServer extends HttpServer {
     private static final String ACK_PARAMETER_KEY = "ack=";
     private static final String FROM_PARAMETER_KEY = "from=";
     private static final Logger log = LoggerFactory.getLogger(ReferenceServer.class);
-    private static final int commonMillisTimeout = 500;
+    private static final int COMMON_MILLIS_TIMEOUT = 500;
     private final int totalThreads = Runtime.getRuntime().availableProcessors();
 
     private final ExecutorService executorLocal =
@@ -63,7 +63,7 @@ public class ReferenceServer extends HttpServer {
 
         this.httpClient = HttpClient.newBuilder()
                 .executor(Executors.newFixedThreadPool(totalThreads))
-                .connectTimeout(Duration.ofMillis(commonMillisTimeout))
+                .connectTimeout(Duration.ofMillis(COMMON_MILLIS_TIMEOUT))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
     }
@@ -223,7 +223,7 @@ public class ReferenceServer extends HttpServer {
                                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 )
                 .header(HEADER_REMOTE, HEADER_REMOTE_VALUE)
-                .timeout(Duration.ofMillis(commonMillisTimeout))
+                .timeout(Duration.ofMillis(COMMON_MILLIS_TIMEOUT))
                 .build();
 
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())

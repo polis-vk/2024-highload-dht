@@ -445,8 +445,9 @@ public class HttpServerImpl extends HttpServer {
 
     private void iterateOverChunks(HttpSession session, Iterator<EntryWithTimestamp<MemorySegment>> iterator) {
         try {
-            if (processChunk(session, iterator)) {
-                iterateOverChunks(session, iterator);
+            boolean callsCounter = true;
+            while (callsCounter) {
+               callsCounter = processChunk(session, iterator);
             }
         } catch (IOException e) {
             logger.error("Error during iteration over chunks", e);

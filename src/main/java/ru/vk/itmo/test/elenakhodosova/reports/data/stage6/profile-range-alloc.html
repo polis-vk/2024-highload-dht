@@ -14,7 +14,7 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 896px}
+	#canvas {width: 100%; height: 384px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(56);
+	const levels = Array(24);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -252,110 +252,152 @@
 const cpool = [
 'all',
 ' byte[]',
-' java/lang/String.format',
-'1split',
-'2ubSequence',
-'4string',
-'0Latin1.newString',
+' java.lang.String',
+'*invoke.MethodHandles$Lookup',
+'%nio.HeapByteBuffer',
+'%util.HashMap$Node',
+'$/lang/Integer.toHexString',
+'4UnsignedString0',
 '*Thread.run',
 '4With',
-'%security/AccessController.doPrivileged',
-'?executePrivileged',
-'%text/DecimalFormatSymbols.getInstance',
-'%util/Arrays.copyOfRange',
-'<Byte',
-'*Formatter$FormatSpecifier.localizedMagnitude',
-'Dprint',
-'IInteger',
-'3.format',
-'4getDecimalFormatSymbols',
-'7Zero',
+'*foreign/MemorySegment.ofArray',
+'*invoke/MethodHandleNatives.linkMethodHandleConstant',
+'=s$Lookup.in',
+'%nio/ByteBuffer.wrap',
+'%util/HashMap.newNode',
+'2put',
+'5Val',
+'.Set.add',
 '*concurrent/ThreadPoolExecutor$Worker.run',
 'G.runWorker',
-'*regex/Pattern.split',
-'!dk/internal/foreign/AbstractMemorySegmentImpl.apply',
-'PsSlice',
-'OcheckBounds',
-'OoutOfBoundException',
+'!dk.internal.foreign.GlobalSession',
+'5HeapMemorySegmentImpl$OfByte',
+'5MappedMemorySegmentImpl',
+'5layout.ValueLayouts$OfByteImpl',
+'#/internal/foreign/AbstractMemorySegmentImpl$$Lambda.0x0000008801133cb8.apply',
+'fed0.apply',
+'N.asSlice',
+'VNoCheck',
+'Olambda$toArray$1',
+'OtoArray',
+'5HeapMemorySegmentImpl$OfByte.fromArray',
 '5MappedMemorySegmentImpl.asSlice',
-'-util/Preconditions.checkIndex',
-'@outOfBounds',
-'KCheckIndex',
-' ru/vk/itmo/test/elenakhodosova/HttpServerImpl$$Lambda.0x00000008010c79d0.run',
-'M.lambda$executeRangeRequest$1',
-'?dao/LiveFilteringIterator.<init>',
+'Mdup',
+'6emorySessionImpl.heapSession',
+'5layout/ValueLayouts$AbstractValueLayout.withOrder',
+'IOfByteImpl.dup',
+'TwithOrder',
+' one.nio.net.Session$ArrayQueueItem',
+'(util.ByteArrayBuilder',
+'#/nio/net/JavaSelector.select',
+'1ocket.write',
+',Session$ArrayQueueItem.write',
+'3.process',
+';Write',
+'4write',
+'(server/SelectorThread.run',
+'(util/ByteArrayBuilder.<init>',
+'>toBytes',
+'-Utf8.toBytes',
+' ru.vk.itmo.test.elenakhodosova.dao.BaseEntryWithTimestamp',
+'"/vk/itmo/test/elenakhodosova/HttpServerImpl$$Lambda.0x000000880114fb18.run',
+'M.iterateOverChunks',
+'Nlambda$executeRangeRequest$1',
+'NprocessChunk',
+'?dao/LiveFilteringIterator.next',
 'YskipTombstones',
 'CMergingEntryIterator.next',
-'CReferenceDao.get',
 'CSSTable$SliceIterator.next',
 'CWeightedPeekingEntryIterator.next',
-' sun/util/cldr/CLDRLocaleProviderAdapter.createLanguageTagSet',
-')locale/provider/JRELocaleProviderAdapter$$Lambda.0x80000006c.run',
-'Q.getDecimalFormatSymbolsProvider',
-'ULanguageTagSet',
-'VocaleServiceProvider',
-'Rlambda$getDecimalFormatSymbolsProvider$4',
-'9LocaleProviderAdapter.findAdapter',
-'OgetAdapter'
+' sun/nio/ch/KQueueSelectorImpl.doSelect',
+'>processEvents',
+'+SelectorImpl.lockAndDoSelect',
+'8processReadyEvents',
+'8select'
 ];
 unpack(cpool);
 
-n(3,1)
+n(3,1177)
+u(65,1172)
+u(73)
+u(145)
+u(153)
+u(401)
+u(417)
+u(409)
+u(425)
+u(49,48)
 u(57)
-u(65)
-u(161)
-u(169)
-u(249)
-u(257)
-u(289)
-u(289)
-u(265)
+u(10,40)
+n(18,8)
+f(233,9,8,195)
+u(89,1)
+u(97)
+u(26)
+f(233,10,1,194)
+u(193,153)
+u(225)
+u(10)
+f(201,11,153,25)
+u(81)
+u(241)
+u(170,13)
+n(265,12)
+u(162)
+f(289,11,12,16)
 u(273)
 u(281)
 u(281)
-u(305)
-u(297)
-u(297)
-u(217)
-u(217)
-u(193)
-u(201)
-u(225)
-u(241)
-u(233)
-u(185)
-u(185)
+u(186)
+f(306,9,16,10)
+n(353,80)
+u(298,73)
+n(353,7)
+u(329)
+u(321)
+u(105)
+u(34)
+f(369,9,7,472)
+u(369)
+u(10)
+f(377,9,472,145)
+u(10)
+f(385,9,145,34)
+u(10)
+f(433,9,34,188)
+u(433)
+u(441)
+u(449)
+u(449)
+u(465)
+u(457)
+u(457)
+u(249,141)
+u(249)
 u(209)
-u(17)
-u(137)
+u(217)
+u(257)
+u(257)
+u(178)
+f(394,17,141,47)
+f(361,1,47,5)
+u(313,1)
+u(505)
+u(489)
+u(473)
+u(481)
+u(497)
 u(137)
 u(121)
 u(129)
-u(121)
 u(113)
-u(153)
-u(145)
-u(89)
-u(369)
-u(361)
+u(42)
+f(337,2,1,4)
 u(345)
 u(329)
-u(73)
-u(81)
 u(321)
-u(353)
-u(337)
-u(313)
-u(25)
-u(25)
-u(177)
-u(177)
-u(33)
-u(41)
-u(49)
-u(97)
 u(105)
-u(10)
+u(34)
 
 search();
 </script></body></html>

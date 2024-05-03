@@ -14,7 +14,7 @@
 	#status {left: 0}
 	#match {right: 0}
 	#reset {cursor: pointer}
-	#canvas {width: 100%; height: 16px}
+	#canvas {width: 100%; height: 192px}
 </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
@@ -32,7 +32,7 @@
 	let root, rootLevel, px, pattern;
 	let level0 = 0, left0 = 0, width0 = 0;
 	let reverse = false;
-	const levels = Array(1);
+	const levels = Array(12);
 	for (let h = 0; h < levels.length; h++) {
 		levels[h] = [];
 	}
@@ -250,11 +250,37 @@
 	}
 
 const cpool = [
-'all'
+'all',
+' java/lang/Thread.run',
+'4With',
+'%util/concurrent/ThreadPoolExecutor$Worker.run',
+'G.runWorker',
+' one.nio.http.HttpSession',
+'#/nio/net/Session.process',
+'4write',
+'(server/SelectorThread.run',
+' ru/vk/itmo/test/elenakhodosova/HttpServerImpl$$Lambda.0x000000880114fb18.run',
+'M.iterateOverChunks',
+'Nlambda$executeRangeRequest$1',
+'NprocessChunk'
 ];
 unpack(cpool);
 
-n(2)
+n(3,92)
+u(9,83)
+u(17)
+u(25)
+u(33)
+u(73)
+u(89)
+u(81)
+u(97)
+u(57)
+u(57)
+u(42)
+f(65,1,83,9)
+u(49)
+u(42)
 
 search();
 </script></body></html>

@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 

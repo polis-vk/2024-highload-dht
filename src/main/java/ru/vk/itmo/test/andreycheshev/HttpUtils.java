@@ -5,7 +5,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.http.HttpResponse;
 import java.util.Map;
 import java.util.Optional;

@@ -87,7 +87,7 @@ public class HttpUtils {
             case Request.METHOD_PUT -> {
                 return new Response(Response.CREATED, Response.EMPTY);
             }
-            case Request.METHOD_DELETE  -> {
+            case Request.METHOD_DELETE -> {
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
             default -> throw new IllegalArgumentException("Unsupported request method");

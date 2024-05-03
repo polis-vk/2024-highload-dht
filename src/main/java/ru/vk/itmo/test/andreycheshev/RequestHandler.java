@@ -23,7 +23,7 @@ public class RequestHandler implements HttpProvider {
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
-    ); // Immutable set.
+    );
 
     private static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
 
@@ -119,7 +119,7 @@ public class RequestHandler implements HttpProvider {
             return HttpUtils.getBadRequest();
         }
 
-        List<Integer> nodesIndices = distributor.getNodesByKey(id, ack);
+        List<Integer> nodesIndices = distributor.getNodesByKey(id, from);
 
         long timestamp = method == Request.METHOD_GET
                 ? HttpUtils.EMPTY_TIMESTAMP

@@ -54,27 +54,11 @@ public class ReferenceService implements Service {
         }
         try {
             server.stop();
-
         } finally {
             dao.close();
         }
         stopped = true;
         return CompletableFuture.completedFuture(null);
-    }
-
-    public static void shutdownAndAwaitTermination(ExecutorService pool) {
-        pool.shutdown();
-        try {
-            if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                pool.shutdownNow();
-                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                    log.error("Pool did not terminate");
-                }
-            }
-        } catch (InterruptedException ex) {
-            pool.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
     }
 
     @ServiceFactory(stage = 5)

@@ -55,8 +55,19 @@ CPU (sync)
 CPU (async)
 ![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/put/cpu/png/async_4.png)
 
-HttpClientFacade.send для синк подхода ~12000 сэмплов (22.31%), для асинк подхода HttpClientFacade.sendAsync ~6200 (10.02%).
-Остальные параметры почти не изменились.
+На профиле есть аномалия, SharedRuntime занимает 26% сэмплов, SchedulableTask.run() занимает 23% CPU.
+Насколько понял, в MultiExchange.responseAsyncImpl есть логика, завязанная на retries & redirect.
+Внутри много регистраторов таймера и его остановок в случае timeout'а. Думаю, в нем проблема, можно попробовать увеличить timeout.
+SchedulableTask.run() - по идее класс отвечает за постановку задач в очередь на потоки. Насколько я понимаю, он помогает
+в обработке цепочек в completable future. Единственное, чего я не понимаю - это почему он такой же большой для sync флейм графа.
+
+Появился ForkJoinWorkerThread. Он отвечает за выполнение ForkJoinTask CompletableFuture.
+Когда вызывается метод MergeHandleResult.sendResult(), он выполняется в контексте этого потока.
+
+PayloadThread.run уменьшился с 38% до 26%, тк теперь ожидание асинхронное и ноды выполняют больше полезной нагрузки и 
+меньше простаивают.
+
+MultiExchange.responseAsync переехала в Thread.run.
 sync local handleRequest (4.51%) vs async handleAsReplica (5%)
 
 ALLOC (sync)
@@ -65,6 +76,9 @@ ALLOC (async)
 ![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/put/alloc/png/async_4.png)
 
 Добавилась обработка ConcurrentLinkedQueue (36 + 116 сэмплов, 0.06 %+ 0.18%).
+
+Также появился появился ForkJoinWorkerThread, который занимает 1.66%.
+
 HttpClientFacade.send для синк подхода ~23000 сэмплов (44.45%), для асинк подхода HttpClientFacade.sendAsync ~8000 (12.14%).
 
 LOCK (sync)
@@ -72,7 +86,9 @@ LOCK (sync)
 LOCK (async)
 ![put](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/put/lock/png/async_4.png)
 
-HttpClientFacade.send для синк подхода ~1_300_000 сэмплов (37.37%), для асинк подхода HttpClientFacade.sendAsync ~1_130_000 (25.29%).
+HttpClientFacade.send для синк подхода ~1_300_000 сэмплов (37.37%), для асинк подхода HttpClientFacade.sendAsync ~1_130_000 (25.29%) -
+MultiExchange.responseAsync переехала в Thread.run и выросла с 22.60% до 29.69%. В сумме стало больше, что логично, тк 
+асинхронных операций стало больше.
 
 ## GET Research
 ### 13 thds - предыдущая точка разладки
@@ -101,22 +117,27 @@ asyc
 100.000%   15.02ms
 ```
 
-В целом для cpu/alloc изменения такие же как и на put флейм графе.
-
 CPU (sync)
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/get/cpu/png/sync_4.png)
 CPU (async)
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/get/cpu/png/async_4.png)
+
+В асинхронной версии processHttpBuffer() занимает почти 40% CPU сэмплов, а в синхронной -- меньше 4%.
+processRead -> processHttpBuffer -> 22% просидели в HttpSession.closing -> это триггерило exception Bad request.
+Но я подозреваю, что это также связано с маленьким timeout'ом, для http клиента.
 
 ALLOC (sync)
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/get/alloc/png/sync_4.png)
 ALLOC (async)
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/get/alloc/png/async_4.png)
 
+MultiExchange.responseAsync переехала в Thread.run и почти не изменилась (30% vs 31%).
+
 LOCK (sync)
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/get/lock/png/sync_4.png)
 LOCK (async)
 ![get](https://github.com/NoGe4Ek/2024-highload-dht/blob/feature/task5/src/main/java/ru/vk/itmo/test/timofeevkirill/results/task5/asprof/get/lock/png/async_4.png)
 
-Для локов тоже нет особого отличия от put.
 HttpClientFacade.send для синк подхода ~1_550_000 сэмплов (36.97%), для асинк подхода HttpClientFacade.sendAsync ~1_200_000 (24.17%).
+MultiExchange.responseAsync 11.38% -> 3.33%. Кажется, немного аномальная ситуация, тк я не ожидал такого изменения. Вероятно
+связано с аномальным простоем в processHttpBuffer.

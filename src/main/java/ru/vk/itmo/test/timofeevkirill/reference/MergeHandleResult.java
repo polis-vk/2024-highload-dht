@@ -9,6 +9,7 @@ import java.net.HttpURLConnection;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MergeHandleResult {
@@ -30,9 +31,9 @@ public class MergeHandleResult {
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
-    public void add(CompletableFuture<HandleResult> resultFuture) {
+    public void add(CompletableFuture<HandleResult> resultFuture, ExecutorService executor) {
         resultFutures.add(resultFuture);
-        resultFuture.whenComplete((result, e) -> {
+        resultFuture.whenCompleteAsync((result, e) -> {
             if (e == null) {
                 results.add(result);
                 int get = count.incrementAndGet();
@@ -43,7 +44,7 @@ public class MergeHandleResult {
             } else {
                 log.error("Error remote handle result: " + e);
             }
-        });
+        }, executor);
     }
 
     private void cancelRemainingFutures() {

@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.TimestampEntry;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -85,20 +85,25 @@ public final class SSTableUtils {
     }
 
     private static Entry<MemorySegment> get(MemorySegment sstable, long index, long afterBloomFilterOffset) {
-        long offset = afterBloomFilterOffset + index * Byte.SIZE;
+        long keyOffset = afterBloomFilterOffset + index * Long.BYTES;
 
-        long keyOffset = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
-        long keySize = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset);
-        keyOffset += Long.BYTES;
-        MemorySegment key = sstable.asSlice(keyOffset, keySize);
-        keyOffset += keySize;
-        long valueSize = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset);
-        keyOffset += Long.BYTES;
+        long offset = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset); //key size offset
+        long keySize = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+        offset += Long.BYTES;
+        MemorySegment key = sstable.asSlice(offset, keySize);
+        offset += keySize;
+        long valueSize = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+        offset += Long.BYTES;
 
         if (valueSize == TOMBSTONE) {
-            return new BaseEntry<>(key, null);
+            long timestamp = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+            return new TimestampEntry<>(key, null, timestamp);
         } else {
-            return new BaseEntry<>(key, sstable.asSlice(keyOffset, valueSize));
+            MemorySegment value = sstable.asSlice(offset, valueSize);
+            offset += valueSize;
+            long timestamp = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+
+            return new TimestampEntry<>(key, value, timestamp);
         }
     }
 
@@ -138,14 +143,6 @@ public final class SSTableUtils {
         }
     }
 
-    public static long entryByteSize(Entry<MemorySegment> entry) {
-        if (entry.value() == null) {
-            return entry.key().byteSize();
-        }
-
-        return entry.key().byteSize() + entry.value().byteSize();
-    }
-
     public static long sizeOf(final Entry<MemorySegment> entry) {
         if (entry == null) {
             return 0L;
@@ -155,6 +152,6 @@ public final class SSTableUtils {
             return entry.key().byteSize();
         }
 
-        return entry.key().byteSize() + entry.value().byteSize();
+        return entry.key().byteSize() + entry.value().byteSize() + Long.BYTES; //k + v + timestamp
     }
 }

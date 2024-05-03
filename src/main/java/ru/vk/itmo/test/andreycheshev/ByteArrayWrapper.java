@@ -1,15 +1,17 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import java.util.Arrays;
+import java.nio.ByteBuffer;
 
 public class ByteArrayWrapper {
-    private final byte[] array;
+    private final ByteBuffer buffer;
 
-    public ByteArrayWrapper(byte[] array) {
-        this.array = Arrays.copyOf(array, array.length);
+    public ByteArrayWrapper(byte[] data) {
+        this.buffer = ByteBuffer.wrap(data).asReadOnlyBuffer();
     }
 
     public byte[] get() {
-        return array;
+        byte[] copy = new byte[buffer.remaining()];
+        buffer.slice().get(copy);
+        return copy;
     }
 }

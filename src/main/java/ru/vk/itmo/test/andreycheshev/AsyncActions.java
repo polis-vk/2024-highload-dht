@@ -172,7 +172,7 @@ public class AsyncActions {
                 () -> switch (method) {
                     case Request.METHOD_GET -> httpProvider.get(id);
                     case Request.METHOD_PUT -> httpProvider.put(id, request.getBody(), timestamp);
-                    case Request.METHOD_DELETE  -> httpProvider.delete(id, timestamp);
+                    case Request.METHOD_DELETE -> httpProvider.delete(id, timestamp);
                     default -> throw new IllegalArgumentException("Unsupported method");
                 },
                 localCallExecutor

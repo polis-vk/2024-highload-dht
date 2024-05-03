@@ -10,14 +10,19 @@ import java.util.Map;
 import java.util.Optional;
 
 public class HttpUtils {
-    private static final Map<Integer, String> AVAILABLE_RESPONSES = Map.of(
-            200, Response.OK,
-            201, Response.CREATED,
-            202, Response.ACCEPTED,
-            404, Response.NOT_FOUND,
-            410, Response.GONE
-    ); // Immutable map.
-    private static final int GONE_RESPONSE_CODE = 410;
+    public static final int OK_CODE = 200;
+    public static final int CREATED_CODE = 201;
+    public static final int ACCEPT_CODE = 202;
+    public static final int NOT_FOUND_CODE = 404;
+    public static final int GONE_CODE = 410;
+
+    public static final Map<Integer, String> AVAILABLE_RESPONSES = Map.of(
+            OK_CODE, Response.OK,
+            CREATED_CODE, Response.CREATED,
+            ACCEPT_CODE, Response.ACCEPTED,
+            NOT_FOUND_CODE, Response.NOT_FOUND,
+            GONE_CODE, Response.GONE
+    );
 
     public static final String TIMESTAMP_JAVA_NET_HEADER = "X-Timestamp";
     public static final String TIMESTAMP_ONE_NIO_HEADER = TIMESTAMP_JAVA_NET_HEADER + ": ";
@@ -76,7 +81,7 @@ public class HttpUtils {
             case Request.METHOD_GET -> {
                 int status = elements.getStatus();
 
-                Response response = status == GONE_RESPONSE_CODE
+                Response response = status == GONE_CODE
                         ? new Response(Response.NOT_FOUND, Response.EMPTY)
                         : new Response(AVAILABLE_RESPONSES.get(status), elements.getBody());
 

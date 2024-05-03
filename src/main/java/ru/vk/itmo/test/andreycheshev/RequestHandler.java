@@ -148,12 +148,12 @@ public class RequestHandler implements HttpProvider {
 
         ResponseElements response;
         if (entry == null) {
-            response = new ResponseElements(404, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
+            response = new ResponseElements(HttpUtils.NOT_FOUND_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
         } else {
             long timestamp = entry.timestamp();
             response = (entry.value() == null)
-                    ? new ResponseElements(410, Response.EMPTY, timestamp)
-                    : new ResponseElements(200, entry.value().toArray(ValueLayout.JAVA_BYTE), timestamp);
+                    ? new ResponseElements(HttpUtils.GONE_CODE, Response.EMPTY, timestamp)
+                    : new ResponseElements(HttpUtils.OK_CODE, entry.value().toArray(ValueLayout.JAVA_BYTE), timestamp);
         }
 
         return response;
@@ -168,7 +168,7 @@ public class RequestHandler implements HttpProvider {
         );
         dao.upsert(entry);
 
-        return new ResponseElements(201, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
+        return new ResponseElements(HttpUtils.CREATED_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
     @Override
@@ -180,7 +180,7 @@ public class RequestHandler implements HttpProvider {
         );
         dao.upsert(entry);
 
-        return new ResponseElements(202, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
+        return new ResponseElements(HttpUtils.ACCEPT_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
     private static MemorySegment fromString(String data) {

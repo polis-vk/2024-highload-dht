@@ -18,7 +18,7 @@ public class RendezvousDistributor {
         this.clusterUrls = clusterUrls;
         this.thisNodeNumber = thisNodeNumber;
         this.quorumNumber = clusterUrls.size() / 2 + 1;
-        this.defaultAckFrom = new ParametersTuple<>(quorumNumber, getNodeCount());
+        this.defaultAckFrom = new ParametersTuple<>(quorumNumber, clusterUrls.size());
     }
 
     private static int hashCode(int key) {

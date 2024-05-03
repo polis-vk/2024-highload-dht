@@ -6,7 +6,6 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -67,7 +66,7 @@ public class AsyncActions {
                 )
                 .exceptionallyAsync(
                         exception -> {
-                            if (exception.getCause() instanceof UncheckedIOException) {
+                            if (exception.getCause() instanceof SendingResponseException) {
                                 LOGGER.error("Error when sending a response", exception);
                             }
                             return null;
@@ -81,16 +80,22 @@ public class AsyncActions {
             String id,
             Request request,
             long timestamp,
-            ResponseCollector collector) {
+            ResponseCollector collector,
+            HttpSession session) {
 
         CompletableFuture<Void> future = getLocalFuture(method, id, request, timestamp)
-                .thenApplyAsync(
-                        collector::add,
-                        internalExecutor
-                )
                 .exceptionallyAsync(
                         exception -> {
                             LOGGER.error("Internal error of the DAO operation", exception);
+                            return null;
+                        },
+                        internalExecutor
+                )
+                .thenApplyAsync(
+                        responseElements -> {
+                            if (responseElements != null) {
+                                collector.add(responseElements);
+                            }
                             return collector.incrementResponsesCounter();
                         },
                         internalExecutor
@@ -98,7 +103,7 @@ public class AsyncActions {
                 .thenAcceptAsync(
                         condition -> {
                             if (condition) {
-                                collector.sendResponse();
+                                HttpUtils.sendResponse(collector.getResponse(), session);
                             }
                         },
                         senderExecutor
@@ -111,7 +116,8 @@ public class AsyncActions {
             String node,
             Request request,
             long timestamp,
-            ResponseCollector collector) {
+            ResponseCollector collector,
+            HttpSession session) {
 
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(node + request.getURI()))
                 .method(
@@ -126,17 +132,20 @@ public class AsyncActions {
 
         CompletableFuture<Void> future = httpClient
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .thenApplyAsync(
-                        response -> { // java.net response.
-                            return collector.add(
-                                    HttpUtils.getElementsFromJavaNetResponse(response)
-                            );
-                        },
-                        internalExecutor
-                )
                 .exceptionallyAsync(
                         exception -> {
                             LOGGER.error("Error when sending a request to the remote node", exception);
+                            return null;
+                        },
+                        internalExecutor
+                )
+                .thenApplyAsync(
+                        response -> { // java.net response.
+                            if (response != null) {
+                                collector.add(
+                                        HttpUtils.getElementsFromJavaNetResponse(response)
+                                );
+                            }
                             return collector.incrementResponsesCounter();
                         },
                         internalExecutor
@@ -144,7 +153,7 @@ public class AsyncActions {
                 .thenAcceptAsync(
                         condition -> {
                             if (condition) {
-                                collector.sendResponse();
+                                HttpUtils.sendResponse(collector.getResponse(), session);
                             }
                         },
                         senderExecutor
@@ -169,6 +178,15 @@ public class AsyncActions {
         );
     }
 
+    public CompletableFuture<Void> sendAsync(Response response, HttpSession session) {
+        return withSendingErrorProcessing(
+                CompletableFuture.runAsync(
+                        () -> HttpUtils.sendResponse(response, session),
+                        senderExecutor
+                )
+        );
+    }
+
     private CompletableFuture<Void> withSendingErrorProcessing(
             CompletableFuture<Void> future) {
 
@@ -180,16 +198,5 @@ public class AsyncActions {
                         },
                         internalExecutor
                 );
-    }
-
-    public void sendAsync(Response response, HttpSession session) throws AssertionError {
-        CompletableFuture<Void> future = withSendingErrorProcessing(
-                CompletableFuture.runAsync(
-                        () -> HttpUtils.sendResponse(response, session),
-                        senderExecutor
-                )
-        );
-
-        assert future != null;
     }
 }

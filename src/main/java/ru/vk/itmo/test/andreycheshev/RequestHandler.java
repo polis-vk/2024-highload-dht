@@ -3,7 +3,6 @@ package ru.vk.itmo.test.andreycheshev;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
@@ -30,10 +29,6 @@ public class RequestHandler implements HttpProvider {
 
     private static final String REQUEST_PATH = "/v0/entity";
 
-    private static final String ID_PARAMETER = "id=";
-    private static final String ACK_PARAMETER = "ack=";
-    private static final String FROM_PARAMETER = "from=";
-
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final RendezvousDistributor distributor;
     private final AsyncActions asyncActions;
@@ -56,23 +51,16 @@ public class RequestHandler implements HttpProvider {
     }
 
     public void sendAsync(Response response, HttpSession session) {
-        try {
-            asyncActions.sendAsync(response, session);
-        } catch (AssertionError e) {
+        CompletableFuture<Void> future = asyncActions.sendAsync(response, session);
+        if (future == null) {
             LOGGER.info(FUTURE_CREATION_ERROR);
         }
     }
 
     private Response analyzeRequest(Request request, HttpSession session) {
 
-        // Checking the correctness.
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
-            return HttpUtils.getBadRequest();
-        }
-
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
             return HttpUtils.getBadRequest();
         }
 
@@ -81,13 +69,22 @@ public class RequestHandler implements HttpProvider {
             return HttpUtils.getMethodNotAllowed();
         }
 
-        String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
-        return isRequestCameFromNode(timestamp)
-                ? local(request, method, id, timestamp, session)
-                : distributed(request, method, id, session);
+        try {
+
+            String id = ParametersParser.parseId(request);
+            String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
+
+            return isRequestCameFromNode(timestamp)
+                    ? processLocally(request, method, id, timestamp, session)
+                    : processDistributed(request, method, id, session);
+
+        } catch (IllegalArgumentException e) {
+            return HttpUtils.getBadRequest();
+        }
+
     }
 
-    private Response local(Request request, int method, String id, String timestamp, HttpSession session) {
+    private Response processLocally(Request request, int method, String id, String timestamp, HttpSession session) {
         try {
             CompletableFuture<Void> future =
                     asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
@@ -102,56 +99,47 @@ public class RequestHandler implements HttpProvider {
         return null;
     }
 
-    private Response distributed(Request request, int method, String id, HttpSession session) {
-        // Get and check "ack" and "from" parameters.
-        ParametersParser parser = new ParametersParser(distributor);
-        try {
-            parser.parseAckFrom(
-                    request.getParameter(ACK_PARAMETER),
-                    request.getParameter(FROM_PARAMETER)
-            );
-        } catch (IllegalArgumentException e) {
-            return HttpUtils.getBadRequest();
-        }
-
-        // Start processing on remote and local nodes.
-        processDistributed(method, id, request, parser.getAck(), parser.getFrom(), session);
-        return null;
-    }
-
     private boolean isRequestCameFromNode(String timestamp) {
         // A timestamp is an indication that the request
         // came from the client directly or from the cluster node.
         return timestamp != null;
     }
 
-    private void processDistributed(
+    private Response processDistributed(
+            Request request,
             int method,
             String id,
-            Request request,
-            int ack,
-            int from,
             HttpSession session) {
 
-        List<Integer> nodesIndices = distributor.getQuorumNodes(id, from);
+        ParametersTuple<Integer> ackFrom = ParametersParser.parseAckFromOrDefault(request, distributor);
+        int ack = ackFrom.first();
+        int from = ackFrom.second();
+        if (ack <= 0 || ack > from) {
+            LOGGER.error("An error occurred while analyzing the parameters");
+            return HttpUtils.getBadRequest();
+        }
 
-        long timestamp = (method == Request.METHOD_GET)
+        List<Integer> nodesIndices = distributor.getNodesByKey(id, ack);
+
+        long timestamp = method == Request.METHOD_GET
                 ? HttpUtils.EMPTY_TIMESTAMP
                 : System.currentTimeMillis();
 
-        ResponseCollector collector = new ResponseCollector(method, ack, from, session);
+        ResponseCollector collector = new ResponseCollector(method, ack, from);
 
         for (int nodeIndex : nodesIndices) {
             String node = distributor.getNodeUrlByIndex(nodeIndex);
 
             CompletableFuture<Void> future = distributor.isOurNode(nodeIndex)
-                    ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector)
-                    : asyncActions.processRemotelyToCollect(node, request, timestamp, collector);
+                    ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector, session)
+                    : asyncActions.processRemotelyToCollect(node, request, timestamp, collector, session);
 
             if (future == null) {
                 LOGGER.info(FUTURE_CREATION_ERROR);
             }
         }
+
+        return null;
     }
 
     @Override

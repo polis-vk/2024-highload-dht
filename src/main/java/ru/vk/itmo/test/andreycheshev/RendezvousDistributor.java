@@ -11,10 +11,14 @@ import java.util.stream.Collectors;
 public class RendezvousDistributor {
     private final List<String> clusterUrls;
     private final int thisNodeNumber;
+    private final int quorumNumber;
+    private final ParametersTuple<Integer> defaultAckFrom;
 
     public RendezvousDistributor(List<String> clusterUrls, int thisNodeNumber) {
         this.clusterUrls = clusterUrls;
         this.thisNodeNumber = thisNodeNumber;
+        this.quorumNumber = clusterUrls.size() / 2 + 1;
+        this.defaultAckFrom = new ParametersTuple<>(quorumNumber, getNodeCount());
     }
 
     private static int hashCode(int key) {
@@ -25,16 +29,20 @@ public class RendezvousDistributor {
         return x;
     }
 
-    public List<Integer> getQuorumNodes(String stringKey, int quorumNumber) {
+    public List<Integer> getNodesByKey(String stringKey, int number) {
         PriorityQueue<HashPair> queue = new PriorityQueue<>(
-                quorumNumber,
+                number,
                 Comparator.comparingInt(HashPair::getHash).reversed()
         );
         int key = Hash.murmur3(stringKey);
-        for (int i = 0; i < quorumNumber; i++) {
+        for (int i = 0; i < number; i++) {
             queue.add(new HashPair(hashCode(key + i), i));
         }
         return queue.stream().map(HashPair::getIndex).collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    public List<Integer> getQuorumNodesByKey(String stringKey) {
+        return getNodesByKey(stringKey, quorumNumber);
     }
 
     public String getNodeUrlByIndex(int index) {
@@ -46,7 +54,11 @@ public class RendezvousDistributor {
     }
 
     public int getQuorumNumber() {
-        return clusterUrls.size() / 2 + 1;
+        return quorumNumber;
+    }
+
+    public ParametersTuple<Integer> getDefaultAckFrom() {
+        return defaultAckFrom;
     }
 
     public boolean isOurNode(int node) {

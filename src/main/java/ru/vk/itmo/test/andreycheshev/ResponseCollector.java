@@ -2,6 +2,7 @@ package ru.vk.itmo.test.andreycheshev;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.http.Response;
 
 import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
@@ -16,36 +17,31 @@ public class ResponseCollector {
     private final int method;
     private final int ack;
     private final int from;
-    private final HttpSession session;
-
     private final AtomicBoolean sendCondition = new AtomicBoolean(false);
     private final AtomicInteger responseCount = new AtomicInteger(0);
 
-    public ResponseCollector(int method, int ack, int from, HttpSession session) {
+    public ResponseCollector(int method, int ack, int from) {
         this.collector = new PriorityBlockingQueue<>(from);
 
         this.method = method;
         this.ack = ack;
         this.from = from;
-        this.session = session;
-    }
-
-    public HttpSession getSession() {
-        return session;
     }
 
     public boolean incrementResponsesCounter() {
-        return responseCount.incrementAndGet() == from;
-    }
-
-    public boolean add(ResponseElements responseElements) {
         responseCount.incrementAndGet();
 
+        if (isReadySendResponse()) {
+            // Setting the flag to ensure that only one response is sent.
+            return sendCondition.compareAndSet(false, true);
+        }
+        return false;
+    }
+
+    public void add(ResponseElements responseElements) {
         if (isResponseSucceeded(responseElements.getStatus())) {
             collector.put(responseElements);
         }
-
-        return isReadySendResponse();
     }
 
     private static boolean isResponseSucceeded(int status) {
@@ -56,17 +52,9 @@ public class ResponseCollector {
         return (method == Request.METHOD_GET && collector.size() >= ack) || responseCount.get() >= from;
     }
 
-    public void sendResponse() {
-        if (!sendCondition.compareAndSet(false, true)) {
-            return;
-        }
-
-        // The following actions are performed only once.
-
-        if (collector.size() >= ack) {
-            HttpUtils.sendResponse(HttpUtils.getOneNioResponse(method, collector.poll()), session);
-        } else {
-            HttpUtils.sendResponse(HttpUtils.getNotEnoughReplicas(), session);
-        }
+    public Response getResponse() {
+        return collector.size() >= ack
+                ? HttpUtils.getOneNioResponse(method, collector.poll())
+                : HttpUtils.getNotEnoughReplicas();
     }
 }

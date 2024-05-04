@@ -25,6 +25,8 @@ import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.shutdownAndAwai
 public class ServerExecutorStrategyDecorator extends ServerStrategyDecorator implements RejectedExecutionHandler {
     private final ThreadPoolExecutor mainExecutor;
     private final Map<Thread, ThreadPoolExecutor> executors;
+    private final long keepAliveTime;
+    private static final int SUB_EXECUTORS_POOL_SIZE = 1;
 
     public ServerExecutorStrategyDecorator(
             ServerStrategy serverStrategy,
@@ -32,17 +34,18 @@ public class ServerExecutorStrategyDecorator extends ServerStrategyDecorator imp
             long keepAliveTime, int queueCapacity
     ) {
         super(serverStrategy);
-        executors = new HashMap<>();
+        this.executors = new HashMap<>();
+        this.keepAliveTime = keepAliveTime;
         int realCorePoolSize = corePoolSize == 1 ? 1 : corePoolSize / 2;
-        mainExecutor = new ThreadPoolExecutor(
+        this.mainExecutor = new ThreadPoolExecutor(
                 realCorePoolSize,
                 maximumPoolSize - realCorePoolSize,
-                keepAliveTime,
+                this.keepAliveTime,
                 TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(queueCapacity * 10),
+                new LinkedBlockingQueue<>(queueCapacity * realCorePoolSize),
                 new CustomPolicy()
         );
-        mainExecutor.prestartAllCoreThreads();
+        this.mainExecutor.prestartAllCoreThreads();
     }
 
     private class CustomPolicy implements RejectedExecutionHandler {
@@ -82,12 +85,12 @@ public class ServerExecutorStrategyDecorator extends ServerStrategyDecorator imp
         ThreadPoolExecutor[] threadPoolExecutors = new ThreadPoolExecutor[mainExecutor.getCorePoolSize()];
         for (int i = 0; i < threadPoolExecutors.length; i++) {
             threadPoolExecutors[i] = new ThreadPoolExecutor(
-                    1,
-                    1,
-                    100,
+                    SUB_EXECUTORS_POOL_SIZE,
+                    SUB_EXECUTORS_POOL_SIZE,
+                    this.keepAliveTime,
                     TimeUnit.SECONDS,
                     new LinkedBlockingQueue<>(
-                            mainExecutor.getQueue().remainingCapacity() / 10
+                            mainExecutor.getQueue().remainingCapacity() / mainExecutor.getCorePoolSize()
                     ),
                     this
             );

@@ -3,6 +3,7 @@ package ru.vk.itmo.test.andreycheshev;
 import one.nio.http.Request;
 
 public final class ParametersParser {
+    private static final String ID_PARAMETER = "id=";
     private static final String ACK_PARAMETER = "ack=";
     private static final String FROM_PARAMETER = "from=";
     private static final String START_PARAMETER = "start=";
@@ -12,48 +13,35 @@ public final class ParametersParser {
 
     }
 
-    public static ParametersTuple<Integer> parseAckFrom(
+    public static String parseId(Request request) {
+        String id = request.getParameter(ID_PARAMETER);
+        if (id == null || id.isEmpty()) {
+            throw new IllegalArgumentException("Illegal parameter");
+        }
+        return id;
+    }
+
+    public static ParametersTuple<Integer> parseAckFromOrDefault(
             Request request,
-            RendezvousDistributor distributor) throws IllegalArgumentException {
+            RendezvousDistributor distributor) {
 
         String ack = request.getParameter(ACK_PARAMETER);
         String from = request.getParameter(FROM_PARAMETER);
 
         if (ack == null || from == null) {
-            return getDefaultAckFrom(distributor);
+            return distributor.getDefaultAckFrom();
         } else {
-            try {
-                ParametersTuple<Integer> params = new ParametersTuple<>(
-                        Integer.parseInt(ack),
-                        Integer.parseInt(from)
-                );
-
-                if (!params.isValidAckFrom()) {
-                    throw new IllegalArgumentException();
-                }
-
-                return params;
-            } catch (NumberFormatException e) {
-                return getDefaultAckFrom(distributor);
-            }
+            return new ParametersTuple<>(
+                    Integer.parseInt(ack),
+                    Integer.parseInt(from)
+            );
         }
     }
 
-    private static ParametersTuple<Integer> getDefaultAckFrom(RendezvousDistributor distributor) {
-        return new ParametersTuple<>(
-                distributor.getQuorumNumber(),
-                distributor.getNodeCount()
-        );
-    }
-
-    public static ParametersTuple<String> parseStartEnd(Request request) throws IllegalArgumentException {
+    public static ParametersTuple<String> parseStartEnd(Request request) {
 
         String start = request.getParameter(START_PARAMETER);
         String end = request.getParameter(END_PARAMETER);
-
-        if (start == null || start.isEmpty() || end.isEmpty()) {
-            throw new IllegalArgumentException();
-        }
 
         return new ParametersTuple<>(start, end);
     }

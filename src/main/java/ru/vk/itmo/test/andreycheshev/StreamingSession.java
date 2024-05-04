@@ -15,6 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
 public class StreamingSession extends HttpSession {
+    private static final int BUFF_SIZE = (2 << 10) * (2 << 7); // 128 kb.
+
     private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] LF = "\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] END_PART = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
@@ -44,7 +46,6 @@ public class StreamingSession extends HttpSession {
 
     public static class RangeItem extends Session.QueueItem {
         private final Iterator<Entry<MemorySegment>> rangeIterator;
-        private static final int BUFF_SIZE = (2 << 10) * (2 << 7); // 128 kb.
         private final StreamingBuffer buffer = new StreamingBuffer(BUFF_SIZE);
         private Entry<MemorySegment> entry;
 

@@ -16,15 +16,14 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import static ru.vk.itmo.test.alenkovayulya.ServerInitializer.LOGGER;
+import static ru.vk.itmo.test.andreycheshev.AsyncActions.FUTURE_CREATION_ERROR;
 
 public class RequestHandler implements HttpProvider {
     private static final Set<Integer> AVAILABLE_METHODS = Set.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
-    ); // Immutable set.
-
-    private static final String ID_PARAMETER = "id=";
+    );
 
     private static final String ENTITY_REQUEST_PATH = "/v0/entity";
     private static final String ENTITIES_REQUEST_PATH = "/v0/entities";
@@ -63,87 +62,82 @@ public class RequestHandler implements HttpProvider {
     }
 
     private Response analyzeEntity(Request request, HttpSession session) {
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
+
+        String path = request.getPath();
+        if (!path.equals(ENTITY_REQUEST_PATH)) {
             return HttpUtils.getBadRequest();
         }
-
-        String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
-        try {
-            if (isRequestCameFromNode(timestamp)) {
-                // The request came from a remote node.
-                CompletableFuture<Void> future =
-                        asyncActions.processLocallyToSend(id, request, Long.parseLong(timestamp), session);
-
-                if (AsyncActions.checkFuture(future)) {
-                    return HttpUtils.getInternalError();
-                }
-            } else {
-                // Get and check "ack" and "from" parameters.
-                ParametersTuple<Integer> params = ParametersParser.parseAckFrom(request, distributor);
-
-                // Start processing on remote and local nodes.
-                processDistributed(id, request, params.first(), params.second(), session);
-            }
-        } catch (IllegalArgumentException e) {
-            return HttpUtils.getBadRequest();
-        }
-
-        return null;
-    }
-
-    private Response analyzeEntities(Request request, HttpSession session) {
-        try {
-            // Get and check "start" and "end" parameters.
-            ParametersTuple<String> params = ParametersParser.parseStartEnd(request);
-
-            Iterator<Entry<MemorySegment>> streamingIterator = dao.get(
-                    fromString(params.first()),
-                    params.second() == null ? null : fromString(params.second())
-            );
-
-            asyncActions.stream(
-                    () -> {
-                        try {
-                            ((StreamingSession) session).stream(streamingIterator);
-                        } catch (Exception e) {
-                            Thread.currentThread().interrupt();
-                        }
-                    }
-            );
-        } catch (IllegalArgumentException e) {
-            return HttpUtils.getBadRequest();
-        }
-
-        return null;
-    }
-
-    private void processDistributed(
-            String id,
-            Request request,
-            int ack,
-            int from,
-            HttpSession session) {
 
         int method = request.getMethod();
+        if (!AVAILABLE_METHODS.contains(method)) {
+            return HttpUtils.getMethodNotAllowed();
+        }
 
-        List<Integer> nodesIndices = distributor.getQuorumNodes(id, from);
+        try {
 
-        long timestamp = (method == Request.METHOD_GET)
+            String id = ParametersParser.parseId(request);
+            String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
+
+            return isRequestCameFromNode(timestamp)
+                    ? processLocally(request, method, id, timestamp, session)
+                    : processDistributed(request, method, id, session);
+
+        } catch (IllegalArgumentException e) {
+            return HttpUtils.getBadRequest();
+        }
+    }
+
+    private Response processLocally(Request request, int method, String id, String timestamp, HttpSession session) {
+        try {
+            CompletableFuture<Void> future =
+                    asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
+
+            if (future == null) {
+                LOGGER.info(FUTURE_CREATION_ERROR);
+                return HttpUtils.getInternalError();
+            }
+        } catch (NumberFormatException e) {
+            return HttpUtils.getBadRequest();
+        }
+        return null;
+    }
+
+    private Response processDistributed(
+            Request request,
+            int method,
+            String id,
+            HttpSession session) {
+
+        ParametersTuple<Integer> ackFrom = ParametersParser.parseAckFromOrDefault(request, distributor);
+        int ack = ackFrom.first();
+        int from = ackFrom.second();
+        if (ack <= 0 || ack > from) {
+            LOGGER.error("An error occurred while analyzing the parameters");
+            return HttpUtils.getBadRequest();
+        }
+
+        List<Integer> nodesIndices = distributor.getNodesByKey(id, from);
+
+        long timestamp = method == Request.METHOD_GET
                 ? HttpUtils.EMPTY_TIMESTAMP
                 : System.currentTimeMillis();
 
-        ResponseCollector collector = new ResponseCollector(method, ack, from, session);
+        ResponseCollector collector = new ResponseCollector(method, ack, from);
 
         for (int nodeIndex : nodesIndices) {
             String node = distributor.getNodeUrlByIndex(nodeIndex);
 
             CompletableFuture<Void> future = distributor.isOurNode(nodeIndex)
-                    ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector)
-                    : asyncActions.processRemotelyToCollect(node, request, timestamp, collector);
+                    ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector, session)
+                    : asyncActions.processRemotelyToCollect(node, request, timestamp, collector, session);
 
-            AsyncActions.checkFuture(future);
+            if (future == null) {
+                LOGGER.info(FUTURE_CREATION_ERROR);
+                return HttpUtils.getInternalError();
+            }
         }
+
+        return null;
     }
 
     private boolean isRequestCameFromNode(String timestamp) {
@@ -152,8 +146,47 @@ public class RequestHandler implements HttpProvider {
         return timestamp != null;
     }
 
+    private Response analyzeEntities(Request request, HttpSession session) {
+        try {
+            ParametersTuple<String> params = ParametersParser.parseStartEnd(request);
+            String start = params.first();
+            String end = params.second();
+            if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
+                throw new IllegalArgumentException();
+            }
+
+            Iterator<Entry<MemorySegment>> streamingIterator = dao.get(
+                    fromString(start),
+                    end == null ? null : fromString(end)
+            );
+
+            CompletableFuture<Void> future = asyncActions.stream(
+                    () -> {
+                        try {
+                            ((StreamingSession) session).stream(streamingIterator);
+                        } catch (Exception e) {
+                            LOGGER.error("An error occurred while streaming response");
+                        }
+                    }
+            );
+
+            if (future == null) {
+                LOGGER.info(FUTURE_CREATION_ERROR);
+                return HttpUtils.getInternalError();
+            }
+        } catch (IllegalArgumentException e) {
+            LOGGER.error("An error occurred while analyzing entities the parameters");
+            return HttpUtils.getBadRequest();
+        }
+
+        return null;
+    }
+
     public void sendAsync(Response response, HttpSession session) {
-        asyncActions.sendAsync(response, session);
+        CompletableFuture<Void> future = asyncActions.sendAsync(response, session);
+        if (future == null) {
+            LOGGER.info(FUTURE_CREATION_ERROR);
+        }
     }
 
     @Override
@@ -162,12 +195,12 @@ public class RequestHandler implements HttpProvider {
 
         ResponseElements response;
         if (entry == null) {
-            response = new ResponseElements(404, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
+            response = new ResponseElements(HttpUtils.NOT_FOUND_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
         } else {
             long timestamp = entry.timestamp();
             response = (entry.value() == null)
-                    ? new ResponseElements(410, Response.EMPTY, timestamp)
-                    : new ResponseElements(200, entry.value().toArray(ValueLayout.JAVA_BYTE), timestamp);
+                    ? new ResponseElements(HttpUtils.GONE_CODE, Response.EMPTY, timestamp)
+                    : new ResponseElements(HttpUtils.OK_CODE, entry.value().toArray(ValueLayout.JAVA_BYTE), timestamp);
         }
 
         return response;
@@ -182,7 +215,7 @@ public class RequestHandler implements HttpProvider {
         );
         dao.upsert(entry);
 
-        return new ResponseElements(201, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
+        return new ResponseElements(HttpUtils.CREATED_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
     @Override
@@ -194,7 +227,7 @@ public class RequestHandler implements HttpProvider {
         );
         dao.upsert(entry);
 
-        return new ResponseElements(202, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
+        return new ResponseElements(HttpUtils.ACCEPT_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
     private static MemorySegment fromString(String data) {

@@ -20,8 +20,6 @@ public class AsyncActions {
 
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
 
-    public static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
-
     private final Executor internalExecutor = Executors.newFixedThreadPool(
             CPU_THREADS_COUNT / 2,
             new WorkerThreadFactory("Internal-thread")

@@ -17,10 +17,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-import static ru.vk.itmo.test.andreycheshev.AsyncActions.FUTURE_CREATION_ERROR;
-
 public class RequestHandler implements HttpProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
+
+    private static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
 
     private static final Set<Integer> AVAILABLE_METHODS = Set.of(
             Request.METHOD_GET,

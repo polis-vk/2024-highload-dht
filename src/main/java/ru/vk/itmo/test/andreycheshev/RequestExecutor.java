@@ -16,7 +16,6 @@ public class RequestExecutor {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestExecutor.class);
 
     private static final int CPU_THREADS_COUNT = Runtime.getRuntime().availableProcessors();
-    private static final int MAX_CPU_THREADS_TIMES = 1;
     private static final int KEEPALIVE_MILLIS = 3000;
     private static final int MAX_WORK_QUEUE_SIZE = 300;
 
@@ -26,8 +25,8 @@ public class RequestExecutor {
     public RequestExecutor(RequestHandler requestHandler) {
         this.requestHandler = requestHandler;
         this.executor = new ThreadPoolExecutor(
-                CPU_THREADS_COUNT,
-                CPU_THREADS_COUNT * MAX_CPU_THREADS_TIMES,
+                CPU_THREADS_COUNT / 2,
+                CPU_THREADS_COUNT / 2,
                 KEEPALIVE_MILLIS,
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(MAX_WORK_QUEUE_SIZE),

@@ -37,7 +37,7 @@ public class AsyncActions {
             new WorkerThreadFactory("RemoteCall-thread")
     );
     private final Executor streamingExecutor = Executors.newFixedThreadPool(
-            CPU_THREADS_COUNT,
+            CPU_THREADS_COUNT / 2,
             new WorkerThreadFactory("Streaming-thread")
     );
 

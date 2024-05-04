@@ -22,6 +22,10 @@ public class StreamingBuffer {
         return size;
     }
 
+    public boolean isEmpty() {
+        return size - pos <= 0;
+    }
+
     public void reset() {
         size = 0;
         pos = 0;

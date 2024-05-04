@@ -17,10 +17,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
+import static ru.vk.itmo.test.andreycheshev.AsyncActions.FUTURE_CREATION_ERROR;
+
 public class RequestHandler implements HttpProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
-
-    public static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
 
     private static final Set<Integer> AVAILABLE_METHODS = Set.of(
             Request.METHOD_GET,
@@ -96,7 +96,7 @@ public class RequestHandler implements HttpProvider {
                     asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
 
             if (future == null) {
-                LOGGER.info(FUTURE_CREATION_ERROR);
+                LOGGER.error(FUTURE_CREATION_ERROR);
                 return HttpUtils.getInternalError();
             }
         } catch (NumberFormatException e) {
@@ -135,7 +135,7 @@ public class RequestHandler implements HttpProvider {
                     : asyncActions.processRemotelyToCollect(node, request, timestamp, collector, session);
 
             if (future == null) {
-                LOGGER.info(FUTURE_CREATION_ERROR);
+                LOGGER.error(FUTURE_CREATION_ERROR);
                 return HttpUtils.getInternalError();
             }
         }
@@ -188,7 +188,7 @@ public class RequestHandler implements HttpProvider {
     public void sendAsync(Response response, HttpSession session) {
         CompletableFuture<Void> future = asyncActions.sendAsync(response, session);
         if (future == null) {
-            LOGGER.info(FUTURE_CREATION_ERROR);
+            LOGGER.error(FUTURE_CREATION_ERROR);
         }
     }
 
@@ -234,7 +234,6 @@ public class RequestHandler implements HttpProvider {
     }
 
     private static MemorySegment fromString(String data) {
-        LOGGER.info(data);
         return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 }

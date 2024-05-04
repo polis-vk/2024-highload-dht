@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
 public class StreamingSession extends HttpSession {
-    private static final int BUFF_SIZE = (2 << 10) * (2 << 7); // 128 kb.
+    private static final int BUFF_SIZE = (2 << 10) * (2 << 10);
 
     private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] LF = "\n".getBytes(StandardCharsets.UTF_8);
@@ -68,11 +68,12 @@ public class StreamingSession extends HttpSession {
 
         @Override
         public int remaining() {
-            return entry != null || rangeIterator.hasNext() ? 1 : 0;
+            return entry != null || rangeIterator.hasNext() || !buffer.isEmpty() ? 1 : 0;
         }
 
         @Override
         public int write(Socket socket) throws IOException {
+
             buffer.tryWrite(socket);
 
             while (entry != null || rangeIterator.hasNext()) {
@@ -92,7 +93,8 @@ public class StreamingSession extends HttpSession {
                 writeEntry(lengthBytes, keyBytes, valueBytes);
                 entry = null;
             }
-            if (remaining() == 0) {
+
+            if (entry == null && !rangeIterator.hasNext()) {
                 buffer.append(END_PART);
             }
 

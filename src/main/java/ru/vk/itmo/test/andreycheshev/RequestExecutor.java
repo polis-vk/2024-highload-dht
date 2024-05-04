@@ -25,7 +25,7 @@ public class RequestExecutor {
     public RequestExecutor(RequestHandler requestHandler) {
         this.requestHandler = requestHandler;
         this.executor = new ThreadPoolExecutor(
-                CPU_THREADS_COUNT,
+                CPU_THREADS_COUNT / 2,
                 CPU_THREADS_COUNT / 2,
                 KEEPALIVE_MILLIS,
                 TimeUnit.MILLISECONDS,

@@ -33,6 +33,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER;
+import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER_NORMAL;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER_NORMAL;
 
@@ -99,7 +100,7 @@ public class Server extends HttpServer {
                         handleDefault(request, session);
                         return;
                     }
-                    if (request.getHeader(FROM_HEADER) == null) {
+                    if (request.getHeader(FROM_HEADER_NORMAL) == null) {
                         request.addHeader(FROM_HEADER + selfUrl);
                         collectResponsesCallback(
                                 broadcast(
@@ -211,7 +212,7 @@ public class Server extends HttpServer {
 
     public CompletableFuture<Response> handleProxy(String redirectedUrl, Request request) {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(redirectedUrl))
-                .header(FROM_HEADER, selfUrl)
+                .header(FROM_HEADER_NORMAL, selfUrl)
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
                         request.getBody() == null ? new byte[]{} : request.getBody())
                 ).build();

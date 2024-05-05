@@ -60,7 +60,6 @@ public class Server extends HttpServer {
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
         this.selfHandler = new SelfRequestHandler(dao, utils);
-        this.closeSessions = true;
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
@@ -71,6 +70,7 @@ public class Server extends HttpServer {
         acceptorConfig.reusePort = true;
 
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        httpServerConfig.closeSessions = true;
 
         return httpServerConfig;
     }
@@ -94,7 +94,8 @@ public class Server extends HttpServer {
                     Map<String, Integer> ackFrom = getFromAndAck(request);
                     int from = ackFrom.get("from");
                     int ack = ackFrom.get("ack");
-                    if (!permittedMethods.contains(request.getMethod()) || checkBadRequest(ack, from)) {
+                    if (!permittedMethods.contains(request.getMethod())
+                            || checkBadRequest(ack, from, request.getMethod())) {
                         handleDefault(request, session);
                         return;
                     }
@@ -134,8 +135,8 @@ public class Server extends HttpServer {
         }
     }
 
-    private boolean checkBadRequest(int ack, int from) {
-        return ack > from || ack <= 0 || from > clusterUrls.size();
+    private boolean checkBadRequest(int ack, int from, int method) {
+        return !permittedMethods.contains(method) || ack > from || ack <= 0 || from > clusterUrls.size();
     }
 
     private List<CompletableFuture<Response>> broadcast(List<String> nodes, Request request) {

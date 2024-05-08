@@ -1,9 +1,5 @@
-id = 0
-
 function request()
-    id = id + 1
+    id = math.random(1, 1000)
     path = "/v0/entity?id=" .. id
-    headers = {}
-    headers["Host"] = "localhost:8080"
-    return wrk.format("GET", path, headers)
+    return wrk.format("GET", path, body)
 end

@@ -20,7 +20,6 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -41,13 +40,6 @@ public class ServerImplementation extends HttpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerImplementation.class);
 
     private static final String ENTITY_PATH = "/v0/entity";
-    private static final String ENTITIES_PATH = "/v0/entities";
-    private static final byte[] ENTRIES_HEADER = """
-            HTTP/1.1 200 OK\r
-            Transfer-Encoding: chunked\r
-            \r
-            """.getBytes(StandardCharsets.UTF_8);
-
     private static final String REQUEST_KEY = "id=";
 
     private static final String FROM_PARAMETER = "from=";
@@ -115,10 +107,6 @@ public class ServerImplementation extends HttpServer {
         try {
             executor.execute(() -> {
                 try {
-                    if (request.getPath().equals(ENTITIES_PATH)) {
-                        handleEntitiesRequest(request, session);
-                        return;
-                    }
                     if (!request.getPath().equals(ENTITY_PATH)) {
                         handleDefault(request, session);
                         return;
@@ -350,48 +338,6 @@ public class ServerImplementation extends HttpServer {
             }
         }
     }
-
-    private void handleEntitiesRequest(Request request, HttpSession session) {
-        String startParameter = request.getParameter("start=");
-        if (startParameter == null || startParameter.isEmpty()) {
-            try {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            } catch (IOException e) {
-                LOGGER.error("error sent entries bad request response", e);
-                session.close();
-            }
-        }
-        String endParameter = request.getParameter("end=");
-        MemorySegment start = convertStringToMemorySegment(startParameter);
-        MemorySegment end = convertStringToMemorySegment(endParameter);
-        try {
-            session.write(ENTRIES_HEADER, 0, ENTRIES_HEADER.length);
-            Iterator<Entry<MemorySegment>> entryIterator = memorySegmentDao.get(start, end);
-            while (entryIterator.hasNext()) {
-                Entry<MemorySegment> entry = entryIterator.next();
-                int entrySize = (int) (entry.key().byteSize() + entry.value().byteSize()) + "\n".length();
-                String entrySizeHex = Long.toHexString(entrySize);
-                byte[] content = (entrySizeHex
-                        + "\r\n"
-                        + new String(entry.key().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
-                        + "\n"
-                        + new String(entry.value().toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
-                        + "\r\n").getBytes(StandardCharsets.UTF_8);
-                session.write(content, 0, content.length);
-            }
-            session.write("0\r\n\r\n".getBytes(StandardCharsets.UTF_8),
-                    0,
-                    "0\r\n\r\n".getBytes(StandardCharsets.UTF_8).length);
-            session.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private MemorySegment convertStringToMemorySegment(String parameter) {
-        return parameter == null ? null : MemorySegment.ofArray(parameter.getBytes(StandardCharsets.UTF_8));
-    }
-
 }
 
 

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 public class ClusterResponseMerger {
     private static final Logger log = LoggerFactory.getLogger(ClusterResponseMerger.class);
@@ -16,7 +17,7 @@ public class ClusterResponseMerger {
     private final int allowedUnsuccessfulResponses;
     private final Request originalRequest;
     private final HttpSession session;
-    private final NodeResponse[] nodeResponses;
+    private final AtomicReferenceArray<NodeResponse> nodeResponses;
     private final AtomicInteger unsuccessfulResponsesCount;
     private final AtomicInteger successfulResponsesCount;
 
@@ -25,13 +26,14 @@ public class ClusterResponseMerger {
         this.allowedUnsuccessfulResponses = from - ack;
         this.originalRequest = originalRequest;
         this.session = session;
-        this.nodeResponses = new NodeResponse[from];
+        this.nodeResponses = new AtomicReferenceArray<>(from);
         this.unsuccessfulResponsesCount = new AtomicInteger();
         this.successfulResponsesCount = new AtomicInteger();
     }
 
     public void addToMerge(int index, NodeResponse response) {
-        nodeResponses[index] = response;
+        // we can write in plain semantic because we read in opaque in mergeReplicasResponses method
+        nodeResponses.setPlain(index, response);
         if (isSuccessfulResponse(response.statusCode())) {
             int newSuccessfulResponsesCount = successfulResponsesCount.incrementAndGet();
             if (newSuccessfulResponsesCount == ack) {

@@ -4,6 +4,7 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_ENTITY_TOO_LARGE;
@@ -24,7 +25,7 @@ public class LsmServerUtil {
 
     public static Response mergeReplicasResponses(
             final Request originalRequest,
-            final NodeResponse[] responses,
+            final AtomicReferenceArray<NodeResponse> responses,
             final int ack
     ) {
         switch (originalRequest.getMethod()) {
@@ -41,11 +42,12 @@ public class LsmServerUtil {
         }
     }
 
-    private static Response mergeGetResponses(Request originalRequest, NodeResponse[] responses, int ack) {
+    private static Response mergeGetResponses(Request originalRequest, AtomicReferenceArray<NodeResponse> responses, int ack) {
         long maxTimestamp = -1;
         NodeResponse lastValue = null;
         int successfulResponses = 0;
-        for (NodeResponse response : responses) {
+        for (int i = 0; i < responses.length(); i++) {
+            final NodeResponse response = responses.getOpaque(i);
             if (response == null) continue;
             final long valueTimestamp = getTimestamp(response);
             if (valueTimestamp > maxTimestamp) {
@@ -75,7 +77,7 @@ public class LsmServerUtil {
 
     private static Response mergePutResponses(
             Request originalRequest,
-            NodeResponse[] responses,
+            AtomicReferenceArray<NodeResponse> responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -86,7 +88,7 @@ public class LsmServerUtil {
 
     private static Response mergeDeleteResponses(
             Request originalRequest,
-            NodeResponse[] responses,
+            AtomicReferenceArray<NodeResponse> responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -95,9 +97,10 @@ public class LsmServerUtil {
         return LSMConstantResponse.accepted(originalRequest);
     }
 
-    private static boolean hasNotEnoughReplicas(NodeResponse[] responses, int ack) {
+    private static boolean hasNotEnoughReplicas(AtomicReferenceArray<NodeResponse> responses, int ack) {
         int successfulResponses = 0;
-        for (NodeResponse response : responses) {
+        for (int i = 0; i < responses.length(); i++) {
+            final NodeResponse response = responses.getOpaque(i);
             if (response == null) continue;
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 successfulResponses++;
@@ -114,8 +117,9 @@ public class LsmServerUtil {
         return Long.parseLong(timestamp);
     }
 
-    private static NodeResponse firstNotNull(NodeResponse[] responses) {
-        for (NodeResponse response : responses) {
+    private static NodeResponse firstNotNull(AtomicReferenceArray<NodeResponse> responses) {
+        for (int i = 0; i < responses.length(); i++) {
+            final NodeResponse response = responses.getOpaque(i);
             if (response != null) return response;
         }
         throw new NoSuchElementException();

@@ -1,8 +1,10 @@
 package ru.vk.itmo.test.kovalevigor.server.util;
 
 import one.nio.http.HttpSession;
+import one.nio.http.Response;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -18,16 +20,37 @@ public final class ServerUtil {
             200, 201, 202, 404
     );
 
+    public static final TimeUnit REMOTE_TIMEOUT_TIMEUNIT = TimeUnit.MILLISECONDS;
+    public static final int REMOTE_TIMEOUT_VALUE = 500;
+    public static final Duration REMOTE_TIMEOUT = Duration.ofMillis(500);
+
     private ServerUtil() {
     }
 
-    public static void sendResponseWithoutIo(HttpSession session, Responses response) {
+    public static void sendResponseWithoutIo(HttpSession session, Response response) {
         try {
-            session.sendResponse(response.toResponse());
+            session.sendResponse(response);
         } catch (IOException ioException) {
-            log.log(Level.SEVERE, "IO in socket", ioException);
+            logIO(ioException);
             closeSession(session, ioException);
         }
+    }
+
+    public static void sendResponseWithoutIo(HttpSession session, Responses response) {
+        sendResponseWithoutIo(session, response.toResponse());
+    }
+
+    public static void sendErrorWithoutIo(HttpSession session, String code, String message) {
+        try {
+            session.sendError(code, message);
+        } catch (IOException ioException) {
+            logIO(ioException);
+            closeSession(session, ioException);
+        }
+    }
+
+    public static void logIO(IOException exception) {
+        log.log(Level.SEVERE, "IO in socket", exception);
     }
 
     public static void closeSession(HttpSession session, Exception base) {
@@ -35,7 +58,7 @@ public final class ServerUtil {
             session.sendError(Responses.SERVICE_UNAVAILABLE.getResponseCode(), null);
         } catch (IOException ioException) {
             ioException.addSuppressed(base);
-            log.log(Level.SEVERE, "IO in socket", ioException);
+            logIO(ioException);
             session.handleException(ioException);
         }
     }
@@ -81,5 +104,23 @@ public final class ServerUtil {
             }
         }
         return 0;
+    }
+
+    public static Response mergeResponses(Response lhs, Response rhs) {
+        if (lhs == null) {
+            return rhs;
+        } else if (rhs == null) {
+            return lhs;
+        }
+
+        int compare = compareTimestamps(getTimestamp(lhs), getTimestamp(rhs));
+        if (compare == 0) {
+            return rhs;
+        }
+        return compare > 0 ? lhs : rhs;
+    }
+
+    public static String getTimestamp(Response response) {
+        return Headers.getHeader(response, Headers.TIMESTAMP);
     }
 }

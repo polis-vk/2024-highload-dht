@@ -169,8 +169,12 @@ public class DaoHttpServer extends HttpServer {
     private void processRange(final Request request, final HttpSession session) throws IOException {
         final String startString = request.getParameter("start=");
         final String endString = request.getParameter("end=");
-        if (startString == null || startString.isBlank() || (endString != null && endString.isBlank())) {
+        if (startString == null || startString.isBlank()) {
             session.sendError(Response.BAD_REQUEST, "Missing range parameter \"start\".");
+            return;
+        }
+        if (endString != null && endString.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, "Missing range parameter \"end\".");
             return;
         }
         final MemorySegment startKey = MemorySegment.ofArray(startString.getBytes(StandardCharsets.UTF_8));

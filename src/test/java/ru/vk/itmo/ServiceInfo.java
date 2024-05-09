@@ -48,6 +48,13 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> range(String start, String end) throws Exception {
+        return client.send(
+                requestForRange(start, end).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     public HttpResponse<byte[]> delete(String key) throws Exception {
         return client.send(
                 requestForKey(key).DELETE().build(),
@@ -93,5 +100,9 @@ public class ServiceInfo {
 
     private HttpRequest.Builder requestForKey(String key, int ack, int from) {
         return request(STR."/v0/entity?id=\{key}&from=\{from}&ack=\{ack}");
+    }
+
+    private HttpRequest.Builder requestForRange(String start, String end) {
+        return request(STR."/v0/entities?start=\{start}\{end == null ? "" : (STR."&end=\{end}")}");
     }
 }

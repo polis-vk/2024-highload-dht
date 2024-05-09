@@ -42,7 +42,11 @@ public class LsmServerUtil {
         }
     }
 
-    private static Response mergeGetResponses(Request originalRequest, AtomicReferenceArray<NodeResponse> responses, int ack) {
+    private static Response mergeGetResponses(
+            Request originalRequest,
+            AtomicReferenceArray<NodeResponse> responses,
+            int ack
+    ) {
         long maxTimestamp = -1;
         NodeResponse lastValue = null;
         int successfulResponses = 0;

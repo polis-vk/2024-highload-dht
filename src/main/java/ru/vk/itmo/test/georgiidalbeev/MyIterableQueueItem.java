@@ -2,7 +2,6 @@ package ru.vk.itmo.test.georgiidalbeev;
 
 import one.nio.net.Session;
 import one.nio.net.Socket;
-import one.nio.util.ByteArrayBuilder;
 import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.georgiidalbeev.dao.ReferenceBaseEntry;
 
@@ -13,9 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
 public class MyIterableQueueItem extends Session.QueueItem {
-    private static final String DELIMITER = "\n";
-    private static final String CRLF = "\r\n";
-    private static final String FINAL_BYTES = "0\r\n\r\n";
+    private static final byte[] DELIMITER = "\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] FINAL_BYTES = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     private final Iterator<ReferenceBaseEntry<MemorySegment>> entries;
     private byte[] headers;
 
@@ -26,28 +25,33 @@ public class MyIterableQueueItem extends Session.QueueItem {
 
     @Override
     public int write(Socket socket) throws IOException {
-        ByteArrayBuilder builder = new ByteArrayBuilder();
+        int written = 0;
         if (headers != null) {
-            builder.append(headers);
+            written += socket.write(headers, 0, headers.length);
             headers = null;
         }
         if (entries.hasNext()) {
             Entry<MemorySegment> entry = entries.next();
-            createChunk(builder, entry);
+            written += writeToSocket(socket, entry);
         }
         if (!entries.hasNext()) {
-            builder.append(FINAL_BYTES.getBytes(StandardCharsets.UTF_8));
+            written += socket.write(FINAL_BYTES, 0, FINAL_BYTES.length);
         }
-        return socket.write(builder.toBytes(), 0, builder.length());
+        return written;
     }
 
-    private void createChunk(ByteArrayBuilder builder, Entry<MemorySegment> entry) {
-        builder.append(Long.toHexString(getEntrySize(entry)).getBytes(StandardCharsets.UTF_8));
-        builder.append(CRLF);
-        builder.append(entry.key().toArray(ValueLayout.JAVA_BYTE));
-        builder.append(DELIMITER);
-        builder.append(entry.value().toArray(ValueLayout.JAVA_BYTE));
-        builder.append(CRLF);
+    private int writeToSocket(Socket socket, Entry<MemorySegment> entry) throws IOException {
+        int written = 0;
+        byte[] size = Long.toHexString(getEntrySize(entry)).getBytes(StandardCharsets.UTF_8);
+        written += socket.write(size, 0, size.length);
+        written += socket.write(CRLF, 0, CRLF.length);
+        byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
+        written += socket.write(key, 0, key.length);
+        written += socket.write(DELIMITER, 0, DELIMITER.length);
+        byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
+        written += socket.write(value, 0, value.length);
+        written += socket.write(CRLF, 0, CRLF.length);
+        return written;
     }
 
     private long getEntrySize(Entry<MemorySegment> entry) {

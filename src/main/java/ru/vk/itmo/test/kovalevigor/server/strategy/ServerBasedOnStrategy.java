@@ -10,7 +10,7 @@ import java.io.IOException;
 
 public class ServerBasedOnStrategy extends HttpServer implements ServerFull {
 
-    private final ServerStrategy serverStrategy;
+    protected final ServerStrategy serverStrategy;
     private boolean stopped;
 
     public ServerBasedOnStrategy(HttpServerConfig config, ServerStrategy serverStrategy) throws IOException {

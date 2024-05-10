@@ -4,7 +4,7 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.dariasupriadkina.sharding.RendezvousHashing;
 import ru.vk.itmo.test.dariasupriadkina.sharding.ShardingPolicy;
-import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
+import ru.vk.itmo.test.dariasupriadkina.workers.CustomThreadConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,10 +18,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static ru.vk.itmo.test.dariasupriadkina.ServiceImlFactory.FLUSH_THRESHOLD_BYTES;
+
 public final class TestServer {
 
-    private static final int THREADS = Runtime.getRuntime().availableProcessors();
-    private static final int QUEUE_SIZE = 1024;
     private static final String LOCALHOST_PREFIX = "http://localhost:";
     private static final int NODE_AMOUNT = 3;
 
@@ -56,9 +56,9 @@ public final class TestServer {
 
         for (ServiceConfig serviceConfig : clusterConfs) {
             ServiceIml serviceIml = new ServiceIml(serviceConfig, new Config(serviceConfig.workingDir(),
-                    1024 * 1024),
-                    new WorkerConfig(THREADS * 2, THREADS * 2,
-                            QUEUE_SIZE, 60), shardingPolicy);
+                    FLUSH_THRESHOLD_BYTES),
+                    CustomThreadConfig.baseConfig("worker-thread"), shardingPolicy,
+                    CustomThreadConfig.baseConfig("node-thread"));
             serviceIml.start().get(2, TimeUnit.SECONDS);
         }
     }

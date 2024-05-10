@@ -1,6 +1,5 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
-import one.nio.async.CustomThreadFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -8,46 +7,42 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 import ru.vk.itmo.test.dariasupriadkina.dao.ReferenceDao;
 import ru.vk.itmo.test.dariasupriadkina.sharding.ShardingPolicy;
-import ru.vk.itmo.test.dariasupriadkina.workers.WorkerConfig;
-import ru.vk.itmo.test.dariasupriadkina.workers.WorkerThreadPoolExecutor;
+import ru.vk.itmo.test.dariasupriadkina.workers.CustomThreadConfig;
+import ru.vk.itmo.test.dariasupriadkina.workers.CustomThreadPoolExecutor;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServiceIml implements Service {
 
     private final Config daoConfig;
     private final ServiceConfig serviceConfig;
-    private final WorkerConfig workerConfig;
+    private final CustomThreadConfig workerConfig;
+    private final CustomThreadConfig nodeConfig;
     private final ShardingPolicy shardingPolicy;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private Server server;
     private Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
-    private WorkerThreadPoolExecutor workerThreadPoolExecutor;
-    private NodeThreadPoolExecutor nodeThreadPoolExecutor;
+    private CustomThreadPoolExecutor workerThreadPoolExecutor;
+    private CustomThreadPoolExecutor nodeThreadPoolExecutor;
 
     public ServiceIml(ServiceConfig serviceConfig, Config daoConfig,
-                      WorkerConfig workerConfig, ShardingPolicy shardingPolicy) {
+                      CustomThreadConfig workerConfig, ShardingPolicy shardingPolicy,
+                      CustomThreadConfig nodeConfig) {
         this.daoConfig = daoConfig;
         this.serviceConfig = serviceConfig;
         this.workerConfig = workerConfig;
         this.shardingPolicy = shardingPolicy;
+        this.nodeConfig = nodeConfig;
     }
 
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(daoConfig);
-        workerThreadPoolExecutor = new WorkerThreadPoolExecutor(workerConfig);
-        // TODO вынести параметры в отдельную конфигурацию для большей гибкости
-        nodeThreadPoolExecutor = new NodeThreadPoolExecutor(16,
-                16,
-                new ArrayBlockingQueue<>(1024),
-                new CustomThreadFactory("node-executor", true),
-                new ThreadPoolExecutor.AbortPolicy(), 60);
+        workerThreadPoolExecutor = new CustomThreadPoolExecutor(workerConfig);
+        nodeThreadPoolExecutor = new CustomThreadPoolExecutor(nodeConfig);
         nodeThreadPoolExecutor.prestartAllCoreThreads();
         workerThreadPoolExecutor.prestartAllCoreThreads();
 

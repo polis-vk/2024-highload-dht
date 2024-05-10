@@ -20,7 +20,7 @@ public class RendezvousClusterManager {
         int resIdx = -1;
         int maxHash = Integer.MIN_VALUE;
         for (int i = 0; i < availableClusters.size(); ++i) {
-            var hash = Hash.murmur3(String.join("", availableClusters.get(i), key));
+            var hash = Hash.murmur3(key + availableClusters.get(i));
             if (hash > maxHash) {
                 resIdx = i;
                 maxHash = hash;

@@ -22,7 +22,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -40,6 +39,7 @@ import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLI
 public class Server extends HttpServer {
 
     private static final Logger logger = LoggerFactory.getLogger(Server.class.getName());
+    private static final byte[] EMPTY_BYTE_ARRAY = new byte[]{};
     private final ExecutorService workerExecutor;
     private final Set<Integer> permittedMethods =
             Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
@@ -188,7 +188,8 @@ public class Server extends HttpServer {
 
             }, workerExecutor).exceptionally(exception -> {
                 logger.error("Error happened while collecting responses from nodes", exception);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                sendAsyncResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY), session);
+                return null;
             });
         }
     }
@@ -214,7 +215,7 @@ public class Server extends HttpServer {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(redirectedUrl))
                 .header(FROM_HEADER_NORMAL, selfUrl)
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
-                        request.getBody() == null ? new byte[]{} : request.getBody())
+                        request.getBody() == null ? EMPTY_BYTE_ARRAY : request.getBody())
                 ).build();
         return httpClient
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
@@ -222,17 +223,9 @@ public class Server extends HttpServer {
                     Response response1 = new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
                     if (httpResponse.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) == null) {
                         response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
-                    } else {
-                        response1.addHeader(TIMESTAMP_MILLIS_HEADER
-                                + httpResponse.headers().map().get(
-                                TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase(Locale.ROOT)).getFirst()
-                        );
                     }
                     return response1;
-                }, workerExecutor).exceptionally(exception -> {
-                    logger.error("Error happened while sending async requests", exception);
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                });
+                }, workerExecutor);
     }
 
     private Map<String, Integer> getFromAndAck(Request request) {

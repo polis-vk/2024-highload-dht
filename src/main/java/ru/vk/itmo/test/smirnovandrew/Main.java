@@ -16,7 +16,7 @@ public final class Main {
         ReferenceDao dao = new ReferenceDao(
                 new Config(
                         data,
-                        2 * 1024 * 1024
+                        2L * 1024 * 1024
                 )
         );
         String localhost = "http://localhost";

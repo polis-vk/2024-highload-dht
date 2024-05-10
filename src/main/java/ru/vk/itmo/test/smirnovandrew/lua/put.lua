@@ -1,8 +1,8 @@
-id = 0
+id = 250
 
 function random_string()
     str = ""
-    for i = 1, math.random(2, 100)
+    for i = 1, math.random(2, 10000)
     do
         str = str .. string.char(math.random(97, 122))
     end

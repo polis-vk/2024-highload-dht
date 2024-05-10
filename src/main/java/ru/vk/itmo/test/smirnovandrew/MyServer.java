@@ -251,7 +251,6 @@ public class MyServer extends HttpServer {
     ) {
         String start = request.getParameter("start=");
         String end = request.getParameter("end=");
-
         if (start.isEmpty()) {
             MyServerUtil.sendEmpty(session, logger, Response.BAD_REQUEST);
             return;

@@ -9,12 +9,13 @@ import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.CompletableFuture;
 
 public class SelfRequestHandler {
 
+    private static final String TIMESTAMP_MILLIS_HEADER = "X-TIMESTAMP-MILLIS: ";
     private final Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
     private final Utils utils;
-    private static final String TIMESTAMP_MILLIS_HEADER = "X-TIMESTAMP-MILLIS: ";
 
     public SelfRequestHandler(Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao, Utils utils) {
         this.dao = dao;
@@ -23,12 +24,20 @@ public class SelfRequestHandler {
 
     public Response handleRequest(Request request) {
         String id = utils.getIdParameter(request);
-        return switch (request.getMethodName()) {
-            case "GET" -> get(id);
-            case "PUT" -> put(id, request);
-            case "DELETE" -> delete(id);
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> get(id);
+            case Request.METHOD_PUT -> put(id, request);
+            case Request.METHOD_DELETE -> delete(id);
             default -> new Response(Response.NOT_FOUND, Response.EMPTY);
         };
+    }
+
+    public CompletableFuture<Response> handleAsyncRequest(Request request) {
+        return composeFuture(handleRequest(request));
+    }
+
+    private CompletableFuture<Response> composeFuture(Response response) {
+        return CompletableFuture.completedFuture(response);
     }
 
     public Response get(String id) {

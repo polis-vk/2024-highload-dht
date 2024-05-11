@@ -1,22 +1,21 @@
 package ru.vk.itmo.test.dariasupriadkina.workers;
 
-import one.nio.async.CustomThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-public class WorkerThreadPoolExecutor extends ThreadPoolExecutor {
+public class CustomThreadPoolExecutor extends ThreadPoolExecutor {
 
-    private static final Logger logger = LoggerFactory.getLogger(WorkerThreadPoolExecutor.class.getName());
+    private static final Logger logger = LoggerFactory.getLogger(CustomThreadPoolExecutor.class.getName());
     private final int shutdownTimeoutSec;
 
-    public WorkerThreadPoolExecutor(WorkerConfig workerConfig) {
+    public CustomThreadPoolExecutor(CustomThreadConfig workerConfig) {
         super(workerConfig.getCorePoolSize(), workerConfig.getMaximumPoolSize(),
-                WorkerConfig.KEEP_ALIVE_TIME, WorkerConfig.KEEP_ALIVE_TIME_SECONDS,
-                workerConfig.getWorkQueue(), new CustomThreadFactory("worker-thread", true),
-                new AbortPolicy());
+                CustomThreadConfig.KEEP_ALIVE_TIME, CustomThreadConfig.KEEP_ALIVE_TIME_SECONDS,
+                workerConfig.getWorkQueue(), workerConfig.getThreadFactory(),
+                workerConfig.getHandler());
         this.shutdownTimeoutSec = workerConfig.getShutdownTimeoutSec();
     }
 

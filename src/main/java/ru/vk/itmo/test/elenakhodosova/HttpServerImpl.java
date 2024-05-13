@@ -52,6 +52,7 @@ public class HttpServerImpl extends HttpServer {
     public static final String X_TOMB_HEADER = "X-tomb: ";
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ExecutorService executorService;
+    private final ExecutorService completeFutureExecutor;
     private static final Logger logger = LoggerFactory.getLogger(HttpServerImpl.class);
 
     private final HttpClient client;
@@ -62,10 +63,12 @@ public class HttpServerImpl extends HttpServer {
         GET, PUT, DELETE
     }
 
-    public HttpServerImpl(ServiceConfig config, ReferenceDao dao, ExecutorService executorService) throws IOException {
+    public HttpServerImpl(ServiceConfig config, ReferenceDao dao, ExecutorService executorService,
+                          ExecutorService completeFutureExecutor) throws IOException {
         super(createServerConfig(config));
         this.dao = dao;
         this.executorService = executorService;
+        this.completeFutureExecutor = completeFutureExecutor;
         this.selfUrl = config.selfUrl();
         this.nodes = config.clusterUrls();
         this.client = HttpClient.newBuilder()
@@ -146,7 +149,7 @@ public class HttpServerImpl extends HttpServer {
                     if (lastSuccessCount >= ack && requestHandled.compareAndSet(false, true)) {
                         handleSendResponse(request, session, ack, responseArray, lastSuccessResp);
                     }
-                });
+                }, completeFutureExecutor);
                 validateFuture(futureResult);
             } catch (InterruptedException | IOException e) {
                 logger.error("Error during sending request", e);

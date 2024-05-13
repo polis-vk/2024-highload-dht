@@ -31,7 +31,8 @@ public class ServiceImpl implements Service {
     public CompletableFuture<Void> start() throws IOException {
         dao = new ReferenceDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         executorService = ExecutorServiceConfig.newExecutorService();
-        server = new HttpServerImpl(config, dao, executorService);
+        ExecutorService completeFutureExecutor = ExecutorServiceConfig.newExecutorService();
+        server = new HttpServerImpl(config, dao, executorService, completeFutureExecutor);
         server.start();
         isServiceStopped.getAndSet(false);
         return CompletableFuture.completedFuture(null);

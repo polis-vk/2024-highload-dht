@@ -2,8 +2,11 @@ package ru.vk.itmo.test.viktorkorotkikh.util;
 
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.util.ByteArrayBuilder;
 
-import java.util.List;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.util.NoSuchElementException;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_ENTITY_TOO_LARGE;
@@ -24,7 +27,7 @@ public class LsmServerUtil {
 
     public static Response mergeReplicasResponses(
             final Request originalRequest,
-            final List<NodeResponse> responses,
+            final NodeResponse[] responses,
             final int ack
     ) {
         switch (originalRequest.getMethod()) {
@@ -41,11 +44,12 @@ public class LsmServerUtil {
         }
     }
 
-    private static Response mergeGetResponses(Request originalRequest, List<NodeResponse> responses, int ack) {
+    private static Response mergeGetResponses(Request originalRequest, NodeResponse[] responses, int ack) {
         long maxTimestamp = -1;
         NodeResponse lastValue = null;
         int successfulResponses = 0;
         for (NodeResponse response : responses) {
+            if (response == null) continue;
             final long valueTimestamp = getTimestamp(response);
             if (valueTimestamp > maxTimestamp) {
                 maxTimestamp = valueTimestamp;
@@ -59,10 +63,10 @@ public class LsmServerUtil {
             return LSMConstantResponse.notEnoughReplicas(originalRequest);
         }
         if (lastValue == null) {
-            lastValue = responses.getFirst();
+            lastValue = firstNotNull(responses);
         }
         return switch (lastValue.statusCode()) {
-            case HTTP_OK -> lastValue.okResponse();
+            case HTTP_OK -> Response.ok(lastValue.body());
             case HTTP_BAD_REQUEST -> LSMConstantResponse.badRequest(originalRequest);
             case HTTP_NOT_FOUND -> LSMConstantResponse.notFound(originalRequest);
             case HTTP_ENTITY_TOO_LARGE -> LSMConstantResponse.entityTooLarge(originalRequest);
@@ -74,7 +78,7 @@ public class LsmServerUtil {
 
     private static Response mergePutResponses(
             Request originalRequest,
-            List<NodeResponse> responses,
+            NodeResponse[] responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -85,7 +89,7 @@ public class LsmServerUtil {
 
     private static Response mergeDeleteResponses(
             Request originalRequest,
-            List<NodeResponse> responses,
+            NodeResponse[] responses,
             int ack
     ) {
         if (hasNotEnoughReplicas(responses, ack)) {
@@ -94,9 +98,10 @@ public class LsmServerUtil {
         return LSMConstantResponse.accepted(originalRequest);
     }
 
-    private static boolean hasNotEnoughReplicas(List<NodeResponse> responses, int ack) {
+    private static boolean hasNotEnoughReplicas(NodeResponse[] responses, int ack) {
         int successfulResponses = 0;
         for (NodeResponse response : responses) {
+            if (response == null) continue;
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 successfulResponses++;
             }
@@ -110,5 +115,38 @@ public class LsmServerUtil {
             return -1;
         }
         return Long.parseLong(timestamp);
+    }
+
+    private static NodeResponse firstNotNull(NodeResponse[] responses) {
+        for (NodeResponse response : responses) {
+            if (response != null) return response;
+        }
+        throw new NoSuchElementException();
+    }
+
+    public static int copyMemorySegmentToByteArrayBuilder(MemorySegment memorySegmentBody, ByteArrayBuilder builder) {
+        return copyMemorySegmentToByteArrayBuilder(memorySegmentBody, 0, builder, builder.capacity());
+    }
+
+    public static int copyMemorySegmentToByteArrayBuilder(
+            MemorySegment memorySegment,
+            int memorySegmentOffset,
+            ByteArrayBuilder builder,
+            int builderCapacity
+    ) {
+        int estimatedCapacityInBuffer = builderCapacity - builder.length();
+        int toWrite = memorySegment.byteSize() > estimatedCapacityInBuffer
+                ? estimatedCapacityInBuffer
+                : (int) memorySegment.byteSize() - memorySegmentOffset;
+        MemorySegment.copy(
+                memorySegment,
+                ValueLayout.JAVA_BYTE,
+                memorySegmentOffset,
+                builder.buffer(),
+                builder.length(),
+                toWrite
+        );
+        builder.setLength(builder.length() + toWrite);
+        return toWrite;
     }
 }

@@ -46,6 +46,16 @@ public final class SSTableUtils {
                 : baseDir.resolve(FILE_NAME + fileIndex + FILE_EXTENSION);
     }
 
+    public static Path compressionInfoName(
+            final boolean isCompacted,
+            final Path baseDir,
+            final int fileIndex
+    ) {
+        return isCompacted
+                ? baseDir.resolve(COMPACTED_PREFIX + FILE_NAME + fileIndex + COMPRESSION_INFO_EXTENSION)
+                : baseDir.resolve(FILE_NAME + fileIndex + COMPRESSION_INFO_EXTENSION);
+    }
+
     public static Path tempIndexName(
             final boolean isCompacted,
             final Path baseDir,
@@ -68,6 +78,20 @@ public final class SSTableUtils {
         return isCompacted
                 ? baseDir.resolve(COMPACTED_PREFIX + FILE_NAME + fileIndex + FILE_EXTENSION + TMP_FILE_EXTENSION)
                 : baseDir.resolve(FILE_NAME + fileIndex + FILE_EXTENSION + TMP_FILE_EXTENSION);
+    }
+
+    public static Path tempCompressionInfoName(
+            final boolean isCompacted,
+            final Path baseDir,
+            final int fileIndex
+    ) {
+        if (isCompacted) {
+            return baseDir.resolve(
+                    COMPACTED_PREFIX + FILE_NAME + fileIndex + COMPRESSION_INFO_EXTENSION + TMP_FILE_EXTENSION
+            );
+        } else {
+            return baseDir.resolve(FILE_NAME + fileIndex + COMPRESSION_INFO_EXTENSION + TMP_FILE_EXTENSION);
+        }
     }
 
     public static List<LSMPointerIterator> ssTableIterators(

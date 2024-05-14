@@ -40,6 +40,10 @@ dependencies {
     // Our beloved one-nio
     implementation 'ru.odnoklassniki:one-nio:1.7.1'
 
+    // compression
+    implementation 'org.lz4:lz4-java:1.8.0'
+    implementation group: 'com.github.luben', name: 'zstd-jni', version: '1.5.6-3'
+
     // JUnit Jupiter test framework
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.1'
     testImplementation 'org.junit.jupiter:junit-jupiter-params:5.10.1'

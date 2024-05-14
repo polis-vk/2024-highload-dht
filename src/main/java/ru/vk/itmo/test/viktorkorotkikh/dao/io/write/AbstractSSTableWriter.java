@@ -22,16 +22,25 @@ import java.util.Iterator;
  *
  * @author vitekkor
  * @see BaseSSTableWriter
+ * @see CompressedSSTableWriter
  */
 public abstract class AbstractSSTableWriter {
     private static final int BUFFER_SIZE = 64 * 1024;
     protected final ByteArraySegment longBuffer = new ByteArraySegment(Long.BYTES);
     protected final ByteArraySegment blobBuffer;
+    protected final int blockSize;
 
     private static final long INDEX_METADATA_SIZE = Long.BYTES + 1L; // entries size + hasNoTombstones flag
 
-    protected AbstractSSTableWriter() {
-        blobBuffer = new ByteArraySegment(512);
+    private static final int COMPRESSION_INFO_METADATA_SIZE = 2 * Integer.BYTES; // blocksCount|blockSize
+
+    protected AbstractSSTableWriter(int blockSize) {
+        this.blockSize = blockSize;
+        if (this.blockSize <= 0) { // set default blob buffer
+            blobBuffer = new ByteArraySegment(512);
+        } else {
+            blobBuffer = new ByteArraySegment(blockSize, false);
+        }
     }
 
     /**
@@ -50,6 +59,7 @@ public abstract class AbstractSSTableWriter {
             final int fileIndex
     ) throws IOException {
         // Write to temporary files
+        final Path tempCompressionInfo = SSTableUtils.tempCompressionInfoName(isCompacted, baseDir, fileIndex);
         final Path tempIndexName = SSTableUtils.tempIndexName(isCompacted, baseDir, fileIndex);
         final Path tempDataName = SSTableUtils.tempDataName(isCompacted, baseDir, fileIndex);
 
@@ -61,7 +71,11 @@ public abstract class AbstractSSTableWriter {
         // Will write through FileChannel despite extra memory copying and
         // no buffering (which may be implemented later).
         // Looking forward to MemorySegment facilities in FileChannel!
-        try (
+        try (OutputStream compressionInfo =
+                     new BufferedOutputStream(
+                             new FileOutputStream(
+                                     tempCompressionInfo.toFile()),
+                             BUFFER_SIZE);
                 OutputStream index =
                         new BufferedOutputStream(
                                 new FileOutputStream(
@@ -74,6 +88,9 @@ public abstract class AbstractSSTableWriter {
                                 BUFFER_SIZE)) {
             index.write(new byte[(int) INDEX_METADATA_SIZE]); // write 0, fill in the data later
 
+            writeCompressionHeader(compressionInfo);
+            compressionInfo.write(new byte[COMPRESSION_INFO_METADATA_SIZE]); // write 0s, fill in the data later
+
             int entriesSize = 0;
             boolean hasNoTombstones = true;
 
@@ -81,16 +98,23 @@ public abstract class AbstractSSTableWriter {
                 // Then write the entry
                 final TimestampedEntry<MemorySegment> entry = entries.next();
                 hasNoTombstones &= entry.value() != null;
-                writeEntry(entry, data, index);
+                writeEntry(entry, data, compressionInfo, index);
                 entriesSize++;
             }
 
             index.flush();
+            compressionInfo.flush();
+            finish(data, compressionInfo);
 
             // map the index and compression info files for updating metadata
             try (Arena arena = Arena.ofConfined();
                  FileChannel indexFileChannel = FileChannel.open(
                          tempIndexName,
+                         StandardOpenOption.READ,
+                         StandardOpenOption.WRITE
+                 );
+                 FileChannel compressionInfoFileChannel = FileChannel.open(
+                         tempCompressionInfo,
                          StandardOpenOption.READ,
                          StandardOpenOption.WRITE
                  )
@@ -101,35 +125,52 @@ public abstract class AbstractSSTableWriter {
                         INDEX_METADATA_SIZE,
                         arena
                 );
+
+                MemorySegment mappedCompressionInfoFile = compressionInfoFileChannel.map(
+                        FileChannel.MapMode.READ_WRITE,
+                        2L, // isCompressed|algorithm
+                        COMPRESSION_INFO_METADATA_SIZE,
+                        arena
+                );
                 // write final index information and compression info metadata.
-                writeIndexInfo(mappedIndexFile, entriesSize, hasNoTombstones);
+                writeIndexInfo(mappedIndexFile, mappedCompressionInfoFile, entriesSize, hasNoTombstones);
                 // force changes to the files to be written to the storage device.
                 mappedIndexFile.force();
+                mappedCompressionInfoFile.force();
             }
         }
 
-        renameTmpFiles(isCompacted, baseDir, fileIndex, tempIndexName, tempDataName);
+        renameTmpFiles(isCompacted, baseDir, fileIndex, tempCompressionInfo, tempIndexName, tempDataName);
     }
 
     /**
      * Rename the temporary files to their final names, making the SSTable available for use.
      *
-     * @param isCompacted   A boolean flag indicating whether the SSTable is compacted.
-     * @param baseDir       The base directory for storing SSTable files.
-     * @param fileIndex     The index of the SSTable file.
-     * @param tempIndexName A temporary index file path.
-     * @param tempDataName  A temporary data file path.
+     * @param isCompacted         A boolean flag indicating whether the SSTable is compacted.
+     * @param baseDir             The base directory for storing SSTable files.
+     * @param fileIndex           The index of the SSTable file.
+     * @param tempCompressionInfo A temporary compression info file path.
+     * @param tempIndexName       A temporary index file path.
+     * @param tempDataName        A temporary data file path.
      * @throws IOException if an I/O error occurs during writing.
      */
     private static void renameTmpFiles(
             boolean isCompacted,
             Path baseDir,
             int fileIndex,
+            Path tempCompressionInfo,
             Path tempIndexName,
             Path tempDataName
     ) throws IOException {
         // Publish files atomically
         // FIRST index, LAST data
+        final Path compressionInfoName = SSTableUtils.compressionInfoName(isCompacted, baseDir, fileIndex);
+        Files.move(
+                tempCompressionInfo,
+                compressionInfoName,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+        );
         final Path indexName = SSTableUtils.indexName(isCompacted, baseDir, fileIndex);
         Files.move(
                 tempIndexName,
@@ -149,12 +190,14 @@ public abstract class AbstractSSTableWriter {
     /**
      * Write final index information and compression info metadata.
      *
-     * @param mappedIndexFile A mapped index file.
-     * @param entriesSize     Count of entries.
-     * @param hasNoTombstones hasNoTombstones flag
+     * @param mappedIndexFile           A mapped index file.
+     * @param mappedCompressionInfoFile A mapped compression info file.
+     * @param entriesSize               Count of entries.
+     * @param hasNoTombstones           hasNoTombstones flag
      */
     protected abstract void writeIndexInfo(
             MemorySegment mappedIndexFile,
+            MemorySegment mappedCompressionInfoFile,
             int entriesSize,
             boolean hasNoTombstones
     );
@@ -162,14 +205,33 @@ public abstract class AbstractSSTableWriter {
     /**
      * Writes entry into os stream. Also writes additional information into compressionInfoStream and indexStream.
      *
-     * @param entry       Entry to write.
-     * @param os          Data output stream.
-     * @param indexStream Index output stream.
+     * @param entry                 Entry to write.
+     * @param os                    Data output stream.
+     * @param compressionInfoStream Compression info output stream.
+     * @param indexStream           Index output stream.
      * @throws IOException if an I/O error occurs during writing.
      */
     protected abstract void writeEntry(
             final TimestampedEntry<MemorySegment> entry,
             final OutputStream os,
+            final OutputStream compressionInfoStream,
             final OutputStream indexStream
     ) throws IOException;
+
+    /**
+     * Flush blobBuffer to outputStream forcibly.
+     *
+     * @param os                    outputStream for writing
+     * @param compressionInfoStream compression info outputStream
+     * @throws IOException if an I/O error occurs.
+     */
+    protected abstract void finish(OutputStream os, OutputStream compressionInfoStream) throws IOException;
+
+    /**
+     * Write the header for compression information.
+     *
+     * @param os Compression info output stream.
+     * @throws IOException if an I/O error occurs.
+     */
+    protected abstract void writeCompressionHeader(final OutputStream os) throws IOException;
 }

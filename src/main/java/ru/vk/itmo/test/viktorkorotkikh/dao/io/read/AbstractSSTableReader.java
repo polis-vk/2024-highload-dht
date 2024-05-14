@@ -17,15 +17,18 @@ import java.lang.foreign.ValueLayout;
 public abstract class AbstractSSTableReader {
     protected final MemorySegment mappedSSTable;
     protected final MemorySegment mappedIndexFile;
+    protected final MemorySegment mappedCompressionInfo;
     protected final int index;
 
     protected AbstractSSTableReader(
             MemorySegment mappedSSTable,
             MemorySegment mappedIndexFile,
+            MemorySegment mappedCompressionInfo,
             int index
     ) {
         this.mappedSSTable = mappedSSTable;
         this.mappedIndexFile = mappedIndexFile;
+        this.mappedCompressionInfo = mappedCompressionInfo;
         this.index = index;
     }
 

@@ -39,6 +39,7 @@ public class LSMServiceImpl implements Service {
     private static final int LOCAL_REQUEST_EXECUTOR_SERVICE_THREADS_COUNT = 16;
     private static final int LOCAL_REQUEST_EXECUTOR_SERVICE_QUEUE_SIZE = 1024;
     private final ServiceConfig serviceConfig;
+    private final Config.CompressionConfig compressionConfig;
     private LSMServerImpl httpServer;
     private boolean isRunning;
     private Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao;
@@ -102,8 +103,13 @@ public class LSMServiceImpl implements Service {
     }
 
     public LSMServiceImpl(ServiceConfig serviceConfig) {
+        this(serviceConfig, Config.disableCompression());
+    }
+
+    public LSMServiceImpl(ServiceConfig serviceConfig, Config.CompressionConfig compressionConfig) {
         this.serviceConfig = serviceConfig;
         this.consistentHashingManager = new ConsistentHashingManager(10, serviceConfig.clusterUrls());
+        this.compressionConfig = compressionConfig;
     }
 
     private LSMServerImpl createServer(
@@ -145,10 +151,14 @@ public class LSMServiceImpl implements Service {
         );
     }
 
-    private static Dao<MemorySegment, TimestampedEntry<MemorySegment>> createLSMDao(Path workingDir) {
+    private static Dao<MemorySegment, TimestampedEntry<MemorySegment>> createLSMDao(
+            Path workingDir,
+            Config.CompressionConfig compressionConfig
+    ) {
         Config daoConfig = new Config(
                 workingDir,
-                FLUSH_THRESHOLD
+                FLUSH_THRESHOLD,
+                compressionConfig
         );
         return new LSMDaoImpl(daoConfig);
     }
@@ -183,7 +193,7 @@ public class LSMServiceImpl implements Service {
     @Override
     public synchronized CompletableFuture<Void> start() throws IOException {
         if (isRunning) return CompletableFuture.completedFuture(null);
-        dao = createLSMDao(serviceConfig.workingDir());
+        dao = createLSMDao(serviceConfig.workingDir(), compressionConfig);
 
         httpServer = createServer(dao);
         httpServer.start();
@@ -245,7 +255,7 @@ public class LSMServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 6)
+    @ServiceFactory(stage = 7)
     public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
@@ -253,4 +263,25 @@ public class LSMServiceImpl implements Service {
         }
     }
 
+    @ServiceFactory(stage = 7)
+    public static class LZ4CompressedLSMServiceFactoryImpl implements ServiceFactory.Factory {
+        @Override
+        public Service create(ServiceConfig config) {
+            return new LSMServiceImpl(
+                    config,
+                    new Config.CompressionConfig(true, Config.CompressionConfig.Compressor.LZ4, 4096)
+            );
+        }
+    }
+
+    @ServiceFactory(stage = 7)
+    public static class ZSTDCompressedLSMServiceFactoryImpl implements ServiceFactory.Factory {
+        @Override
+        public Service create(ServiceConfig config) {
+            return new LSMServiceImpl(
+                    config,
+                    new Config.CompressionConfig(true, Config.CompressionConfig.Compressor.ZSTD, 4096)
+            );
+        }
+    }
 }

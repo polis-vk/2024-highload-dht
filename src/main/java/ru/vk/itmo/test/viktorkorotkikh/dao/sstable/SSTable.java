@@ -5,10 +5,16 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.LSMPointerIterator;
 import ru.vk.itmo.test.viktorkorotkikh.dao.MemTable;
 import ru.vk.itmo.test.viktorkorotkikh.dao.MergeIterator;
 import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
+import ru.vk.itmo.test.viktorkorotkikh.dao.compressor.Compressor;
+import ru.vk.itmo.test.viktorkorotkikh.dao.compressor.LZ4Compressor;
+import ru.vk.itmo.test.viktorkorotkikh.dao.compressor.ZstdCompressor;
+import ru.vk.itmo.test.viktorkorotkikh.dao.decompressor.Decompressor;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.read.AbstractSSTableReader;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.read.BaseSSTableReader;
+import ru.vk.itmo.test.viktorkorotkikh.dao.io.read.CompressedSSTableReader;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.write.AbstractSSTableWriter;
 import ru.vk.itmo.test.viktorkorotkikh.dao.io.write.BaseSSTableWriter;
+import ru.vk.itmo.test.viktorkorotkikh.dao.io.write.CompressedSSTableWriter;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -74,6 +80,10 @@ public final class SSTable {
                 FileChannel indexFileChannel = FileChannel.open(
                         SSTableUtils.indexName(isCompacted, config.basePath(), index),
                         StandardOpenOption.READ
+                );
+                FileChannel compressionInfoFileChannel = FileChannel.open(
+                        SSTableUtils.compressionInfoName(isCompacted, config.basePath(), index),
+                        StandardOpenOption.READ
                 )
         ) {
             MemorySegment mappedSSTable = ssTableFileChannel.map(
@@ -88,11 +98,30 @@ public final class SSTable {
                     indexFileChannel.size(),
                     arena
             );
-            AbstractSSTableReader reader = new BaseSSTableReader(
-                    mappedSSTable,
-                    mappedIndexFile,
-                    index
+            MemorySegment mappedCompressionInfo = compressionInfoFileChannel.map(
+                    FileChannel.MapMode.READ_ONLY,
+                    0,
+                    compressionInfoFileChannel.size(),
+                    arena
             );
+            AbstractSSTableReader reader;
+            if (CompressedSSTableReader.isCompressed(mappedCompressionInfo)) {
+                Decompressor decompressor = CompressedSSTableReader.getDecompressor(mappedCompressionInfo);
+                reader = new CompressedSSTableReader(
+                        mappedSSTable,
+                        mappedIndexFile,
+                        mappedCompressionInfo,
+                        decompressor,
+                        index
+                );
+            } else {
+                reader = new BaseSSTableReader(
+                        mappedSSTable,
+                        mappedIndexFile,
+                        mappedCompressionInfo,
+                        index
+                );
+            }
             return new SSTable(reader);
         }
     }
@@ -117,7 +146,7 @@ public final class SSTable {
             // it is ok, actually it is normal state
         }
 
-        AbstractSSTableWriter writer = getWriter();
+        AbstractSSTableWriter writer = getWriter(config);
         writer.write(false, memTable.values().iterator(), config.basePath(), fileIndex);
 
         String newFileName = SSTableUtils.dataName(false, config.basePath(), fileIndex)
@@ -140,15 +169,23 @@ public final class SSTable {
         Files.move(indexTmp, indexFile, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private static AbstractSSTableWriter getWriter() {
-        return new BaseSSTableWriter();
+    private static AbstractSSTableWriter getWriter(Config config) {
+        if (config.compressionConfig().enabled()) {
+            Compressor compressor = switch (config.compressionConfig().compressor()) {
+                case LZ4 -> LZ4Compressor.INSTANCE;
+                case ZSTD -> ZstdCompressor.INSTANCE;
+            };
+            return new CompressedSSTableWriter(compressor, config.compressionConfig().blockSize());
+        } else {
+            return new BaseSSTableWriter();
+        }
     }
 
     public static void compact(
             MergeIterator.MergeIteratorWithTombstoneFilter data,
             Config config
     ) throws IOException {
-        AbstractSSTableWriter writer = getWriter();
+        AbstractSSTableWriter writer = getWriter(config);
         writer.write(true, data, config.basePath(), 0);
         finalizeCompaction(config.basePath());
     }
@@ -212,9 +249,11 @@ public final class SSTable {
 
         Files.move(indexTmp, indexFile, StandardCopyOption.ATOMIC_MOVE);
         Path sstableIndexFile = SSTableUtils.indexName(true, storagePath, 0);
+        Path sstableCompressionInfoFile = SSTableUtils.compressionInfoName(true, storagePath, 0);
         if (noData) {
             Files.delete(compactionFile);
             Files.delete(sstableIndexFile);
+            Files.delete(sstableCompressionInfoFile);
         } else {
             Files.move(
                     compactionFile,
@@ -224,6 +263,11 @@ public final class SSTable {
             Files.move(
                     sstableIndexFile,
                     SSTableUtils.indexName(false, storagePath, 0),
+                    StandardCopyOption.ATOMIC_MOVE
+            );
+            Files.move(
+                    sstableCompressionInfoFile,
+                    SSTableUtils.compressionInfoName(false, storagePath, 0),
                     StandardCopyOption.ATOMIC_MOVE
             );
         }

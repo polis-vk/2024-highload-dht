@@ -15,9 +15,14 @@ import java.lang.foreign.ValueLayout;
 public final class BaseSSTableWriter extends AbstractSSTableWriter {
     private long entryOffset;
 
+    public BaseSSTableWriter() {
+        super(-1);
+    }
+
     @Override
     protected void writeIndexInfo(
             MemorySegment mappedIndexFile,
+            MemorySegment mappedCompressionInfoFile,
             int entriesSize,
             boolean hasNoTombstones
     ) {
@@ -29,6 +34,7 @@ public final class BaseSSTableWriter extends AbstractSSTableWriter {
     protected void writeEntry(
             final TimestampedEntry<MemorySegment> entry,
             final OutputStream os,
+            final OutputStream compressionInfoStream,
             final OutputStream indexStream
     ) throws IOException {
         final MemorySegment key = entry.key();
@@ -75,5 +81,15 @@ public final class BaseSSTableWriter extends AbstractSSTableWriter {
         blobBuffer.ensureCapacity(size);
         MemorySegment.copy(value, 0L, blobBuffer.segment(), 0L, size);
         blobBuffer.withArray(array -> os.write(array, 0, (int) size));
+    }
+
+    @Override
+    protected void writeCompressionHeader(OutputStream os) throws IOException {
+        os.write(0); // isCompressed == false
+    }
+
+    @Override
+    protected void finish(OutputStream os, OutputStream compressionInfoStream) throws IOException {
+        // no op
     }
 }

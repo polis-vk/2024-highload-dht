@@ -22,9 +22,10 @@ public class BaseSSTableReader extends AbstractSSTableReader {
     public BaseSSTableReader(
             MemorySegment mappedSSTable,
             MemorySegment mappedIndexFile,
+            MemorySegment mappedCompressionInfo,
             int index
     ) {
-        super(mappedSSTable, mappedIndexFile, index);
+        super(mappedSSTable, mappedIndexFile, mappedCompressionInfo, index);
     }
 
     private long getMinKeySizeOffset() {

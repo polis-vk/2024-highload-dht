@@ -23,19 +23,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
 
     private final ExecutorService executorService;
     private final HttpClient httpClient;
     private final ConsistentHashing consistentHashing;
-    private final List<String> clusterUrls;
     private final RequestHandler requestHandler;
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
@@ -49,10 +48,9 @@ public class ServerImpl extends HttpServer {
         this.consistentHashing = consistentHashing;
         this.selfUrl = config.selfUrl();
         this.clusterSize = config.clusterUrls().size();
-        this.clusterUrls = config.clusterUrls();
         this.requestHandler = new RequestHandler(dao);
         this.httpClient = HttpClient.newBuilder()
-                .executor(Executors.newFixedThreadPool(2)).build();
+                .executor(worker.getExecutorService()).build();
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -86,19 +84,13 @@ public class ServerImpl extends HttpServer {
             }
 
             String paramId = request.getParameter("id=");
-
-            if (paramId == null || paramId.isEmpty()) {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-
             String fromStr = request.getParameter("from=");
             String ackStr = request.getParameter("ack=");
 
             int from = fromStr == null || fromStr.isEmpty() ? clusterSize : Integer.parseInt(fromStr);
             int ack = ackStr == null || ackStr.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackStr);
 
-            if (ack == 0 || from > clusterSize || ack > from) {
+            if (ack == 0 || from > clusterSize || ack > from || paramId == null || paramId.isEmpty()) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
@@ -119,16 +111,16 @@ public class ServerImpl extends HttpServer {
 
     private void processingRequest(Request request, HttpSession session, long processingStartTime,
                                    String paramId, int from, int ack) throws IOException {
-        if (System.currentTimeMillis() - processingStartTime > 350) {
+        if (System.currentTimeMillis() - processingStartTime > Constants.REQUEST_TIMEOUT) {
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
             return;
         }
 
         try {
             if (request.getHeader(Constants.HTTP_TERMINATION_HEADER) == null) {
-                session.sendResponse(handleProxyRequest(request, session, paramId, from, ack));
+                sendResponse(session, handleProxyRequest(request, session, paramId, from, ack));
             } else {
-                session.sendResponse(requestHandler.handle(request, paramId));
+                sendResponse(session, requestHandler.handle(request, paramId));
             }
         } catch (Exception e) {
             if (e.getClass() == HttpException.class) {
@@ -138,16 +130,6 @@ public class ServerImpl extends HttpServer {
                 session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
         }
-    }
-
-    private Response sendException(Exception exception) {
-        String responseCode;
-        if (exception.getClass().equals(TimeoutException.class)) {
-            responseCode = Response.REQUEST_TIMEOUT;
-        } else {
-            responseCode = Response.INTERNAL_ERROR;
-        }
-        return new Response(responseCode, Response.EMPTY);
     }
 
     private void sendResponse(HttpSession session, Response response) {
@@ -168,33 +150,27 @@ public class ServerImpl extends HttpServer {
                 .build();
     }
 
-    private Response sendProxyRequest(HttpRequest httpRequest) {
-        try {
-            HttpResponse<byte[]> httpResponse = httpClient
-                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .get(Constants.REQUEST_TIMEOUT, TimeUnit.MILLISECONDS);
+    private CompletableFuture<Response> sendProxyRequest(HttpRequest httpRequest) {
+        return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApplyAsync(this::processingResponse);
+    }
 
-            String statusCode = Constants.HTTP_CODE.getOrDefault(httpResponse.statusCode(), null);
-            if (statusCode == null) {
-                return new Response(Response.INTERNAL_ERROR, httpResponse.body());
-            } else {
-
-                Response response = new Response(statusCode, httpResponse.body());
-                long timestamp = httpRequest.headers()
-                        .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
-                response.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
-                return response;
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return sendException(e);
-        } catch (ExecutionException | TimeoutException e) {
-            return sendException(e);
+    private Response processingResponse(HttpResponse<byte[]> response) {
+        String statusCode = Constants.HTTP_CODE.getOrDefault(response.statusCode(), null);
+        if (statusCode == null) {
+            return new Response(Response.INTERNAL_ERROR, response.body());
+        } else {
+            Response newResponse = new Response(statusCode, response.body());
+            long timestamp = response.headers()
+                    .firstValueAsLong(Constants.HTTP_TIMESTAMP_HEADER).orElse(0);
+            newResponse.addHeader(Constants.NIO_TIMESTAMP_HEADER + timestamp);
+            return newResponse;
         }
     }
 
-    private List<Response> sendProxyRequests(Map<String, HttpRequest> httpRequests, List<String> nodeUrls) {
-        List<Response> responses = new ArrayList<>();
+    private List<CompletableFuture<Response>> sendProxyRequests(Map<String, HttpRequest> httpRequests,
+                                                                List<String> nodeUrls) {
+        List<CompletableFuture<Response>> responses = new ArrayList<>();
         for (String nodeUrl : nodeUrls) {
             HttpRequest httpRequest = httpRequests.get(nodeUrl);
             if (!Objects.equals(selfUrl, nodeUrl)) {
@@ -204,8 +180,9 @@ public class ServerImpl extends HttpServer {
         return responses;
     }
 
-    private Response handleProxyRequest(Request request, HttpSession session, String paramId, int from, int ack) {
-        List<String> nodeUrls = consistentHashing.getNodes(paramId, clusterUrls, from);
+    private Response handleProxyRequest(Request request, HttpSession session,
+                                                           String paramId, int from, int ack) {
+        List<String> nodeUrls = consistentHashing.getNodes(paramId, from);
 
         if (nodeUrls.size() < from) {
             sendResponse(session, new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
@@ -216,31 +193,66 @@ public class ServerImpl extends HttpServer {
             httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
         }
 
-        List<Response> responses = sendProxyRequests(httpRequests, nodeUrls);
+        List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
 
         if (httpRequests.get(selfUrl) != null) {
-            responses.add(requestHandler.handle(request, paramId));
+            responses.add(
+                    CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId))
+            );
         }
 
-        List<Response> successResponses = new ArrayList<>();
-        for (Response response : responses) {
-            if (response.getStatus() < 500) {
-                successResponses.add(response);
-            }
+        return getQuorumResult(request, from, ack, responses);
+    }
+
+    private Response getQuorumResult(Request request, int from, int ack,
+                                                        List<CompletableFuture<Response>> responses) {
+        List<Response> successResponses = new CopyOnWriteArrayList<>();
+        CompletableFuture<Response> result = new CompletableFuture<>();
+        AtomicInteger successResponseCount = new AtomicInteger();
+        AtomicInteger errorResponseCount = new AtomicInteger();
+
+        for (CompletableFuture<Response> responseFuture : responses) {
+            responseFuture.whenCompleteAsync((response, throwable) -> {
+                if (throwable == null || (response != null && response.getStatus() < Constants.SERVER_ERROR)) {
+                    successResponseCount.incrementAndGet();
+                    successResponses.add(response);
+                } else {
+                    errorResponseCount.incrementAndGet();
+                }
+
+                if (successResponseCount.get() >= ack) {
+                    result.complete(getResult(request, successResponses));
+                }
+
+                if (errorResponseCount.get() == from - ack + 1) {
+                    result.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                }
+            }).exceptionally(e -> new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
 
-        if (successResponses.size() >= ack) {
-            if (request.getMethod() == Request.METHOD_GET) {
-                successResponses.sort(Comparator.comparingLong(r -> {
-                            String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
-                            return timestamp == null ? 0 : Long.parseLong(timestamp);
-                        }));
-                return successResponses.getFirst();
-            } else {
-                return successResponses.getLast();
-            }
+        try {
+            return result.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (ExecutionException e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
+    private Response getResult(Request request, List<Response> successResponses) {
+        if (request.getMethod() == Request.METHOD_GET) {
+            sortResponses(successResponses);
+            return successResponses.getLast();
         } else {
-            return new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return successResponses.getFirst();
         }
+    }
+
+    private void sortResponses(List<Response> successResponses) {
+        successResponses.sort(Comparator.comparingLong(r -> {
+            String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
+            return timestamp == null ? 0 : Long.parseLong(timestamp);
+        }));
     }
 }

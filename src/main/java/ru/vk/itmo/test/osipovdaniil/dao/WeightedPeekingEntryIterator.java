@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.osipovdaniil.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -12,15 +10,15 @@ import java.util.NoSuchElementException;
  * @author incubos
  */
 final class WeightedPeekingEntryIterator
-        implements Iterator<Entry<MemorySegment>>,
+        implements Iterator<ReferenceBaseEntry<MemorySegment>>,
         Comparable<WeightedPeekingEntryIterator> {
     private final int weight;
-    private final Iterator<Entry<MemorySegment>> delegate;
-    private Entry<MemorySegment> next;
+    private final Iterator<ReferenceBaseEntry<MemorySegment>> delegate;
+    private ReferenceBaseEntry<MemorySegment> next;
 
     WeightedPeekingEntryIterator(
             final int weight,
-            final Iterator<Entry<MemorySegment>> delegate) {
+            final Iterator<ReferenceBaseEntry<MemorySegment>> delegate) {
         this.weight = weight;
         this.delegate = delegate;
         this.next = delegate.hasNext() ? delegate.next() : null;
@@ -32,17 +30,17 @@ final class WeightedPeekingEntryIterator
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public ReferenceBaseEntry<MemorySegment> next() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
 
-        final Entry<MemorySegment> result = next;
+        final ReferenceBaseEntry<MemorySegment> result = next;
         next = delegate.hasNext() ? delegate.next() : null;
         return result;
     }
 
-    Entry<MemorySegment> peek() {
+    ReferenceBaseEntry<MemorySegment> peek() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }

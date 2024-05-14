@@ -2,7 +2,10 @@ package ru.vk.itmo.test.viktorkorotkikh.util;
 
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.util.ByteArrayBuilder;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -127,5 +130,31 @@ public class LsmServerUtil {
             if (response != null) return response;
         }
         throw new NoSuchElementException();
+    }
+
+    public static int copyMemorySegmentToByteArrayBuilder(MemorySegment memorySegmentBody, ByteArrayBuilder builder) {
+        return copyMemorySegmentToByteArrayBuilder(memorySegmentBody, 0, builder, builder.capacity());
+    }
+
+    public static int copyMemorySegmentToByteArrayBuilder(
+            MemorySegment memorySegment,
+            int memorySegmentOffset,
+            ByteArrayBuilder builder,
+            int builderCapacity
+    ) {
+        int estimatedCapacityInBuffer = builderCapacity - builder.length();
+        int toWrite = memorySegment.byteSize() > estimatedCapacityInBuffer
+                ? estimatedCapacityInBuffer
+                : (int) memorySegment.byteSize() - memorySegmentOffset;
+        MemorySegment.copy(
+                memorySegment,
+                ValueLayout.JAVA_BYTE,
+                memorySegmentOffset,
+                builder.buffer(),
+                builder.length(),
+                toWrite
+        );
+        builder.setLength(builder.length() + toWrite);
+        return toWrite;
     }
 }

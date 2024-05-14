@@ -29,22 +29,16 @@ public class SelfRequestHandler {
 
     public Response handleRequest(Request request) {
         String id = utils.getIdParameter(request);
-        return switch (request.getMethodName()) {
-            case "GET" -> get(id);
-            case "PUT" -> put(id, request);
-            case "DELETE" -> delete(id);
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> get(id);
+            case Request.METHOD_PUT -> put(id, request);
+            case Request.METHOD_DELETE -> delete(id);
             default -> new Response(Response.NOT_FOUND, Response.EMPTY);
         };
     }
 
     public CompletableFuture<Response> handleAsyncRequest(Request request) {
-        String id = utils.getIdParameter(request);
-        return switch (request.getMethodName()) {
-            case "GET" -> composeFuture(get(id));
-            case "PUT" -> composeFuture(put(id, request));
-            case "DELETE" -> composeFuture(delete(id));
-            default -> composeFuture(new Response(Response.NOT_FOUND, Response.EMPTY));
-        };
+        return composeFuture(handleRequest(request));
     }
 
     private CompletableFuture<Response> composeFuture(Response response) {

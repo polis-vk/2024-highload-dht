@@ -33,12 +33,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER;
+import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.FROM_HEADER_NORMAL;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER;
 import static ru.vk.itmo.test.dariasupriadkina.HeaderConstraints.TIMESTAMP_MILLIS_HEADER_NORMAL;
 
 public class Server extends HttpServer {
 
     private static final Logger logger = LoggerFactory.getLogger(Server.class.getName());
+    private static final byte[] EMPTY_BYTE_ARRAY = new byte[]{};
     private final ExecutorService workerExecutor;
     private final Set<Integer> permittedMethods =
             Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
@@ -60,7 +62,6 @@ public class Server extends HttpServer {
         this.httpClient = HttpClient.newBuilder().executor(nodeExecutor).build();
         this.utils = new Utils(dao);
         this.selfHandler = new SelfRequestHandler(dao, utils);
-        this.closeSessions = true;
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
@@ -69,6 +70,7 @@ public class Server extends HttpServer {
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        httpServerConfig.closeSessions = true;
         return httpServerConfig;
     }
 
@@ -95,11 +97,12 @@ public class Server extends HttpServer {
                     Map<String, Integer> ackFrom = getFromAndAck(request);
                     int from = ackFrom.get("from");
                     int ack = ackFrom.get("ack");
-                    if (!permittedMethods.contains(request.getMethod()) || checkBadRequest(ack, from)) {
+                    if (!permittedMethods.contains(request.getMethod())
+                            || checkBadRequest(ack, from, request.getMethod())) {
                         handleDefault(request, session);
                         return;
                     }
-                    if (request.getHeader(FROM_HEADER) == null) {
+                    if (request.getHeader(FROM_HEADER_NORMAL) == null) {
                         request.addHeader(FROM_HEADER + selfUrl);
                         collectResponsesCallback(
                                 broadcast(
@@ -135,8 +138,8 @@ public class Server extends HttpServer {
         }
     }
 
-    private boolean checkBadRequest(int ack, int from) {
-        return ack > from || ack <= 0 || from > clusterUrls.size();
+    private boolean checkBadRequest(int ack, int from, int method) {
+        return !permittedMethods.contains(method) || ack > from || ack <= 0 || from > clusterUrls.size();
     }
 
     private List<CompletableFuture<Response>> broadcast(List<String> nodes, Request request) {
@@ -211,9 +214,9 @@ public class Server extends HttpServer {
 
     public CompletableFuture<Response> handleProxy(String redirectedUrl, Request request) {
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(redirectedUrl))
-                .header(FROM_HEADER, selfUrl)
+                .header(FROM_HEADER_NORMAL, selfUrl)
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
-                        request.getBody() == null ? new byte[]{} : request.getBody())
+                        request.getBody() == null ? EMPTY_BYTE_ARRAY : request.getBody())
                 ).build();
         return httpClient
                 .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
@@ -228,10 +231,7 @@ public class Server extends HttpServer {
                         );
                     }
                     return response1;
-                }, workerExecutor).exceptionally(exception -> {
-                    logger.error("Error happened while sending async requests", exception);
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                });
+                }, workerExecutor);
     }
 
     private Map<String, Integer> getFromAndAck(Request request) {

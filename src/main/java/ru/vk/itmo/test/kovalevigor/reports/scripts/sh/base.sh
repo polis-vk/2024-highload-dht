@@ -1,7 +1,7 @@
 #!/bin/bash
 NAME=$(date +"%s")
 JFR="../../info-$NAME.jfr"
-PREFIX="../../html/stage4"
+PREFIX="../../html/stage5"
 (wrk2 -c 128 -t 8 -L -d $1 -R $2 -s "../lua/$3.lua" http://localhost:8080 > "${PREFIX}/${NAME}_wrk.txt") &
 ./ap/bin/asprof -t -e cpu,alloc,lock -d $1 -f $JFR MainServer
 

@@ -5,7 +5,7 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
 
-public final class LSMServiceFactories {
+public class LSMServiceFactories {
     private LSMServiceFactories() {
     }
 

@@ -19,7 +19,6 @@ public class CustomHttpSession extends HttpSession {
         super(socket, server);
     }
 
-
     @Override
     protected void processWrite() throws Exception {
         super.processWrite();
@@ -47,6 +46,5 @@ public class CustomHttpSession extends HttpSession {
         }
         scheduleClose();
     }
-
 
 }

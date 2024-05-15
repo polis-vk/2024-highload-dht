@@ -25,11 +25,15 @@ public final class EntryChunkUtils {
     private static final byte[] CLRF_BYTES = "\r\n".getBytes(StandardCharsets.UTF_8);
 
     public static void getEntryByteChunk(Entry<MemorySegment> ee, ByteArrayBuilder bb) {
-        bb.append(EntryChunkUtils.getKVLengthChunk(ee), 0, EntryChunkUtils.getKVLengthChunk(ee).length);
+        byte[] key = getEntryKeyChunk(ee);
+        byte[] value = getEntryValueChunk(ee);
+        byte[] kvLength = getKVLengthChunk(ee);
+
+        bb.append(kvLength, 0, kvLength.length);
         bb.append(CLRF_BYTES, 0, CLRF_BYTES.length);
-        bb.append(EntryChunkUtils.getEntryKeyChunk(ee), 0, EntryChunkUtils.getEntryKeyChunk(ee).length);
+        bb.append(key, 0, key.length);
         bb.append(DELIMITER_BYTES, 0, DELIMITER_BYTES.length);
-        bb.append(EntryChunkUtils.getEntryValueChunk(ee), 0, EntryChunkUtils.getEntryValueChunk(ee).length);
+        bb.append(value, 0, value.length);
         bb.append(CLRF_BYTES, 0, CLRF_BYTES.length);
     }
 

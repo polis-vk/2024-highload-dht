@@ -24,7 +24,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -35,6 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ServerImpl extends HttpServer {
 
     public static final int EXECUTOR_SERVICE_TERMINATION_TIMEOUT = 60;
+    public static final String ENTITY_PATH = "/v0/entity";
+    public static final String START = "start=";
     private static final String HEADER_REMOTE = "X-flag-remote-server-to-node";
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": true";
     private static final String HEADER_TIMESTAMP = "X-flag-remote-server-to-node";
@@ -42,6 +46,21 @@ public class ServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private static final long REMOTE_HEADER_TIMEOUT = 500;
+    public static final String ID = "id=";
+    public static final String ACK = "ack=";
+    public static final String FROM = "from=";
+    public static final String ENTITIES_PATH = "/v0/entities";
+    public static final String END = "end=";
+    private static final byte[] CHUNK_HEADERS =
+            """
+            HTTP/1.1 200\r
+            OKContentType: application/octet-stream\r
+            Transfer-Encoding: chunked\r
+            Connection: keep-alive\r
+            \r
+            """.getBytes(StandardCharsets.UTF_8);
+    private static final byte[] N_SEP = "\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CHUNK_SEP = "\r\n".getBytes(StandardCharsets.UTF_8);
 
     private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2,
             new CustomThreadFactory("local-work"));
@@ -89,7 +108,12 @@ public class ServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(final Request request, final HttpSession session) throws IOException {
-        if (!"/v0/entity".equals(request.getPath())) {
+        final String path = request.getPath();
+        if (path.startsWith(ENTITIES_PATH)) {
+            getRange(request, session);
+            return;
+        }
+        if (!ENTITY_PATH.equals(path)) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
         }
@@ -97,7 +121,7 @@ public class ServerImpl extends HttpServer {
             session.sendError(Response.METHOD_NOT_ALLOWED, null);
             return;
         }
-        final String id = request.getParameter("id=");
+        final String id = request.getParameter(ID);
         if (!validateId(id)) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
@@ -116,8 +140,8 @@ public class ServerImpl extends HttpServer {
             });
             return;
         }
-        final int ack = getInt(request, "ack=", config.clusterUrls().size() / 2 + 1);
-        final int from = getInt(request, "from=", config.clusterUrls().size());
+        final int ack = getInt(request, ACK, config.clusterUrls().size() / 2 + 1);
+        final int from = getInt(request, FROM, config.clusterUrls().size());
         if (!validateAckFrom(ack, from)) {
             session.sendError(Response.BAD_REQUEST, null);
             return;
@@ -134,6 +158,56 @@ public class ServerImpl extends HttpServer {
             }
         }
 
+    }
+
+    private void getRange(final Request request, final HttpSession session) throws IOException {
+        final String startParameter = request.getParameter(START);
+        final String endParameter = request.getParameter(END);
+        if (!validateStartEnd(startParameter, endParameter)) {
+            session.sendError(Response.BAD_REQUEST, null);
+            return;
+        }
+        final MemorySegment startKeySegment = MemorySegment.ofArray(startParameter.getBytes(StandardCharsets.UTF_8));
+        final MemorySegment endKeySegment = endParameter == null
+                ? null : MemorySegment.ofArray(endParameter.getBytes(StandardCharsets.UTF_8));
+        final Iterator<ReferenceBaseEntry<MemorySegment>> iterator = dao.get(startKeySegment, endKeySegment);
+        writeChunkRes(iterator, session);
+    }
+
+    private void writeChunkRes(final Iterator<ReferenceBaseEntry<MemorySegment>> iterator, final HttpSession session)
+            throws IOException {
+        if (!iterator.hasNext()) {
+            session.sendResponse(new Response(Response.OK, Response.EMPTY));
+            return;
+        }
+        session.write(CHUNK_HEADERS, 0, CHUNK_HEADERS.length);
+        while (iterator.hasNext()) {
+            writeChunkEntry(iterator.next(), session);
+        }
+        final byte[] zero = Integer.toHexString(0).toUpperCase().getBytes(StandardCharsets.UTF_8);
+        session.write(zero, 0, zero.length);
+        session.write(CHUNK_SEP, 0, CHUNK_SEP.length);
+        session.write(CHUNK_SEP, 0, CHUNK_SEP.length);
+        session.close();
+    }
+
+    private void writeChunkEntry(final ReferenceBaseEntry<MemorySegment> entry, final HttpSession session)
+            throws IOException {
+        final byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
+        final byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
+        final byte[] length = Integer.toHexString(key.length + value.length + N_SEP.length)
+                .toUpperCase()
+                .getBytes(StandardCharsets.UTF_8);
+        session.write(length, 0, length.length);
+        session.write(CHUNK_SEP, 0, CHUNK_SEP.length);
+        session.write(key, 0, key.length);
+        session.write(N_SEP, 0, N_SEP.length);
+        session.write(value, 0, value.length);
+        session.write(CHUNK_SEP, 0, CHUNK_SEP.length);
+    }
+
+    private boolean validateStartEnd(final String startParameter, final String endParameter) {
+        return startParameter != null && !startParameter.isEmpty() && (endParameter == null || !endParameter.isEmpty());
     }
 
     private int getInt(final Request request, final String param, final int defaultValue) {

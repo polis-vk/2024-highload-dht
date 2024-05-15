@@ -1,8 +1,6 @@
 package ru.vk.itmo.test.asvistukhin.dao;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -16,7 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class PersistentDao implements Dao<MemorySegment, TimestampEntry<MemorySegment>> {
 
     private final StorageState storageState;
     private final Arena arena;
@@ -42,12 +40,12 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+    public Iterator<TimestampEntry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         return diskStorage.range(storageState, from, to);
     }
 
     @Override
-    public void upsert(Entry<MemorySegment> entry) {
+    public void upsert(TimestampEntry<MemorySegment> entry) {
         if (storageState.getActiveSSTable().getStorageSize() >= config.getFlushThresholdBytes()
                 && storageState.getFlushingSSTable() != null
         ) {
@@ -71,21 +69,18 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> get(MemorySegment key) {
-        Entry<MemorySegment> entry = storageState.getActiveSSTable().get(key);
+    public TimestampEntry<MemorySegment> get(MemorySegment key) {
+        TimestampEntry<MemorySegment> entry = storageState.getActiveSSTable().get(key);
         if (entry != null) {
-            if (entry.value() == null) {
-                return null;
-            }
             return entry;
         }
 
-        Iterator<Entry<MemorySegment>> iterator = diskStorage.rangeFromDisk(key, null);
+        Iterator<TimestampEntry<MemorySegment>> iterator = diskStorage.rangeFromDisk(key, null);
 
         if (!iterator.hasNext()) {
             return null;
         }
-        Entry<MemorySegment> next = iterator.next();
+        TimestampEntry<MemorySegment> next = iterator.next();
         if (MemorySegmentUtils.isSameKey(next.key(), key)) {
             return next;
         }
@@ -101,7 +96,7 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
 
         executor.execute(() -> {
             try {
-                Iterable<Entry<MemorySegment>> compactValues = () -> diskStorage.rangeFromDisk(null, null);
+                Iterable<TimestampEntry<MemorySegment>> compactValues = () -> diskStorage.rangeFromDisk(null, null);
                 if (compactValues.iterator().hasNext()) {
                     Files.createDirectories(config.getCompactTempPath());
                     DiskStorage.save(config.getCompactTempPath(), compactValues);
@@ -133,7 +128,7 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
     }
 
     @Override
-    public synchronized void close() throws IOException {
+    public synchronized void close() {
         if (!arena.scope().isAlive()) {
             return;
         }
@@ -156,7 +151,7 @@ public class PersistentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
 
     private void flushToDisk() {
         try {
-            Iterable<Entry<MemorySegment>> valuesToFlush = () -> storageState.getFlushingSSTable().getAll();
+            Iterable<TimestampEntry<MemorySegment>> valuesToFlush = () -> storageState.getFlushingSSTable().getAll();
             String filename = DiskStorage.save(config.getDataPath(), valuesToFlush);
             storageState.removeFlushingSSTable();
             diskStorage.mapSSTableAfterFlush(config.getDataPath(), filename, arena);

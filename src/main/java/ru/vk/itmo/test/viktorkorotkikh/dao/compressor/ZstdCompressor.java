@@ -35,4 +35,9 @@ public class ZstdCompressor implements Compressor {
         );
         return result;
     }
+
+    @Override
+    public int calculateLastBlockOffset(int len, byte[] compressedBlock) {
+        return compressedBlock.length;
+    }
 }

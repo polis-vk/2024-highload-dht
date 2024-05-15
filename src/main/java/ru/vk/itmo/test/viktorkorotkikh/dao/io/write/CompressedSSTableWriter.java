@@ -127,9 +127,7 @@ public final class CompressedSSTableWriter extends AbstractSSTableWriter {
         os.write(compressed);
         writeInt(compressionInfoStream, blockOffset);
 
-        if (compressor instanceof ZstdCompressor) { // zstd specific
-            blobBufferOffset = compressed.length;
-        }
+        blobBufferOffset = compressor.calculateLastBlockOffset(blobBufferOffset, compressed);
         writeInt(compressionInfoStream, blobBufferOffset); // size of last uncompressed data
         
         blobBufferOffset = 0;

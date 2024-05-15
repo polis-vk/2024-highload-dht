@@ -36,4 +36,13 @@ public final class ServiceConfig {
     public Path workingDir() {
         return workingDir;
     }
+
+    @Override
+    public String toString() {
+        return "ServiceConfig[" +
+                "selfPort=" + selfPort + ", " +
+                "selfUrl=" + selfUrl + ", " +
+                "clusterUrls=" + clusterUrls + ", " +
+                "workingDir=" + workingDir + ']';
+    }
 }

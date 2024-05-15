@@ -1,6 +1,8 @@
 package ru.vk.itmo.test.viktorkorotkikh;
 
 import one.nio.async.CustomThreadFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
@@ -28,6 +30,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class LSMServiceImpl implements Service {
+    private static final Logger logger = LoggerFactory.getLogger(LSMServiceImpl.class);
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private static final int TERMINATION_TIMEOUT_SECONDS = 20;
     private static final int SERVER_EXECUTOR_SERVICE_THREADS_COUNT = 16;
@@ -83,13 +86,33 @@ public class LSMServiceImpl implements Service {
             workingDir = baseWorkingDir.resolve(String.valueOf(port));
         }
 
+        int compressorIndex = argList.indexOf("--compressor");
+        Config.CompressionConfig.Compressor compressor = Config.CompressionConfig.Compressor.LZ4;
+        boolean compressionEnabled = false;
+        if (compressorIndex >= 0) {
+            compressor = Config.CompressionConfig.Compressor.valueOf(argList.get(compressorIndex + 1));
+            compressionEnabled = true;
+        }
+
+        int blockSize = 4096;
+        int blockSizeIndex = argList.indexOf("--block-size");
+        if (blockSizeIndex >= 0) {
+            blockSize = Integer.parseInt(argList.get(blockSizeIndex + 1));
+        }
+
         ServiceConfig serviceConfig = new ServiceConfig(
                 port,
                 "http://localhost:" + port,
                 clusterUrls,
                 workingDir
         );
-        LSMServiceImpl lsmService = new LSMServiceImpl(serviceConfig);
+        Config.CompressionConfig compressionConfig = new Config.CompressionConfig(
+                compressionEnabled,
+                compressor,
+                blockSize
+        );
+        LSMServiceImpl lsmService = new LSMServiceImpl(serviceConfig, compressionConfig);
+        logger.info("Create lsmService with config: \n\t\t{}\n\t\t{}", serviceConfig, compressionConfig);
 
         lsmService.start().get();
         Thread stopServiceHook = new Thread(() -> {

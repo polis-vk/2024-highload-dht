@@ -92,4 +92,17 @@ public class RequestHandler {
 
         return dao.get(startVal, endVal);
     }
+
+    public Response putEntry(String id, byte[] body) {
+        if (id.isEmpty() || id.isBlank() || body == null) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
+
+        MemorySegment key = fromString(id);
+        MemorySegment value = MemorySegment.ofArray(body);
+
+        dao.upsert(new BaseEntryWithTimestamp(key, value, System.currentTimeMillis()));
+
+        return new Response(Response.CREATED, Response.EMPTY);
+    }
 }

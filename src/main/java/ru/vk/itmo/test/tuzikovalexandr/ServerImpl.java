@@ -268,19 +268,19 @@ public class ServerImpl extends HttpServer {
     }
 
     private Response getResult(Request request, Map<String, Response> successResponses, String paramId) {
+        List<Response> sortedResponses = new ArrayList<>(successResponses.values());
+
         if (request.getMethod() == Request.METHOD_GET) {
-            List<Response> sortedResponses = new ArrayList<>(successResponses.values());
             sortResponses(sortedResponses);
 
             if (checkReadRepair(sortedResponses)) {
-
                 List<String> nodesToUpdate = getNodesForUpdate(successResponses, sortedResponses.getLast());
                 updateValues(nodesToUpdate, sortedResponses.getLast(), paramId);
             }
 
             return sortedResponses.getLast();
         } else {
-            return successResponses.values().iterator().next();
+            return sortedResponses.getFirst();
         }
     }
 
@@ -329,18 +329,22 @@ public class ServerImpl extends HttpServer {
         byte[] body = lastValue.getBody();
 
         for (String nodeUrl : nodesToUpdate) {
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + paramId))
-                    .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
-                    .setHeader(Constants.HTTP_TERMINATION_HEADER, "true")
-                    .build();
+            if (selfUrl.equals(nodeUrl)) {
+                requestHandler.putEntry(paramId, body);
+            } else {
+                HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + paramId))
+                        .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                        .setHeader(Constants.HTTP_TERMINATION_HEADER, "true")
+                        .build();
 
-            try {
-                httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                sendException(e);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+                try {
+                    httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    sendException(e);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
         }
     }

@@ -5,7 +5,10 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
 
-public class LSMServiceFactories {
+public final class LSMServiceFactories {
+    private LSMServiceFactories() {
+    }
+
     @ServiceFactory(stage = 7)
     public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
         @Override

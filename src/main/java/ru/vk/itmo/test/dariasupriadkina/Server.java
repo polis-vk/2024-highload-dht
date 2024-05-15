@@ -6,7 +6,9 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -124,6 +126,11 @@ public class Server extends HttpServer {
         }
     }
 
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomHttpSession(socket, this);
+    }
+
     private void solveUnexpectedError(Exception e, HttpSession session) {
         logger.error("Unexpected error", e);
         try {
@@ -190,7 +197,7 @@ public class Server extends HttpServer {
 
             }, workerExecutor).exceptionally(exception -> {
                 logger.error("Error happened while collecting responses from nodes", exception);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                return null;
             });
         }
     }

@@ -3,7 +3,6 @@ package ru.vk.itmo.test.dariasupriadkina;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.util.ByteArrayBuilder;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedBaseEntry;
@@ -119,21 +118,7 @@ public class SelfRequestHandler {
                         utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
         );
 
-        sendRange(it, session);
-    }
-
-    public void sendRange(Iterator<ExtendedEntry<MemorySegment>> it, HttpSession session) throws IOException {
-        session.write(EntryChunkUtils.HEADER_BYTES, 0, EntryChunkUtils.HEADER_BYTES.length);
-
-        ByteArrayBuilder bb = new ByteArrayBuilder();
-        while (it.hasNext()) {
-            ExtendedEntry<MemorySegment> ee = it.next();
-            EntryChunkUtils.getEntryByteChunk(ee, bb);
-            session.write(bb.toBytes(), 0, bb.length());
-            bb.setLength(0);
-        }
-        session.write(EntryChunkUtils.LAST_BYTES, 0, EntryChunkUtils.LAST_BYTES.length);
-        session.scheduleClose();
+        ((CustomHttpSession) session).streaming(it);
     }
 
 }

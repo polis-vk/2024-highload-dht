@@ -1,11 +1,7 @@
 package ru.vk.itmo.test.tuzikovalexandr;
 
-import one.nio.http.HttpException;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.async.CustomThreadFactory;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,16 +22,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
 
     private final ExecutorService executorService;
+    private final ExecutorService futureExecutorService;
     private final HttpClient httpClient;
     private final ConsistentHashing consistentHashing;
     private final RequestHandler requestHandler;
@@ -48,6 +41,8 @@ public class ServerImpl extends HttpServer {
                       ConsistentHashing consistentHashing) throws IOException {
         super(createServerConfig(config));
         this.executorService = worker.getExecutorService();
+        this.futureExecutorService = Executors.newFixedThreadPool(
+                Runtime.getRuntime().availableProcessors(), new CustomThreadFactory("future-executor"));
         this.consistentHashing = consistentHashing;
         this.selfUrl = config.selfUrl();
         this.clusterSize = config.clusterUrls().size();
@@ -183,7 +178,7 @@ public class ServerImpl extends HttpServer {
 
     private CompletableFuture<Response> sendProxyRequest(HttpRequest httpRequest) {
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .thenApplyAsync(this::processingResponse);
+                .thenApplyAsync(this::processingResponse, futureExecutorService);
     }
 
     private Response processingResponse(HttpResponse<byte[]> response) {
@@ -199,13 +194,13 @@ public class ServerImpl extends HttpServer {
         }
     }
 
-    private List<CompletableFuture<Response>> sendProxyRequests(Map<String, HttpRequest> httpRequests,
+    private Map<String, CompletableFuture<Response>> sendProxyRequests(Map<String, HttpRequest> httpRequests,
                                                                 List<String> nodeUrls) {
-        List<CompletableFuture<Response>> responses = new ArrayList<>();
+        Map<String, CompletableFuture<Response>> responses = new HashMap<>();
         for (String nodeUrl : nodeUrls) {
             HttpRequest httpRequest = httpRequests.get(nodeUrl);
             if (!Objects.equals(selfUrl, nodeUrl)) {
-                responses.add(sendProxyRequest(httpRequest));
+                responses.put(nodeUrl, sendProxyRequest(httpRequest));
             }
         }
         return responses;
@@ -224,41 +219,42 @@ public class ServerImpl extends HttpServer {
             httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
         }
 
-        List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
+        Map<String, CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
 
         if (httpRequests.get(selfUrl) != null) {
-            responses.add(
+            responses.put(
+                    selfUrl,
                     CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId))
             );
         }
 
-        return getQuorumResult(request, from, ack, responses);
+        return getQuorumResult(request, from, ack, responses, paramId);
     }
 
     private Response getQuorumResult(Request request, int from, int ack,
-                                                        List<CompletableFuture<Response>> responses) {
-        List<Response> successResponses = new CopyOnWriteArrayList<>();
+                                     Map<String, CompletableFuture<Response>> responses, String paramId) {
+        Map<String, Response> successResponses = new ConcurrentHashMap<>();
         CompletableFuture<Response> result = new CompletableFuture<>();
         AtomicInteger successResponseCount = new AtomicInteger();
         AtomicInteger errorResponseCount = new AtomicInteger();
 
-        for (CompletableFuture<Response> responseFuture : responses) {
-            responseFuture.whenCompleteAsync((response, throwable) -> {
+        for (Map.Entry<String, CompletableFuture<Response>> responseFuture : responses.entrySet()) {
+            responseFuture.getValue().whenCompleteAsync((response, throwable) -> {
                 if (throwable == null || (response != null && response.getStatus() < Constants.SERVER_ERROR)) {
                     successResponseCount.incrementAndGet();
-                    successResponses.add(response);
+                    successResponses.put(responseFuture.getKey(), response);
                 } else {
                     errorResponseCount.incrementAndGet();
                 }
 
                 if (successResponseCount.get() >= ack) {
-                    result.complete(getResult(request, successResponses));
+                    result.complete(getResult(request, successResponses, paramId));
                 }
 
                 if (errorResponseCount.get() == from - ack + 1) {
                     result.complete(new Response(Constants.NOT_ENOUGH_REPLICAS, Response.EMPTY));
                 }
-            }).exceptionally(e -> new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            }, futureExecutorService).exceptionally(e -> new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
 
         try {
@@ -271,12 +267,20 @@ public class ServerImpl extends HttpServer {
         }
     }
 
-    private Response getResult(Request request, List<Response> successResponses) {
+    private Response getResult(Request request, Map<String, Response> successResponses, String paramId) {
         if (request.getMethod() == Request.METHOD_GET) {
-            sortResponses(successResponses);
-            return successResponses.getLast();
+            List<Response> sortedResponses = new ArrayList<>(successResponses.values());
+            sortResponses(sortedResponses);
+
+            if (checkReadRepair(sortedResponses)) {
+
+                List<String> nodesToUpdate = getNodesForUpdate(successResponses, sortedResponses.getLast());
+                updateValues(nodesToUpdate, sortedResponses.getLast(), paramId);
+            }
+
+            return sortedResponses.getLast();
         } else {
-            return successResponses.getFirst();
+            return successResponses.values().iterator().next();
         }
     }
 
@@ -285,5 +289,73 @@ public class ServerImpl extends HttpServer {
             String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
             return timestamp == null ? 0 : Long.parseLong(timestamp);
         }));
+    }
+
+    private boolean checkReadRepair(List<Response> sortedResponses) {
+        long lastTimestamp = getTimestamp(sortedResponses.getLast().getHeader(Constants.NIO_TIMESTAMP_HEADER));
+        long curTimestamp;
+
+        for (Response response : sortedResponses) {
+            curTimestamp = getTimestamp(response.getHeader(Constants.NIO_TIMESTAMP_HEADER));
+
+            if (curTimestamp != lastTimestamp) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private List<String> getNodesForUpdate(Map<String, Response> successResponses, Response response) {
+        Iterator<Map.Entry<String, Response>> responses = successResponses.entrySet().iterator();
+        List<String> nodes = new ArrayList<>();
+
+        long lastTimestamp = getTimestamp(response.getHeader(Constants.NIO_TIMESTAMP_HEADER));
+        long curTimestamp;
+
+        while (responses.hasNext()) {
+            Map.Entry<String, Response> curResponse = responses.next();
+            curTimestamp = getTimestamp(curResponse.getValue().getHeader(Constants.NIO_TIMESTAMP_HEADER));
+
+            if (curTimestamp != lastTimestamp) {
+                nodes.add(curResponse.getKey());
+            }
+        }
+
+        return nodes;
+    }
+
+    private void updateValues(List<String> nodesToUpdate, Response lastValue, String paramId) {
+        byte[] body = lastValue.getBody();
+
+        for (String nodeUrl : nodesToUpdate) {
+            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + paramId))
+                    .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                    .setHeader(Constants.HTTP_TERMINATION_HEADER, "true")
+                    .build();
+
+            try {
+                httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                sendException(e);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private long getTimestamp(String strTimestamp) {
+        return strTimestamp == null ? 0 : Long.parseLong(strTimestamp);
+    }
+
+    private void sendException(Exception exception) {
+        String responseCode;
+        if (exception.getClass().equals(TimeoutException.class)) {
+            responseCode = Response.REQUEST_TIMEOUT;
+        } else {
+            responseCode = Response.INTERNAL_ERROR;
+        }
+        new Response(responseCode, Response.EMPTY);
     }
 }

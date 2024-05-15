@@ -39,10 +39,10 @@ public final class ServiceConfig {
 
     @Override
     public String toString() {
-        return "ServiceConfig[" +
-                "selfPort=" + selfPort + ", " +
-                "selfUrl=" + selfUrl + ", " +
-                "clusterUrls=" + clusterUrls + ", " +
-                "workingDir=" + workingDir + ']';
+        return "ServiceConfig["
+                + "selfPort=" + selfPort + ", "
+                + "selfUrl=" + selfUrl + ", "
+                + "clusterUrls=" + clusterUrls + ", "
+                + "workingDir=" + workingDir + ']';
     }
 }

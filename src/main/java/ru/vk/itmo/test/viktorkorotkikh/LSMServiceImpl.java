@@ -7,7 +7,6 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.viktorkorotkikh.dao.LSMDaoImpl;
 import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 
@@ -275,36 +274,6 @@ public class LSMServiceImpl implements Service {
             httpClient.awaitTermination(Duration.of(TERMINATION_TIMEOUT_SECONDS, ChronoUnit.SECONDS));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        }
-    }
-
-    @ServiceFactory(stage = 7)
-    public static class LSMServiceFactoryImpl implements ServiceFactory.Factory {
-        @Override
-        public Service create(ServiceConfig config) {
-            return new LSMServiceImpl(config);
-        }
-    }
-
-    @ServiceFactory(stage = 7)
-    public static class LZ4CompressedLSMServiceFactoryImpl implements ServiceFactory.Factory {
-        @Override
-        public Service create(ServiceConfig config) {
-            return new LSMServiceImpl(
-                    config,
-                    new Config.CompressionConfig(true, Config.CompressionConfig.Compressor.LZ4, 4096)
-            );
-        }
-    }
-
-    @ServiceFactory(stage = 7)
-    public static class ZSTDCompressedLSMServiceFactoryImpl implements ServiceFactory.Factory {
-        @Override
-        public Service create(ServiceConfig config) {
-            return new LSMServiceImpl(
-                    config,
-                    new Config.CompressionConfig(true, Config.CompressionConfig.Compressor.ZSTD, 4096)
-            );
         }
     }
 }

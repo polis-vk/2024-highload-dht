@@ -1,4 +1,25 @@
-# Stage 5
+# Stage 7
+
+- [Stage 7](#stage-7)
+   * [Конфигурация](#Конфигурация)
+   * [LZ4 - блок 4kb](#lz4---блок-4kb)
+      + [PUT](#put)
+         - [CPU profile](#cpu-profile)
+         - [Alloc profile](#alloc-profile)
+         - [Lock profile](#lock-profile)
+      + [GET](#get)
+         - [CPU profile](#cpu-profile-1)
+         - [Alloc profile](#alloc-profile-1)
+         - [Lock profile](#lock-profile-1)
+   * [ZSTD - блок 4kb](#zstd---блок-4kb)
+      + [PUT](#put-1)
+         - [CPU profile](#cpu-profile-2)
+         - [Alloc profile](#alloc-profile-2)
+         - [Lock profile](#lock-profile-2)
+      + [GET](#get-1)
+         - [CPU profile](#cpu-profile-3)
+         - [Alloc profile](#alloc-profile-3)
+         - [Lock profile](#lock-profile-3)
 
 ## Конфигурация
 

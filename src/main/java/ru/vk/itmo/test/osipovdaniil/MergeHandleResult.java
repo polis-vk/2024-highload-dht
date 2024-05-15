@@ -29,7 +29,7 @@ public class MergeHandleResult {
     public boolean add(int index, HandleResult handleResult) {
         handleResults[index] = handleResult;
         int valid = validateResultStatus(handleResult.status()) ? countValid.getAndIncrement() : countValid.get();
-        if (valid >= ack) {
+        if (valid == ack) {
             sendResult();
             return true;
         }

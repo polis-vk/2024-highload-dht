@@ -34,12 +34,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServerImpl extends HttpServer {
 
+    public static final int EXECUTOR_SERVICE_TERMINATION_TIMEOUT = 60;
     private static final String HEADER_REMOTE = "X-flag-remote-server-to-node";
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": true";
     private static final String HEADER_TIMESTAMP = "X-flag-remote-server-to-node";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final long REMOTE_HEADER_TIMEOUT = 500;
 
     private final ExecutorService executorLocal = Executors.newFixedThreadPool(THREADS / 2,
             new CustomThreadFactory("local-work"));
@@ -211,7 +213,7 @@ public class ServerImpl extends HttpServer {
                                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 )
                 .header(HEADER_REMOTE, "true")
-                .timeout(Duration.ofMillis(500))
+                .timeout(Duration.ofMillis(REMOTE_HEADER_TIMEOUT))
                 .build();
         final HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         final Optional<String> string = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
@@ -273,15 +275,15 @@ public class ServerImpl extends HttpServer {
         int[] maxHashs = new int[count];
 
         for (int i = 0; i < count; i++) {
-            String url = config.clusterUrls().get(i);
-            int hash = Hash.murmur3(url + id);
+            final String url = config.clusterUrls().get(i);
+            final int hash = Hash.murmur3(url + id);
             result[i] = i;
             maxHashs[i] = hash;
         }
 
         for (int i = count; i < config.clusterUrls().size(); i++) {
-            String url = config.clusterUrls().get(i);
-            int hash = Hash.murmur3(url + id);
+            final String url = config.clusterUrls().get(i);
+            final int hash = Hash.murmur3(url + id);
             for (int j = 0; j < maxHashs.length; j++) {
                 int maxHash = maxHashs[j];
                 if (maxHash < hash) {
@@ -300,11 +302,12 @@ public class ServerImpl extends HttpServer {
 
     private void shutdownAndAwaitTermination(ExecutorService pool) {
         try {
-            if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+            if (!pool.awaitTermination(EXECUTOR_SERVICE_TERMINATION_TIMEOUT, TimeUnit.MILLISECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+                if (!pool.awaitTermination(EXECUTOR_SERVICE_TERMINATION_TIMEOUT, TimeUnit.MILLISECONDS)) {
                     log.info("Pool did not terminate");
                 }
+
             }
         } catch (InterruptedException ie) {
             pool.shutdownNow();

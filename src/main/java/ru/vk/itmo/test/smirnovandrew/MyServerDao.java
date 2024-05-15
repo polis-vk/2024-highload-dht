@@ -31,11 +31,11 @@ public class MyServerDao {
             ValWithTime valueWithTimestamp = byteArrayToObject(entry.value().toArray(ValueLayout.JAVA_BYTE));
             if (valueWithTimestamp.value() == null) {
                 Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                response.addHeader(MyServerUtil.X_TIMESTAMP + valueWithTimestamp.timestamp());
+                response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
                 return response;
             }
             Response response = new Response(Response.OK, valueWithTimestamp.value());
-            response.addHeader(MyServerUtil.X_TIMESTAMP + valueWithTimestamp.timestamp());
+            response.addHeader("X-Timestamp: " + valueWithTimestamp.timestamp());
             return response;
         } catch (IOException | ClassNotFoundException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);

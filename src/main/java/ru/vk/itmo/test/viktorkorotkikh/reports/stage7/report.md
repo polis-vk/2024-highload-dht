@@ -74,7 +74,7 @@ wrk2 - 64 connections, 4 threads
 
 #### Lock profile
 
-[LZ4-4096-PUT-lock.html](LZ4-4096-PUT-lock.html)[PUT-31k-lock.html](PUT-31k-lock.html)
+[LZ4-4096-PUT-lock.html](LZ4-4096-PUT-lock.html)
 
 Блокировки относительно [прошлого результата](../stage5/PUT-31.5k-af-lock.html) остались приблизительно такими же.
 
@@ -161,3 +161,122 @@ wrk смог пропихнуть только 1.5k RPS. Нужно снижат
 2. Но при этом увеличилось количество сэмлпов у `responseAsync` метода - больше локов у `EPollSelectorImpl::wakeup`, 
    так как обработка запроса нодой из кластера стала тяжелее и занимает больше времени.
 
+## ZSTD - блок 4kb
+
+### PUT
+
+[ZSTD-PUT-31.5k.txt](ZSTD-PUT-31.5k.txt)
+
+```
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.97ms    1.23ms  13.90ms   85.92%
+    Req/Sec     8.30k     0.89k   12.11k    70.74%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.68ms
+ 75.000%    2.32ms
+ 90.000%    3.21ms
+ 99.000%    7.23ms
+ 99.900%   10.41ms
+ 99.990%   11.95ms
+ 99.999%   12.91ms
+100.000%   13.91ms
+```
+
+Показатели хуже, чем у LZ4 и примерно такие же как в [прошлой реализации](../stage5/PUT-31.5k.txt). Возможно, реализация ZSTD просто 
+работает несколько медленнее.
+
+Гистограмма примерно такая же, как и [в прошлый раз](../stage5/PUT-31.5k-histogram.png):
+
+![ZSTD-PUT-31.5k-histogram.png](ZSTD-PUT-31.5k-histogram.png)
+
+#### CPU profile
+
+[ZSTD-4096-PUT-cpu.html](ZSTD-4096-PUT-cpu.html)
+
+Профиль такой же (в рамках погрешности), как и у LZ4.
+
+#### Alloc profile
+
+Аллокации примерено такие же, как и в случае LZ4
+
+[ZSTD-4096-PUT-alloc.html](ZSTD-4096-PUT-alloc.html)
+
+#### Lock profile
+
+[ZSTD-4096-PUT-lock.html](ZSTD-4096-PUT-lock.html)
+
+Профиль блокировок похож на профиль LZ4, но здесь чуть больше (на 2.5%) сэмплов `Exchange::responseAsync`.
+
+### GET
+
+База объемом ~900mb, каждая нода хранит около 297mb.
+
+На 1k RPS ситуация лучше стала значительно хуже:
+
+[ZSTD-4096-GET-1k.txt](ZSTD-4096-GET-1k.txt)
+
+```
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    21.53s     8.83s   38.40s    56.20%
+    Req/Sec    95.50      1.58   100.00     93.75%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%   21.69s 
+ 75.000%   29.62s 
+ 90.000%   32.87s 
+ 99.000%   36.67s 
+ 99.900%   37.85s 
+ 99.990%   38.34s 
+ 99.999%   38.44s 
+100.000%   38.44s 
+```
+
+Точка разладки ещё сильнее сместилась:
+
+[ZSTD-4096-GET-200.txt](ZSTD-4096-GET-200.txt)
+
+```
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    91.18ms   38.56ms 241.41ms   71.20%
+    Req/Sec    49.68     11.89    88.00     81.42%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%   90.30ms
+ 75.000%  115.39ms
+ 90.000%  140.93ms
+ 99.000%  189.44ms
+ 99.900%  222.34ms
+ 99.990%  236.03ms
+ 99.999%  241.54ms
+100.000%  241.54ms
+```
+
+Дальнейшее снижение RPS не позволяло добиться тех же показателей latency, как у LZ4.
+
+Очевидно, что для продакшн использования такое решение не подойдёт и в данном случае имеет смысл задуматься на фильтром
+блума или хотя бы разреженным индексом для sstable (напр. первый ключ в sstable и последний), который бы позволил 
+сократить количество просматриваемых sstable. Также ещё одной оптимизацией являлось бы добавление кеша разжатых sstable,
+чтобы к самым горячим данным мы сразу имели доступ в разжатом виде.
+
+#### CPU profile
+
+[ZSTD-4096-GET-cpu.html](ZSTD-4096-GET-cpu.html)
+
+Как и в прошлый раз с LZ4 расжатие занимает львиную долю всех семплов, но в случае с ZSTD аж 88%. Http взаимодействие с
+кластером отошло на задний план и почти не заметно.
+
+GC примерно также - 3.68%.
+
+#### Alloc profile
+
+[ZSTD-4096-GET-alloc.html](ZSTD-4096-GET-alloc.html)
+
+Аллокации в целом такие же, но ZSTD требует дополнительно 2% сэмплов аллокаций `ZstdDecompressedContext`.
+
+#### Lock profile
+
+[ZSTD-4096-GET-lock.html](ZSTD-4096-GET-lock.html)
+
+Увеличилось количество сэмплов метода `ArrayBlockingQueue::take` - у нас меньше нагрузка, пулы потоков простаивают в 
+ожидании задач.
+
+Блокировки на методах `HttpClient` тоже поменялись: Количество сэмплов на `purgeExpiredConnectionsAndReturnNextDeadline`
+увеличилось. Вероятно, из-за долгого ожидания ответов от кластера.

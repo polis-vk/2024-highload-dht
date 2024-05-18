@@ -22,6 +22,7 @@ public final class LSMConstantResponse {
     public static final Response GATEWAY_TIMEOUT_CLOSE =
             new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     public static final Response NOT_ENOUGH_REPLICAS_CLOSE = new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+    public static final byte[] CHUNKED_RESPONSE_CLOSE_WITH_HEADERS_BYTES;
 
     private static final String CONNECTION_KEEP_ALIVE_HEADER = "Connection: Keep-Alive";
     public static final Response BAD_REQUEST_KEEP_ALIVE = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -40,6 +41,7 @@ public final class LSMConstantResponse {
             new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     public static final Response NOT_ENOUGH_REPLICAS_KEEP_ALIVE =
             new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+    public static final byte[] CHUNKED_RESPONSE_KEEP_ALIVE_WITH_HEADERS_BYTES;
 
     static {
         BAD_REQUEST_CLOSE.addHeader(CONNECTION_CLOSE_HEADER);
@@ -65,6 +67,16 @@ public final class LSMConstantResponse {
         SERVICE_UNAVAILABLE_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         GATEWAY_TIMEOUT_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
         NOT_ENOUGH_REPLICAS_KEEP_ALIVE.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
+
+        Response chunkedResponseKeepAlive = new Response(Response.OK);
+        chunkedResponseKeepAlive.addHeader("Transfer-Encoding: chunked");
+        chunkedResponseKeepAlive.addHeader(CONNECTION_KEEP_ALIVE_HEADER);
+        CHUNKED_RESPONSE_KEEP_ALIVE_WITH_HEADERS_BYTES = chunkedResponseKeepAlive.toBytes(false);
+
+        Response chunkedResponseClose = new Response(Response.OK);
+        chunkedResponseKeepAlive.addHeader("Transfer-Encoding: chunked");
+        chunkedResponseKeepAlive.addHeader(CONNECTION_CLOSE_HEADER);
+        CHUNKED_RESPONSE_CLOSE_WITH_HEADERS_BYTES = chunkedResponseClose.toBytes(false);
     }
 
     public static Response ok(final Request request) {

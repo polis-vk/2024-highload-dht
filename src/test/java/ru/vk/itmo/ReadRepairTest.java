@@ -37,8 +37,8 @@ public class ReadRepairTest extends TestBase {
 
         serviceInfos.get(1).stop();
 
-        responseService1 = serviceInfos.get(0).get(key, 1,1);
+        responseService0 = serviceInfos.get(0).get(key, 1,1);
         assertEquals(HttpURLConnection.HTTP_OK, responseService1.statusCode());
-        assertArrayEquals(responseService1.body(), responseService1.body());
+        assertArrayEquals(responseService1.body(), responseService0.body());
     }
 }

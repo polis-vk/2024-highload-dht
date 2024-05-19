@@ -40,7 +40,6 @@ public class ServerImpl extends HttpServer {
     private final HttpClient httpClient;
     private final ConsistentHashing consistentHashing;
     private final RequestHandler requestHandler;
-    private final ReadRepairManager readRepairManager;
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
     private final String selfUrl;
@@ -56,7 +55,6 @@ public class ServerImpl extends HttpServer {
         this.selfUrl = config.selfUrl();
         this.clusterSize = config.clusterUrls().size();
         this.requestHandler = new RequestHandler(dao);
-        this.readRepairManager = new ReadRepairManager();
         this.httpClient = HttpClient.newBuilder()
                 .executor(worker.getExecutorService()).build();
     }
@@ -280,6 +278,10 @@ public class ServerImpl extends HttpServer {
     private Response getResult(Request request, List<ResponseWithUrl> successResponses, String paramId) {
         if (request.getMethod() == Request.METHOD_GET) {
             Utils.sortResponses(successResponses);
+
+            ReadRepairManager readRepairManager = new ReadRepairManager(successResponses, selfUrl,
+                    requestHandler, paramId, httpClient);
+            readRepairManager.execute();
 
             return successResponses.getLast().getResponse();
         } else {

@@ -34,10 +34,11 @@ public class ReadRepairManager {
         return false;
     }
 
-    public List<String> getNodesForUpdate(List<ResponseWithUrl> successResponses, Response response) {
+    public List<String> getNodesForUpdate(List<ResponseWithUrl> successResponses) {
         List<String> nodes = new ArrayList<>();
 
-        long lastTimestamp = getTimestamp(response.getHeader(Constants.NIO_TIMESTAMP_HEADER));
+        long lastTimestamp = getTimestamp(successResponses.getLast()
+                .getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER));
         long curTimestamp;
 
         for (ResponseWithUrl responseWithUrl : successResponses) {

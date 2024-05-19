@@ -280,22 +280,19 @@ public class ServerImpl extends HttpServer {
     }
 
     private Response getResult(Request request, List<ResponseWithUrl> successResponses, String paramId) {
-        List<ResponseWithUrl> sortedResponses = new ArrayList<>(successResponses);
-
         if (request.getMethod() == Request.METHOD_GET) {
-            sortResponses(sortedResponses);
+            sortResponses(successResponses);
 
-            if (readRepairManager.checkReadRepair(sortedResponses)) {
-                List<String> nodesToUpdate = readRepairManager.getNodesForUpdate(successResponses,
-                        sortedResponses.getLast().getResponse());
+            if (readRepairManager.checkReadRepair(successResponses)) {
+                List<String> nodesToUpdate = readRepairManager.getNodesForUpdate(successResponses);
 
                 readRepairManager.updateValues(selfUrl, requestHandler, nodesToUpdate,
-                        sortedResponses.getLast().getResponse(), paramId, httpClient);
+                        successResponses.getLast().getResponse(), paramId, httpClient);
             }
 
-            return sortedResponses.getLast().getResponse();
+            return successResponses.getLast().getResponse();
         } else {
-            return sortedResponses.getFirst().getResponse();
+            return successResponses.getFirst().getResponse();
         }
     }
 

@@ -16,7 +16,6 @@ import ru.vk.itmo.test.tuzikovalexandr.dao.EntryWithTimestamp;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -175,15 +174,6 @@ public class ServerImpl extends HttpServer {
         }
     }
 
-    private HttpRequest createProxyRequest(Request request, String nodeUrl, String params) {
-        return HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + params))
-                .method(request.getMethodName(), request.getBody() == null
-                        ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                .setHeader(Constants.HTTP_TERMINATION_HEADER, "true")
-                .build();
-    }
-
     private CompletableFuture<Response> sendProxyRequest(HttpRequest httpRequest) {
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .thenApplyAsync(this::processingResponse, futureExecutorService);
@@ -224,7 +214,7 @@ public class ServerImpl extends HttpServer {
 
         HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
         for (String nodeUrl : nodeUrls) {
-            httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
+            httpRequests.put(nodeUrl, Utils.createProxyRequest(request, nodeUrl, paramId));
         }
 
         Map<String, CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);

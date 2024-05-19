@@ -1,7 +1,12 @@
 package ru.vk.itmo.test.tuzikovalexandr;
 
 import one.nio.async.CustomThreadFactory;
-import one.nio.http.*;
+import one.nio.http.HttpException;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +37,7 @@ public class ServerImpl extends HttpServer {
     private final HttpClient httpClient;
     private final ConsistentHashing consistentHashing;
     private final RequestHandler requestHandler;
+    private final ReadRepairManager readRepairManager;
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
     private final String selfUrl;
@@ -47,6 +53,7 @@ public class ServerImpl extends HttpServer {
         this.selfUrl = config.selfUrl();
         this.clusterSize = config.clusterUrls().size();
         this.requestHandler = new RequestHandler(dao);
+        this.readRepairManager = new ReadRepairManager();
         this.httpClient = HttpClient.newBuilder()
                 .executor(worker.getExecutorService()).build();
     }
@@ -233,7 +240,7 @@ public class ServerImpl extends HttpServer {
 
     private Response getQuorumResult(Request request, int from, int ack,
                                      Map<String, CompletableFuture<Response>> responses, String paramId) {
-        Map<String, Response> successResponses = new ConcurrentHashMap<>();
+        List<ResponseWithUrl> successResponses = new CopyOnWriteArrayList<>();
         CompletableFuture<Response> result = new CompletableFuture<>();
         AtomicInteger successResponseCount = new AtomicInteger();
         AtomicInteger errorResponseCount = new AtomicInteger();
@@ -242,7 +249,7 @@ public class ServerImpl extends HttpServer {
             responseFuture.getValue().whenCompleteAsync((response, throwable) -> {
                 if (throwable == null || (response != null && response.getStatus() < Constants.SERVER_ERROR)) {
                     successResponseCount.incrementAndGet();
-                    successResponses.put(responseFuture.getKey(), response);
+                    successResponses.add(new ResponseWithUrl(responseFuture.getKey(), response));
                 } else {
                     errorResponseCount.incrementAndGet();
                 }
@@ -267,99 +274,30 @@ public class ServerImpl extends HttpServer {
         }
     }
 
-    private Response getResult(Request request, Map<String, Response> successResponses, String paramId) {
-        List<Response> sortedResponses = new ArrayList<>(successResponses.values());
+    private Response getResult(Request request, List<ResponseWithUrl> successResponses, String paramId) {
+        List<ResponseWithUrl> sortedResponses = new ArrayList<>(successResponses);
 
         if (request.getMethod() == Request.METHOD_GET) {
             sortResponses(sortedResponses);
 
-            if (checkReadRepair(sortedResponses)) {
-                List<String> nodesToUpdate = getNodesForUpdate(successResponses, sortedResponses.getLast());
-                updateValues(nodesToUpdate, sortedResponses.getLast(), paramId);
-            }
+//            if (readRepairManager.checkReadRepair(sortedResponses)) {
+//                List<String> nodesToUpdate = readRepairManager.getNodesForUpdate(successResponses,
+//                        sortedResponses.getLast());
+//
+//                readRepairManager.updateValues(selfUrl, requestHandler, nodesToUpdate,
+//                        sortedResponses.getLast(), paramId, httpClient);
+//            }
 
-            return sortedResponses.getLast();
+            return sortedResponses.getLast().getResponse();
         } else {
-            return sortedResponses.getFirst();
+            return sortedResponses.getFirst().getResponse();
         }
     }
 
-    private void sortResponses(List<Response> successResponses) {
+    private void sortResponses(List<ResponseWithUrl> successResponses) {
         successResponses.sort(Comparator.comparingLong(r -> {
-            String timestamp = r.getHeader(Constants.NIO_TIMESTAMP_HEADER);
+            String timestamp = r.getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER);
             return timestamp == null ? 0 : Long.parseLong(timestamp);
         }));
-    }
-
-    private boolean checkReadRepair(List<Response> sortedResponses) {
-        long lastTimestamp = getTimestamp(sortedResponses.getLast().getHeader(Constants.NIO_TIMESTAMP_HEADER));
-        long curTimestamp;
-
-        for (Response response : sortedResponses) {
-            curTimestamp = getTimestamp(response.getHeader(Constants.NIO_TIMESTAMP_HEADER));
-
-            if (curTimestamp != lastTimestamp) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private List<String> getNodesForUpdate(Map<String, Response> successResponses, Response response) {
-        Iterator<Map.Entry<String, Response>> responses = successResponses.entrySet().iterator();
-        List<String> nodes = new ArrayList<>();
-
-        long lastTimestamp = getTimestamp(response.getHeader(Constants.NIO_TIMESTAMP_HEADER));
-        long curTimestamp;
-
-        while (responses.hasNext()) {
-            Map.Entry<String, Response> curResponse = responses.next();
-            curTimestamp = getTimestamp(curResponse.getValue().getHeader(Constants.NIO_TIMESTAMP_HEADER));
-
-            if (curTimestamp != lastTimestamp) {
-                nodes.add(curResponse.getKey());
-            }
-        }
-
-        return nodes;
-    }
-
-    private void updateValues(List<String> nodesToUpdate, Response lastValue, String paramId) {
-        byte[] body = lastValue.getBody();
-
-        for (String nodeUrl : nodesToUpdate) {
-            if (selfUrl.equals(nodeUrl)) {
-                requestHandler.putEntry(paramId, body);
-            } else {
-                HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/entity?id=" + paramId))
-                        .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
-                        .setHeader(Constants.HTTP_TERMINATION_HEADER, "true")
-                        .build();
-
-                try {
-                    httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    sendException(e);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }
-    }
-
-    private long getTimestamp(String strTimestamp) {
-        return strTimestamp == null ? 0 : Long.parseLong(strTimestamp);
-    }
-
-    private void sendException(Exception exception) {
-        String responseCode;
-        if (exception.getClass().equals(TimeoutException.class)) {
-            responseCode = Response.REQUEST_TIMEOUT;
-        } else {
-            responseCode = Response.INTERNAL_ERROR;
-        }
-        new Response(responseCode, Response.EMPTY);
     }
 }

@@ -14,4 +14,8 @@ public class ResponseWithUrl {
     public Response getResponse() {
         return response;
     }
+    
+    public String getUrl() {
+        return url;
+    }
 }

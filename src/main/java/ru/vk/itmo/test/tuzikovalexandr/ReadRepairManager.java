@@ -35,18 +35,16 @@ public class ReadRepairManager {
     }
 
     public List<String> getNodesForUpdate(List<ResponseWithUrl> successResponses, Response response) {
-        Iterator<Map.Entry<String, Response>> responses = successResponses.entrySet().iterator();
         List<String> nodes = new ArrayList<>();
 
         long lastTimestamp = getTimestamp(response.getHeader(Constants.NIO_TIMESTAMP_HEADER));
         long curTimestamp;
 
-        while (responses.hasNext()) {
-            Map.Entry<String, Response> curResponse = responses.next();
-            curTimestamp = getTimestamp(curResponse.getValue().getHeader(Constants.NIO_TIMESTAMP_HEADER));
+        for (ResponseWithUrl responseWithUrl : successResponses) {
+            curTimestamp = getTimestamp(responseWithUrl.getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER));
 
             if (curTimestamp != lastTimestamp) {
-                nodes.add(curResponse.getKey());
+                nodes.add(responseWithUrl.getUrl());
             }
         }
 

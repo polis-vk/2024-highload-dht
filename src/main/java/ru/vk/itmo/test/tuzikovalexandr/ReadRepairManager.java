@@ -18,12 +18,13 @@ public class ReadRepairManager {
 
     }
 
-    public boolean checkReadRepair(List<Response> sortedResponses) {
-        long lastTimestamp = getTimestamp(sortedResponses.getLast().getHeader(Constants.NIO_TIMESTAMP_HEADER));
+    public boolean checkReadRepair(List<ResponseWithUrl> sortedResponses) {
+        long lastTimestamp = getTimestamp(sortedResponses.getLast()
+                .getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER));
         long curTimestamp;
 
-        for (Response response : sortedResponses) {
-            curTimestamp = getTimestamp(response.getHeader(Constants.NIO_TIMESTAMP_HEADER));
+        for (ResponseWithUrl response : sortedResponses) {
+            curTimestamp = getTimestamp(response.getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER));
 
             if (curTimestamp != lastTimestamp) {
                 return true;
@@ -33,7 +34,7 @@ public class ReadRepairManager {
         return false;
     }
 
-    public List<String> getNodesForUpdate(Map<String, Response> successResponses, Response response) {
+    public List<String> getNodesForUpdate(List<ResponseWithUrl> successResponses, Response response) {
         Iterator<Map.Entry<String, Response>> responses = successResponses.entrySet().iterator();
         List<String> nodes = new ArrayList<>();
 
@@ -71,7 +72,7 @@ public class ReadRepairManager {
                     Thread.currentThread().interrupt();
                     sendException(e);
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    sendException(e);
                 }
             }
         }

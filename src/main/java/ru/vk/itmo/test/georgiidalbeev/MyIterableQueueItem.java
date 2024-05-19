@@ -17,41 +17,79 @@ public class MyIterableQueueItem extends Session.QueueItem {
     private static final byte[] FINAL_BYTES = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     private final Iterator<ReferenceBaseEntry<MemorySegment>> entries;
     private byte[] headers;
+    private byte[] currentChunk;
+    private int offset;
 
     public MyIterableQueueItem(MyChunkedResponse myChunkedResponse) {
         this.headers = myChunkedResponse.toBytes(false);
         this.entries = myChunkedResponse.getIterator();
+        this.offset = 0;
     }
 
     @Override
     public int write(Socket socket) throws IOException {
-        int written = 0;
+        int totalWritten = 0;
+
         if (headers != null) {
-            written += socket.write(headers, 0, headers.length);
+            int length = Math.min(headers.length - offset, headers.length);
+            int written = socket.write(headers, offset, length);
+            totalWritten += written;
+            offset += written;
+            if (offset < headers.length) {
+                return totalWritten;
+            }
             headers = null;
+            offset = 0;
         }
-        if (entries.hasNext()) {
-            Entry<MemorySegment> entry = entries.next();
-            written += writeToSocket(socket, entry);
+
+        while (entries.hasNext() || currentChunk != null) {
+            if (currentChunk == null) {
+                Entry<MemorySegment> entry = entries.next();
+                currentChunk = createChunk(entry);
+                offset = 0;
+            }
+            int length = Math.min(currentChunk.length - offset, currentChunk.length);
+            int written = socket.write(currentChunk, offset, length);
+            totalWritten += written;
+            offset += written;
+            if (offset < currentChunk.length) {
+                return totalWritten;
+            }
+            currentChunk = null;
+            offset = 0;
         }
-        if (!entries.hasNext()) {
-            written += socket.write(FINAL_BYTES, 0, FINAL_BYTES.length);
+
+        int length = Math.min(FINAL_BYTES.length - offset, FINAL_BYTES.length);
+        int written = socket.write(FINAL_BYTES, offset, length);
+        totalWritten += written;
+        offset += written;
+        if (offset < FINAL_BYTES.length) {
+            return totalWritten;
         }
-        return written;
+
+        return totalWritten;
     }
 
-    private int writeToSocket(Socket socket, Entry<MemorySegment> entry) throws IOException {
-        int written = 0;
+    private byte[] createChunk(Entry<MemorySegment> entry) {
         byte[] size = Long.toHexString(getEntrySize(entry)).getBytes(StandardCharsets.UTF_8);
-        written += socket.write(size, 0, size.length);
-        written += socket.write(CRLF, 0, CRLF.length);
         byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
-        written += socket.write(key, 0, key.length);
-        written += socket.write(DELIMITER, 0, DELIMITER.length);
         byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
-        written += socket.write(value, 0, value.length);
-        written += socket.write(CRLF, 0, CRLF.length);
-        return written;
+        byte[] chunk = new byte[size.length + CRLF.length + key.length + DELIMITER.length + value.length + CRLF.length];
+
+        int pos = 0;
+        System.arraycopy(size, 0, chunk, pos, size.length);
+        pos += size.length;
+        System.arraycopy(CRLF, 0, chunk, pos, CRLF.length);
+        pos += CRLF.length;
+        System.arraycopy(key, 0, chunk, pos, key.length);
+        pos += key.length;
+        System.arraycopy(DELIMITER, 0, chunk, pos, DELIMITER.length);
+        pos += DELIMITER.length;
+        System.arraycopy(value, 0, chunk, pos, value.length);
+        pos += value.length;
+        System.arraycopy(CRLF, 0, chunk, pos, CRLF.length);
+
+        return chunk;
     }
 
     private long getEntrySize(Entry<MemorySegment> entry) {

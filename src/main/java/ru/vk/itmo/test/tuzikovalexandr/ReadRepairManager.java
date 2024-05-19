@@ -8,14 +8,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
-public class ReadRepairManager {
+public final class ReadRepairManager {
     public ReadRepairManager() {
-
     }
 
     public boolean checkReadRepair(List<ResponseWithUrl> sortedResponses) {

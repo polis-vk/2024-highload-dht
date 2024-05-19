@@ -20,8 +20,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -281,7 +279,7 @@ public class ServerImpl extends HttpServer {
 
     private Response getResult(Request request, List<ResponseWithUrl> successResponses, String paramId) {
         if (request.getMethod() == Request.METHOD_GET) {
-            sortResponses(successResponses);
+            Utils.sortResponses(successResponses);
 
             if (readRepairManager.checkReadRepair(successResponses)) {
                 List<String> nodesToUpdate = readRepairManager.getNodesForUpdate(successResponses);
@@ -294,12 +292,5 @@ public class ServerImpl extends HttpServer {
         } else {
             return successResponses.getFirst().getResponse();
         }
-    }
-
-    private void sortResponses(List<ResponseWithUrl> successResponses) {
-        successResponses.sort(Comparator.comparingLong(r -> {
-            String timestamp = r.getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER);
-            return timestamp == null ? 0 : Long.parseLong(timestamp);
-        }));
     }
 }

@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.dao.BaseEntry;
@@ -7,8 +8,11 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedBaseEntry;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 public class SelfRequestHandler {
@@ -95,4 +99,26 @@ public class SelfRequestHandler {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
+
+    public void handleRange(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+
+        if (start == null
+                || request.getMethod() != Request.METHOD_GET
+                || start.isEmpty()
+                || (end != null && end.isEmpty())) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        Iterator<ExtendedEntry<MemorySegment>> it = dao.get(
+                utils.convertByteArrToMemorySegment(start.getBytes(StandardCharsets.UTF_8)),
+                end == null ? null :
+                        utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
+        );
+
+        ((CustomHttpSession) session).streaming(it);
+    }
+
 }

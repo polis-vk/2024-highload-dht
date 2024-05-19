@@ -23,7 +23,7 @@ import static ru.vk.itmo.test.dariasupriadkina.ServiceImlFactory.FLUSH_THRESHOLD
 public final class TestServer {
 
     private static final String LOCALHOST_PREFIX = "http://localhost:";
-    private static final int NODE_AMOUNT = 3;
+    private static final int NODE_AMOUNT = 1;
 
     private TestServer() {
     }

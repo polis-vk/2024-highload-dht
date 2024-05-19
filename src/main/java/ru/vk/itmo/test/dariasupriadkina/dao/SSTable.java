@@ -196,12 +196,14 @@ final class SSTable {
             // Read value
             if (valueLength == SSTables.TOMBSTONE_VALUE_LENGTH) {
                 timestamp = getLength(offset);
+                offset += Long.BYTES;
                 // Tombstone encountered
                 return new ExtendedBaseEntry<>(key, null, timestamp);
             } else {
                 final MemorySegment value = data.asSlice(offset, valueLength);
                 offset += valueLength;
                 timestamp = getLength(offset);
+                offset += Long.BYTES;
                 return new ExtendedBaseEntry<>(key, value, timestamp);
             }
         }

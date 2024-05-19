@@ -11,16 +11,36 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
-public final class ReadRepairManager {
-    public ReadRepairManager() {
+public class ReadRepairManager {
+    private final List<ResponseWithUrl> successResponses;
+    private final String selfUrl;
+    private final RequestHandler requestHandler;
+    private final String paramId;
+    private final HttpClient httpClient;
+
+    public ReadRepairManager(List<ResponseWithUrl> successResponses, String selfUrl, RequestHandler requestHandler,
+                             String paramId, HttpClient httpClient) {
+        this.successResponses = successResponses;
+        this.selfUrl = selfUrl;
+        this.requestHandler = requestHandler;
+        this.paramId = paramId;
+        this.httpClient = httpClient;
     }
 
-    public boolean checkReadRepair(List<ResponseWithUrl> sortedResponses) {
-        long lastTimestamp = getTimestamp(sortedResponses.getLast()
+    public void execute() {
+        if (checkReadRepair()) {
+            List<String> nodesToUpdate = getNodesForUpdate();
+
+            updateValues(nodesToUpdate);
+        }
+    }
+
+    public boolean checkReadRepair() {
+        long lastTimestamp = getTimestamp(successResponses.getLast()
                 .getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER));
         long curTimestamp;
 
-        for (ResponseWithUrl response : sortedResponses) {
+        for (ResponseWithUrl response : successResponses) {
             curTimestamp = getTimestamp(response.getResponse().getHeader(Constants.NIO_TIMESTAMP_HEADER));
 
             if (curTimestamp != lastTimestamp) {
@@ -31,7 +51,7 @@ public final class ReadRepairManager {
         return false;
     }
 
-    public List<String> getNodesForUpdate(List<ResponseWithUrl> successResponses) {
+    public List<String> getNodesForUpdate() {
         List<String> nodes = new ArrayList<>();
 
         long lastTimestamp = getTimestamp(successResponses.getLast()
@@ -49,9 +69,8 @@ public final class ReadRepairManager {
         return nodes;
     }
 
-    public void updateValues(String selfUrl, RequestHandler requestHandler, List<String> nodesToUpdate,
-                              Response lastValue, String paramId, HttpClient httpClient) {
-        byte[] body = lastValue.getBody();
+    public void updateValues(List<String> nodesToUpdate) {
+        byte[] body = successResponses.getLast().getResponse().getBody();
 
         for (String nodeUrl : nodesToUpdate) {
             if (selfUrl.equals(nodeUrl)) {

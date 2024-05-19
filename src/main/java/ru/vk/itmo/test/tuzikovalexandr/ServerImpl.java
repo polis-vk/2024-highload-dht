@@ -281,13 +281,6 @@ public class ServerImpl extends HttpServer {
         if (request.getMethod() == Request.METHOD_GET) {
             Utils.sortResponses(successResponses);
 
-            if (readRepairManager.checkReadRepair(successResponses)) {
-                List<String> nodesToUpdate = readRepairManager.getNodesForUpdate(successResponses);
-
-                readRepairManager.updateValues(selfUrl, requestHandler, nodesToUpdate,
-                        successResponses.getLast().getResponse(), paramId, httpClient);
-            }
-
             return successResponses.getLast().getResponse();
         } else {
             return successResponses.getFirst().getResponse();

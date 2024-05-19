@@ -27,7 +27,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
@@ -280,13 +287,13 @@ public class ServerImpl extends HttpServer {
         if (request.getMethod() == Request.METHOD_GET) {
             sortResponses(sortedResponses);
 
-//            if (readRepairManager.checkReadRepair(sortedResponses)) {
-//                List<String> nodesToUpdate = readRepairManager.getNodesForUpdate(successResponses,
-//                        sortedResponses.getLast());
-//
-//                readRepairManager.updateValues(selfUrl, requestHandler, nodesToUpdate,
-//                        sortedResponses.getLast(), paramId, httpClient);
-//            }
+            if (readRepairManager.checkReadRepair(sortedResponses)) {
+                List<String> nodesToUpdate = readRepairManager.getNodesForUpdate(successResponses,
+                        sortedResponses.getLast().getResponse());
+
+                readRepairManager.updateValues(selfUrl, requestHandler, nodesToUpdate,
+                        sortedResponses.getLast().getResponse(), paramId, httpClient);
+            }
 
             return sortedResponses.getLast().getResponse();
         } else {

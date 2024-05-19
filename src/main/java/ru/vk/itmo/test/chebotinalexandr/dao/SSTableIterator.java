@@ -1,7 +1,7 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.TimestampEntry;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -36,7 +36,7 @@ public class SSTableIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     private Entry<MemorySegment> next(long index) {
-        long offset = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset + index * Byte.SIZE);
+        long offset = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, keyOffset + index * Long.BYTES); //key size offset
         long keySize = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
         offset += Long.BYTES;
         MemorySegment key = sstable.asSlice(offset, keySize);
@@ -45,9 +45,14 @@ public class SSTableIterator implements Iterator<Entry<MemorySegment>> {
         offset += Long.BYTES;
 
         if (valueSize == TOMBSTONE) {
-            return new BaseEntry<>(key, null);
+            long timestamp = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+            return new TimestampEntry<>(key, null, timestamp);
         } else {
-            return new BaseEntry<>(key, sstable.asSlice(offset, valueSize));
+            MemorySegment value = sstable.asSlice(offset, valueSize);
+            offset += valueSize;
+            long timestamp = sstable.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+
+            return new TimestampEntry<>(key, value, timestamp);
         }
     }
 }

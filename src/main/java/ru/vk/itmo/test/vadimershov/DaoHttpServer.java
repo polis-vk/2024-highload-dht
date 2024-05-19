@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.vadimershov;
 
+import one.nio.http.Header;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.vadimershov.exceptions.DaoException;
+import ru.vk.itmo.test.vadimershov.exceptions.FailedSharding;
 import ru.vk.itmo.test.vadimershov.exceptions.NotFoundException;
 import ru.vk.itmo.test.vadimershov.exceptions.RemoteServiceException;
 
@@ -39,6 +41,7 @@ public class DaoHttpServer extends HttpServer {
             Config daoConfig
     ) throws IOException {
         this(config, daoConfig, new RequestThreadExecutor.Config());
+
     }
 
     public DaoHttpServer(
@@ -86,6 +89,9 @@ public class DaoHttpServer extends HttpServer {
                 } catch (RemoteServiceException e) {
                     logger.error("Exception in remote service: {}", e.getUrl(), e);
                     sessionSendResponse(session, e.getHttpCode());
+                } catch (FailedSharding e) {
+                    logger.error("Exception sharding service: {}", e.getMessage(), e);
+                    sessionSendResponse(session, e.getHttpCode());
                 } catch (Exception e) {
                     logger.error("Exception from one nio handle", e);
                     sessionSendResponse(session, DaoResponse.BAD_REQUEST);
@@ -93,7 +99,7 @@ public class DaoHttpServer extends HttpServer {
             });
         } catch (RejectedExecutionException e) {
             logger.error(e.getMessage());
-            sessionSendResponse(session, DaoResponse.TOO_MANY_REQUESTS);
+            sessionSendResponse(session, DaoResponse.NOT_ENOUGH_REPLICAS);
         }
     }
 
@@ -115,43 +121,69 @@ public class DaoHttpServer extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getMapping(
-            @Param(value = "id", required = true) String id
-    ) throws DaoException, RemoteServiceException {
+            @Param(value = "id", required = true) String id,
+            @Param(value = "ack") Integer ack,
+            @Param(value = "from") Integer from,
+            @Header(value = "X-inner") boolean inner
+    ) throws DaoException, RemoteServiceException, NotFoundException {
         if (id.isBlank()) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
-        byte[] value;
-        try {
-            value = dao.get(id);
-        } catch (NotFoundException e) {
-            return DaoResponse.empty(DaoResponse.NOT_FOUND);
+
+        ResultResponse response;
+            if (inner) {
+                response = dao.get(id);
+            } else {
+                response = dao.get(id, ack, from);
+            }
+
+        if (response.httpCode() == 404) {
+            return DaoResponse.empty(DaoResponse.NOT_FOUND, response.timestamp());
         }
-        return DaoResponse.ok(value);
+        return DaoResponse.ok(response.value(), response.timestamp());
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response upsertMapping(
             @Param(value = "id", required = true) String id,
+            @Param(value = "ack") Integer ack,
+            @Param(value = "from") Integer from,
+            @Header(value = "X-inner") boolean inner,
+            @Header(value = "X-timestamp") Long timestamp,
             Request request
     ) throws DaoException, RemoteServiceException {
         if (id.isBlank() || request.getBody() == null) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
 
-        dao.upsert(id, request.getBody());
+        if (inner) {
+            dao.upsert(id, request.getBody(), timestamp);
+        } else {
+            dao.upsert(id, request.getBody(), ack, from);
+        }
+
         return DaoResponse.empty(DaoResponse.CREATED);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteMapping(
-            @Param(value = "id", required = true) String id
+            @Param(value = "id", required = true) String id,
+            @Param(value = "ack") Integer ack,
+            @Param(value = "from") Integer from,
+            @Header(value = "X-inner") boolean inner,
+            @Header(value = "X-timestamp") Long timestamp
     ) throws DaoException, RemoteServiceException {
         if (id.isBlank()) {
             return DaoResponse.empty(DaoResponse.BAD_REQUEST);
         }
-        dao.delete(id);
+
+        if (inner) {
+            dao.delete(id, timestamp);
+        } else {
+            dao.delete(id, ack, from);
+        }
         return DaoResponse.empty(DaoResponse.ACCEPTED);
     }
 

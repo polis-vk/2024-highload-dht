@@ -39,7 +39,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 4)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

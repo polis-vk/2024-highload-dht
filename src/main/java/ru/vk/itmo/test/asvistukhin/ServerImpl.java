@@ -14,25 +14,28 @@ import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.asvistukhin.dao.PersistentDao;
 
 import java.io.IOException;
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerImpl extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
 
+    private static final Integer INTERNAL_SERVER_ERROR_CODE = 500;
+    private static final List<Integer> NOT_SUCCESSFUL_BAD_REQUESTS_CODES = List.of(429);
     private static final List<Integer> ALLOWED_METHODS = List.of(
         Request.METHOD_GET,
         Request.METHOD_PUT,
         Request.METHOD_DELETE
     );
-    private static final String HTTP_SERVICE_NOT_AVAILABLE = "503";
+
     private static final String NOT_ENOUGH_REPLICAS_RESPONSE = "504 Not Enough Replicas";
     private static final int QUEUE_CAPACITY = 3000;
 
@@ -85,6 +88,10 @@ public class ServerImpl extends HttpServer {
         super.stop();
     }
 
+    public static boolean isSuccessProcessed(int status) {
+        return status < INTERNAL_SERVER_ERROR_CODE && !NOT_SUCCESSFUL_BAD_REQUESTS_CODES.contains(status);
+    }
+
     private void wrapHandleRequest(Request request, HttpSession session) {
         try {
             if (!ALLOWED_METHODS.contains(request.getMethod())) {
@@ -97,15 +104,6 @@ public class ServerImpl extends HttpServer {
                 processFirstRequest(request, session, parameters);
             } else {
                 session.sendResponse(requestHandler.handle(request));
-            }
-        } catch (RejectedExecutionException executionException) {
-            try {
-                log.error("Rejected execution new request.", executionException);
-                session.sendError(HTTP_SERVICE_NOT_AVAILABLE, "Server is overload.");
-            } catch (IOException ex) {
-                log.error("Failed send error response to client.", ex);
-                session.close();
-                Thread.currentThread().interrupt();
             }
         } catch (Exception ex) {
             try {
@@ -122,46 +120,81 @@ public class ServerImpl extends HttpServer {
     }
 
     private void processFirstRequest(
-        Request request,
-        HttpSession session,
-        RequestWrapper parameters
-    ) throws IOException {
+            Request request,
+            HttpSession session,
+            RequestWrapper parameters
+    ) throws IOException, ExecutionException, InterruptedException {
         List<String> nodeUrls = proxyRequestHandler.getNodesByHash(parameters.from);
+
         if (nodeUrls.size() < parameters.from) {
-            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+            sendNotEnoughReplicasResponse(session);
+            return;
         }
 
         boolean isSelfProcessing = nodeUrls.remove(serviceConfig.selfUrl());
-        Map<String, Response> responses = proxyRequestHandler.proxyRequests(request, nodeUrls);
+
+        List<Response> validResponses = new ArrayList<>();
+        AtomicInteger unsuccessfulResponsesCount = new AtomicInteger(0);
+
+        List<CompletableFuture<Response>> futures = new ArrayList<>(proxyRequestHandler.proxyRequests(
+            request,
+            nodeUrls,
+            parameters.ack,
+            validResponses,
+            unsuccessfulResponsesCount
+        ));
 
         if (isSelfProcessing) {
-            responses.put(serviceConfig.selfUrl(), requestHandler.handle(request));
+            futures.add(requestHandler.handle(request, validResponses, unsuccessfulResponsesCount));
         }
 
-        List<Response> validResponses = responses.values().stream()
-            .filter(response -> isSuccessProcessed(response.getStatus()))
-            .collect(Collectors.toList());
+        CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+                futures.stream()
+                        .limit(parameters.ack)
+                        .toArray(CompletableFuture[]::new)
+        );
+
+        try {
+            allFutures.get(5, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("Timeout reached while waiting for responses");
+        }
+
         if (validResponses.size() >= parameters.ack) {
             if (request.getMethod() == Request.METHOD_GET) {
-                validResponses.sort(
-                    Comparator.comparingLong(r -> {
-                            String timestamp = r.getHeader(RequestWrapper.NIO_TIMESTAMP_STRING_HEADER);
-                            return timestamp == null ? 0 : Long.parseLong(timestamp);
-                        }
-                    )
-                );
-                session.sendResponse(validResponses.getLast());
+                sendResponseToClient(session, validResponses);
             } else {
                 session.sendResponse(validResponses.getFirst());
             }
         } else {
-            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+            sendNotEnoughReplicasResponse(session);
         }
     }
 
-    private boolean isSuccessProcessed(int status) {
-        // not server and time limit errors
-        return status < 500;
+    private void sendResponseToClient(HttpSession session, List<Response> validResponses) throws IOException {
+        Response lastResponse = null;
+        long maxTimestamp = Long.MIN_VALUE;
+
+        for (Response response : validResponses) {
+            String timestamp = response.getHeader(RequestWrapper.NIO_TIMESTAMP_STRING_HEADER);
+            if (timestamp != null) {
+                long currentTimestamp = Long.parseLong(timestamp);
+                if (currentTimestamp > maxTimestamp) {
+                    maxTimestamp = currentTimestamp;
+                    lastResponse = response;
+                }
+            }
+        }
+
+        if (lastResponse == null) {
+            sendNotEnoughReplicasResponse(session);
+        } else {
+            session.sendResponse(lastResponse);
+        }
+    }
+
+    private void sendNotEnoughReplicasResponse(HttpSession session) throws IOException {
+        session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
     }
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {

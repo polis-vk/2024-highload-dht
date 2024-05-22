@@ -7,7 +7,7 @@ import ru.vk.itmo.test.ServiceFactory;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 
-@ServiceFactory(stage = 4)
+@ServiceFactory(stage = 6)
 public class ServiceFactoryImpl implements ServiceFactory.Factory {
     @Override
     public Service create(ServiceConfig config) {

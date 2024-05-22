@@ -4,68 +4,70 @@ import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.vk.itmo.test.khadyrovalmasgali.util.HttpUtil;
 
-import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MergeHandleResult {
 
     private static final Logger log = LoggerFactory.getLogger(MergeHandleResult.class);
+    private final AtomicInteger successCount;
     private final AtomicInteger count;
     private final int from;
     private final int ack;
     private final HttpSession session;
-    private final HandleResult[] handleResults;
+    private HandleResult mergedResult = new HandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, Response.EMPTY);
 
     public MergeHandleResult(int from, int ack, HttpSession session) {
-        handleResults = new HandleResult[from];
         this.count = new AtomicInteger();
+        this.successCount = new AtomicInteger();
         this.ack = ack;
         this.from = from;
         this.session = session;
     }
 
-    public void add(HandleResult handleResult, int index) {
-        handleResults[index] = handleResult;
-        int get = count.incrementAndGet();
-
-        if (get == from) {
-            sendResult();
-        }
-    }
-
-    private void sendResult() {
-        HandleResult mergedResult = new HandleResult(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, null);
-
-        int accepted = 0;
-        for (HandleResult handleResult : handleResults) {
-            if (handleResult.status() == HttpURLConnection.HTTP_OK
-                    || handleResult.status() == HttpURLConnection.HTTP_CREATED
-                    || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
-                    || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND) {
-                accepted++;
+    @SuppressWarnings("FutureReturnValueIgnored")
+    public void add(CompletableFuture<HandleResult> futureHandleResult) {
+        futureHandleResult.whenComplete((handleResult, t) -> {
+            checkThrowable(t);
+            if (validateHandleResult(handleResult)) {
                 if (mergedResult.timestamp() <= handleResult.timestamp()) {
                     mergedResult = handleResult;
                 }
+                int get = successCount.incrementAndGet();
+                if (get == ack) {
+                    HttpUtil.sessionSendSafe(
+                            session,
+                            new Response(String.valueOf(mergedResult.status()), mergedResult.data()),
+                            log);
+                }
             }
-        }
+            int currentCount = count.incrementAndGet();
+            if (currentCount == from && successCount.get() < ack) {
+                HttpUtil.sessionSendSafe(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY), log);
+            }
+        });
+    }
 
-        try {
-            if (accepted < ack) {
-                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+    private void checkThrowable(Throwable t) {
+        if (t != null) {
+            if (t instanceof Exception) {
+                log.info("Exception in mergeHandleResult", t);
             } else {
-                session.sendResponse(new Response(String.valueOf(mergedResult.status()), mergedResult.data()));
-            }
-        } catch (Exception e) {
-            log.error("Exception during handleRequest", e);
-            try {
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            } catch (IOException ex) {
-                log.error("Exception while sending close connection", e);
-                session.scheduleClose();
+                HttpUtil.sessionSendSafe(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY), log);
             }
         }
+    }
 
+    private static boolean validateHandleResult(HandleResult handleResult) {
+        if (handleResult == null) {
+            return false;
+        }
+        return handleResult.status() == HttpURLConnection.HTTP_OK
+                || handleResult.status() == HttpURLConnection.HTTP_CREATED
+                || handleResult.status() == HttpURLConnection.HTTP_ACCEPTED
+                || handleResult.status() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 }

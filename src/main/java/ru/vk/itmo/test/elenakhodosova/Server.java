@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -29,6 +30,7 @@ public final class Server {
 
     public static void main(String[] args) throws IOException {
         List<ServiceConfig> nodesConfigs = new ArrayList<>(NODES_COUNT);
+        ExecutorService executorService = ExecutorServiceConfig.newExecutorService();
 
         Map<Integer, String> nodes = new HashMap<>();
         int nodePort = 8080;
@@ -50,12 +52,14 @@ public final class Server {
         }
         for (ServiceConfig config : nodesConfigs) {
             ServiceImpl server = new ServiceImpl(config);
-            try {
-                server.start().get(1, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                logger.error("Unable to start service instance: ", e);
-                Thread.currentThread().interrupt();
-            }
+            executorService.execute(() -> {
+                try {
+                    server.start().get(1, TimeUnit.SECONDS);
+                } catch (InterruptedException | ExecutionException | TimeoutException | IOException e) {
+                    logger.error("Unable to start service instance: ", e);
+                    Thread.currentThread().interrupt();
+                }
+            });
         }
     }
 }

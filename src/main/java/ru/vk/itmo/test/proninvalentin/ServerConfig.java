@@ -28,7 +28,7 @@ public class ServerConfig {
     public static ServerConfig defaultConfig() {
         int workersNumber = Runtime.getRuntime().availableProcessors() * 2;
         int requestMaxTimeToTakeInWorkInMillis = 300;
-        int httpRequestTimeoutInMillis = 350;
+        int httpRequestTimeoutInMillis = 200;
         return new ServerConfig(workersNumber, requestMaxTimeToTakeInWorkInMillis, httpRequestTimeoutInMillis);
     }
 }

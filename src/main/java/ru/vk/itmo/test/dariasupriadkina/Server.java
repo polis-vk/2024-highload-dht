@@ -6,7 +6,9 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
@@ -22,6 +24,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -65,14 +68,11 @@ public class Server extends HttpServer {
 
     private static HttpServerConfig createHttpServerConfig(ServiceConfig serviceConfig) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
-
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = serviceConfig.selfPort();
         acceptorConfig.reusePort = true;
-
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
         httpServerConfig.closeSessions = true;
-
         return httpServerConfig;
     }
 
@@ -92,6 +92,10 @@ public class Server extends HttpServer {
         try {
             workerExecutor.execute(() -> {
                 try {
+                    if (request.getURI().startsWith(Utils.LOCAL_STREAM_ENTRY_PREFIX)) {
+                        selfHandler.handleRange(request, session);
+                        return;
+                    }
                     Map<String, Integer> ackFrom = getFromAndAck(request);
                     int from = ackFrom.get("from");
                     int ack = ackFrom.get("ack");
@@ -120,6 +124,11 @@ public class Server extends HttpServer {
             logger.error("Service is unavailable", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomHttpSession(socket, this);
     }
 
     private void solveUnexpectedError(Exception e, HttpSession session) {
@@ -188,7 +197,6 @@ public class Server extends HttpServer {
 
             }, workerExecutor).exceptionally(exception -> {
                 logger.error("Error happened while collecting responses from nodes", exception);
-                sendAsyncResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY), session);
                 return null;
             });
         }
@@ -223,6 +231,11 @@ public class Server extends HttpServer {
                     Response response1 = new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
                     if (httpResponse.headers().map().get(TIMESTAMP_MILLIS_HEADER_NORMAL) == null) {
                         response1.addHeader(TIMESTAMP_MILLIS_HEADER + "0");
+                    } else {
+                        response1.addHeader(TIMESTAMP_MILLIS_HEADER
+                                + httpResponse.headers().map().get(
+                                TIMESTAMP_MILLIS_HEADER_NORMAL.toLowerCase(Locale.ROOT)).getFirst()
+                        );
                     }
                     return response1;
                 }, workerExecutor);

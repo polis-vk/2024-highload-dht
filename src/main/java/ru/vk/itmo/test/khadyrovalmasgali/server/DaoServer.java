@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.khadyrovalmasgali.server;
 
-import one.nio.http.HttpException;
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -15,6 +15,7 @@ import ru.vk.itmo.test.khadyrovalmasgali.dao.TimestampEntry;
 import ru.vk.itmo.test.khadyrovalmasgali.hashing.Node;
 import ru.vk.itmo.test.khadyrovalmasgali.replication.HandleResult;
 import ru.vk.itmo.test.khadyrovalmasgali.replication.MergeHandleResult;
+import ru.vk.itmo.test.khadyrovalmasgali.util.HttpUtil;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -27,13 +28,12 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class DaoServer extends HttpServer {
@@ -42,22 +42,29 @@ public class DaoServer extends HttpServer {
     private static final String HEADER_REMOTE_ONE_NIO_HEADER = HEADER_REMOTE + ": da";
     private static final String HEADER_TIMESTAMP = "X-flag-remote-reference-server-to-node-by-paschenko2";
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
+    private static final byte[] CHUNK_HEADERS = """
+            HTTP/1.1 200 OK\r
+            Content-Type: text/plain\r
+            Transfer-Encoding: chunked\r
+            Connection: keep-alive\r
+            \r
+            """.getBytes(StandardCharsets.UTF_8);
+    private static final byte[] CHUNK_SEP = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] ENTRY_SEP = "\n".getBytes(StandardCharsets.UTF_8);
     private static final Logger log = LoggerFactory.getLogger(DaoServer.class);
     private static final String ENTITY_PATH = "/v0/entity";
+    private static final String ENTITIES_PATH = "/v0/entities";
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
-    private static final int Q_SIZE = 512;
-    private static final int KEEP_ALIVE_TIME = 50;
     private static final int TERMINATION_TIMEOUT = 60;
     private static final int HTTP_CLIENT_TIMEOUT_MS = 1000;
 
     private final ServiceConfig config;
-    private final ExecutorService executorService = new ThreadPoolExecutor(
-            THREADS,
-            THREADS,
-            KEEP_ALIVE_TIME,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(Q_SIZE),
-            new ThreadPoolExecutor.AbortPolicy());
+    private final ExecutorService executorLocal = Executors
+            .newFixedThreadPool(THREADS, new CustomThreadFactory("local-worker"));
+
+    private final ExecutorService executorRemote = Executors
+            .newFixedThreadPool(THREADS, new CustomThreadFactory("remote-worker"));
+
     private final List<Node> nodes;
     private final Dao<MemorySegment, TimestampEntry<MemorySegment>> dao;
     private final HttpClient httpClient;
@@ -84,11 +91,69 @@ public class DaoServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!ENTITY_PATH.equals(request.getPath())) {
+        if (ENTITY_PATH.equals(request.getPath())) {
+            handleEntity(request, session);
+        } else if (ENTITIES_PATH.equals(request.getPath())) {
+            handleEntities(request, session);
+        } else {
             session.sendError(Response.BAD_REQUEST, null);
-            return;
         }
+    }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private void handleEntities(Request request, HttpSession session) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                if (request.getMethod() != Request.METHOD_GET) {
+                    session.sendError(Response.METHOD_NOT_ALLOWED, null);
+                    return;
+                }
+                String start = request.getParameter("start=");
+                if (start == null || start.isBlank()) {
+                    session.sendError(Response.BAD_REQUEST, null);
+                    return;
+                }
+                String end = request.getParameter("end=");
+                Iterator<TimestampEntry<MemorySegment>> iterator;
+                if (end == null || end.isBlank()) {
+                    iterator = dao.get(stringToMemorySegment(start), null);
+                } else {
+                    iterator = dao.get(stringToMemorySegment(start), stringToMemorySegment(end));
+                }
+                writeFull(session, CHUNK_HEADERS);
+                while (iterator.hasNext()) {
+                    writeChunk(session, iterator.next());
+                }
+                writeEmptyChunk(session);
+                session.close();
+            } catch (IOException e) {
+                log.error("Error handling range", e);
+            }
+        }, executorLocal);
+    }
+
+    private void writeChunk(HttpSession session, TimestampEntry<MemorySegment> entry) throws IOException {
+        byte[] key = entry.key().toArray(ValueLayout.JAVA_BYTE);
+        byte[] value = entry.value().toArray(ValueLayout.JAVA_BYTE);
+        writeFull(session, lengthToHexBytes(key.length + value.length + ENTRY_SEP.length));
+        writeFull(session, CHUNK_SEP);
+        writeFull(session, key);
+        writeFull(session, ENTRY_SEP);
+        writeFull(session, value);
+        writeFull(session, CHUNK_SEP);
+    }
+
+    private void writeEmptyChunk(HttpSession session) throws IOException {
+        writeFull(session, lengthToHexBytes(0));
+        writeFull(session, CHUNK_SEP);
+        writeFull(session, CHUNK_SEP);
+    }
+
+    private void writeFull(HttpSession session, byte[] data) throws IOException {
+        session.write(data, 0, data.length);
+    }
+
+    private void handleEntity(Request request, HttpSession session) throws IOException {
         if (request.getMethod() != Request.METHOD_GET
                 && request.getMethod() != Request.METHOD_DELETE
                 && request.getMethod() != Request.METHOD_PUT) {
@@ -117,120 +182,99 @@ public class DaoServer extends HttpServer {
 
         int[] indexes = determineResponsibleNodes(id, from);
         MergeHandleResult mergeResult = new MergeHandleResult(indexes.length, ack, session);
-        for (int i = 0; i < indexes.length; ++i) {
-            Node node = nodes.get(indexes[i]);
+        for (int index : indexes) {
+            Node node = nodes.get(index);
             if (!config.selfUrl().equals(node.getUrl())) {
-                handleAsync(mergeResult, i, () -> remote(request, node));
+                handle(mergeResult, () -> remote(request, node));
             } else {
-                handleAsync(mergeResult, i, () -> local(request, id));
+                handle(mergeResult, () -> local(request, id));
             }
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void processLocal(Request request, HttpSession session, String id) {
-        executorService.execute(() -> {
-            try {
-                HandleResult local = local(request, id);
-                Response response = new Response(String.valueOf(local.status()), local.data());
-                response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
-                session.sendResponse(response);
-            } catch (Exception e) {
-                log.error("Exception during handleRequest", e);
-                try {
-                    session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                } catch (IOException ex) {
-                    log.error("Exception while sending close connection", e);
-                    session.scheduleClose();
-                }
+        CompletableFuture<HandleResult> localResult = local(request, id);
+        localResult.whenComplete((local, t) -> {
+            if (t != null) {
+                HttpUtil.sessionSendSafe(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY), log);
+                return;
             }
+            Response response = new Response(String.valueOf(local.status()), local.data());
+            response.addHeader(HEADER_TIMESTAMP_ONE_NIO_HEADER + local.timestamp());
+            HttpUtil.sessionSendSafe(session, response, log);
         });
     }
 
-    private HandleResult remote(Request request, Node node) {
-        try {
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(node.getUrl() + request.getURI()))
-                    .method(
-                            request.getMethodName(),
-                            request.getBody() == null
-                                    ? HttpRequest.BodyPublishers.noBody()
-                                    : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-                    )
-                    .header(HEADER_REMOTE, "da")
-                    .timeout(Duration.ofMillis(HTTP_CLIENT_TIMEOUT_MS))
-                    .build();
-            HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+    private CompletableFuture<HandleResult> remote(Request request, Node node) {
+        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(node.getUrl() + request.getURI()))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .header(HEADER_REMOTE, "da")
+                .timeout(Duration.ofMillis(HTTP_CLIENT_TIMEOUT_MS))
+                .build();
+        CompletableFuture<HttpResponse<byte[]>> httpResponseFuture = httpClient
+                .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        return httpResponseFuture.thenApplyAsync(httpResponse -> {
             Optional<String> string = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
             long timestamp;
             timestamp = string.map(Long::parseLong).orElse(0L);
             return new HandleResult(httpResponse.statusCode(), httpResponse.body(), timestamp);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error(e.getMessage());
-            return new HandleResult(HttpURLConnection.HTTP_UNAVAILABLE, Response.EMPTY);
-        } catch (IOException e) {
-            return new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY);
-        }
+        }, executorRemote);
     }
 
-    private HandleResult local(Request request, String id) {
-        long timestamp = System.currentTimeMillis();
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                TimestampEntry<MemorySegment> entry = dao.get(stringToMemorySegment(id));
-                if (entry == null) {
-                    return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY);
-                }
-                if (entry.value() == null) {
-                    return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY, entry.timestamp());
-                }
-                return new HandleResult(
-                        HttpURLConnection.HTTP_OK,
-                        entry.value().toArray(ValueLayout.JAVA_BYTE),
-                        entry.timestamp());
-            }
-            case Request.METHOD_PUT -> {
-                dao.upsert(new TimestampEntry<>(
-                        stringToMemorySegment(id),
-                        MemorySegment.ofArray(request.getBody()),
-                        timestamp));
-                return new HandleResult(HttpURLConnection.HTTP_CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                dao.upsert(new TimestampEntry<>(stringToMemorySegment(id), null, timestamp));
-                return new HandleResult(HttpURLConnection.HTTP_ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new HandleResult(HttpURLConnection.HTTP_BAD_METHOD, Response.EMPTY);
-            }
-        }
-    }
-
-    private void handleAsync(MergeHandleResult mergeResult, int index, ERunnable r) {
-        try {
-            executorService.execute(() -> {
-                try {
-                    HandleResult result = r.run();
-                    mergeResult.add(result, index);
-                } catch (Exception e) {
-                    if (e instanceof HttpException) {
-                        log.error(e.getMessage());
-                        mergeResult.add(new HandleResult(HttpURLConnection.HTTP_BAD_REQUEST, Response.EMPTY), index);
-                    } else {
-                        log.error(e.getMessage());
-                        mergeResult.add(new HandleResult(HttpURLConnection.HTTP_INTERNAL_ERROR, Response.EMPTY), index);
+    private CompletableFuture<HandleResult> local(Request request, String id) {
+        return CompletableFuture.supplyAsync(() -> {
+            long timestamp = System.currentTimeMillis();
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    TimestampEntry<MemorySegment> entry = dao.get(stringToMemorySegment(id));
+                    if (entry == null) {
+                        return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY);
                     }
+                    if (entry.value() == null) {
+                        return new HandleResult(HttpURLConnection.HTTP_NOT_FOUND, Response.EMPTY, entry.timestamp());
+                    }
+                    return new HandleResult(
+                            HttpURLConnection.HTTP_OK,
+                            entry.value().toArray(ValueLayout.JAVA_BYTE),
+                            entry.timestamp());
                 }
-            });
-        } catch (RejectedExecutionException e) {
-            log.error("too many requests", e);
-            mergeResult.add(new HandleResult(HttpURLConnection.HTTP_UNAVAILABLE, Response.EMPTY), index);
+                case Request.METHOD_PUT -> {
+                    dao.upsert(new TimestampEntry<>(
+                            stringToMemorySegment(id),
+                            MemorySegment.ofArray(request.getBody()),
+                            timestamp));
+                    return new HandleResult(HttpURLConnection.HTTP_CREATED, Response.EMPTY);
+                }
+                case Request.METHOD_DELETE -> {
+                    dao.upsert(new TimestampEntry<>(stringToMemorySegment(id), null, timestamp));
+                    return new HandleResult(HttpURLConnection.HTTP_ACCEPTED, Response.EMPTY);
+                }
+                default -> {
+                    return new HandleResult(HttpURLConnection.HTTP_BAD_METHOD, Response.EMPTY);
+                }
+            }
+        }, executorLocal);
+    }
+
+    private void handle(MergeHandleResult mergeResult, ERunnable r) {
+        try {
+            mergeResult.add(r.run());
+        } catch (Exception e) {
+            log.error("Exception during handle request");
+            mergeResult.add(CompletableFuture.failedFuture(e));
         }
     }
 
     @Override
     public synchronized void stop() {
         super.stop();
-        shutdownAndAwaitTermination(executorService);
+        shutdownAndAwaitTermination(executorLocal);
     }
 
     private int getParam(Request request, String p, int defaultValue) {
@@ -288,6 +332,10 @@ public class DaoServer extends HttpServer {
         return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
     }
 
+    private static byte[] lengthToHexBytes(int length) {
+        return Integer.toHexString(length).getBytes(StandardCharsets.UTF_8);
+    }
+
     private static HttpServerConfig createHttpServerConfig(ServiceConfig config) {
         HttpServerConfig serverConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
@@ -299,6 +347,6 @@ public class DaoServer extends HttpServer {
     }
 
     private interface ERunnable {
-        HandleResult run() throws IOException;
+        CompletableFuture<HandleResult> run() throws IOException;
     }
 }

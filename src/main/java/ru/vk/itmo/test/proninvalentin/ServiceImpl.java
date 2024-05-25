@@ -6,14 +6,13 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiter;
-import ru.vk.itmo.test.proninvalentin.failure_limiter.FailureLimiterConfig;
+import ru.vk.itmo.test.proninvalentin.dao.ReferenceDao;
 import ru.vk.itmo.test.proninvalentin.sharding.ConsistentHashing;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingAlgorithm;
 import ru.vk.itmo.test.proninvalentin.sharding.ShardingConfig;
+import ru.vk.itmo.test.proninvalentin.utils.Utils;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPool;
 import ru.vk.itmo.test.proninvalentin.workers.WorkerPoolConfig;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -47,10 +46,7 @@ public class ServiceImpl implements Service {
         ShardingConfig shardingConfig = ShardingConfig.defaultConfig(clusterUrls);
         ShardingAlgorithm shardingAlgorithm = new ConsistentHashing(shardingConfig);
 
-        FailureLimiterConfig failureLimiterConfig = FailureLimiterConfig.defaultConfig(clusterUrls);
-        FailureLimiter failureLimiter = new FailureLimiter(failureLimiterConfig);
-
-        server = new Server(config, dao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig(), failureLimiter);
+        server = new Server(config, dao, workerPool, shardingAlgorithm, ServerConfig.defaultConfig());
         server.start();
         serverAlreadyClosed = false;
         return CompletableFuture.completedFuture(null);
@@ -75,7 +71,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 6)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

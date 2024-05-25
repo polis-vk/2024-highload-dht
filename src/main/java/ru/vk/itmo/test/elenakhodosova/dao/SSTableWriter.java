@@ -1,7 +1,5 @@
 package ru.vk.itmo.test.elenakhodosova.dao;
 
-import ru.vk.itmo.dao.Entry;
-
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -15,7 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 
 /**
- * Writes {@link Entry} {@link Iterator} to SSTable on disk.
+ * Writes {@link EntryWithTimestamp} {@link Iterator} to SSTable on disk.
  *
  * <p>Index file {@code <N>.index} contains {@code long} offsets to entries in data file:
  * {@code [offset0, offset1, ...]}
@@ -40,7 +38,7 @@ final class SSTableWriter {
     void write(
             final Path baseDir,
             final int sequence,
-            final Iterator<Entry<MemorySegment>> entries) throws IOException {
+            final Iterator<EntryWithTimestamp<MemorySegment>> entries) throws IOException {
         // Write to temporary files
         final Path tempIndexName = SSTables.tempIndexName(baseDir, sequence);
         final Path tempDataName = SSTables.tempDataName(baseDir, sequence);
@@ -71,7 +69,7 @@ final class SSTableWriter {
                 writeLong(entryOffset, index);
 
                 // Then write the entry
-                final Entry<MemorySegment> entry = entries.next();
+                final EntryWithTimestamp<MemorySegment> entry = entries.next();
                 entryOffset += writeEntry(entry, data);
             }
         }
@@ -127,15 +125,16 @@ final class SSTableWriter {
     }
 
     /**
-     * Writes {@link Entry} to {@link FileChannel}.
+     * Writes {@link EntryWithTimestamp} to {@link FileChannel}.
      *
      * @return written bytes
      */
     private long writeEntry(
-            final Entry<MemorySegment> entry,
+            final EntryWithTimestamp<MemorySegment> entry,
             final OutputStream os) throws IOException {
         final MemorySegment key = entry.key();
         final MemorySegment value = entry.value();
+        final long timestamp = entry.timestamp();
         long result = 0L;
 
         // Key size
@@ -151,6 +150,10 @@ final class SSTableWriter {
             // Tombstone
             writeLong(SSTables.TOMBSTONE_VALUE_LENGTH, os);
             result += Long.BYTES;
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         } else {
             // Value length
             writeLong(value.byteSize(), os);
@@ -159,6 +162,10 @@ final class SSTableWriter {
             // Value
             writeSegment(value, os);
             result += value.byteSize();
+
+            // Timestamp
+            writeLong(timestamp, os);
+            result += Long.BYTES;
         }
 
         return result;

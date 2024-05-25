@@ -1,5 +1,6 @@
 package ru.vk.itmo.test.dariasupriadkina;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.dao.BaseEntry;
@@ -7,14 +8,18 @@ import ru.vk.itmo.dao.Dao;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedBaseEntry;
 import ru.vk.itmo.test.dariasupriadkina.dao.ExtendedEntry;
 
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.concurrent.CompletableFuture;
 
 public class SelfRequestHandler {
 
+    private static final String TIMESTAMP_MILLIS_HEADER = "X-TIMESTAMP-MILLIS: ";
     private final Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
     private final Utils utils;
-    private static final String TIMESTAMP_MILLIS_HEADER = "X-TIMESTAMP-MILLIS: ";
 
     public SelfRequestHandler(Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao, Utils utils) {
         this.dao = dao;
@@ -23,12 +28,20 @@ public class SelfRequestHandler {
 
     public Response handleRequest(Request request) {
         String id = utils.getIdParameter(request);
-        return switch (request.getMethodName()) {
-            case "GET" -> get(id);
-            case "PUT" -> put(id, request);
-            case "DELETE" -> delete(id);
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> get(id);
+            case Request.METHOD_PUT -> put(id, request);
+            case Request.METHOD_DELETE -> delete(id);
             default -> new Response(Response.NOT_FOUND, Response.EMPTY);
         };
+    }
+
+    public CompletableFuture<Response> handleAsyncRequest(Request request) {
+        return composeFuture(handleRequest(request));
+    }
+
+    private CompletableFuture<Response> composeFuture(Response response) {
+        return CompletableFuture.completedFuture(response);
     }
 
     public Response get(String id) {
@@ -86,4 +99,26 @@ public class SelfRequestHandler {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
+
+    public void handleRange(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+
+        if (start == null
+                || request.getMethod() != Request.METHOD_GET
+                || start.isEmpty()
+                || (end != null && end.isEmpty())) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        Iterator<ExtendedEntry<MemorySegment>> it = dao.get(
+                utils.convertByteArrToMemorySegment(start.getBytes(StandardCharsets.UTF_8)),
+                end == null ? null :
+                        utils.convertByteArrToMemorySegment(end.getBytes(StandardCharsets.UTF_8))
+        );
+
+        ((CustomHttpSession) session).streaming(it);
+    }
+
 }

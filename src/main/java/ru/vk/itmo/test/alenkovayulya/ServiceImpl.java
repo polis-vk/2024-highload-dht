@@ -3,9 +3,9 @@ package ru.vk.itmo.test.alenkovayulya;
 import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.alenkovayulya.dao.Dao;
+import ru.vk.itmo.test.alenkovayulya.dao.EntryWithTimestamp;
 import ru.vk.itmo.test.alenkovayulya.dao.ReferenceDao;
 
 import java.io.IOException;
@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServiceImpl implements Service {
 
-    private Dao<MemorySegment, Entry<MemorySegment>> referenceDao;
+    private Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> referenceDao;
     private ExecutorService executorService;
     private ServerImpl server;
     private final ServiceConfig config;
@@ -72,7 +72,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

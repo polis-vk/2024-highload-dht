@@ -18,11 +18,12 @@ import ru.vk.itmo.test.viktorkorotkikh.dao.TimestampedEntry;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.LSMDaoOutOfMemoryException;
 import ru.vk.itmo.test.viktorkorotkikh.dao.exceptions.TooManyFlushesException;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMCustomSession;
+import ru.vk.itmo.test.viktorkorotkikh.http.LSMRangeWriter;
 import ru.vk.itmo.test.viktorkorotkikh.http.LSMServerResponseWithMemorySegment;
+import ru.vk.itmo.test.viktorkorotkikh.util.ClusterResponseMerger;
 import ru.vk.itmo.test.viktorkorotkikh.util.HttpResponseNodeResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.LSMConstantResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.LsmServerUtil;
-import ru.vk.itmo.test.viktorkorotkikh.util.NodeResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.OneNioNodeResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.ReplicaEmptyResponse;
 import ru.vk.itmo.test.viktorkorotkikh.util.RequestParameters;
@@ -35,18 +36,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.SequencedSet;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
@@ -66,13 +63,17 @@ public class LSMServerImpl extends HttpServer {
     private final String selfUrl;
     private final HttpClient clusterClient;
     private final ServiceConfig serviceConfig;
+    private final ExecutorService clusterResponseProcessor;
+    private final ExecutorService localProcessor;
 
     public LSMServerImpl(
             ServiceConfig serviceConfig,
             Dao<MemorySegment, TimestampedEntry<MemorySegment>> dao,
             ExecutorService executorService,
             ConsistentHashingManager consistentHashingManager,
-            HttpClient clusterClient
+            HttpClient clusterClient,
+            ExecutorService clusterResponseProcessor,
+            ExecutorService localProcessor
     ) throws IOException {
         super(createServerConfig(serviceConfig));
         this.dao = dao;
@@ -81,6 +82,8 @@ public class LSMServerImpl extends HttpServer {
         this.selfUrl = serviceConfig.selfUrl();
         this.clusterClient = clusterClient;
         this.serviceConfig = serviceConfig;
+        this.clusterResponseProcessor = clusterResponseProcessor;
+        this.localProcessor = localProcessor;
     }
 
     private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
@@ -103,6 +106,12 @@ public class LSMServerImpl extends HttpServer {
             executorService.execute(() -> {
                 try {
                     final String path = request.getPath();
+
+                    if (path.startsWith("/v0/entities") && request.getMethod() == METHOD_GET) {
+                        handleEntitiesRangeRequest(request, (LSMCustomSession) session);
+                        return;
+                    }
+
                     if (path.startsWith("/v0/entity")) {
                         handleEntityRequest(request, session);
                     } else {
@@ -186,15 +195,15 @@ public class LSMServerImpl extends HttpServer {
 
         final SequencedSet<String> replicas = consistentHashingManager.getReplicasSet(from, key);
 
-        final Response response = getResponseFromReplicas(
+        getResponseFromReplicas(
                 request,
                 from,
                 replicas,
                 key,
                 id,
-                ack
+                ack,
+                session
         );
-        session.sendResponse(response);
     }
 
     private static RequestParameters getRequestParameters(Request request) {
@@ -220,34 +229,38 @@ public class LSMServerImpl extends HttpServer {
         return new RequestParameters(id, ack, from);
     }
 
-    private Response getResponseFromReplicas(
+    private void getResponseFromReplicas(
             Request request,
-            Integer from,
+            int from,
             SequencedSet<String> replicas,
             byte[] key,
             String id,
-            Integer ack
+            int ack,
+            HttpSession session
     ) {
-        final List<NodeResponse> responses = new ArrayList<>(from);
+        final ClusterResponseMerger clusterResponseMerger = new ClusterResponseMerger(ack, from, request, session);
         final long requestTimestamp = Instant.now().toEpochMilli();
+        int i = 0;
         for (final String replicaUrl : replicas) {
             if (replicaUrl.equals(selfUrl)) {
-                responses.add(processLocal(request, key, id, requestTimestamp));
+                processLocalAsync(request, key, id, requestTimestamp, i, clusterResponseMerger);
             } else {
-                responses.add(processRemote(request, replicaUrl, id, requestTimestamp));
+                processRemote(request, replicaUrl, id, requestTimestamp, i, clusterResponseMerger);
             }
+            i++;
         }
-        return LsmServerUtil.mergeReplicasResponses(request, responses, ack);
     }
 
-    private NodeResponse processRemote(
+    private void processRemote(
             final Request originalRequest,
             final String server,
             final String id,
-            long requestTimestamp
+            long requestTimestamp,
+            int index,
+            ClusterResponseMerger clusterResponseMerge
     ) {
         final HttpRequest request = createClusterRequest(originalRequest, server, id, requestTimestamp);
-        return sendClusterRequest(request);
+        sendClusterRequest(request, index, clusterResponseMerge);
     }
 
     private static HttpRequest createClusterRequest(
@@ -259,7 +272,8 @@ public class LSMServerImpl extends HttpServer {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(server + ENTITY_V0_PATH_WITH_ID_PARAM + id))
                 .header(REPLICA_REQUEST_HEADER, "")
-                .header(LsmServerUtil.TIMESTAMP_HEADER, String.valueOf(requestTimestamp));
+                .header(LsmServerUtil.TIMESTAMP_HEADER, String.valueOf(requestTimestamp))
+                .timeout(Duration.ofMillis(CLUSTER_REQUEST_TIMEOUT_MILLISECONDS));
         switch (originalRequest.getMethod()) {
             case METHOD_GET -> builder.GET();
             case METHOD_PUT -> {
@@ -275,29 +289,47 @@ public class LSMServerImpl extends HttpServer {
         return builder.build();
     }
 
-    private NodeResponse sendClusterRequest(
-            final HttpRequest request
+    private void sendClusterRequest(
+            final HttpRequest request,
+            final int index,
+            final ClusterResponseMerger clusterResponseMerger
     ) {
-        try {
-            return new HttpResponseNodeResponse(
-                    clusterClient
-                            .sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
-                            .get(CLUSTER_REQUEST_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)
-            );
-        } catch (InterruptedException e) {
-            final String clusterUrl = request.uri().toString();
-            Thread.currentThread().interrupt();
-            log.warn("Current thread was interrupted during processing request to cluster {}", clusterUrl);
-            return new ReplicaEmptyResponse(HTTP_UNAVAILABLE);
-        } catch (ExecutionException e) {
-            final String clusterUrl = request.uri().toString();
-            log.error("Unexpected exception occurred while sending request to cluster {}", clusterUrl, e);
-            return new ReplicaEmptyResponse(HTTP_UNAVAILABLE);
-        } catch (TimeoutException e) {
-            final String clusterUrl = request.uri().toString();
-            log.warn("Request timeout to cluster server {}", clusterUrl);
-            return new ReplicaEmptyResponse(HTTP_GATEWAY_TIMEOUT);
-        }
+        clusterClient
+                .sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                .thenAcceptAsync(response ->
+                        clusterResponseMerger.addToMerge(
+                                index,
+                                new HttpResponseNodeResponse(response)
+                        ), clusterResponseProcessor)
+                .exceptionallyAsync(throwable -> {
+                    if (throwable.getCause() instanceof java.net.http.HttpTimeoutException) {
+                        final String clusterUrl = request.uri().toString();
+                        log.warn("Request timeout to cluster server {}", clusterUrl);
+                        clusterResponseMerger.addToMerge(index, new ReplicaEmptyResponse(HTTP_GATEWAY_TIMEOUT));
+                    } else {
+                        final String clusterUrl = request.uri().toString();
+                        log.error(
+                                "Unexpected exception occurred while sending request to cluster {}",
+                                clusterUrl,
+                                throwable
+                        );
+                        clusterResponseMerger.addToMerge(index, new ReplicaEmptyResponse(HTTP_UNAVAILABLE));
+                    }
+                    return null;
+                }, clusterResponseProcessor).state();
+    }
+
+    private void processLocalAsync(
+            Request request,
+            byte[] key,
+            String id,
+            long requestTimestamp,
+            int i,
+            ClusterResponseMerger clusterResponseMerger
+    ) {
+        localProcessor.execute(() ->
+                clusterResponseMerger.addToMerge(i, processLocal(request, key, id, requestTimestamp))
+        );
     }
 
     private OneNioNodeResponse processLocal(
@@ -404,6 +436,21 @@ public class LSMServerImpl extends HttpServer {
     public Response handleCompact(Request request) throws IOException {
         dao.compact();
         return LSMConstantResponse.ok(request);
+    }
+
+    public void handleEntitiesRangeRequest(Request request, LSMCustomSession session) throws IOException {
+        final String start = request.getParameter("start=");
+        final String end = request.getParameter("end=");
+        if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
+            log.debug("Bad request: start parameter and end parameter (if it present) should not be empty");
+            session.sendResponse(LSMConstantResponse.badRequest(request));
+            return;
+        }
+
+        final MemorySegment startMemorySegment = fromByteArray(start.getBytes(StandardCharsets.UTF_8));
+        final MemorySegment endMemorySegment = end == null ? null : fromByteArray(end.getBytes(StandardCharsets.UTF_8));
+        Iterator<TimestampedEntry<MemorySegment>> iterator = dao.get(startMemorySegment, endMemorySegment);
+        session.sendRangeResponse(new LSMRangeWriter(iterator, LSMConstantResponse.keepAlive(request)));
     }
 
     private static MemorySegment fromByteArray(final byte[] data) {

@@ -1,4 +1,4 @@
-package ru.vk.itmo.test.kovalevigor.server.util;
+package ru.vk.itmo.test.kovalevigor.server.strategy.util;
 
 import one.nio.http.Request;
 
@@ -7,7 +7,9 @@ import java.util.function.Function;
 public enum Parameters {
     ID("id"),
     ACK("ack"),
-    FROM("from");
+    FROM("from"),
+    START("start"),
+    END("end");
 
     private final String name;
 

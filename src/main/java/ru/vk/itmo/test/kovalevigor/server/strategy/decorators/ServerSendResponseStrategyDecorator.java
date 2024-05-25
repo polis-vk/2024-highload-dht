@@ -12,9 +12,9 @@ import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 
 import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.closeSession;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.sendErrorWithoutIo;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.sendResponseWithoutIo;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.closeSession;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.sendErrorWithoutIo;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.sendResponseWithoutIo;
 
 public class ServerSendResponseStrategyDecorator extends ServerStrategyDecorator {
 

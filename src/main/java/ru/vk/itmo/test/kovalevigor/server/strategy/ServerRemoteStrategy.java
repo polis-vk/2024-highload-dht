@@ -3,7 +3,7 @@ package ru.vk.itmo.test.kovalevigor.server.strategy;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import ru.vk.itmo.test.kovalevigor.server.util.Headers;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Headers;
 
 import java.io.IOException;
 import java.net.URI;
@@ -15,9 +15,9 @@ import java.util.concurrent.Executor;
 import java.util.logging.Level;
 
 import static ru.vk.itmo.test.kovalevigor.server.strategy.ServerDaoStrategy.log;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT_TIMEUNIT;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT_VALUE;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.REMOTE_TIMEOUT;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.REMOTE_TIMEOUT_TIMEUNIT;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.REMOTE_TIMEOUT_VALUE;
 
 public class ServerRemoteStrategy extends ServerRejectStrategy {
     private final HttpClient httpClient;

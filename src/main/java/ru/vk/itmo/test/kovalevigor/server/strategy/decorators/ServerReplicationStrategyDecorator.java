@@ -5,9 +5,10 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.ServiceInfo;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
-import ru.vk.itmo.test.kovalevigor.server.util.Headers;
-import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
-import ru.vk.itmo.test.kovalevigor.server.util.Responses;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Headers;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Parameters;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Paths;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Responses;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -15,9 +16,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.GOOD_STATUSES;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.REMOTE_TIMEOUT_VALUE;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.mergeResponses;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.GOOD_STATUSES;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.REMOTE_TIMEOUT_VALUE;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.mergeResponses;
 
 public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator {
 
@@ -67,7 +68,7 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
             HttpSession session,
             Executor executor
     ) {
-        if (Headers.hasHeader(request, Headers.REPLICATION)) {
+        if (Paths.getPathOrThrow(request.getPath()).isLocal() || Headers.hasHeader(request, Headers.REPLICATION)) {
             return super.handleRequestAsync(request, session, executor);
         }
         int ack = Parameters.getParameter(request, Parameters.ACK, Integer::parseInt, serviceInfo.getQuorum());

@@ -2,7 +2,7 @@ package ru.vk.itmo.test.kovalevigor.server;
 
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerRemoteStrategy;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
-import ru.vk.itmo.test.kovalevigor.server.util.Partition;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Partition;
 
 import java.io.IOException;
 import java.net.http.HttpClient;

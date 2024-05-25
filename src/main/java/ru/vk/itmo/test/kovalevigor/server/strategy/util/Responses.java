@@ -1,8 +1,9 @@
-package ru.vk.itmo.test.kovalevigor.server.util;
+package ru.vk.itmo.test.kovalevigor.server.strategy.util;
 
 import one.nio.http.Response;
 
 public enum Responses {
+    OK(Response.OK),
     NOT_FOUND(Response.NOT_FOUND),
     CREATED(Response.CREATED),
     ACCEPTED(Response.ACCEPTED),

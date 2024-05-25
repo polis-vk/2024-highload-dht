@@ -41,7 +41,7 @@ public class ResponseCollector {
     }
 
     private static boolean isResponseSucceeded(int status) {
-        return HttpUtils.AVAILABLE_RESPONSES.containsKey(status);
+        return HttpUtils.AVAILABLE_RESPONSE_CODES.containsKey(status);
     }
 
     private boolean isReadySendResponse() {

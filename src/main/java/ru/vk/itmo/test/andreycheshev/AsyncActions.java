@@ -36,6 +36,10 @@ public class AsyncActions {
             CPU_THREADS_COUNT,
             new WorkerThreadFactory("RemoteCall-thread")
     );
+    private final Executor streamingExecutor = Executors.newFixedThreadPool(
+            CPU_THREADS_COUNT / 2,
+            new WorkerThreadFactory("Streaming-thread")
+    );
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .executor(remoteCallExecutor)
@@ -47,6 +51,19 @@ public class AsyncActions {
 
     public AsyncActions(HttpProvider httpProvider) {
         this.httpProvider = httpProvider;
+    }
+
+    public CompletableFuture<Void> stream(Runnable runnable) {
+        return CompletableFuture.runAsync(
+                runnable,
+                streamingExecutor
+        ).exceptionallyAsync(
+                exception -> {
+                    LOGGER.error("Error while streaming process", exception);
+                    return null;
+                },
+                internalExecutor
+        );
     }
 
     public CompletableFuture<Void> processLocallyToSend(
@@ -166,7 +183,7 @@ public class AsyncActions {
             int method,
             String id,
             Request request,
-            long timestamp) {
+            long timestamp) throws IllegalArgumentException {
 
         return CompletableFuture.supplyAsync(
                 () -> switch (method) {

@@ -16,7 +16,7 @@ public class HttpUtils {
     public static final int NOT_FOUND_CODE = 404;
     public static final int GONE_CODE = 410;
 
-    public static final Map<Integer, String> AVAILABLE_RESPONSES = Map.of(
+    public static final Map<Integer, String> AVAILABLE_RESPONSE_CODES = Map.of(
             OK_CODE, Response.OK,
             CREATED_CODE, Response.CREATED,
             ACCEPT_CODE, Response.ACCEPTED,
@@ -83,7 +83,7 @@ public class HttpUtils {
 
                 Response response = status == GONE_CODE
                         ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                        : new Response(AVAILABLE_RESPONSES.get(status), elements.getBody());
+                        : new Response(AVAILABLE_RESPONSE_CODES.get(status), elements.getBody());
 
                 response.addHeader(TIMESTAMP_ONE_NIO_HEADER + elements.getTimestamp());
 

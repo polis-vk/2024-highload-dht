@@ -6,6 +6,8 @@ public final class ParametersParser {
     private static final String ID_PARAMETER = "id=";
     private static final String ACK_PARAMETER = "ack=";
     private static final String FROM_PARAMETER = "from=";
+    private static final String START_PARAMETER = "start=";
+    private static final String END_PARAMETER = "end=";
 
     private ParametersParser() {
 
@@ -34,5 +36,13 @@ public final class ParametersParser {
                     Integer.parseInt(from)
             );
         }
+    }
+
+    public static ParametersTuple<String> parseStartEnd(Request request) {
+
+        String start = request.getParameter(START_PARAMETER);
+        String end = request.getParameter(END_PARAMETER);
+
+        return new ParametersTuple<>(start, end);
     }
 }

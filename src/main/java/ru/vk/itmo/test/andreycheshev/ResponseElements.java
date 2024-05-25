@@ -1,13 +1,15 @@
 package ru.vk.itmo.test.andreycheshev;
 
+import java.util.Arrays;
+
 public class ResponseElements implements Comparable<ResponseElements> {
     private final int status;
-    private final ByteArrayWrapper body;
+    private final byte[] body;
     private final long timestamp;
 
     public ResponseElements(int status, byte[] body, long timestamp) {
         this.status = status;
-        this.body = new ByteArrayWrapper(body);
+        this.body = Arrays.copyOf(body, body.length); // CodeClimate requirement.
         this.timestamp = timestamp;
     }
 
@@ -16,7 +18,7 @@ public class ResponseElements implements Comparable<ResponseElements> {
     }
 
     public byte[] getBody() {
-        return body.get();
+        return Arrays.copyOf(body, body.length); // CodeClimate requirement.
     }
 
     public long getTimestamp() {
@@ -25,7 +27,7 @@ public class ResponseElements implements Comparable<ResponseElements> {
 
     @Override
     public int compareTo(ResponseElements o) {
-        long diff = timestamp - o.timestamp;
+        long diff = this.getTimestamp() - o.getTimestamp();
         if (diff > 0) {
             return -1;
         } else if (diff < 0) {

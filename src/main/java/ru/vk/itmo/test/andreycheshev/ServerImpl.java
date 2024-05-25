@@ -4,6 +4,8 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
 
@@ -27,6 +29,11 @@ public class ServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         executor.execute(request, session);
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new StreamingSession(socket, this);
     }
 
     @Override

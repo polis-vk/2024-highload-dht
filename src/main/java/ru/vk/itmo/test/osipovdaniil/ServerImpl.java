@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.test.osipovdaniil.dao.ReferenceBaseEntry;
 import ru.vk.itmo.test.osipovdaniil.dao.ReferenceDao;
+
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -35,6 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServerImpl extends HttpServer {
 
+    public static final int EXECUTOR_SERVICE_TERMINATION_TIMEOUT = 60;
     public static final String ENTITY_PATH = "/v0/entity";
     public static final String START = "start=";
     private static final String HEADER_REMOTE = "X-flag-remote-server-to-node";
@@ -43,6 +45,7 @@ public class ServerImpl extends HttpServer {
     private static final String HEADER_TIMESTAMP_ONE_NIO_HEADER = HEADER_TIMESTAMP + ": ";
     private static final Logger log = LoggerFactory.getLogger(ServerImpl.class);
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
+    private static final long REMOTE_HEADER_TIMEOUT = 500;
     public static final String ID = "id=";
     public static final String ACK = "ack=";
     public static final String FROM = "from=";
@@ -284,7 +287,7 @@ public class ServerImpl extends HttpServer {
                                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 )
                 .header(HEADER_REMOTE, "true")
-                .timeout(Duration.ofMillis(500))
+                .timeout(Duration.ofMillis(REMOTE_HEADER_TIMEOUT))
                 .build();
         final HttpResponse<byte[]> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         final Optional<String> string = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
@@ -346,15 +349,15 @@ public class ServerImpl extends HttpServer {
         int[] maxHashs = new int[count];
 
         for (int i = 0; i < count; i++) {
-            String url = config.clusterUrls().get(i);
-            int hash = Hash.murmur3(url + id);
+            final String url = config.clusterUrls().get(i);
+            final int hash = Hash.murmur3(url + id);
             result[i] = i;
             maxHashs[i] = hash;
         }
 
         for (int i = count; i < config.clusterUrls().size(); i++) {
-            String url = config.clusterUrls().get(i);
-            int hash = Hash.murmur3(url + id);
+            final String url = config.clusterUrls().get(i);
+            final int hash = Hash.murmur3(url + id);
             for (int j = 0; j < maxHashs.length; j++) {
                 int maxHash = maxHashs[j];
                 if (maxHash < hash) {
@@ -373,11 +376,12 @@ public class ServerImpl extends HttpServer {
 
     private void shutdownAndAwaitTermination(ExecutorService pool) {
         try {
-            if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+            if (!pool.awaitTermination(EXECUTOR_SERVICE_TERMINATION_TIMEOUT, TimeUnit.MILLISECONDS)) {
                 pool.shutdownNow();
-                if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
+                if (!pool.awaitTermination(EXECUTOR_SERVICE_TERMINATION_TIMEOUT, TimeUnit.MILLISECONDS)) {
                     log.info("Pool did not terminate");
                 }
+
             }
         } catch (InterruptedException ie) {
             pool.shutdownNow();

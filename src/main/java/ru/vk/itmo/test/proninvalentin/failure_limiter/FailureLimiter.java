@@ -1,6 +1,6 @@
 package ru.vk.itmo.test.proninvalentin.failure_limiter;
 
-import ru.vk.itmo.test.proninvalentin.Utils;
+import ru.vk.itmo.test.proninvalentin.utils.Utils;
 
 import java.util.HashMap;
 import java.util.List;

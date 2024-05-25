@@ -7,9 +7,13 @@ import ru.vk.itmo.Service;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.Config;
 import ru.vk.itmo.test.ServiceFactory;
+import ru.vk.itmo.test.andreycheshev.dao.PersistentReferenceDao;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
@@ -17,12 +21,19 @@ public class ServiceImpl implements Service {
 
     private final HttpServerConfig serverConfig;
     private final Config daoConfig;
+    private final RendezvousDistributor rendezvousDistributor;
 
     private Server server;
 
     public ServiceImpl(ServiceConfig config) {
         this.serverConfig = createServerConfig(config);
         this.daoConfig = new Config(config.workingDir(), THRESHOLD_BYTES);
+
+        List<String> sortedClusterUrls = new ArrayList<>(config.clusterUrls());
+        Collections.sort(sortedClusterUrls);
+
+        int thisNodeNumber = sortedClusterUrls.indexOf(config.selfUrl());
+        this.rendezvousDistributor = new RendezvousDistributor(sortedClusterUrls, thisNodeNumber);
     }
 
     private HttpServerConfig createServerConfig(ServiceConfig config) {
@@ -40,7 +51,11 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> start() throws IOException {
         try {
-            server = new ServerImpl(serverConfig, daoConfig);
+            PersistentReferenceDao dao = new PersistentReferenceDao(daoConfig);
+            RequestHandler handler = new RequestHandler(dao, rendezvousDistributor);
+            RequestExecutor executor = new RequestExecutor(handler);
+
+            server = new ServerImpl(serverConfig, dao, executor);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -51,10 +66,11 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<Void> stop() throws IOException {
         server.stop();
+
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

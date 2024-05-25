@@ -19,7 +19,7 @@ public class SegmentWriter {
     }
 
     protected static long writeLong(final MemorySegment memorySegment, final long offset, final long value) {
-        memorySegment.set(ValueLayout.JAVA_LONG, offset, value);
+        memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, value);
         return offset + ValueLayout.JAVA_LONG.byteSize();
     }
 

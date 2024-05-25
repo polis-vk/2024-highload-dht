@@ -1,8 +1,7 @@
 package ru.vk.itmo.test.chebotinalexandr.dao;
 
 import ru.vk.itmo.dao.Config;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import ru.vk.itmo.test.chebotinalexandr.dao.entry.Entry;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -88,11 +87,11 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
 
         Entry<MemorySegment> result = currState.getWriteEntries().get(key);
         if (result != null) {
-            return result.value() == null ? null : result;
+            return result;
         }
         result = currState.getReadEntries().get(key);
         if (result != null) {
-            return result.value() == null ? null : result;
+            return result;
         }
 
         return getFromDisk(key, currState);
@@ -210,7 +209,7 @@ public class NotOnlyInMemoryDao implements Dao<MemorySegment, Entry<MemorySegmen
 
         long newBloomFilterLength = BloomFilter.bloomFilterLength(entryCount, BLOOM_FILTER_FPP);
 
-        sizeForCompaction += 2L * Long.BYTES * nonEmptyEntryCount;
+        sizeForCompaction += 3L * Long.BYTES * nonEmptyEntryCount;
         sizeForCompaction += 3L * Long.BYTES + Long.BYTES * nonEmptyEntryCount; //for metadata (header + key offsets)
         sizeForCompaction += Long.BYTES * newBloomFilterLength; //for bloom filter
 

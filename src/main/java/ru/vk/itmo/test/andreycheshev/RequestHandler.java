@@ -1,80 +1,186 @@
 package ru.vk.itmo.test.andreycheshev;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Dao;
-import ru.vk.itmo.dao.Entry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
+import ru.vk.itmo.test.andreycheshev.dao.Dao;
+import ru.vk.itmo.test.andreycheshev.dao.Entry;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
-public class RequestHandler {
+public class RequestHandler implements HttpProvider {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
+
+    private static final Set<Integer> AVAILABLE_METHODS = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
+
+    private static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
+
     private static final String REQUEST_PATH = "/v0/entity";
-    private static final String ID_PARAMETER = "id=";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final RendezvousDistributor distributor;
+    private final AsyncActions asyncActions;
 
-    public RequestHandler(Dao<MemorySegment, Entry<MemorySegment>> dao) {
+    public RequestHandler(
+            Dao<MemorySegment, Entry<MemorySegment>> dao,
+            RendezvousDistributor distributor) {
+
         this.dao = dao;
+        this.distributor = distributor;
+        this.asyncActions = new AsyncActions(this);
     }
 
-    public Response handle(Request request) {
+    public void handle(Request request, HttpSession session) {
+        Response errorResponse = analyzeRequest(request, session);
+
+        if (errorResponse != null) {
+            sendAsync(errorResponse, session);
+        }
+    }
+
+    public void sendAsync(Response response, HttpSession session) {
+        CompletableFuture<Void> future = asyncActions.sendAsync(response, session);
+        if (future == null) {
+            LOGGER.info(FUTURE_CREATION_ERROR);
+        }
+    }
+
+    private Response analyzeRequest(Request request, HttpSession session) {
 
         String path = request.getPath();
         if (!path.equals(REQUEST_PATH)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return HttpUtils.getBadRequest();
         }
 
         int method = request.getMethod();
-
-        return switch (method) {
-            case Request.METHOD_GET -> get(request);
-            case Request.METHOD_PUT -> put(request);
-            case Request.METHOD_DELETE -> delete(request);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        };
-    }
-
-    private Response get(final Request request) {
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        if (!AVAILABLE_METHODS.contains(method)) {
+            return HttpUtils.getMethodNotAllowed();
         }
 
-        Entry<MemorySegment> entry = dao.get(fromString(id));
+        try {
 
-        return entry == null
-                ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
-    }
+            String id = ParametersParser.parseId(request);
+            String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
 
-    private Response put(final Request request) {
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            return isRequestCameFromNode(timestamp)
+                    ? processLocally(request, method, id, timestamp, session)
+                    : processDistributed(request, method, id, session);
+
+        } catch (IllegalArgumentException e) {
+            return HttpUtils.getBadRequest();
         }
 
-        Entry<MemorySegment> entry = new BaseEntry<>(
+    }
+
+    private Response processLocally(Request request, int method, String id, String timestamp, HttpSession session) {
+        try {
+            CompletableFuture<Void> future =
+                    asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
+
+            if (future == null) {
+                LOGGER.info(FUTURE_CREATION_ERROR);
+                return HttpUtils.getInternalError();
+            }
+        } catch (NumberFormatException e) {
+            return HttpUtils.getBadRequest();
+        }
+        return null;
+    }
+
+    private boolean isRequestCameFromNode(String timestamp) {
+        // A timestamp is an indication that the request
+        // came from the client directly or from the cluster node.
+        return timestamp != null;
+    }
+
+    private Response processDistributed(
+            Request request,
+            int method,
+            String id,
+            HttpSession session) {
+
+        ParametersTuple<Integer> ackFrom = ParametersParser.parseAckFromOrDefault(request, distributor);
+        int ack = ackFrom.first();
+        int from = ackFrom.second();
+        if (ack <= 0 || ack > from) {
+            LOGGER.error("An error occurred while analyzing the parameters");
+            return HttpUtils.getBadRequest();
+        }
+
+        List<Integer> nodesIndices = distributor.getNodesByKey(id, from);
+
+        long timestamp = method == Request.METHOD_GET
+                ? HttpUtils.EMPTY_TIMESTAMP
+                : System.currentTimeMillis();
+
+        ResponseCollector collector = new ResponseCollector(method, ack, from);
+
+        for (int nodeIndex : nodesIndices) {
+            String node = distributor.getNodeUrlByIndex(nodeIndex);
+
+            CompletableFuture<Void> future = distributor.isOurNode(nodeIndex)
+                    ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector, session)
+                    : asyncActions.processRemotelyToCollect(node, request, timestamp, collector, session);
+
+            if (future == null) {
+                LOGGER.info(FUTURE_CREATION_ERROR);
+            }
+        }
+
+        return null;
+    }
+
+    @Override
+    public ResponseElements get(String id) {
+        ClusterEntry<MemorySegment> entry = (ClusterEntry<MemorySegment>) dao.get(fromString(id));
+
+        ResponseElements response;
+        if (entry == null) {
+            response = new ResponseElements(HttpUtils.NOT_FOUND_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
+        } else {
+            long timestamp = entry.timestamp();
+            response = (entry.value() == null)
+                    ? new ResponseElements(HttpUtils.GONE_CODE, Response.EMPTY, timestamp)
+                    : new ResponseElements(HttpUtils.OK_CODE, entry.value().toArray(ValueLayout.JAVA_BYTE), timestamp);
+        }
+
+        return response;
+    }
+
+    @Override
+    public ResponseElements put(String id, byte[] body, long timestamp) {
+        Entry<MemorySegment> entry = new ClusterEntry<>(
                 fromString(id),
-                MemorySegment.ofArray(request.getBody())
+                MemorySegment.ofArray(body),
+                timestamp
         );
         dao.upsert(entry);
 
-        return new Response(Response.CREATED, Response.EMPTY);
+        return new ResponseElements(HttpUtils.CREATED_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
-    private Response delete(final Request request) {
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        Entry<MemorySegment> entry = new BaseEntry<>(fromString(id), null);
+    @Override
+    public ResponseElements delete(String id, long timestamp) {
+        Entry<MemorySegment> entry = new ClusterEntry<>(
+                fromString(id),
+                null,
+                timestamp
+        );
         dao.upsert(entry);
 
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+        return new ResponseElements(HttpUtils.ACCEPT_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
     private static MemorySegment fromString(String data) {

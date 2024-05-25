@@ -3,9 +3,9 @@ package ru.vk.itmo.test.osokindm;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Node {
+    private static final int MAX_ERRORS = 10;
     public final String address;
     public final int name;
-    private static final int MAX_ERRORS = 10;
     private final AtomicInteger errors;
     private volatile boolean isAlive;
 

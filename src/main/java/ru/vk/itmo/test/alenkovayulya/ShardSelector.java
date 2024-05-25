@@ -12,16 +12,24 @@ public class ShardSelector {
         this.shardUrls = shardUrls;
     }
 
-    public String getOwnerShardUrl(String id) {
+    public int getOwnerShardIndex(String id) {
         int maxHash = Integer.MIN_VALUE;
-        String maxHashShardUrl = null;
-        for (String shard : shardUrls) {
-            int hash = Hash.murmur3(id + shard);
+        int maxHashShardIndex = -1;
+        for (int i = 0; i < shardUrls.size(); i++) {
+            int hash = Hash.murmur3(id + shardUrls.get(i));
             if (hash > maxHash) {
                 maxHash = hash;
-                maxHashShardUrl = shard;
+                maxHashShardIndex = i;
             }
         }
-        return maxHashShardUrl;
+        return maxHashShardIndex;
+    }
+
+    public int getClusterSize() {
+        return shardUrls.size();
+    }
+
+    public String getShardUrlByIndex(int index) {
+        return shardUrls.get(index);
     }
 }

@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 public class ServerRequestValidationStrategyDecorator extends ServerStrategyDecorator {
 
@@ -29,19 +31,36 @@ public class ServerRequestValidationStrategyDecorator extends ServerStrategyDeco
 
     @Override
     public Response handleRequest(Request request, HttpSession session) throws IOException {
+        Response response = checkErrors(request);
+        return response == null
+                ? super.handleRequest(request, session)
+                : response;
+    }
+
+    @Override
+    public CompletableFuture<Response> handleRequestAsync(
+            Request request,
+            HttpSession session,
+            Executor executor
+    ) {
+        Response response = checkErrors(request);
+        return response == null
+                ? super.handleRequestAsync(request, session, executor)
+                : CompletableFuture.completedFuture(response);
+    }
+
+    private static Response checkErrors(Request request) {
         Paths path = Paths.getPath(request.getPath());
         if (path != null) {
             if (checkMethods(request, path)) {
                 if (checkParameters(request, path)) {
-                    return super.handleRequest(request, session);
+                    return null;
                 }
             } else {
-                session.sendResponse(Responses.NOT_ALLOWED.toResponse());
-                return null;
+                return Responses.NOT_ALLOWED.toResponse();
             }
         }
-        handleDefault(request, session);
-        return null;
+        return Responses.BAD_REQUEST.toResponse();
     }
 
     private static boolean checkMethods(Request request, Paths path) {

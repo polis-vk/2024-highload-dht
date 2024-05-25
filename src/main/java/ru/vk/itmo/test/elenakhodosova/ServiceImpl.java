@@ -33,11 +33,12 @@ public class ServiceImpl implements Service {
         executorService = ExecutorServiceConfig.newExecutorService();
         server = new HttpServerImpl(config, dao, executorService);
         server.start();
+        isServiceStopped.getAndSet(false);
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<Void> stop() throws IOException {
+    public synchronized CompletableFuture<Void> stop() throws IOException {
         if (isServiceStopped.getAndSet(true)) {
             return CompletableFuture.completedFuture(null);
         }
@@ -48,13 +49,14 @@ public class ServiceImpl implements Service {
                 executorService.shutdownNow();
             }
         } catch (InterruptedException e) {
+            executorService.shutdownNow();
             Thread.currentThread().interrupt();
         }
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 3)
+    @ServiceFactory(stage = 6)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

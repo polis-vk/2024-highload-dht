@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 
 public class Utils {
     public static final String ENTRY_PREFIX = "/v0/entity";
+    public static final String LOCAL_STREAM_ENTRY_PREFIX = "/v0/entities";
     public static final String ENTRY_PREFIX_WITH_ID_PARAM = ENTRY_PREFIX + "?id=";
     private final Dao<MemorySegment, ExtendedEntry<MemorySegment>> dao;
 

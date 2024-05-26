@@ -1,148 +1,268 @@
 package ru.vk.itmo.test.pavelemelyanov;
 
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.vk.itmo.ServiceConfig;
-import ru.vk.itmo.dao.BaseEntry;
-import ru.vk.itmo.dao.Entry;
-import ru.vk.itmo.test.reference.dao.ReferenceDao;
+import ru.vk.itmo.test.pavelemelyanov.dao.Dao;
+import ru.vk.itmo.test.pavelemelyanov.dao.EntryWithTimestamp;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
     private static final String V0_PATH = "/v0/entity";
     private static final String ID_PARAM = "id=";
+    private static final String FROM_PARAM = "from=";
+    private static final String ACK_PARAM = "ack=";
+    private static final int SERVER_ERROR = 500;
+    private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
 
-    private final ReferenceDao dao;
     private final ExecutorService workersPool;
+    private final HttpClient httpClient;
+    private final ConsistentHashing shards;
+    private final RequestHandler requestHandler;
+    private final String selfUrl;
+    private final int clusterSize;
 
-    public MyServer(ServiceConfig config, ReferenceDao dao) throws IOException {
-        super(configureServer(config));
-        this.dao = dao;
-        workersPool = configureWorkersPool();
+    public MyServer(
+            ServiceConfig config,
+            Dao<MemorySegment, EntryWithTimestamp<MemorySegment>> dao,
+            ExecutorServiceWrapper worker,
+            ConsistentHashing shards) throws IOException {
+        super(createServerConfig(config));
+        this.selfUrl = config.selfUrl();
+        this.shards = shards;
+        this.requestHandler = new RequestHandler(dao);
+        this.workersPool = worker.getExecutorService();
+        this.clusterSize = config.clusterUrls().size();
+
+        this.httpClient = HttpClient.newBuilder()
+                .executor(workersPool).build();
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
-        if (!request.getPath().equals(V0_PATH)) {
-            sendResponse(
-                    session,
-                    new Response(Response.BAD_REQUEST, Response.EMPTY)
-            );
-            return;
-        }
+    public void handleDefault(Request request, HttpSession session) throws IOException {
+        Response response = HttpUtils.SUPPORTED_METHODS.contains(request.getMethod())
+                ? new Response(Response.BAD_REQUEST, Response.EMPTY)
+                : new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        session.sendResponse(response);
+    }
 
-        String paramId = request.getParameter(ID_PARAM);
-        if (paramId == null || paramId.isBlank()) {
-            sendResponse(
-                    session,
-                    new Response(Response.BAD_REQUEST, Response.EMPTY)
-            );
-            return;
-        }
-
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
+            if (!request.getURI().startsWith(getPathWithIdParam())
+                    || !HttpUtils.SUPPORTED_METHODS.contains(request.getMethod())) {
+                handleDefault(request, session);
+                return;
+            }
+
+            String paramId = request.getParameter(ID_PARAM);
+            String fromStr = request.getParameter(FROM_PARAM);
+            String ackStr = request.getParameter(ACK_PARAM);
+
+            int from = fromStr == null || fromStr.isBlank() ? clusterSize : Integer.parseInt(fromStr);
+            int ack = ackStr == null || ackStr.isBlank() ? from / 2 + 1 : Integer.parseInt(ackStr);
+
+            if (ack == 0 || from > clusterSize || ack > from || paramId == null || paramId.isEmpty()) {
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+
+            long processingStartTime = System.currentTimeMillis();
             workersPool.execute(() -> {
                 try {
-                    sendResponse(
-                            session,
-                            handleRequestToEntity(request, paramId)
-                    );
-                } catch (Exception e) {
-                    sendResponse(
-                            session,
-                            new Response(Response.INTERNAL_ERROR, Response.EMPTY)
-                    );
+                    processingRequest(request, session, processingStartTime, paramId, from, ack);
+                } catch (IOException e) {
+                    LOG.error("Exception while sending close connection", e);
+                    session.scheduleClose();
                 }
             });
         } catch (RejectedExecutionException e) {
-            sendResponse(
-                    session,
-                    new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)
-            );
+            session.sendResponse(new Response("429 Too Many Requests", Response.EMPTY));
         }
     }
 
-    @Override
-    public synchronized void stop() {
-        super.stop();
-        workersPool.close();
-    }
-
-    private Response handleRequestToEntity(Request request, String id) {
-        return switch (request.getMethod()) {
-            case Request.METHOD_GET -> getEntity(id);
-            case Request.METHOD_PUT -> putEntity(request, id);
-            case Request.METHOD_DELETE -> deleteEntity(id);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        };
-    }
-
-    private Response getEntity(String id) {
-        MemorySegment key = convertFromString(id);
-        Entry<MemorySegment> entry = dao.get(key);
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+    private void processingRequest(Request request, HttpSession session, long processingStartTime,
+                                   String paramId, int from, int ack) throws IOException {
+        if (System.currentTimeMillis() - processingStartTime > HttpUtils.REQUEST_TIMEOUT_IN_MILLIS) {
+            session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+            return;
         }
-        return Response.ok(entry.value().toArray(ValueLayout.JAVA_BYTE));
-    }
-
-    private Response putEntity(Request request, String id) {
-        MemorySegment key = convertFromString(id);
-        MemorySegment value = MemorySegment.ofArray(request.getBody());
-        dao.upsert(new BaseEntry<>(key, value));
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    private Response deleteEntity(String id) {
-        MemorySegment key = convertFromString(id);
-        dao.upsert(new BaseEntry<>(key, null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private static MemorySegment convertFromString(String value) {
-        return MemorySegment.ofArray(Utf8.toBytes(value));
-    }
-
-    private static HttpServerConfig configureServer(ServiceConfig serviceConfig) {
-        var httpServerConfig = new HttpServerConfig();
-        var acceptorConfig = new AcceptorConfig();
-        acceptorConfig.port = serviceConfig.selfPort();
-        acceptorConfig.reusePort = true;
-
-        httpServerConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
-        httpServerConfig.closeSessions = true;
-        return httpServerConfig;
-    }
-
-    private static ExecutorService configureWorkersPool() {
-        return new ThreadPoolExecutor(
-                ExecutorServiceConfig.CORE_POOL_SIZE,
-                ExecutorServiceConfig.MAX_CORE_POOL_SIZE,
-                ExecutorServiceConfig.KEEP_ALIVE_TIME,
-                TimeUnit.MILLISECONDS,
-                ExecutorServiceConfig.queue,
-                ExecutorServiceConfig.HANDLER
-        );
+        try {
+            if (request.getHeader(HttpUtils.HTTP_TERMINATION_HEADER) == null) {
+                sendResponse(session, handleProxyRequest(request, paramId, from, ack));
+                return;
+            }
+            sendResponse(session, requestHandler.handle(request, paramId));
+        } catch (Exception e) {
+            if (e.getClass() == HttpException.class) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+            LOG.error("Exception during handleRequest: ", e);
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
     }
 
     private void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            LOG.error("Error sending response", e);
+            session.scheduleClose();
         }
+    }
+
+    private HttpRequest createProxyRequest(Request request, String nodeUrl, String params) {
+        var bodyPublisher = request.getBody() == null
+                ? HttpRequest.BodyPublishers.noBody()
+                : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
+        return HttpRequest.newBuilder(URI.create(nodeUrl + getPathWithIdParam() + params))
+                .method(request.getMethodName(), bodyPublisher)
+                .setHeader(HttpUtils.HTTP_TERMINATION_HEADER, "true")
+                .build();
+    }
+
+    private CompletableFuture<Response> sendProxyRequest(HttpRequest httpRequest) {
+        return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApplyAsync(this::processingResponse);
+    }
+
+    private Response processingResponse(HttpResponse<byte[]> response) {
+        String statusCode = HttpUtils.HTTP_CODE.getOrDefault(response.statusCode(), null);
+        if (statusCode == null) {
+            return new Response(Response.INTERNAL_ERROR, response.body());
+        }
+        Response newResponse = new Response(statusCode, response.body());
+        long timestamp = response.headers()
+                .firstValueAsLong(HttpUtils.HTTP_TIMESTAMP_HEADER)
+                .orElse(0);
+        newResponse.addHeader(HttpUtils.NIO_TIMESTAMP_HEADER + timestamp);
+        return newResponse;
+    }
+
+    private List<CompletableFuture<Response>> sendProxyRequests(Map<String, HttpRequest> httpRequests,
+                                                                List<String> nodeUrls) {
+        List<CompletableFuture<Response>> responses = new ArrayList<>();
+        for (String nodeUrl : nodeUrls) {
+            HttpRequest httpRequest = httpRequests.get(nodeUrl);
+            if (!Objects.equals(selfUrl, nodeUrl)) {
+                responses.add(sendProxyRequest(httpRequest));
+            }
+        }
+        return responses;
+    }
+
+    private Response handleProxyRequest(Request request, String paramId, int from, int ack) {
+        List<String> nodeUrls = shards.getNodes(paramId, from);
+
+        if (nodeUrls.size() < from) {
+            return new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY);
+        }
+
+        HashMap<String, HttpRequest> httpRequests = new HashMap<>(nodeUrls.size());
+        for (var nodeUrl : nodeUrls) {
+            httpRequests.put(nodeUrl, createProxyRequest(request, nodeUrl, paramId));
+        }
+
+        List<CompletableFuture<Response>> responses = sendProxyRequests(httpRequests, nodeUrls);
+
+        if (httpRequests.containsKey(selfUrl)) {
+            responses.add(
+                    CompletableFuture.supplyAsync(() -> requestHandler.handle(request, paramId))
+            );
+        }
+
+        return getQuorumResult(request, from, ack, responses);
+    }
+
+    private Response getQuorumResult(Request request, int from, int ack,
+                                     List<CompletableFuture<Response>> responses) {
+        List<Response> successResponses = new CopyOnWriteArrayList<>();
+        CompletableFuture<Response> result = new CompletableFuture<>();
+        AtomicInteger successResponseCount = new AtomicInteger();
+        AtomicInteger errorResponseCount = new AtomicInteger();
+
+        for (var responseFuture : responses) {
+            responseFuture.whenCompleteAsync((response, throwable) -> {
+                if (throwable == null || (response != null && response.getStatus() < SERVER_ERROR)) {
+                    successResponseCount.incrementAndGet();
+                    successResponses.add(response);
+                } else {
+                    errorResponseCount.incrementAndGet();
+                }
+
+                if (successResponseCount.get() >= ack) {
+                    result.complete(getResult(request, successResponses));
+                }
+
+                if (errorResponseCount.get() == from - ack + 1) {
+                    result.complete(new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                }
+            }).exceptionally(e -> new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
+
+        try {
+            return result.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (ExecutionException e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+    }
+
+    private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
+        HttpServerConfig serverConfig = new HttpServerConfig();
+        AcceptorConfig acceptorConfig = new AcceptorConfig();
+        acceptorConfig.port = serviceConfig.selfPort();
+        acceptorConfig.reusePort = true;
+
+        serverConfig.acceptors = new AcceptorConfig[] {acceptorConfig};
+        serverConfig.closeSessions = true;
+        return serverConfig;
+    }
+
+    private Response getResult(Request request, List<Response> successResponses) {
+        if (request.getMethod() == Request.METHOD_GET) {
+            sortResponses(successResponses);
+            return successResponses.getLast();
+        }
+        return successResponses.getFirst();
+    }
+
+    private void sortResponses(List<Response> successResponses) {
+        successResponses.sort(Comparator.comparingLong(r -> {
+            String timestamp = r.getHeader(HttpUtils.NIO_TIMESTAMP_HEADER);
+            return timestamp == null ? 0 : Long.parseLong(timestamp);
+        }));
+    }
+
+    private static String getPathWithIdParam() {
+        return V0_PATH + "?" + ID_PARAM;
     }
 }

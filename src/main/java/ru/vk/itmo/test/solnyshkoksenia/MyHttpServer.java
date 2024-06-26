@@ -8,8 +8,9 @@ import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Hash;
+import one.nio.server.RejectedSessionException;
 import ru.vk.itmo.ServiceConfig;
 import ru.vk.itmo.dao.BaseEntry;
 import ru.vk.itmo.dao.Config;
@@ -22,16 +23,13 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -42,9 +40,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class MyHttpServer extends HttpServer {
+    private static final long FLUSHING_THRESHOLD_BYTES = Math.round(0.33 * 128 * 1024 * 1024);
     private static final String HEADER_TIMESTAMP = "X-timestamp";
     private static final String HEADER_TIMESTAMP_HEADER = HEADER_TIMESTAMP + ": ";
-    private static final String CHUNK_SEPARATOR = "\r\n";
     private static final int THREADS = Runtime.getRuntime().availableProcessors();
     private final ServiceConfig config;
     private final DaoImpl dao;
@@ -85,7 +83,7 @@ public class MyHttpServer extends HttpServer {
     }
 
     private static Config createConfig(ServiceConfig config) {
-        return new Config(config.workingDir(), Math.round(0.33 * 128 * 1024 * 1024));
+        return new Config(config.workingDir(), FLUSHING_THRESHOLD_BYTES);
     }
 
     @Override
@@ -120,7 +118,8 @@ public class MyHttpServer extends HttpServer {
     @Path("/v0/entities")
     public void handleRangeRequest(final Request request, final HttpSession session,
                                    @Param(value = "start", required = true) String start,
-                                   @Param(value = "end") String end) throws IOException {
+                                   @Param(value = "end") String end, @Param(value = "cluster") String cluster)
+            throws IOException {
         if (request.getMethod() != Request.METHOD_GET) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
             return;
@@ -136,42 +135,73 @@ public class MyHttpServer extends HttpServer {
             return;
         }
 
-        sendLocalRange(new CustomHttpSession(session, session.socket(), this), start, end);
+        if (cluster != null) {
+            sendClusterRange((CustomHttpSession) session, request, start, end);
+            return;
+        }
+
+        executorLocal.execute(() -> {
+            try {
+                sendLocalRange((CustomHttpSession) session, start, end);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
-    private void sendLocalRange(CustomHttpSession session, String start, String end) {
-        Iterator<Entry<MemorySegment>> range = dao.get(toMS(start), end == null || end.isBlank() ? null : toMS(end));
+    private Iterator<Entry<MemorySegment>> invokeLocalRange(String start, String end) {
+        return dao.get(ServerUtils.toMS(start), end == null || end.isBlank() ? null : ServerUtils.toMS(end));
+    }
 
-        ArrayList<Entry<MemorySegment>> data = new ArrayList<>();
-        int currentChunkSize = 0;
-        while (range.hasNext()) {
-            Entry<MemorySegment> entry = range.next();
-            data.add(entry);
-            currentChunkSize += (int) (entry.key().byteSize() + 1 + entry.value().byteSize());
+    private void sendLocalRange(CustomHttpSession session, String start, String end) throws IOException {
+        Iterator<Entry<MemorySegment>> range = invokeLocalRange(start, end);
+        session.stream(range);
+    }
+
+    private void sendClusterRange(CustomHttpSession session, Request request, String start, String end) {
+        List<CompletableFuture<Response>> responses = new ArrayList<>();
+
+        Iterator<Entry<MemorySegment>> localIterator = invokeLocalRange(start, end);
+        for (String node : config.clusterUrls()) {
+            if (!node.equals(config.selfUrl())) {
+                try {
+                    responses.add(invokeRemote(node, request, request.getURI().replace("&cluster=1", ""),
+                            responseInfo -> new CustomSubscriber()));
+                } catch (IOException e) {
+                    responses.add(CompletableFuture.completedFuture(new Response(Response.INTERNAL_ERROR,
+                            Response.EMPTY)));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    responses.add(CompletableFuture.completedFuture(new Response(Response.SERVICE_UNAVAILABLE,
+                            Response.EMPTY)));
+                }
+            }
         }
 
-        session.chunkedWrite("HTTP/1.1 " + Response.OK + CHUNK_SEPARATOR);
-        session.chunkedWrite("Transfer-Encoding: chunked" + CHUNK_SEPARATOR);
-        session.chunkedWrite("Content-Length: " + currentChunkSize + CHUNK_SEPARATOR);
-        session.chunkedWrite(CHUNK_SEPARATOR);
+        executorLocal.execute(() -> {
+            List<Response> completedResponses = responses
+                    .stream()
+                    .map(cf -> {
+                        try {
+                            return cf.get(5000, TimeUnit.MILLISECONDS);
+                        } catch (ExecutionException | TimeoutException e) {
+                            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                        }
+                    }).toList();
+            try {
+                sendRangeResponse(session, localIterator, completedResponses);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
 
-        int offset = 0;
-        byte[] bytes = new byte[currentChunkSize];
-        for (Entry<MemorySegment> memorySegmentEntry : data) {
-            byte[] key = memorySegmentEntry.key().toArray(ValueLayout.JAVA_BYTE);
-            System.arraycopy(key, 0, bytes, offset, key.length);
-            offset += key.length;
-
-            bytes[offset] = (byte) '\n';
-            offset += 1;
-
-            byte[] value = memorySegmentEntry.value().toArray(ValueLayout.JAVA_BYTE);
-            System.arraycopy(value, 0, bytes, offset, value.length);
-            offset += value.length;
-        }
-
-        session.chunkedWrite(bytes);
-        session.scheduleClose();
+    private void sendRangeResponse(CustomHttpSession session, Iterator<Entry<MemorySegment>> firstIterator, List<Response> responses) throws IOException {
+        Iterator<Entry<MemorySegment>> iterator = MergeRangeResult.range(firstIterator, responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK).toList());
+        session.stream(iterator);
     }
 
     @Path("/v0/entity")
@@ -213,7 +243,7 @@ public class MyHttpServer extends HttpServer {
     }
 
     private void handle(Request request, String id, HttpSession session, Integer ack, Integer from) {
-        List<String> executorNodes = getNodesByEntityId(id, from);
+        List<String> executorNodes = ServerUtils.getNodesByEntityId(config.clusterUrls(), id, from);
         List<CompletableFuture<Response>> responses = new ArrayList<>();
 
         for (String node : executorNodes) {
@@ -221,7 +251,7 @@ public class MyHttpServer extends HttpServer {
                 responses.add(CompletableFuture.completedFuture(invokeLocal(request, id)));
             } else {
                 try {
-                    responses.add(invokeRemote(node, request));
+                    responses.add(invokeRemote(node, request, request.getURI() + "&local=1", HttpResponse.BodyHandlers.ofByteArray()));
                 } catch (IOException e) {
                     responses.add(CompletableFuture.completedFuture(new Response(Response.INTERNAL_ERROR,
                             Response.EMPTY)));
@@ -304,44 +334,20 @@ public class MyHttpServer extends HttpServer {
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
-    private CompletableFuture<Response> invokeRemote(String executorNode, Request request)
+    private CompletableFuture<Response> invokeRemote(String executorNode, Request request, String uri,
+                                                     HttpResponse.BodyHandler<byte[]> responseBodyHandler)
             throws IOException, InterruptedException {
-        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(executorNode + request.getURI() + "&local=1"))
-                .method(
-                        request.getMethodName(),
-                        request.getBody() == null
-                                ? HttpRequest.BodyPublishers.noBody()
-                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-                )
-                .timeout(Duration.ofMillis(500))
-                .build();
+        HttpRequest httpRequest = ServerUtils.buildHttpRequest(executorNode, request, uri);
         CompletableFuture<Response> response = new CompletableFuture<>();
-        httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .whenComplete((httpResponse, throwable) -> response.complete(makeResponse(httpResponse)));
-        return response;
-    }
-
-    private Response makeResponse(HttpResponse<byte[]> httpResponse) {
-        Optional<String> header = httpResponse.headers().firstValue(HEADER_TIMESTAMP);
-        long timestamp;
-        if (header.isPresent()) {
-            try {
-                timestamp = Long.parseLong(header.get());
-            } catch (Exception e) {
-                timestamp = 0;
-            }
-        } else {
-            timestamp = 0;
-        }
-        Response response = new Response(Integer.toString(httpResponse.statusCode()), httpResponse.body());
-        response.addHeader(HEADER_TIMESTAMP_HEADER + timestamp);
+        httpClient.sendAsync(httpRequest, responseBodyHandler)
+                .whenComplete((httpResponse, throwable) -> response.complete(ServerUtils.makeResponse(httpResponse)));
         return response;
     }
 
     private Response invokeLocal(Request request, String id) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                MemorySegment key = toMS(id);
+                MemorySegment key = ServerUtils.toMS(id);
                 Entry<MemorySegment> entry = dao.get(key);
                 if (entry == null) {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -360,13 +366,13 @@ public class MyHttpServer extends HttpServer {
                 return response;
             }
             case Request.METHOD_PUT -> {
-                MemorySegment key = toMS(id);
+                MemorySegment key = ServerUtils.toMS(id);
                 MemorySegment value = MemorySegment.ofArray(request.getBody());
                 dao.upsert(new BaseEntry<>(key, value));
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
-                MemorySegment key = toMS(id);
+                MemorySegment key = ServerUtils.toMS(id);
                 dao.upsert(new BaseEntry<>(key, null));
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
@@ -376,39 +382,9 @@ public class MyHttpServer extends HttpServer {
         }
     }
 
-    private MemorySegment toMS(String input) {
-        return MemorySegment.ofArray(input.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private List<String> getNodesByEntityId(String id, Integer from) {
-        List<Node> executorNodes = new ArrayList<>();
-
-        for (int i = 0; i < from; i++) {
-            int hash = Hash.murmur3(config.clusterUrls().get(i) + id);
-            executorNodes.add(new Node(i, hash));
-            executorNodes.sort(Node::compareTo);
-        }
-
-        for (int i = from; i < config.clusterUrls().size(); i++) {
-            int hash = Hash.murmur3(config.clusterUrls().get(i) + id);
-            if (executorNodes.getFirst().hash < hash) {
-                executorNodes.remove(executorNodes.getFirst());
-                executorNodes.add(new Node(i, hash));
-                executorNodes.sort(Node::compareTo);
-                break;
-            }
-        }
-
-        return executorNodes.stream().map(node -> config.clusterUrls().get(node.id)).toList();
-    }
-
-    @SuppressWarnings("unused")
-    private record Node(int id, int hash) implements Comparable<Node> {
-
-        @Override
-        public int compareTo(Node o) {
-            return Integer.compare(hash, o.hash);
-        }
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomHttpSession(socket, this);
     }
 
     public static class Task implements Runnable {

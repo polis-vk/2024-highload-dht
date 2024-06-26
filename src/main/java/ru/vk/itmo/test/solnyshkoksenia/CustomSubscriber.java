@@ -10,7 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Flow;
 
 public class CustomSubscriber implements BodySubscriber<byte[]> {
-    private static final byte delimiter = '\n';
+    private static final byte DELIMITER = '\n';
     volatile CompletableFuture<byte[]> bodyCF;
     Flow.Subscription subscription;
     List<ByteBuffer> responseData = new CopyOnWriteArrayList<>();
@@ -59,7 +59,7 @@ public class CustomSubscriber implements BodySubscriber<byte[]> {
 
     private boolean containsDelim(byte[] bytes) {
         for (int element : bytes) {
-            if (element == delimiter) {
+            if (element == DELIMITER) {
                 return true;
             }
         }
@@ -67,7 +67,7 @@ public class CustomSubscriber implements BodySubscriber<byte[]> {
     }
 
     private boolean startsWithDelim(byte[] bytes) {
-        return delimiter == bytes[0];
+        return DELIMITER == bytes[0];
     }
 
     private byte[] merge(byte[] src1, byte[] src2) {
@@ -84,7 +84,7 @@ public class CustomSubscriber implements BodySubscriber<byte[]> {
         for (byte[] src : bytes) {
             System.arraycopy(src, 0, dst, offset, src.length);
             offset += src.length;
-            dst[offset] = delimiter;
+            dst[offset] = DELIMITER;
             offset++;
         }
         return dst;
@@ -100,20 +100,20 @@ public class CustomSubscriber implements BodySubscriber<byte[]> {
         byte[] pred = null;
         for (int i = 0; i < chunks.size(); i++) {
             byte[] cur = chunks.get(i);
+            byte[] next = i + 1 == chunks.size() ? new byte[0] : chunks.get(i + 1);
             if (startsWithDelim(cur) && !predContainsDelim) {
                 cur = merge(pred, cur);
             } else if (!containsDelim(cur) && predEndsWithDelim) {
-                byte[] next = chunks.get(i + 1);
-                if (!startsWithDelim(next)) {
-                    cur = merge(pred, cur);
-                } else {
+                if (startsWithDelim(next)) {
                     bytes.add(pred);
+                } else {
+                    cur = merge(pred, cur);
                 }
             } else if (pred != null) {
                 bytes.add(pred);
             }
 
-            predEndsWithDelim = delimiter == cur[cur.length - 1];
+            predEndsWithDelim = DELIMITER == cur[cur.length - 1];
             predContainsDelim = containsDelim(cur);
             pred = cur;
         }

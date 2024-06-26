@@ -16,6 +16,9 @@ import java.util.NoSuchElementException;
 public class MergeRangeResult {
     private static final Comparator<MemorySegment> comparator = new MemorySegmentComparator();
 
+    private MergeRangeResult() {
+    }
+
     public static Iterator<Entry<MemorySegment>> range(Iterator<Entry<MemorySegment>> firstIterator,
                                                        List<Response> responses) {
         List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(responses.size() + 1);
@@ -36,7 +39,7 @@ public class MergeRangeResult {
         byte[] body = response.getBody();
         char separator = '\n';
         return new Iterator<>() {
-            int offset = 0;
+            int offset;
 
             @Override
             public boolean hasNext() {

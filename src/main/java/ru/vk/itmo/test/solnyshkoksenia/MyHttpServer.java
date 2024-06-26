@@ -7,6 +7,7 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
+import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
@@ -116,22 +117,12 @@ public class MyHttpServer extends HttpServer {
     }
 
     @Path("/v0/entities")
+    @RequestMethod(Request.METHOD_GET)
     public void handleRangeRequest(final Request request, final HttpSession session,
                                    @Param(value = "start", required = true) String start,
                                    @Param(value = "end") String end, @Param(value = "cluster") String cluster)
             throws IOException {
-        if (request.getMethod() != Request.METHOD_GET) {
-            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-            return;
-        }
-
-        if (start == null || start.isBlank()) {
-            session.sendError(Response.BAD_REQUEST, "Start parameter required");
-            return;
-        }
-
-        if (end != null && !end.isBlank() && start.compareTo(end) >= 0) {
-            session.sendError(Response.BAD_REQUEST, "Start parameter should be less than end parameter");
+        if (!ServerUtils.validParameters(session, start, end)) {
             return;
         }
 
@@ -144,7 +135,7 @@ public class MyHttpServer extends HttpServer {
             try {
                 sendLocalRange((CustomHttpSession) session, start, end);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                throw new UncheckedIOException(e);
             }
         });
     }
@@ -159,24 +150,9 @@ public class MyHttpServer extends HttpServer {
     }
 
     private void sendClusterRange(CustomHttpSession session, Request request, String start, String end) {
-        List<CompletableFuture<Response>> responses = new ArrayList<>();
-
+        List<CompletableFuture<Response>> responses = getResponses(request, config.clusterUrls(), request.getURI().replace("&cluster=1", ""),
+                responseInfo -> new CustomSubscriber());
         Iterator<Entry<MemorySegment>> localIterator = invokeLocalRange(start, end);
-        for (String node : config.clusterUrls()) {
-            if (!node.equals(config.selfUrl())) {
-                try {
-                    responses.add(invokeRemote(node, request, request.getURI().replace("&cluster=1", ""),
-                            responseInfo -> new CustomSubscriber()));
-                } catch (IOException e) {
-                    responses.add(CompletableFuture.completedFuture(new Response(Response.INTERNAL_ERROR,
-                            Response.EMPTY)));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    responses.add(CompletableFuture.completedFuture(new Response(Response.SERVICE_UNAVAILABLE,
-                            Response.EMPTY)));
-                }
-            }
-        }
 
         executorLocal.execute(() -> {
             List<Response> completedResponses = responses
@@ -194,13 +170,15 @@ public class MyHttpServer extends HttpServer {
             try {
                 sendRangeResponse(session, localIterator, completedResponses);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                throw new UncheckedIOException(e);
             }
         });
     }
 
-    private void sendRangeResponse(CustomHttpSession session, Iterator<Entry<MemorySegment>> firstIterator, List<Response> responses) throws IOException {
-        Iterator<Entry<MemorySegment>> iterator = MergeRangeResult.range(firstIterator, responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK).toList());
+    private void sendRangeResponse(CustomHttpSession session, Iterator<Entry<MemorySegment>> firstIterator,
+                                   List<Response> responses) throws IOException {
+        Iterator<Entry<MemorySegment>> iterator = MergeRangeResult.range(firstIterator, responses.stream()
+                .filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK).toList());
         session.stream(iterator);
     }
 
@@ -242,16 +220,13 @@ public class MyHttpServer extends HttpServer {
         handle(request, id, session, ack, from);
     }
 
-    private void handle(Request request, String id, HttpSession session, Integer ack, Integer from) {
-        List<String> executorNodes = ServerUtils.getNodesByEntityId(config.clusterUrls(), id, from);
+    private List<CompletableFuture<Response>> getResponses(Request request, List<String> executorNodes, String uri,
+                                                           HttpResponse.BodyHandler<byte[]> responseBodyHandler) {
         List<CompletableFuture<Response>> responses = new ArrayList<>();
-
         for (String node : executorNodes) {
-            if (node.equals(config.selfUrl())) {
-                responses.add(CompletableFuture.completedFuture(invokeLocal(request, id)));
-            } else {
+            if (!node.equals(config.selfUrl())) {
                 try {
-                    responses.add(invokeRemote(node, request, request.getURI() + "&local=1", HttpResponse.BodyHandlers.ofByteArray()));
+                    responses.add(invokeRemote(node, request, uri, responseBodyHandler));
                 } catch (IOException e) {
                     responses.add(CompletableFuture.completedFuture(new Response(Response.INTERNAL_ERROR,
                             Response.EMPTY)));
@@ -261,6 +236,16 @@ public class MyHttpServer extends HttpServer {
                             Response.EMPTY)));
                 }
             }
+        }
+        return responses;
+    }
+
+    private void handle(Request request, String id, HttpSession session, Integer ack, Integer from) {
+        List<String> executorNodes = ServerUtils.getNodesByEntityId(config.clusterUrls(), id, from);
+        List<CompletableFuture<Response>> responses = getResponses(request, executorNodes,
+                request.getURI() + "&local=1", HttpResponse.BodyHandlers.ofByteArray());
+        if (executorNodes.contains(config.selfUrl())) {
+            responses.add(CompletableFuture.completedFuture(invokeLocal(request, id)));
         }
 
         executorLocal.execute(() -> {
@@ -300,20 +285,7 @@ public class MyHttpServer extends HttpServer {
                     return;
                 }
 
-                responses = responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK
-                        || r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND).toList();
-
-                Response bestResp = responses.getFirst();
-                for (int i = 1; i < responses.size(); i++) {
-                    String bestRespTime = bestResp.getHeader(HEADER_TIMESTAMP_HEADER);
-                    if (responses.get(i).getHeader(HEADER_TIMESTAMP) != null) {
-                        if (bestRespTime == null || Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP_HEADER))
-                                > Long.parseLong(bestRespTime)) {
-                            bestResp = responses.get(i);
-                        }
-                    }
-                }
-                session.sendResponse(bestResp);
+                session.sendResponse(getBestResponse(responses));
             }
             case Request.METHOD_PUT -> {
                 if (statuses.stream().filter(s -> s == HttpURLConnection.HTTP_CREATED).count() < ack) {
@@ -331,6 +303,22 @@ public class MyHttpServer extends HttpServer {
             }
             default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
+    }
+
+    private static Response getBestResponse(List<Response> responses) {
+        responses = responses.stream().filter(r -> r.getStatus() == HttpURLConnection.HTTP_OK
+                || r.getStatus() == HttpURLConnection.HTTP_NOT_FOUND).toList();
+
+        Response bestResp = responses.getFirst();
+        for (int i = 1; i < responses.size(); i++) {
+            String bestRespTime = bestResp.getHeader(HEADER_TIMESTAMP_HEADER);
+            if (responses.get(i).getHeader(HEADER_TIMESTAMP) != null && (bestRespTime == null ||
+                    Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP_HEADER))
+                            > Long.parseLong(bestRespTime))) {
+                bestResp = responses.get(i);
+            }
+        }
+        return bestResp;
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")

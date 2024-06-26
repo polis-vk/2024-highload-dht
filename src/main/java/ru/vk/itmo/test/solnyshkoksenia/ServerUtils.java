@@ -1,10 +1,12 @@
 package ru.vk.itmo.test.solnyshkoksenia;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Hash;
 import ru.vk.itmo.dao.Entry;
 
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.net.URI;
@@ -19,6 +21,7 @@ import java.util.Optional;
 public class ServerUtils {
     private static final String HEADER_TIMESTAMP = "X-timestamp";
     private static final String HEADER_TIMESTAMP_HEADER = HEADER_TIMESTAMP + ": ";
+
     protected static MemorySegment toMS(String input) {
         return MemorySegment.ofArray(input.getBytes(StandardCharsets.UTF_8));
     }
@@ -52,6 +55,20 @@ public class ServerUtils {
         return response;
     }
 
+    protected static boolean validParameters(final HttpSession session, String start, String end) throws IOException {
+        if (start == null || start.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, "Start parameter required");
+            return false;
+        }
+
+        if (end != null && !end.isBlank() && start.compareTo(end) >= 0) {
+            session.sendError(Response.BAD_REQUEST, "Start parameter should be less than end parameter");
+            return false;
+        }
+
+        return true;
+    }
+
     protected static List<String> getNodesByEntityId(List<String> urls, String id, Integer from) {
         List<Node> executorNodes = new ArrayList<>();
 
@@ -83,7 +100,6 @@ public class ServerUtils {
         return memorySegment == null ? "" : new String(memorySegment.toArray(ValueLayout.JAVA_BYTE),
                 StandardCharsets.UTF_8);
     }
-
 
     @SuppressWarnings("unused")
     private record Node(int id, int hash) implements Comparable<Node> {

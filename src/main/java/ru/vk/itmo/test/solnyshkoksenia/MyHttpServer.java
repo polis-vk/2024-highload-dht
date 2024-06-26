@@ -150,7 +150,8 @@ public class MyHttpServer extends HttpServer {
     }
 
     private void sendClusterRange(CustomHttpSession session, Request request, String start, String end) {
-        List<CompletableFuture<Response>> responses = getResponses(request, config.clusterUrls(), request.getURI().replace("&cluster=1", ""),
+        List<CompletableFuture<Response>> responses = getResponses(request, config.clusterUrls(),
+                request.getURI().replace("&cluster=1", ""),
                 responseInfo -> new CustomSubscriber());
         Iterator<Entry<MemorySegment>> localIterator = invokeLocalRange(start, end);
 
@@ -312,8 +313,8 @@ public class MyHttpServer extends HttpServer {
         Response bestResp = responses.getFirst();
         for (int i = 1; i < responses.size(); i++) {
             String bestRespTime = bestResp.getHeader(HEADER_TIMESTAMP_HEADER);
-            if (responses.get(i).getHeader(HEADER_TIMESTAMP) != null && (bestRespTime == null ||
-                    Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP_HEADER))
+            if (responses.get(i).getHeader(HEADER_TIMESTAMP) != null && (bestRespTime == null
+                    || Long.parseLong(responses.get(i).getHeader(HEADER_TIMESTAMP_HEADER))
                             > Long.parseLong(bestRespTime))) {
                 bestResp = responses.get(i);
             }

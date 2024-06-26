@@ -13,7 +13,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 
-public class MergeRangeResult {
+public final class MergeRangeResult {
     private static final Comparator<MemorySegment> comparator = new MemorySegmentComparator();
 
     private MergeRangeResult() {

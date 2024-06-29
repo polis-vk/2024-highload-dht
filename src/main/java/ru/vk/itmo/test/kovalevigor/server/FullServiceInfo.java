@@ -2,9 +2,10 @@ package ru.vk.itmo.test.kovalevigor.server;
 
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerRemoteStrategy;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
-import ru.vk.itmo.test.kovalevigor.server.util.Partition;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Partition;
 
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -15,6 +16,7 @@ public class FullServiceInfo implements ServiceInfo, AutoCloseable {
     private final List<Partition> clusterPartitions;
 
     public FullServiceInfo(
+            HttpClient httpClient,
             List<String> clusterUrls,
             String clusterUrl
     ) {
@@ -28,7 +30,7 @@ public class FullServiceInfo implements ServiceInfo, AutoCloseable {
             String url = clusterUrls.get(i);
             clusterPartitions.add(
                     new Partition(
-                            url.equals(clusterUrl) ? null : new ServerRemoteStrategy(url),
+                            url.equals(clusterUrl) ? null : new ServerRemoteStrategy(httpClient, url),
                             offset,
                             nextOffset
                     )

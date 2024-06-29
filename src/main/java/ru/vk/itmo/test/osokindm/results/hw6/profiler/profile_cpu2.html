@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px 10px 22px 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {position: fixed; bottom: 0; margin: 0; padding: 2px 3px 2px 3px; outline: 1px solid #ffc000; display: none; overflow: hidden; white-space: nowrap; background-color: #ffffe0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {left: 0}
+	#match {right: 0}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 752px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>CPU profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='status'></p>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<script>
+	// Copyright The async-profiler authors
+	// SPDX-License-Identifier: Apache-2.0
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let level0 = 0, left0 = 0, width0 = 0;
+	let reverse = false;
+	const levels = Array(47);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(key, level, left, width, inln, c1, int) {
+		levels[level0 = level].push({left: left0 += left, width: width0 = width || width0,
+			color: getColor(palette[key & 7]), title: cpool[key >>> 3],
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function u(key, width, inln, c1, int) {
+		f(key, level0 + 1, 0, width, inln, c1, int)
+	}
+
+	function n(key, width, inln, c1, int) {
+		f(key, level0, width0, width, inln, c1, int)
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inline-block' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	function unpack(cpool) {
+		for (let i = 1; i < cpool.length; i++) {
+			cpool[i] = cpool[i - 1].substring(0, cpool[i].charCodeAt(0) - 32) + cpool[i].substring(1);
+		}
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f !== root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				status.style.display = 'inline-block';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = null;
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+
+const cpool = [
+'all',
+' C2Compiler::compile_method',
+'!ompile::Code_Gen',
+'+mpile',
+'\'Broker::compiler_thread_loop',
+'/invoke_compiler_on_method',
+' JavaThread::thread_main_inner',
+' Matcher::Label_Root',
+')match',
+'._sfpt',
+'/tree',
+')xform',
+' State::_sub_Op_LoadP',
+' Thread::call_run',
+' [unknown]',
+' __GI___read',
+'"_slab_alloc',
+'"alloc_pages',
+'(skb',
+'"check_object_size',
+'3.part.0',
+'"dev_queue_xmit',
+'#o_softirq',
+'"fdget',
+'#get_light',
+'#olio_alloc',
+'#utex_abstimed_wait_cancelable64',
+'"handle_mm_fault',
+'"ip_finish_output',
+'%queue_xmit',
+'"libc_send',
+'#ocal_bh_enable_ip',
+'"napi_poll',
+'#etif_receive_skb',
+'3_one_core',
+'"sys_sendto',
+'"tcp_push_pending_frames',
+'&transmit_skb',
+'"x64_sys_futex',
+'*read',
+'*sendto',
+'!raw_spin_lock_bh',
+' alloc_pages',
+'%ate_slab',
+'!sm_exc_page_fault',
+' check_heap_object',
+'!lear_page_rep',
+' d_path',
+'!o_anonymous_page',
+'#futex',
+'#softirq.part.0',
+'$yscall_64',
+'#user_addr_fault',
+' entry_SYSCALL_64_after_hwframe',
+'!xc_page_fault',
+' get_page_from_freelist',
+' handle_mm_fault',
+'\'pte_fault',
+' inet6_sendmsg',
+'!p_finish_output',
+'02',
+'#local_deliver',
+'0_finish',
+')out',
+'#output',
+'#protocol_deliver_rcu',
+'#queue_xmit',
+'#rcv',
+' java/lang/Thread.run',
+'4With',
+'*foreign/MemorySegment.copy',
+'@get',
+'@mismatch',
+'*invoke/VarHandleGuards.guard_LJ_I',
+':SegmentAsBytes.checkAddress',
+'Iget',
+'IoffsetNoVMAlignCheck',
+'%util/AbstractQueue.remove',
+'*PriorityQueue.add',
+'8offer',
+'8poll',
+'8siftDownComparable',
+'<Up',
+'>Comparable',
+'*concurrent/ThreadPoolExecutor$Worker.run',
+'G.runWorker',
+'!dk/internal/foreign/AbstractMemorySegmentImpl.asSlice',
+'VNoCheck',
+'OcheckAccess',
+'TBounds',
+'Popy',
+'Omismatch',
+'OsessionImpl',
+'OtoArray',
+'5MappedMemorySegmentImpl.asSlice',
+'Mdup',
+'6emorySessionImpl.checkValidStateRaw',
+'-misc/ScopedMemoryAccess.copyMemory',
+'OInternal',
+'EgetByte',
+'LInternal',
+' kmalloc_reserve',
+'"em_cache_alloc_node',
+'!sys_read',
+' lock_sock_nested',
+' native_queued_spin_lock_slowpath',
+'!eigh_hh_output',
+'"t_rx_action',
+'"w_slab',
+' one/nio/http/HttpSession.sendResponse',
+'(net/NativeSocket.write',
+',Session$ArrayQueueItem.write',
+'3.write',
+' prepend_path',
+'"ocess_backlog',
+' ru/vk/itmo/test/osokindm/CustomHttpSession.writeChunk',
+'PResponse',
+'9ServiceImpl$$Lambda.0x00007f5204154888.run',
+'D.lambda$entities$0',
+'9dao/LiveFilteringIterator.next',
+'SskipTombstones',
+'=MemorySegmentComparator.compare',
+'?rgingEntryIterator.next',
+'=SSTable$SliceIterator.next',
+'=WeightedPeekingEntryIterator.compareTo',
+'Znext',
+' seq_file_path',
+'$path',
+'%utc',
+'$read',
+'(_iter',
+'!how_map',
+'(_vma',
+'!kb_do_copy_data_nocache',
+'!ockfd_lookup_light',
+'!tart_thread',
+' tcp_push',
+'$sendmsg',
+'+_locked',
+'%tream_alloc_skb',
+'$write_xmit',
+'!hread_native_entry',
+' vfs_read',
+'!ma_alloc_folio'
+];
+unpack(cpool);
+
+n(3,58)
+u(115,4)
+u(123,3)
+u(429)
+u(413)
+u(317)
+u(829)
+u(1141)
+u(1037)
+u(1045)
+u(1053)
+u(1061)
+f(1013,12,1,1)
+u(1021)
+u(381)
+u(909)
+f(1029,12,1)
+f(211,2,1)
+u(429)
+u(413)
+u(309)
+u(397)
+f(545,1,1,53)
+u(553)
+u(673)
+u(681)
+u(937)
+u(945)
+u(873)
+u(929)
+u(921,9)
+u(745,1)
+u(746)
+u(562)
+u(722)
+u(778)
+u(786)
+u(770)
+f(897,10,1,8)
+u(897)
+u(889)
+u(881)
+u(243)
+u(429)
+u(413)
+u(325)
+u(285)
+u(469,7)
+u(1101)
+u(837,1)
+u(333)
+u(845)
+f(1109,21,1,6)
+u(1069,1)
+u(157)
+u(165)
+u(365)
+f(1093,22,1,3)
+u(293)
+u(1125)
+u(301)
+u(533)
+u(237)
+u(509)
+u(517)
+f(477,30,1,2)
+u(229)
+u(485)
+u(853)
+u(173)
+f(253,35,1,1)
+u(405)
+u(181)
+u(861)
+u(261)
+u(917)
+u(269)
+u(277)
+u(541)
+u(493)
+u(501)
+u(525)
+f(1117,22,1,2)
+u(149)
+f(813,24,1,1)
+u(821)
+u(133)
+u(869)
+u(349)
+u(341)
+u(141)
+u(445)
+u(373)
+f(1077,19,1)
+u(189)
+u(197)
+f(953,9,1,44)
+u(953)
+u(961)
+u(977)
+u(977)
+u(617,33)
+u(641)
+u(650,33,11,0,0)
+f(993,17,5,28,6,0,0)
+u(993,28,6,0,0)
+f(969,19,5,23,1,0,0)
+u(969,23,1,0,0)
+u(577,23,1,0,0)
+f(577,22,1,22)
+u(730)
+f(570,24,8,13)
+u(586)
+u(602)
+f(594,27,1,3)
+u(706)
+u(714)
+f(610,27,3,2)
+n(738,1)
+n(794,6)
+u(802)
+f(770,29,1,5)
+f(706,24,5,1)
+u(714)
+f(625,14,1,2)
+u(633)
+u(657)
+u(665)
+u(993)
+u(993)
+u(969)
+u(969)
+u(577)
+u(577)
+u(730)
+f(969,14,2,1)
+u(969)
+u(577)
+u(577)
+u(730)
+f(1001,14,1,8)
+u(986)
+u(986)
+f(754,17,4,4)
+u(754)
+u(690)
+u(698,3)
+u(762)
+u(762)
+f(357,23,2,1)
+u(437)
+u(421)
+u(453)
+u(221)
+u(461)
+u(389)
+u(1149)
+u(205)
+u(141)
+f(714,20,1)
+f(1083,1,1)
+u(1132)
+u(108)
+u(52)
+u(36)
+u(44)
+u(12)
+u(28)
+u(20)
+u(68)
+u(92)
+u(76)
+u(84)
+u(60)
+u(60)
+u(100)
+
+search();
+</script></body></html>

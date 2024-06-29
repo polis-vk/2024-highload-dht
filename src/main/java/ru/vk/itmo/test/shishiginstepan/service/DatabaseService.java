@@ -6,7 +6,6 @@ import ru.vk.itmo.test.ServiceFactory;
 import ru.vk.itmo.test.shishiginstepan.dao.EntryWithTimestamp;
 import ru.vk.itmo.test.shishiginstepan.dao.InMemDaoImpl;
 import ru.vk.itmo.test.shishiginstepan.server.DistributedDao;
-import ru.vk.itmo.test.shishiginstepan.server.RemoteDaoNode;
 import ru.vk.itmo.test.shishiginstepan.server.Server;
 
 import java.io.IOException;
@@ -33,14 +32,10 @@ public class DatabaseService implements ru.vk.itmo.Service {
                 );
         distributedDao = new DistributedDao(localDao, config.selfUrl());
         for (String url : config.clusterUrls()) {
-            if (url.equals(config.selfUrl())) {
-                continue;
-            }
             distributedDao.addNode(
-                    new RemoteDaoNode(url), url
+                    url
             );
         }
-        distributedDao.addNode(localDao, config.selfUrl());
         try {
             server = new Server(config, distributedDao);
         } catch (IOException e) {
@@ -57,7 +52,7 @@ public class DatabaseService implements ru.vk.itmo.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 4)
+    @ServiceFactory(stage = 5)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

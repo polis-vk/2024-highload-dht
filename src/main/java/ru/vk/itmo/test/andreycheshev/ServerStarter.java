@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 public final class ServerStarter {
-    private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/lab3/");
+    private static final Path STORAGE_DIR_PATH = Path.of("/home/andrey/andrey/lab6/storage");
     private static final String LOCALHOST = "http://localhost";
     private static final int BASE_PORT = 8080;
     private static final int CLUSTER_NODE_COUNT = 4;
@@ -39,7 +39,7 @@ public final class ServerStarter {
 
         List<String> urls = new ArrayList<>(CLUSTER_NODE_COUNT);
         for (Integer port: ports) {
-            urls.add(LOCALHOST + port);
+            urls.add(LOCALHOST + ":" + port);
         }
 
         for (int i = 0; i < CLUSTER_NODE_COUNT; i++) {

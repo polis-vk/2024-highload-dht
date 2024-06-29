@@ -5,13 +5,13 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.ServiceInfo;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
-import ru.vk.itmo.test.kovalevigor.server.util.Headers;
-import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Headers;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Parameters;
 
 import java.io.IOException;
 import java.util.Collection;
 
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.GOOD_STATUSES;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.GOOD_STATUSES;
 
 public class ServerShardingStrategyDecorator extends ServerStrategyDecorator {
     private final ServiceInfo serviceInfo;

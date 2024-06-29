@@ -5,15 +5,20 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import ru.vk.itmo.test.kovalevigor.server.ServiceInfo;
 import ru.vk.itmo.test.kovalevigor.server.strategy.ServerStrategy;
-import ru.vk.itmo.test.kovalevigor.server.util.Headers;
-import ru.vk.itmo.test.kovalevigor.server.util.Parameters;
-import ru.vk.itmo.test.kovalevigor.server.util.Responses;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Headers;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Parameters;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Paths;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Responses;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.GOOD_STATUSES;
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.compareTimestamps;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.GOOD_STATUSES;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.REMOTE_TIMEOUT_VALUE;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.mergeResponses;
 
 public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator {
 
@@ -56,6 +61,40 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
         return checkReplicaResponse(responseCount, ack, replicasResponse);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
+    @Override
+    public CompletableFuture<Response> handleRequestAsync(
+            Request request,
+            HttpSession session,
+            Executor executor
+    ) {
+        if (Paths.getPathOrThrow(request.getPath()).isLocal() || Headers.hasHeader(request, Headers.REPLICATION)) {
+            return super.handleRequestAsync(request, session, executor);
+        }
+        int ack = Parameters.getParameter(request, Parameters.ACK, Integer::parseInt, serviceInfo.getQuorum());
+        int from = Parameters.getParameter(request, Parameters.FROM, Integer::parseInt, serviceInfo.getClusterSize());
+        if (ack > from || ack == 0) {
+            return CompletableFuture.completedFuture(Responses.BAD_REQUEST.toResponse());
+        }
+
+        Collection<ServerStrategy> strategies = serviceInfo.getPartitionStrategy(
+                this,
+                Parameters.getParameter(request, Parameters.ID),
+                from
+        );
+
+        Headers.addHeader(request, Headers.REPLICATION, "");
+        AckEitherCompletableFuture result = new AckEitherCompletableFuture(ack, from);
+        for (ServerStrategy strategy : strategies) {
+            CompletableFuture<Response> future =
+                    strategy == this
+                            ? super.handleRequestAsync(request, session, executor)
+                            : strategy.handleRequestAsync(request, session, executor);
+            future.whenCompleteAsync(result::markCompletedFuture, executor);
+        }
+        return result.orTimeout(REMOTE_TIMEOUT_VALUE, TimeUnit.SECONDS);
+    }
+
     private static Response checkReplicaResponse(int responseCount, int ack, Response replicasResponse) {
         Response response;
         if (responseCount >= ack) {
@@ -68,23 +107,5 @@ public class ServerReplicationStrategyDecorator extends ServerStrategyDecorator 
             response = Responses.NOT_ENOUGH_REPLICAS.toResponse();
         }
         return response;
-    }
-
-    private Response mergeResponses(Response lhs, Response rhs) {
-        if (lhs == null) {
-            return rhs;
-        } else if (rhs == null) {
-            return lhs;
-        }
-
-        int compare = compareTimestamps(getTimestamp(lhs), getTimestamp(rhs));
-        if (compare == 0) {
-            return rhs;
-        }
-        return compare > 0 ? lhs : rhs;
-    }
-
-    private static String getTimestamp(Response response) {
-        return Headers.getHeader(response, Headers.TIMESTAMP);
     }
 }

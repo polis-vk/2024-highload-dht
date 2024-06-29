@@ -1,226 +1,216 @@
 package ru.vk.itmo.test.andreycheshev;
 
-import one.nio.http.HttpClient;
-import one.nio.http.HttpException;
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.pool.PoolException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.test.andreycheshev.dao.ClusterEntry;
 import ru.vk.itmo.test.andreycheshev.dao.Dao;
 import ru.vk.itmo.test.andreycheshev.dao.Entry;
 
-import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
-public class RequestHandler {
+public class RequestHandler implements HttpProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
-    private static final TimestampComparator timestampComparator = new TimestampComparator();
-    private static final Set<Integer> AVAILABLE_METHODS;
 
-    static {
-        AVAILABLE_METHODS = Set.of(
-                Request.METHOD_GET,
-                Request.METHOD_PUT,
-                Request.METHOD_DELETE
-        ); // Immutable set.
-    }
+    private static final String FUTURE_CREATION_ERROR = "Error when CompletableFuture creation";
 
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-    private static final String REQUEST_PATH = "/v0/entity";
+    private static final Set<Integer> AVAILABLE_METHODS = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
-    private static final String ID_PARAMETER = "id=";
-    private static final String ACK_PARAMETER = "ack=";
-    private static final String FROM_PARAMETER = "from=";
-
-    public static final String TIMESTAMP_HEADER = "Timestamp: ";
-
-    private static final int OK = 200;
-    private static final int CREATED = 201;
-    private static final int ACCEPTED = 202;
-    private static final int NOT_FOUND = 404;
-    private static final int GONE = 410;
-
-    private static final int EMPTY_TIMESTAMP = -1;
+    private static final String ENTITY_REQUEST_PATH = "/v0/entity";
+    private static final String ENTITIES_REQUEST_PATH = "/v0/entities";
 
     private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private final HttpClient[] clusterConnections;
     private final RendezvousDistributor distributor;
+    private final AsyncActions asyncActions;
 
     public RequestHandler(
             Dao<MemorySegment, Entry<MemorySegment>> dao,
-            HttpClient[] clusterConnections,
             RendezvousDistributor distributor) {
 
         this.dao = dao;
-        this.clusterConnections = clusterConnections;
         this.distributor = distributor;
+        this.asyncActions = new AsyncActions(this);
     }
 
-    public Response handle(Request request) throws InterruptedException {
+    public void handle(Request request, HttpSession session) {
+        Response errorResponse = analyzeRequest(request, session);
 
-        // Checking the correctness.
-        String path = request.getPath();
-        if (!path.equals(REQUEST_PATH)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        if (errorResponse != null) {
+            sendAsync(errorResponse, session);
+        }
+    }
+
+    private Response analyzeRequest(Request request, HttpSession session) {
+        if (!AVAILABLE_METHODS.contains(request.getMethod())) {
+            return HttpUtils.getMethodNotAllowed();
         }
 
-        String id = request.getParameter(ID_PARAMETER);
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        return switch (request.getPath()) {
+            case ENTITY_REQUEST_PATH -> analyzeEntity(request, session);
+            case ENTITIES_REQUEST_PATH -> analyzeEntities(request, session);
+            default -> HttpUtils.getBadRequest();
+        };
+    }
+
+    private Response analyzeEntity(Request request, HttpSession session) {
+
+        String path = request.getPath();
+        if (!path.equals(ENTITY_REQUEST_PATH)) {
+            return HttpUtils.getBadRequest();
         }
 
         int method = request.getMethod();
         if (!AVAILABLE_METHODS.contains(method)) {
-            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            return HttpUtils.getMethodNotAllowed();
         }
 
-        // A timestamp is an indication that the request
-        // came from the client directly or from the cluster node.
-        String timestamp = request.getHeader(TIMESTAMP_HEADER);
-        if (timestamp != null) {
-            // The request came from a remote node.
-            try {
-                return processLocally(method,
-                        id,
-                        request,
-                        Long.parseLong(timestamp)
-                );
-            } catch (NumberFormatException e) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-        }
-
-        // Get and check "ack" and "from" parameters.
-        ParametersParser parser = new ParametersParser(distributor);
         try {
-            parser.parseAckFrom(
-                    request.getParameter(ACK_PARAMETER),
-                    request.getParameter(FROM_PARAMETER)
-            );
-        } catch (IllegalArgumentException e) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
 
-        // Start processing on remote and local nodes.
-        return processDistributed(method, id, request, parser.getAck(), parser.getFrom());
+            String id = ParametersParser.parseId(request);
+            String timestamp = request.getHeader(HttpUtils.TIMESTAMP_ONE_NIO_HEADER);
+
+            return isRequestCameFromNode(timestamp)
+                    ? processLocally(request, method, id, timestamp, session)
+                    : processDistributed(request, method, id, session);
+
+        } catch (IllegalArgumentException e) {
+            return HttpUtils.getBadRequest();
+        }
+    }
+
+    private Response processLocally(Request request, int method, String id, String timestamp, HttpSession session) {
+        try {
+            CompletableFuture<Void> future =
+                    asyncActions.processLocallyToSend(method, id, request, Long.parseLong(timestamp), session);
+
+            if (future == null) {
+                LOGGER.error(FUTURE_CREATION_ERROR);
+                return HttpUtils.getInternalError();
+            }
+        } catch (NumberFormatException e) {
+            return HttpUtils.getBadRequest();
+        }
+        return null;
     }
 
     private Response processDistributed(
+            Request request,
             int method,
             String id,
-            Request request,
-            int ack,
-            int from) throws InterruptedException {
+            HttpSession session) {
 
-        List<Integer> nodes = distributor.getQuorumNodes(id, from);
-        List<Response> responses = new ArrayList<>();
+        ParametersTuple<Integer> ackFrom = ParametersParser.parseAckFromOrDefault(request, distributor);
+        int ack = ackFrom.first();
+        int from = ackFrom.second();
+        if (ack <= 0 || ack > from) {
+            LOGGER.error("An error occurred while analyzing the parameters");
+            return HttpUtils.getBadRequest();
+        }
 
-        long currTimestamp = (method == Request.METHOD_GET)
-                ? EMPTY_TIMESTAMP
+        List<Integer> nodesIndices = distributor.getNodesByKey(id, from);
+
+        long timestamp = method == Request.METHOD_GET
+                ? HttpUtils.EMPTY_TIMESTAMP
                 : System.currentTimeMillis();
 
-        for (int node : nodes) {
-            try {
-                Response response = distributor.isOurNode(node)
-                        ? processLocally(method, id, request, currTimestamp)
-                        : redirectRequest(node, request, currTimestamp);
+        ResponseCollector collector = new ResponseCollector(method, ack, from);
 
-                if (isRequestSucceeded(method, response.getStatus())) {
-                    responses.add(response);
-                }
+        for (int nodeIndex : nodesIndices) {
+            String node = distributor.getNodeUrlByIndex(nodeIndex);
 
-                // For the GET method, we do not need to continue to request
-                // if we have already received the required number of successful responses.
-                if (method == Request.METHOD_GET && areEnoughSuccessfulResponses(responses, ack)) {
-                    return analyzeResponses(method, responses);
-                }
-            } catch (SocketTimeoutException e) {
-                LOGGER.error("Request processing time exceeded on another node", e);
-            } catch (PoolException | HttpException | IOException e) {
-                LOGGER.error("An error occurred when processing a request on another node", e);
+            CompletableFuture<Void> future = distributor.isOurNode(nodeIndex)
+                    ? asyncActions.processLocallyToCollect(method, id, request, timestamp, collector, session)
+                    : asyncActions.processRemotelyToCollect(node, request, timestamp, collector, session);
+
+            if (future == null) {
+                LOGGER.error(FUTURE_CREATION_ERROR);
+                return HttpUtils.getInternalError();
             }
         }
 
-        return !areEnoughSuccessfulResponses(responses, ack)
-                ? new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY)
-                : analyzeResponses(method, responses);
+        return null;
     }
 
-    private static boolean isRequestSucceeded(int method, int status) {
-        return (method == Request.METHOD_GET && (status == OK || status == NOT_FOUND || status == GONE))
-                || (method == Request.METHOD_PUT && status == CREATED)
-                || (method == Request.METHOD_DELETE && status == ACCEPTED);
+    private boolean isRequestCameFromNode(String timestamp) {
+        // A timestamp is an indication that the request
+        // came from the client directly or from the cluster node.
+        return timestamp != null;
     }
 
-    private static boolean areEnoughSuccessfulResponses(List<Response> responses, int ack) {
-        return responses.size() >= ack;
-    }
-
-    private Response redirectRequest(
-            int nodeNumber,
-            Request request,
-            long timestamp) throws HttpException, IOException, PoolException, InterruptedException {
-
-        HttpClient client = clusterConnections[nodeNumber];
-        request.addHeader(TIMESTAMP_HEADER + timestamp);
-        return client.invoke(request);
-    }
-
-    private Response processLocally(int method, String id, Request request, long timestamp) {
-        return switch (method) {
-            case Request.METHOD_GET -> get(id);
-            case Request.METHOD_PUT -> put(id, request.getBody(), timestamp);
-            default -> delete(id, timestamp);
-        };
-    }
-
-    private Response analyzeResponses(int method, List<Response> responses) {
-        // The required number of successful responses has already been received here.
-        switch (method) {
-            case Request.METHOD_GET -> {
-                responses.sort(timestampComparator);
-
-                Response response = responses.getFirst();
-
-                return (response.getStatus() == GONE)
-                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                        : response;
+    private Response analyzeEntities(Request request, HttpSession session) {
+        try {
+            ParametersTuple<String> params = ParametersParser.parseStartEnd(request);
+            String start = params.first();
+            String end = params.second();
+            if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
+                throw new IllegalArgumentException();
             }
-            case Request.METHOD_PUT -> {
-                return new Response(Response.CREATED, Response.EMPTY);
+
+            Iterator<Entry<MemorySegment>> streamingIterator = dao.get(
+                    fromString(start),
+                    end == null ? null : fromString(end)
+            );
+
+            CompletableFuture<Void> future = asyncActions.stream(
+                    () -> {
+                        try {
+                            ((StreamingSession) session).stream(streamingIterator);
+                        } catch (Exception e) {
+                            LOGGER.error("An error occurred while streaming response");
+                        }
+                    }
+            );
+
+            if (future == null) {
+                LOGGER.info(FUTURE_CREATION_ERROR);
+                return HttpUtils.getInternalError();
             }
-            default -> { // For delete method.
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
+        } catch (IllegalArgumentException e) {
+            LOGGER.error("An error occurred while analyzing entities the parameters");
+            return HttpUtils.getBadRequest();
+        }
+
+        return null;
+    }
+
+    public void sendAsync(Response response, HttpSession session) {
+        CompletableFuture<Void> future = asyncActions.sendAsync(response, session);
+        if (future == null) {
+            LOGGER.error(FUTURE_CREATION_ERROR);
         }
     }
 
-    private Response get(String id) {
+    @Override
+    public ResponseElements get(String id) {
         ClusterEntry<MemorySegment> entry = (ClusterEntry<MemorySegment>) dao.get(fromString(id));
 
-        Response response;
+        ResponseElements response;
         if (entry == null) {
-            response = new Response(Response.NOT_FOUND, Response.EMPTY);
-            response.addHeader(TIMESTAMP_HEADER + EMPTY_TIMESTAMP);
+            response = new ResponseElements(HttpUtils.NOT_FOUND_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
         } else {
+            long timestamp = entry.timestamp();
             response = (entry.value() == null)
-                    ? new Response(Response.GONE, Response.EMPTY)
-                    : new Response(Response.OK, entry.value().toArray(ValueLayout.JAVA_BYTE));
-            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+                    ? new ResponseElements(HttpUtils.GONE_CODE, Response.EMPTY, timestamp)
+                    : new ResponseElements(HttpUtils.OK_CODE, entry.value().toArray(ValueLayout.JAVA_BYTE), timestamp);
         }
 
         return response;
     }
 
-    private Response put(String id, byte[] body, long timestamp) {
+    @Override
+    public ResponseElements put(String id, byte[] body, long timestamp) {
         Entry<MemorySegment> entry = new ClusterEntry<>(
                 fromString(id),
                 MemorySegment.ofArray(body),
@@ -228,10 +218,11 @@ public class RequestHandler {
         );
         dao.upsert(entry);
 
-        return new Response(Response.CREATED, Response.EMPTY);
+        return new ResponseElements(HttpUtils.CREATED_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
-    private Response delete(String id, long timestamp) {
+    @Override
+    public ResponseElements delete(String id, long timestamp) {
         Entry<MemorySegment> entry = new ClusterEntry<>(
                 fromString(id),
                 null,
@@ -239,7 +230,7 @@ public class RequestHandler {
         );
         dao.upsert(entry);
 
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+        return new ResponseElements(HttpUtils.ACCEPT_CODE, Response.EMPTY, HttpUtils.EMPTY_TIMESTAMP);
     }
 
     private static MemorySegment fromString(String data) {

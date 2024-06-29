@@ -1,41 +1,48 @@
 package ru.vk.itmo.test.andreycheshev;
 
-public class ParametersParser {
-    private final RendezvousDistributor distributor;
-    private int ack;
-    private int from;
+import one.nio.http.Request;
 
-    public ParametersParser(RendezvousDistributor distributor) {
-        this.distributor = distributor;
+public final class ParametersParser {
+    private static final String ID_PARAMETER = "id=";
+    private static final String ACK_PARAMETER = "ack=";
+    private static final String FROM_PARAMETER = "from=";
+    private static final String START_PARAMETER = "start=";
+    private static final String END_PARAMETER = "end=";
+
+    private ParametersParser() {
+
     }
 
-    public void parseAckFrom(String ackParameter, String fromParameter) throws IllegalArgumentException {
-        if (ackParameter == null || fromParameter == null) {
-            setDefault();
+    public static String parseId(Request request) {
+        String id = request.getParameter(ID_PARAMETER);
+        if (id == null || id.isEmpty()) {
+            throw new IllegalArgumentException("Illegal parameter");
+        }
+        return id;
+    }
+
+    public static ParametersTuple<Integer> parseAckFromOrDefault(
+            Request request,
+            RendezvousDistributor distributor) {
+
+        String ack = request.getParameter(ACK_PARAMETER);
+        String from = request.getParameter(FROM_PARAMETER);
+
+        if (ack == null || from == null) {
+            return distributor.getDefaultAckFrom();
         } else {
-            try {
-                ack = Integer.parseInt(ackParameter);
-                from = Integer.parseInt(fromParameter);
-            } catch (Exception e) {
-                setDefault();
-                return;
-            }
-            if (ack <= 0 || ack > from) {
-                throw new IllegalArgumentException();
-            }
+            return new ParametersTuple<>(
+                    Integer.parseInt(ack),
+                    Integer.parseInt(from)
+            );
         }
     }
 
-    private void setDefault() {
-        ack = distributor.getQuorumNumber();
-        from = distributor.getNodeCount();
-    }
+    public static ParametersTuple<String> parseStartEnd(Request request) {
 
-    public int getAck() {
-        return ack;
-    }
+        String start = request.getParameter(START_PARAMETER);
+        String end = request.getParameter(END_PARAMETER);
 
-    public int getFrom() {
-        return from;
+        return new ParametersTuple<>(start, end);
     }
 }

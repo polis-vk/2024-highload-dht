@@ -1,5 +1,7 @@
 package ru.vk.itmo.test.proninvalentin.sharding;
 
+import java.util.List;
+
 public interface ShardingAlgorithm {
-    String getNodeByKey(String key);
+    List<String> getNodesByKey(String key, int necessaryNodeNumber);
 }

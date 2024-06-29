@@ -3,6 +3,7 @@ package ru.vk.itmo.test.viktorkorotkikh.http;
 import one.nio.http.Response;
 import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
+import ru.vk.itmo.test.viktorkorotkikh.util.LsmServerUtil;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -46,19 +47,8 @@ public class LSMServerResponseWithMemorySegment extends Response {
         }
         builder.append('\r').append('\n');
         if (includeBody) {
-            writeBody(memorySegmentBody, builder);
+            LsmServerUtil.copyMemorySegmentToByteArrayBuilder(memorySegmentBody, builder);
         }
         return builder.buffer();
-    }
-
-    private static void writeBody(MemorySegment memorySegmentBody, ByteArrayBuilder builder) {
-        MemorySegment.copy(
-                memorySegmentBody,
-                ValueLayout.JAVA_BYTE,
-                0L,
-                builder.buffer(),
-                builder.length(),
-                (int) memorySegmentBody.byteSize()
-        );
     }
 }

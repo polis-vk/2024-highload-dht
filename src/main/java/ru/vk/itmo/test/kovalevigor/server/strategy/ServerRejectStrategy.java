@@ -3,16 +3,16 @@ package ru.vk.itmo.test.kovalevigor.server.strategy;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import ru.vk.itmo.test.kovalevigor.server.util.Responses;
+import ru.vk.itmo.test.kovalevigor.server.strategy.util.Responses;
 
 import java.io.IOException;
 
-import static ru.vk.itmo.test.kovalevigor.server.util.ServerUtil.sendResponseWithoutIo;
+import static ru.vk.itmo.test.kovalevigor.server.strategy.util.ServerUtil.sendResponseWithoutIo;
 
 public class ServerRejectStrategy implements ServerStrategy {
     @Override
     public Response handleRequest(Request request, HttpSession session) throws IOException {
-        handleDefault(request, session);
+        rejectRequest(request, session);
         return null;
     }
 
@@ -24,6 +24,11 @@ public class ServerRejectStrategy implements ServerStrategy {
     @Override
     public void rejectRequest(Request request, HttpSession session) {
         sendResponseWithoutIo(session, Responses.SERVICE_UNAVAILABLE);
+    }
+
+    @Override
+    public void handleIOException(Request request, HttpSession session, IOException exception) {
+        // do nothing
     }
 
     @Override

@@ -4,6 +4,7 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.vk.itmo.dao.Dao;
@@ -17,6 +18,7 @@ import java.lang.foreign.ValueLayout;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Iterator;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -141,6 +143,9 @@ public class DaoHttpServer extends HttpServer {
             if (path.equals(SERVER_STOP_PATH)) {
                 stop();
                 return;
+            } else if (path.startsWith("/v0/entities")) {
+                processRange(request, session);
+                return;
             }
             final String id = request.getParameter("id=");
             final ProcessResultHandler handler = processHandler(session, request, id, path);
@@ -159,6 +164,39 @@ public class DaoHttpServer extends HttpServer {
             logger.error("Interrupted while processing tasks.");
             Thread.currentThread().interrupt();
         }
+    }
+
+    private void processRange(final Request request, final HttpSession session) throws IOException {
+        final String startString = request.getParameter("start=");
+        final String endString = request.getParameter("end=");
+        if (startString == null || startString.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, "Missing range parameter \"start\".");
+            return;
+        }
+        if (endString != null && endString.isBlank()) {
+            session.sendError(Response.BAD_REQUEST, "Missing range parameter \"end\".");
+            return;
+        }
+        final MemorySegment startKey = MemorySegment.ofArray(startString.getBytes(StandardCharsets.UTF_8));
+        final MemorySegment endKey;
+        if (endString == null) {
+            endKey = null;
+        } else {
+            endKey = MemorySegment.ofArray(endString.getBytes(StandardCharsets.UTF_8));
+        }
+
+        final Iterator<TimeEntry<MemorySegment>> iterator = dao.get(startKey, endKey);
+        if (!iterator.hasNext()) {
+            session.sendResponse(new Response(Response.OK, Response.EMPTY));
+            return;
+        }
+        ((DaoSession) session).range(iterator);
+        session.close();
+    }
+
+    @Override
+    public HttpSession createSession(final Socket socket) {
+        return new DaoSession(socket, this);
     }
 
     private void processRequestAck(
@@ -246,7 +284,7 @@ public class DaoHttpServer extends HttpServer {
         return response;
     }
 
-    public ProcessResultHandler processHandler(
+    private ProcessResultHandler processHandler(
             final HttpSession session,
             final Request request,
             final String id,
@@ -292,7 +330,7 @@ public class DaoHttpServer extends HttpServer {
         return handler;
     }
 
-    public boolean isInvalidKey(final String key) {
+    private boolean isInvalidKey(final String key) {
         return key == null || key.isEmpty();
     }
 

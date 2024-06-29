@@ -16,7 +16,7 @@ public class StorageUtils {
     }
 
     protected long startOfKey(MemorySegment segment, long recordIndex) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 3 * Long.BYTES);
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES);
     }
 
     protected long endOfKey(MemorySegment segment, long recordIndex) {
@@ -24,15 +24,23 @@ public class StorageUtils {
     }
 
     protected long startOfValue(MemorySegment segment, long recordIndex) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 3 * Long.BYTES + Long.BYTES);
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES + Long.BYTES);
     }
 
     protected long endOfValue(MemorySegment segment, long recordIndex) {
+        return normalizedStartOfTimestamp(segment, recordIndex);
+    }
+
+    protected long startOfTimestamp(MemorySegment segment, long recordIndex) {
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES + Long.BYTES * 2);
+    }
+
+    protected long endOfTimestamp(MemorySegment segment, long recordIndex) {
         return normalizedStartOfExpiration(segment, recordIndex);
     }
 
     protected long startOfExpiration(MemorySegment segment, long recordIndex) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 3 * Long.BYTES + Long.BYTES * 2);
+        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, recordIndex * 4 * Long.BYTES + Long.BYTES * 3);
     }
 
     protected long endOfExpiration(MemorySegment segment, long recordIndex, long recordsCount) {
@@ -51,8 +59,8 @@ public class StorageUtils {
     }
 
     protected long recordsCount(MemorySegment segment) {
-        long indexSize = indexSize(segment);
-        return indexSize / Long.BYTES / 3;
+        long indexSize = segment.get(ValueLayout.JAVA_LONG_UNALIGNED, 0);
+        return indexSize / Long.BYTES / 4;
     }
 
     protected MemorySegment mapFile(FileChannel fileChannel, long size, Arena arena) throws IOException {
@@ -64,26 +72,12 @@ public class StorageUtils {
         );
     }
 
-    protected Entry<Long> countEntrySize(EntryExtended<MemorySegment> entry, Entry<Long> sizes) {
-        long dataSize = sizes.key();
-        dataSize += entry.key().byteSize();
-        MemorySegment value = entry.value();
-        if (value != null) {
-            dataSize += value.byteSize();
-        }
-        MemorySegment expiration = entry.expiration();
-        if (expiration != null) {
-            dataSize += expiration.byteSize();
-        }
-        return new BaseEntry<>(dataSize, sizes.value() + 1);
-    }
-
     protected Entry<Long> putEntry(MemorySegment fileSegment, Entry<Long> offsets, EntryExtended<MemorySegment> entry) {
         long dataOffset = offsets.key();
         long indexOffset = offsets.value();
+
         fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
         indexOffset += Long.BYTES;
-
         MemorySegment key = entry.key();
         MemorySegment.copy(key, 0, fileSegment, dataOffset, key.byteSize());
         dataOffset += key.byteSize();
@@ -97,6 +91,12 @@ public class StorageUtils {
             dataOffset += value.byteSize();
         }
         indexOffset += Long.BYTES;
+
+        fileSegment.set(ValueLayout.JAVA_LONG_UNALIGNED, indexOffset, dataOffset);
+        indexOffset += Long.BYTES;
+        MemorySegment timestamp = entry.timestamp();
+        MemorySegment.copy(timestamp, 0, fileSegment, dataOffset, timestamp.byteSize());
+        dataOffset += timestamp.byteSize();
 
         MemorySegment expiration = entry.expiration();
         if (expiration == null) {
@@ -115,12 +115,33 @@ public class StorageUtils {
         return normalize(startOfValue(segment, recordIndex));
     }
 
+    private long normalizedStartOfTimestamp(MemorySegment segment, long recordIndex) {
+        return normalize(startOfTimestamp(segment, recordIndex));
+    }
+
     private long normalizedStartOfExpiration(MemorySegment segment, long recordIndex) {
         return normalize(startOfExpiration(segment, recordIndex));
     }
 
-    private static long indexSize(MemorySegment segment) {
-        return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, 0);
+    protected Entry<Long> countSizes(Iterable<EntryExtended<MemorySegment>> iterable, long currentTime) {
+        long dataSize = 0L;
+        long count = 0L;
+        for (EntryExtended<MemorySegment> entry : iterable) {
+            MemorySegment expiration = entry.expiration();
+            if (expiration == null || checkTTL(expiration, currentTime)) {
+                dataSize += entry.key().byteSize();
+                MemorySegment value = entry.value();
+                if (value != null) {
+                    dataSize += value.byteSize();
+                }
+                dataSize += entry.timestamp().byteSize();
+                if (expiration != null) {
+                    dataSize += expiration.byteSize();
+                }
+                count++;
+            }
+        }
+        return new BaseEntry<>(dataSize, count);
     }
 
     protected long indexOf(MemorySegment segment, MemorySegment key) {
